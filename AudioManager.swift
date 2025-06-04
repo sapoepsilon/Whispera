@@ -16,6 +16,7 @@ class AudioManager: NSObject, ObservableObject {
     private var audioRecorder: AVAudioRecorder?
     private var audioFileURL: URL?
     private let whisperKitTranscriber = WhisperKitTranscriber.shared
+	// private let recordingIndicator = RecordingIndicatorManager()
     
     override init() {
         super.init()
@@ -69,6 +70,10 @@ class AudioManager: NSObject, ObservableObject {
             audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
             audioRecorder?.record()
             isRecording = true
+            
+            // Show visual indicator
+            // recordingIndicator.showIndicator()
+            
             playFeedbackSound(start: true)
         } catch {
             print("Failed to start recording: \(error)")
@@ -79,6 +84,10 @@ class AudioManager: NSObject, ObservableObject {
         audioRecorder?.stop()
         audioRecorder = nil
         isRecording = false
+        
+        // Hide visual indicator
+        // recordingIndicator.hideIndicator()
+        
         playFeedbackSound(start: false)
         
         if let audioFileURL = audioFileURL {
