@@ -116,8 +116,7 @@ class WhisperKitTranscriber: ObservableObject {
         
         do {
             print("🎤 Starting real WhisperKit transcription...")
-            
-            let result = try await whisperKit.transcribe(audioPath: processedURL.path)
+			let result = try await whisperKit.transcribe(audioPath: processedURL.path)
             let transcription = result.first?.text ?? "No speech detected"
             
             print("✅ WhisperKit transcription completed: \(transcription)")
@@ -195,9 +194,6 @@ class WhisperKitTranscriber: ObservableObject {
         guard whisperKit != nil else {
             throw WhisperKitError.notInitialized
         }
-        
-        print("📥 Downloading model: \(modelName)")
-        
         do {
             // Download the model without switching to it
             let _ = try await WhisperKit.download(variant: modelName)

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 @main
-struct MacWhisperApp: App {
+struct WhisperaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
@@ -11,10 +11,10 @@ struct MacWhisperApp: App {
         }
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button("About Mac Whisper") {
+                Button("About Whispera") {
                     NSApplication.shared.orderFrontStandardAboutPanel(
                         options: [
-                            .applicationName: "Mac Whisper",
+                            .applicationName: "Whispera",
                             .applicationVersion: "1.0"
                         ]
                     )
@@ -74,7 +74,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Mac Whisper")
+            button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
             button.action = #selector(togglePopover)
             button.target = self
         }
@@ -110,13 +110,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem?.button {
             if audioManager.isTranscribing {
                 // Transcribing state - blue waveform icon following design language
-                button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Mac Whisper - Transcribing")
+                button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Whispera - Transcribing")
                 button.image?.isTemplate = false
                 button.contentTintColor = .systemBlue
                 button.alphaValue = 1.0 // Reset alpha for transcribing state
             } else if audioManager.isRecording {
                 // Recording state - listening waveform icon with animation
-                button.image = NSImage(systemSymbolName: "waveform.badge.mic", accessibilityDescription: "Mac Whisper - Listening")
+                button.image = NSImage(systemSymbolName: "waveform.badge.mic", accessibilityDescription: "Whispera - Listening")
                 button.image?.isTemplate = false
                 button.contentTintColor = .systemRed
                 
@@ -137,7 +137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } else {
                 // Ready state - default microphone icon
-                button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Mac Whisper")
+                button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
                 button.image?.isTemplate = true
                 button.contentTintColor = nil
                 button.alphaValue = 1.0 // Reset alpha for normal state

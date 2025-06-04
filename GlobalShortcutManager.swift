@@ -42,7 +42,7 @@ class GlobalShortcutManager: ObservableObject {
         if !hasPermissions {
             print("⚠️ PROBLEM: No accessibility permissions - shortcuts will NOT work")
             print("💡 Go to System Settings > Privacy & Security > Accessibility")
-            print("💡 Add MacWhisper to the list and enable it")
+            print("💡 Add Whispera to the list and enable it")
         } else if globalMonitor == nil {
             print("⚠️ PROBLEM: Global monitor not set up despite having permissions")
             setupShortcut()
@@ -172,7 +172,7 @@ class GlobalShortcutManager: ObservableObject {
             setupShortcut()
         } else {
             print("⏳ Waiting for accessibility permissions...")
-            print("📱 Please go to System Settings > Privacy & Security > Accessibility and enable MacWhisper")
+            print("📱 Please go to System Settings > Privacy & Security > Accessibility and enable Whispera")
             print("💡 Global shortcuts will NOT work until accessibility permissions are granted")
             
             // Check again every 3 seconds for up to 30 seconds

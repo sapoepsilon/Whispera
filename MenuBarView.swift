@@ -13,7 +13,7 @@ struct MenuBarView: View {
                     .font(.system(size: 32))
                     .foregroundColor(.blue)
                 
-                Text("Mac Whisper")
+                Text("Whispera")
                     .font(.system(.title2, design: .rounded))
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
@@ -84,7 +84,7 @@ struct MenuBarView: View {
                         .buttonStyle(SecondaryButtonStyle())
                     }
                     
-                    Button("Quit Mac Whisper") {
+                    Button("Quit Whispera") {
                         NSApplication.shared.terminate(nil)
                     }
                     .buttonStyle(TertiaryButtonStyle())
@@ -173,7 +173,7 @@ struct StatusCardView: View {
                             .fill(whisperKit.isInitialized ? .green : .orange)
                             .frame(width: 8, height: 8)
                         
-                        Text("AI Model")
+                        Text("Whisper Model")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

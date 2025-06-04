@@ -76,7 +76,7 @@ class AudioManager: NSObject, ObservableObject {
             isRecording = true
             
             // Show visual indicator
-            recordingIndicator.showIndicator()
+//            recordingIndicator.showIndicator()
             
             playFeedbackSound(start: true)
         } catch {
@@ -90,7 +90,7 @@ class AudioManager: NSObject, ObservableObject {
         isRecording = false
         
         // Hide visual indicator
-        recordingIndicator.hideIndicator()
+//        recordingIndicator.hideIndicator()
         
         playFeedbackSound(start: false)
         
