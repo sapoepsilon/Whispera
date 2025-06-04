@@ -29,7 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var popover = NSPopover()
     var audioManager: AudioManager!
     var shortcutManager: GlobalShortcutManager!
-    @AppStorage("globalShortcut") var globalShortcut = "⌘⇧R"
+    @AppStorage("globalShortcut") var globalShortcut = "⌘⌥D"
     private var recordingObserver: NSObjectProtocol?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -47,7 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "Mac Whisper")
+            button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Mac Whisper")
             button.action = #selector(togglePopover)
             button.target = self
         }
@@ -81,12 +81,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func updateStatusIcon() {
         if let button = statusItem?.button {
-            if audioManager.isRecording {
+            if audioManager.isTranscribing {
+                // Transcribing state - blue waveform icon following design language
+                button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Mac Whisper - Transcribing")
+                button.image?.isTemplate = false
+                button.contentTintColor = .systemBlue
+            } else if audioManager.isRecording {
+                // Recording state - red microphone icon
                 button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Mac Whisper - Recording")
                 button.image?.isTemplate = false
                 button.contentTintColor = .systemRed
             } else {
-                button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "Mac Whisper")
+                // Ready state - default microphone icon
+                button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Mac Whisper")
                 button.image?.isTemplate = true
                 button.contentTintColor = nil
             }

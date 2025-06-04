@@ -7,6 +7,7 @@ class WhisperKitTranscriber: ObservableObject {
     @Published var isInitialized = false
     @Published var availableModels: [String] = []
     @Published var currentModel: String?
+    @Published var downloadedModels: Set<String> = []
     
     private var whisperKit: WhisperKit?
     private var initializationTask: Task<Void, Never>?
@@ -37,23 +38,63 @@ class WhisperKitTranscriber: ObservableObject {
         do {
             print("🔄 Initializing WhisperKit...")
             
-            whisperKit = try await WhisperKit()
+            // Get the user's selected model from settings
+            let selectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "openai_whisper-small.en"
+            print("📋 User selected model: \(selectedModel)")
             
-            if let whisperKit = whisperKit {
-                // Use default model for now - WhisperKit will download it automatically
-                availableModels = ["openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small"]
-                currentModel = "openai_whisper-base"
+            // Initialize WhisperKit with the selected model
+            whisperKit = try await WhisperKit(WhisperKitConfig(model: selectedModel))
+            
+            if whisperKit != nil {
+                // Get available models
+                do {
+                    availableModels = try await WhisperKit.fetchAvailableModels()
+                } catch {
+                    print("Failed to get the available models")
+                }
+                
+                // Set current model to what was actually loaded
+                currentModel = selectedModel
+                
+                // Mark the current model as downloaded since WhisperKit successfully initialized with it
+                if let currentModel = currentModel {
+                    downloadedModels.insert(currentModel)
+                }
+                
                 isInitialized = true
                 
                 print("✅ WhisperKit initialized with model: \(currentModel ?? "none")")
                 print("📋 Available models: \(availableModels)")
+                print("💾 Downloaded models: \(downloadedModels)")
             } else {
                 print("❌ Failed to create WhisperKit instance")
                 isInitialized = false
             }
         } catch {
-            print("❌ Failed to initialize WhisperKit: \(error)")
-            isInitialized = false
+            print("❌ Failed to initialize WhisperKit with selected model, falling back to default: \(error)")
+            
+            // Fall back to default if selected model fails
+            do {
+                whisperKit = try await WhisperKit()
+                if whisperKit != nil {
+                    do {
+                        availableModels = try await WhisperKit.fetchAvailableModels()
+                    } catch {
+                        print("Failed to get the available models")
+                    }
+                    currentModel = "openai_whisper-base"
+                    
+                    if let currentModel = currentModel {
+                        downloadedModels.insert(currentModel)
+                    }
+                    
+                    isInitialized = true
+                    print("✅ WhisperKit initialized with fallback model: \(currentModel ?? "none")")
+                }
+            } catch {
+                print("❌ Failed to initialize WhisperKit even with fallback: \(error)")
+                isInitialized = false
+            }
         }
         
         initializationTask = nil
@@ -102,13 +143,40 @@ class WhisperKitTranscriber: ObservableObject {
         print("🔄 Switching to model: \(model)")
         
         do {
-            whisperKit = try await WhisperKit(WhisperKitConfig(modelRepo: model))
+            let recommendedModels = WhisperKit.recommendedModels()
+            print("👂🏼 Recommended models: \(recommendedModels)")
+			whisperKit = try await WhisperKit(WhisperKitConfig(model: model))
             currentModel = model
+            
+            // Add to downloaded models set
+            downloadedModels.insert(model)
+            
             print("✅ Switched to model: \(model)")
         } catch {
             print("❌ Failed to switch to model \(model): \(error)")
             throw WhisperKitError.transcriptionFailed("Failed to load model: \(error.localizedDescription)")
         }
+    }
+    
+    func getDownloadedModels() async throws -> Set<String> {
+        // For now, we'll use a simple approach - check if models exist locally
+        // In a real implementation, you might want to check the WhisperKit model cache directory
+        return downloadedModels
+    }
+    
+    func refreshAvailableModels() async throws {
+        do {
+            availableModels = try await WhisperKit.fetchAvailableModels()
+            print("✅ Refreshed available models: \(availableModels)")
+        } catch {
+            print("❌ Failed to refresh available models: \(error)")
+            throw error
+        }
+    }
+    
+    func getRecommendedModels() -> (default: String, supported: [String]) {
+        let recommended = WhisperKit.recommendedModels()
+        return (default: recommended.default, supported: recommended.supported)
     }
     
     private func prepareAudioForWhisperKit(_ audioURL: URL) async throws -> URL {
@@ -122,6 +190,25 @@ class WhisperKitTranscriber: ObservableObject {
         let duration = try await asset.load(.duration)
         return CMTimeGetSeconds(duration)
     }
+    
+    func downloadModel(_ modelName: String) async throws {
+        guard whisperKit != nil else {
+            throw WhisperKitError.notInitialized
+        }
+        
+        print("📥 Downloading model: \(modelName)")
+        
+        do {
+            // Download the model without switching to it
+            let _ = try await WhisperKit.download(variant: modelName)
+            downloadedModels.insert(modelName)
+            print("✅ Successfully downloaded model: \(modelName)")
+        } catch {
+            print("❌ Failed to download model \(modelName): \(error)")
+            throw error
+        }
+    }
+    
 }
 
 enum WhisperKitError: LocalizedError {

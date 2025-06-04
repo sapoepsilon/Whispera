@@ -10,13 +10,17 @@ class AudioManager: NSObject, ObservableObject {
         }
     }
     @Published var lastTranscription: String?
-    @Published var isTranscribing = false
+    @Published var isTranscribing = false {
+        didSet {
+            NotificationCenter.default.post(name: NSNotification.Name("RecordingStateChanged"), object: nil)
+        }
+    }
     @Published var transcriptionError: String?
     
     private var audioRecorder: AVAudioRecorder?
     private var audioFileURL: URL?
     private let whisperKitTranscriber = WhisperKitTranscriber.shared
-	// private let recordingIndicator = RecordingIndicatorManager()
+	private let recordingIndicator = RecordingIndicatorManager()
     
     override init() {
         super.init()
@@ -72,7 +76,7 @@ class AudioManager: NSObject, ObservableObject {
             isRecording = true
             
             // Show visual indicator
-            // recordingIndicator.showIndicator()
+            recordingIndicator.showIndicator()
             
             playFeedbackSound(start: true)
         } catch {
@@ -86,7 +90,7 @@ class AudioManager: NSObject, ObservableObject {
         isRecording = false
         
         // Hide visual indicator
-        // recordingIndicator.hideIndicator()
+        recordingIndicator.hideIndicator()
         
         playFeedbackSound(start: false)
         

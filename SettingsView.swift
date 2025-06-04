@@ -1,92 +1,203 @@
 import SwiftUI
+import AVFoundation
+import WhisperKit
 
 struct SettingsView: View {
-    @AppStorage("globalShortcut") private var globalShortcut = "⌘⇧R"
-    @AppStorage("selectedModel") private var selectedModel = "base"
+    @AppStorage("globalShortcut") private var globalShortcut = "⌘⌥D"
+    @AppStorage("selectedModel") private var selectedModel = "openai_whisper-small.en"
     @AppStorage("autoDownloadModel") private var autoDownloadModel = true
     @AppStorage("soundFeedback") private var soundFeedback = true
-    
-    private let availableModels = ["tiny", "base", "small", "medium", "large"]
-    
-    var body: some View {
-        TabView {
-            GeneralSettingsView(
-                globalShortcut: $globalShortcut,
-                soundFeedback: $soundFeedback
-            )
-            .tabItem {
-                Label("General", systemImage: "gear")
-            }
-            
-            ModelSettingsView(
-                selectedModel: $selectedModel,
-                autoDownloadModel: $autoDownloadModel,
-                availableModels: availableModels
-            )
-            .tabItem {
-                Label("Model", systemImage: "cpu")
-            }
-        }
-        .frame(width: 500, height: 300)
-    }
-}
-
-struct GeneralSettingsView: View {
-    @Binding var globalShortcut: String
-    @Binding var soundFeedback: Bool
+    @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
+    @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
     @State private var eventMonitor: Any?
     
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Global Shortcut:")
-                        Spacer()
-                        Button(action: {
-                            if isRecordingShortcut {
-                                stopRecording()
-                            } else {
-                                startRecording()
-                            }
-                        }) {
-                            Text(isRecordingShortcut ? "Recording..." : globalShortcut)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 4)
-                                .background(isRecordingShortcut ? Color.blue.opacity(0.3) : Color.gray.opacity(0.2))
-                                .cornerRadius(6)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(isRecordingShortcut ? Color.blue : Color.clear, lineWidth: 2)
-                                )
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(spacing: 16) {
+                HStack {
+                    Text("Global Shortcut")
+                        .font(.headline)
+                    Spacer()
+                    Button(action: {
+                        if isRecordingShortcut {
+                            stopRecording()
+                        } else {
+                            startRecording()
                         }
-                        .buttonStyle(.plain)
+                    }) {
+                        Text(isRecordingShortcut ? "Press keys..." : globalShortcut)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minWidth: 80)
+                    }
+                    .buttonStyle(.bordered)
+                    .foregroundColor(isRecordingShortcut ? .red : .primary)
+                }
+                
+                HStack {
+                    Text("Sound Feedback")
+                        .font(.headline)
+                    Spacer()
+                    Toggle("", isOn: $soundFeedback)
+                }
+                
+                HStack {
+                    Text("AI Model")
+                        .font(.headline)
+                    Spacer()
+                    Picker("Model", selection: $selectedModel) {
+                        ForEach(getModelOptions(), id: \.0) { model in
+                            Text(model.1).tag(model.0)
+                        }
+                    }
+                    .frame(minWidth: 180)
+                }
+                
+                HStack {
+                    Text("Auto Download")
+                        .font(.headline)
+                    Spacer()
+                    Toggle("", isOn: $autoDownloadModel)
+                }
+            }
+            .padding(20)
+            
+            if needsPermissions {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Required Permissions")
+                        .font(.headline)
+                        .foregroundColor(.orange)
+                    
+                    if !microphonePermissionGranted {
+                        Text("• Microphone access required")
+                            .font(.caption)
                     }
                     
-                    if isRecordingShortcut {
-                        Text("Press the desired key combination...")
+                    if !accessibilityPermissionGranted {
+                        Text("• Accessibility access required")
                             .font(.caption)
-                            .foregroundColor(.blue)
-                    } else {
-                        Text("Click to change shortcut")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    }
+                    
+                    Button("Open System Settings") {
+                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(.horizontal, 20)
+            }
+            
+            Spacer()
+        }
+        .frame(width: 400, height: 300)
+        .background(.regularMaterial)
+        .onAppear {
+            loadAvailableModels()
+        }
+        .onDisappear {
+            stopRecording()
+        }
+        .onChange(of: selectedModel) { newModel in
+            Task {
+                await switchToModel(newModel)
+            }
+        }
+    }
+
+    
+    private var needsPermissions: Bool {
+        !microphonePermissionGranted || !accessibilityPermissionGranted
+    }
+    
+    private var microphonePermissionGranted: Bool {
+        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+    
+    private var accessibilityPermissionGranted: Bool {
+        AXIsProcessTrusted()
+    }
+    
+    private func getModelOptions() -> [(String, String)] {
+        if availableModels.isEmpty {
+            return [("openai_whisper-small.en", "Loading models...")]
+        }
+        
+        return availableModels.compactMap { model in
+            let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
+            let displayName: String
+            
+            switch cleanName {
+            case "tiny.en": displayName = "Tiny (English) - 39MB"
+            case "tiny": displayName = "Tiny (Multilingual) - 39MB"
+            case "base.en": displayName = "Base (English) - 74MB"
+            case "base": displayName = "Base (Multilingual) - 74MB"
+            case "small.en": displayName = "Small (English) - 244MB"
+            case "small": displayName = "Small (Multilingual) - 244MB"
+            case "medium.en": displayName = "Medium (English) - 769MB"
+            case "medium": displayName = "Medium (Multilingual) - 769MB"
+            case "large-v2": displayName = "Large v2 (Multilingual) - 1.5GB"
+            case "large-v3": displayName = "Large v3 (Multilingual) - 1.5GB"
+            case "large-v3-turbo": displayName = "Large v3 Turbo (Multilingual) - 809MB"
+            case "distil-large-v2": displayName = "Distil Large v2 (Multilingual) - 756MB"
+            case "distil-large-v3": displayName = "Distil Large v3 (Multilingual) - 756MB"
+            default: displayName = cleanName.capitalized
+            }
+            
+            return (model, displayName)
+        }
+    }
+    
+    private func loadAvailableModels() {
+        guard whisperKit.isInitialized else { return }
+        
+        Task {
+            do {
+                let recommendedModels = whisperKit.getRecommendedModels()
+                try await whisperKit.refreshAvailableModels()
+                let remoteModels = whisperKit.availableModels
+                let downloaded = try await whisperKit.getDownloadedModels()
+                
+                var allModels: [String] = []
+                allModels.append(contentsOf: [recommendedModels.default] + recommendedModels.supported)
+                
+                let existingModels = Set(allModels)
+                for model in remoteModels {
+                    if !existingModels.contains(model) {
+                        allModels.append(model)
                     }
                 }
                 
-                Toggle("Sound Feedback", isOn: $soundFeedback)
-                    .help("Play sound when starting/stopping recording")
-                
-                Button("Reset to Default") {
-                    globalShortcut = "⌘⇧R"
+                allModels.sort { (lhs, rhs) in
+                    let lhsDownloaded = downloaded.contains(lhs)
+                    let rhsDownloaded = downloaded.contains(rhs)
+                    
+                    if lhsDownloaded != rhsDownloaded {
+                        return lhsDownloaded && !rhsDownloaded
+                    }
+                    
+                    return getModelPriority(lhs) < getModelPriority(rhs)
                 }
-                .buttonStyle(.borderless)
+                
+                await MainActor.run {
+                    self.availableModels = allModels
+                }
+            } catch {
+                print("Failed to load models: \(error)")
             }
         }
-        .padding()
-        .onDisappear {
-            stopRecording()
+    }
+    
+    private func getModelPriority(_ modelName: String) -> Int {
+        let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
+        switch cleanName {
+        case "tiny.en", "tiny": return 1
+        case "base.en", "base": return 2
+        case "small.en", "small": return 3
+        case "medium.en", "medium": return 4
+        case "large-v2": return 5
+        case "large-v3": return 6
+        case "large-v3-turbo": return 7
+        case "distil-large-v2", "distil-large-v3": return 8
+        default: return 9
         }
     }
     
@@ -94,13 +205,13 @@ struct GeneralSettingsView: View {
         isRecordingShortcut = true
         
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
-            if isRecordingShortcut {
-                let shortcut = formatKeyEvent(event)
+            if self.isRecordingShortcut {
+                let shortcut = self.formatKeyEvent(event)
                 if !shortcut.isEmpty {
-                    globalShortcut = shortcut
-                    stopRecording()
+                    self.globalShortcut = shortcut
+                    self.stopRecording()
                 }
-                return nil // Consume the event
+                return nil
             }
             return event
         }
@@ -123,77 +234,20 @@ struct GeneralSettingsView: View {
         if flags.contains(.control) { parts.append("⌃") }
         if flags.contains(.shift) { parts.append("⇧") }
         
-        // Get the key character
         if let characters = event.charactersIgnoringModifiers?.uppercased() {
             parts.append(characters)
         }
         
-        // Only accept combinations with at least one modifier
         return flags.intersection([.command, .option, .control, .shift]).isEmpty ? "" : parts.joined()
+    }
+    
+    private func switchToModel(_ modelName: String) async {
+        do {
+            try await whisperKit.switchModel(to: modelName)
+            print("✅ Successfully switched to model: \(modelName)")
+        } catch {
+            print("❌ Failed to switch to model \(modelName): \(error)")
+        }
     }
 }
 
-struct ModelSettingsView: View {
-    @Binding var selectedModel: String
-    @Binding var autoDownloadModel: Bool
-    let availableModels: [String]
-    @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
-    
-    var body: some View {
-        Form {
-            Section("WhisperKit Models") {
-                HStack {
-                    Text("Status:")
-                    Spacer()
-                    if whisperKit.isInitialized {
-                        Text("✅ Ready")
-                            .foregroundColor(.green)
-                    } else {
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text("Initializing...")
-                                .foregroundColor(.orange)
-                        }
-                    }
-                }
-                
-                if whisperKit.isInitialized {
-                    Picker("Current Model:", selection: $selectedModel) {
-                        ForEach(whisperKit.availableModels, id: \.self) { model in
-                            Text(model.replacingOccurrences(of: "openai_whisper-", with: "").capitalized)
-                                .tag(model)
-                        }
-                    }
-                    .onChange(of: selectedModel) { newModel in
-                        Task {
-                            try? await whisperKit.switchModel(to: newModel)
-                        }
-                    }
-                    
-                    HStack {
-                        Text("Current Model:")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(whisperKit.currentModel?.replacingOccurrences(of: "openai_whisper-", with: "") ?? "None")
-                            .font(.system(.body, design: .monospaced))
-                    }
-                } else {
-                    Text("Waiting for WhisperKit to initialize...")
-                        .foregroundColor(.secondary)
-                }
-                
-                Toggle("Automatic model selection", isOn: $autoDownloadModel)
-                    .help("Automatically select the best model for your Mac")
-            }
-            
-            Section("Legacy Model Manager") {
-                Text("The old whisper.cpp model downloads are no longer needed with WhisperKit")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.top, 8)
-            }
-        }
-        .padding()
-    }
-}
