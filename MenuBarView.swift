@@ -36,14 +36,14 @@ struct MenuBarView: View {
                         audioManager.toggleRecording()
                     }) {
                         HStack(spacing: 8) {
-                            Image(systemName: audioManager.isRecording ? "stop.fill" : "mic.fill")
-                            Text(audioManager.isRecording ? "Stop Recording" : "Start Recording")
+                            Image(systemName: buttonIcon)
+                            Text(buttonText)
                                 .font(.system(.body, design: .rounded, weight: .medium))
                         }
                         .frame(maxWidth: .infinity)
                         .frame(height: 40)
                     }
-                    .buttonStyle(PrimaryButtonStyle(isRecording: audioManager.isRecording))
+                    .buttonStyle(PrimaryButtonStyle(isRecording: isActiveState))
                     .disabled(audioManager.isTranscribing)
                     
                     // Shortcut display - design language compliant
@@ -105,6 +105,28 @@ struct MenuBarView: View {
         .onAppear {
             // Start WhisperKit initialization when the menu bar view appears
             whisperKit.startInitialization()
+        }
+    }
+    
+    // MARK: - UI Helpers
+    
+    private var isActiveState: Bool {
+        return audioManager.isRecording
+    }
+    
+	private var buttonIcon: String {
+        if audioManager.isRecording {
+            return "stop.fill"
+        } else {
+            return "mic.fill"
+        }
+    }
+    
+    private var buttonText: String {
+        if audioManager.isRecording {
+            return "Stop Recording"
+        } else {
+            return "Start Recording"
         }
     }
 }
@@ -316,6 +338,7 @@ struct TranscriptionResultView: View {
         .padding(.bottom, 12)
     }
 }
+
 
 // MARK: - Error Banner
 struct ErrorBannerView: View {

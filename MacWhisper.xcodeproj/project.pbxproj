@@ -151,7 +151,8 @@
 				1A1A1A1A1A1A1A1A1A1A1A1B /* MenuBarView.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1C /* SettingsView.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1D /* AudioManager.swift in Sources */,
-						1A1A1A1A1A1A1A1A1A1A1A1F /* GlobalShortcutManager.swift in Sources */,
+				D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */,
+				1A1A1A1A1A1A1A1A1A1A1A1F /* GlobalShortcutManager.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A21 /* WhisperKitTranscriber.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

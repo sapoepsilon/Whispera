@@ -7,6 +7,9 @@ struct SettingsView: View {
     @AppStorage("selectedModel") private var selectedModel = "openai_whisper-small.en"
     @AppStorage("autoDownloadModel") private var autoDownloadModel = true
     @AppStorage("soundFeedback") private var soundFeedback = true
+    @AppStorage("startSound") private var startSound = "Tink"
+    @AppStorage("stopSound") private var stopSound = "Pop"
+    @AppStorage("launchAtStartup") private var launchAtStartup = false
     @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
     @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
@@ -41,6 +44,38 @@ struct SettingsView: View {
                     Toggle("", isOn: $soundFeedback)
                 }
                 
+                if soundFeedback {
+                    HStack {
+                        Text("Start Sound")
+                            .font(.headline)
+                        Spacer()
+                        Picker("Start Sound", selection: $startSound) {
+                            ForEach(getAvailableSounds(), id: \.self) { sound in
+                                Text(sound).tag(sound)
+                            }
+                        }
+                        .frame(minWidth: 120)
+                        .onChange(of: startSound) { _ in
+                            previewSound(startSound)
+                        }
+                    }
+                    
+                    HStack {
+                        Text("Stop Sound")
+                            .font(.headline)
+                        Spacer()
+                        Picker("Stop Sound", selection: $stopSound) {
+                            ForEach(getAvailableSounds(), id: \.self) { sound in
+                                Text(sound).tag(sound)
+                            }
+                        }
+                        .frame(minWidth: 120)
+                        .onChange(of: stopSound) { _ in
+                            previewSound(stopSound)
+                        }
+                    }
+                }
+                
                 HStack {
                     Text("AI Model")
                         .font(.headline)
@@ -58,6 +93,13 @@ struct SettingsView: View {
                         .font(.headline)
                     Spacer()
                     Toggle("", isOn: $autoDownloadModel)
+                }
+                
+                HStack {
+                    Text("Launch at Startup")
+                        .font(.headline)
+                    Spacer()
+                    Toggle("", isOn: $launchAtStartup)
                 }
             }
             .padding(20)
@@ -88,10 +130,11 @@ struct SettingsView: View {
             
             Spacer()
         }
-        .frame(width: 400, height: 300)
+        .frame(width: 400, height: 420)
         .background(.regularMaterial)
         .onAppear {
             loadAvailableModels()
+            checkLaunchAtStartupStatus()
         }
         .onDisappear {
             stopRecording()
@@ -100,6 +143,9 @@ struct SettingsView: View {
             Task {
                 await switchToModel(newModel)
             }
+        }
+        .onChange(of: launchAtStartup) { newValue in
+            setLaunchAtStartup(newValue)
         }
     }
 
@@ -248,6 +294,96 @@ struct SettingsView: View {
         } catch {
             print("❌ Failed to switch to model \(modelName): \(error)")
         }
+    }
+    
+    private func getAvailableSounds() -> [String] {
+        return [
+            "None",
+            "Basso",
+            "Blow",
+            "Bottle",
+            "Frog",
+            "Funk",
+            "Glass",
+            "Hero",
+            "Morse",
+            "Ping",
+            "Pop",
+            "Purr",
+            "Sosumi",
+            "Submarine",
+            "Tink"
+        ]
+    }
+    
+    private func setLaunchAtStartup(_ enabled: Bool) {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            print("❌ Could not get bundle identifier")
+            return
+        }
+        
+        let launchAgentURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents")
+            .appendingPathComponent("\(bundleIdentifier).plist")
+        
+        if enabled {
+            // Create launch agent plist
+            let plistContent = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>Label</key>
+                <string>\(bundleIdentifier)</string>
+                <key>ProgramArguments</key>
+                <array>
+                    <string>\(Bundle.main.executablePath ?? "")</string>
+                </array>
+                <key>RunAtLoad</key>
+                <true/>
+                <key>KeepAlive</key>
+                <false/>
+            </dict>
+            </plist>
+            """
+            
+            do {
+                // Create LaunchAgents directory if it doesn't exist
+                try FileManager.default.createDirectory(
+                    at: launchAgentURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                
+                // Write the plist file
+                try plistContent.write(to: launchAgentURL, atomically: true, encoding: .utf8)
+                print("✅ Launch at startup enabled")
+            } catch {
+                print("❌ Failed to enable launch at startup: \(error)")
+            }
+        } else {
+            // Remove launch agent plist
+            do {
+                try FileManager.default.removeItem(at: launchAgentURL)
+                print("✅ Launch at startup disabled")
+            } catch {
+                print("❌ Failed to disable launch at startup: \(error)")
+            }
+        }
+    }
+    
+    private func previewSound(_ soundName: String) {
+        guard soundName != "None" else { return }
+        NSSound(named: soundName)?.play()
+    }
+    
+    private func checkLaunchAtStartupStatus() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
+        
+        let launchAgentURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents")
+            .appendingPathComponent("\(bundleIdentifier).plist")
+        
+        launchAtStartup = FileManager.default.fileExists(atPath: launchAgentURL.path)
     }
 }
 

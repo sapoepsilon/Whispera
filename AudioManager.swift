@@ -102,14 +102,17 @@ class AudioManager: NSObject, ObservableObject {
     }
     
     private func playFeedbackSound(start: Bool) {
-        if UserDefaults.standard.bool(forKey: "soundFeedback") {
-            if start {
-                NSSound(named: "Tink")?.play()
-            } else {
-                NSSound(named: "Pop")?.play()
-            }
-        }
+        guard UserDefaults.standard.bool(forKey: "soundFeedback") else { return }
+        
+        let soundName = start ? 
+            UserDefaults.standard.string(forKey: "startSound") ?? "Tink" :
+            UserDefaults.standard.string(forKey: "stopSound") ?? "Pop"
+        
+        guard soundName != "None" else { return }
+        
+        NSSound(named: soundName)?.play()
     }
+	
     
     private func transcribeAudio(fileURL: URL) async {
         isTranscribing = true

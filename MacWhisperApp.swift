@@ -33,6 +33,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingObserver: NSObjectProtocol?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        setupDefaultsIfNeeded()
+        
         Task { @MainActor in
             audioManager = AudioManager()
             shortcutManager = GlobalShortcutManager()
@@ -41,6 +43,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             shortcutManager.setAudioManager(audioManager)
             observeRecordingState()
         }
+    }
+    
+    private func setupDefaultsIfNeeded() {
+        // Set default values if they don't exist
+        if UserDefaults.standard.object(forKey: "selectedModel") == nil {
+            UserDefaults.standard.set("openai_whisper-small.en", forKey: "selectedModel")
+        }
+        
+        if UserDefaults.standard.object(forKey: "startSound") == nil {
+            UserDefaults.standard.set("Tink", forKey: "startSound")
+        }
+        
+        if UserDefaults.standard.object(forKey: "stopSound") == nil {
+            UserDefaults.standard.set("Pop", forKey: "stopSound")
+        }
+        
+        if UserDefaults.standard.object(forKey: "launchAtStartup") == nil {
+            UserDefaults.standard.set(false, forKey: "launchAtStartup")
+        }
+        
+        print("🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")")
     }
     
     func setupMenuBar() {
