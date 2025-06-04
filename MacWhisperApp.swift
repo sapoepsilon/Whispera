@@ -63,6 +63,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(false, forKey: "launchAtStartup")
         }
         
+        if UserDefaults.standard.object(forKey: "soundFeedback") == nil {
+            UserDefaults.standard.set(true, forKey: "soundFeedback")
+        }
+        
         print("🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")")
     }
     
@@ -109,16 +113,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Mac Whisper - Transcribing")
                 button.image?.isTemplate = false
                 button.contentTintColor = .systemBlue
+                button.alphaValue = 1.0 // Reset alpha for transcribing state
             } else if audioManager.isRecording {
-                // Recording state - red microphone icon
-                button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Mac Whisper - Recording")
+                // Recording state - listening waveform icon with animation
+                button.image = NSImage(systemSymbolName: "waveform.badge.mic", accessibilityDescription: "Mac Whisper - Listening")
                 button.image?.isTemplate = false
                 button.contentTintColor = .systemRed
+                
+                // Add a subtle pulsing animation to show it's actively listening
+                button.alphaValue = 1.0
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 1.0
+                    context.allowsImplicitAnimation = true
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    button.animator().alphaValue = 0.6
+                } completionHandler: {
+                    NSAnimationContext.runAnimationGroup { context in
+                        context.duration = 1.0
+                        context.allowsImplicitAnimation = true
+                        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                        button.animator().alphaValue = 1.0
+                    }
+                }
             } else {
                 // Ready state - default microphone icon
                 button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Mac Whisper")
                 button.image?.isTemplate = true
                 button.contentTintColor = nil
+                button.alphaValue = 1.0 // Reset alpha for normal state
             }
         }
     }
