@@ -88,6 +88,11 @@ struct SettingsView: View {
                     .frame(minWidth: 180)
                 }
                 
+                Text("Choose your AI model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 4)
+                
                 HStack {
                     Text("Auto Download")
                         .font(.headline)

@@ -224,8 +224,7 @@ class RecordingIndicatorManager: ObservableObject {
     private var indicatorWindow: RecordingIndicatorWindow?
     
     func showIndicator() {
-        hideIndicator() // Hide any existing indicator first
-        
+        hideIndicator()
         indicatorWindow = RecordingIndicatorWindow()
         indicatorWindow?.showNearCaret()
     }

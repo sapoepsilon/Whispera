@@ -9,6 +9,9 @@ struct WhisperaApp: App {
         Settings {
             SettingsView()
         }
+        .windowResizability(.contentSize)
+        .windowToolbarStyle(.unified(showsTitle: true))
+        .defaultPosition(.center)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About Whispera") {
@@ -24,13 +27,15 @@ struct WhisperaApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var statusItem: NSStatusItem?
     var popover = NSPopover()
     var audioManager: AudioManager!
     var shortcutManager: GlobalShortcutManager!
-    @AppStorage("globalShortcut") var globalShortcut = "⌘⌥D"
+    @AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
+    @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
     private var recordingObserver: NSObjectProtocol?
+    private var onboardingWindow: NSWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupDefaultsIfNeeded()
@@ -42,6 +47,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(.accessory)
             shortcutManager.setAudioManager(audioManager)
             observeRecordingState()
+            observeWindowState()
+            
+            // Show onboarding if first launch
+            if !hasCompletedOnboarding {
+                showOnboarding()
+            }
         }
     }
     
@@ -49,6 +60,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Set default values if they don't exist
         if UserDefaults.standard.object(forKey: "selectedModel") == nil {
             UserDefaults.standard.set("openai_whisper-small.en", forKey: "selectedModel")
+        }
+        
+        if UserDefaults.standard.object(forKey: "globalShortcut") == nil {
+            UserDefaults.standard.set("⌥⌘R", forKey: "globalShortcut")
         }
         
         if UserDefaults.standard.object(forKey: "startSound") == nil {
@@ -93,6 +108,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    private func showOnboarding() {
+        let onboardingView = OnboardingView(
+            audioManager: audioManager,
+            shortcutManager: shortcutManager
+        )
+        
+        let hostingController = NSHostingController(rootView: onboardingView)
+        
+        onboardingWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        
+        onboardingWindow?.title = "Welcome to Whispera"
+        onboardingWindow?.contentViewController = hostingController
+        onboardingWindow?.center()
+        onboardingWindow?.makeKeyAndOrderFront(nil)
+        
+        // Set app policy to regular when showing onboarding
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Listen for onboarding completion
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("OnboardingCompleted"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.onboardingWindow?.close()
+            self?.onboardingWindow = nil
+            NSApp.setActivationPolicy(.accessory)
+            
+            // Switch to the selected model after onboarding completes
+            Task { @MainActor in
+                self?.applyStoredModel()
+            }
+        }
+    }
+    
     private func observeRecordingState() {
         recordingObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("RecordingStateChanged"),
@@ -101,6 +157,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.updateStatusIcon()
+            }
+        }
+    }
+    
+    private func observeWindowState() {
+        // Monitor when settings/preferences windows close to revert to accessory mode
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let window = notification.object as? NSWindow {
+                let title = window.title.lowercased()
+                if title.contains("settings") || title.contains("preferences") {
+                    // Settings window is closing, revert to accessory mode
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        NSApp.setActivationPolicy(.accessory)
+                    }
+                }
             }
         }
     }
@@ -141,6 +216,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 button.image?.isTemplate = true
                 button.contentTintColor = nil
                 button.alphaValue = 1.0 // Reset alpha for normal state
+            }
+        }
+    }
+    
+    @MainActor private func applyStoredModel() {
+        let storedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "openai_whisper-small.en"
+        
+        guard audioManager.whisperKitTranscriber.isInitialized else {
+            print("⚠️ WhisperKit not initialized, cannot switch model")
+            return
+        }
+        
+        guard storedModel != audioManager.whisperKitTranscriber.currentModel else {
+            print("📝 Model already matches stored preference: \(storedModel)")
+            return
+        }
+        
+        print("🔄 Applying stored model after onboarding: \(storedModel)")
+        Task {
+            do {
+                try await audioManager.whisperKitTranscriber.switchModel(to: storedModel)
+                print("✅ Successfully switched to stored model: \(storedModel)")
+            } catch {
+                print("❌ Failed to switch to stored model: \(error)")
             }
         }
     }

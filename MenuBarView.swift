@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct MenuBarView: View {
     @ObservedObject var audioManager: AudioManager
@@ -70,13 +71,37 @@ struct MenuBarView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(SecondaryButtonStyle())
-                        .onTapGesture {
+                        .simultaneousGesture(TapGesture().onEnded {
+                            // Set app policy to regular to ensure proper window focus
+                            NSApp.setActivationPolicy(.regular)
                             NSApp.activate(ignoringOtherApps: true)
-                        }
+                            
+                            // Bring the settings window to front after a brief delay
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                if let settingsWindow = NSApp.windows.first(where: { $0.title.contains("Settings") || $0.title.contains("Preferences") }) {
+                                    settingsWindow.makeKeyAndOrderFront(nil)
+                                    settingsWindow.orderFrontRegardless()
+                                    NSApp.activate(ignoringOtherApps: true)
+                                }
+                            }
+                        })
                     } else {
                         Button {
+                            // Set app policy to regular to ensure proper window focus
+                            NSApp.setActivationPolicy(.regular)
                             NSApp.activate(ignoringOtherApps: true)
+                            
+                            // Use legacy preferences approach
                             NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+                            
+                            // Bring the settings window to front after a brief delay
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                if let settingsWindow = NSApp.windows.first(where: { $0.title.contains("Settings") || $0.title.contains("Preferences") }) {
+                                    settingsWindow.makeKeyAndOrderFront(nil)
+                                    settingsWindow.orderFrontRegardless()
+                                    NSApp.activate(ignoringOtherApps: true)
+                                }
+                            }
                         } label: {
                             Label("Settings", systemImage: "gear")
                                 .frame(maxWidth: .infinity)
@@ -103,8 +128,7 @@ struct MenuBarView: View {
         .frame(width: 320)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .onAppear {
-            // Start WhisperKit initialization when the menu bar view appears
-            whisperKit.startInitialization()
+            // WhisperKit initialization is handled by AudioManager
         }
     }
     
@@ -184,19 +208,57 @@ struct StatusCardView: View {
                         Text("Ready")
                             .font(.caption)
                             .foregroundColor(.green)
+                    } else if whisperKit.isInitializing {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            HStack(spacing: 4) {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                Text("Loading...")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                            
+                            // Progress bar
+                            ProgressView(value: whisperKit.initializationProgress)
+                                .frame(width: 80)
+                                .scaleEffect(0.8)
+                            
+                            // Status text
+                            Text(whisperKit.initializationStatus)
+                                .font(.system(.caption2, design: .rounded))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
                     } else {
                         HStack(spacing: 4) {
                             ProgressView()
                                 .scaleEffect(0.6)
-                            Text("Loading...")
+                            Text("Starting...")
                                 .font(.caption)
                                 .foregroundColor(.orange)
                         }
                     }
                 }
                 
-                // Current model display
-                if whisperKit.isInitialized {
+                // Current model display or download progress
+                if whisperKit.isDownloadingModel {
+                    VStack(spacing: 4) {
+                        HStack {
+                            HStack(spacing: 4) {
+                                ProgressView()
+                                    .scaleEffect(0.5)
+                                Text("Loading \(whisperKit.downloadingModelName ?? "model")...")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                            Spacer()
+                        }
+                        
+                        ProgressView(value: whisperKit.downloadProgress)
+                            .frame(height: 4)
+                    }
+                } else if whisperKit.isInitialized {
                     HStack {
                         Text(currentModelDisplayName)
                             .font(.system(.caption, design: .rounded, weight: .medium))
@@ -373,6 +435,7 @@ struct PrimaryButtonStyle: ButtonStyle {
     
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+			.padding(10)
             .font(.system(.body, design: .rounded, weight: .medium))
             .foregroundColor(.white)
             .background(
@@ -388,6 +451,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+			.padding(10)
             .font(.system(.body, design: .rounded))
             .foregroundColor(.primary)
             .frame(height: 36)

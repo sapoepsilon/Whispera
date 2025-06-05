@@ -6,7 +6,7 @@ class GlobalShortcutManager: ObservableObject {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var audioManager: AudioManager?
-    @Published var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌘⌥D"
+    @Published var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌥⌘R"
     
     init() {
         print("🚀 GlobalShortcutManager initializing...")
@@ -18,7 +18,7 @@ class GlobalShortcutManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌘⌥D"
+            let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌥⌘R"
             if newShortcut != self?.currentShortcut {
                 print("🔄 Shortcut changed from \(self?.currentShortcut ?? "nil") to \(newShortcut)")
                 self?.currentShortcut = newShortcut

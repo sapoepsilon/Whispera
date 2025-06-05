@@ -1,88 +1,173 @@
-# Mac Whisper - Development Plan
+# Whispera Development Plan
 
-## Technology Stack
-- **SwiftUI** - For the UI (both menu bar and settings window)
-- **AppKit** - For menu bar integration (NSStatusItem)
-- **AVFoundation** - For audio recording
-- **WhisperKit** - Apple's native Swift package for Whisper (replaces whisper.cpp)
-- **async/await** - For asynchronous operations
+## Phase 1: Distribution & Code Signing Fixes 🚀
 
-## Development Phases
+### ✅ ZIP Distribution Fix
+- [ ] Fix ZIP creation to avoid user path references
+- [ ] Create proper app bundle structure with relative paths
+- [ ] Test ZIP extraction on clean system
 
-### Phase 1: Basic App Structure ✅
-- [x] Create macOS menu bar app structure with SwiftUI
-- [x] Implement settings/setup window UI
-- [x] Fix Settings window opening (use SettingsLink for macOS 14+)
-- [ ] Handle app permissions (microphone, accessibility)
+### ✅ Apple Developer Code Signing
+- [ ] Configure proper Developer ID Application certificate
+- [ ] Set up automatic code signing with team
+- [ ] Enable hardened runtime and entitlements
+- [ ] Test Gatekeeper compatibility
 
-### Phase 2: Audio & Feedback ✅
-- [x] Implement audio recording functionality
-- [x] Add audio feedback (sound effects) for recording start/stop
+### ✅ Notarization Process
+- [ ] Set up notarization workflow
+- [ ] Submit app for notarization
+- [ ] Verify notarization status
+- [ ] Test distribution without security warnings
 
-### Phase 3: Whisper Integration ✅
-- [x] Add Whisper model download functionality
-- [x] Implement model selection logic (auto-detect best model)
-- [x] Integrate whisper.cpp for audio transcription
+## Phase 2: User Experience Improvements 🎯
 
-### Phase 4: User Interaction ✅
-- [x] Set up global keyboard shortcut handling
-- [x] Add clipboard/paste functionality for transcribed text
+### ✅ Keyboard Shortcut Fix
+- [ ] Change default from ⌘⌥D (conflicts with Dock)
+- [ ] Research and implement better default (⌘⌥V for Voice?)
+- [ ] Update all references in code and UI
 
-### Phase 5: Testing
-- [ ] Manual testing of all features
-- [ ] Write XCTest unit tests
+### ✅ Model Loading Feedback
+- [ ] Add progress indicators for model downloads
+- [ ] Show loading states during first-time model initialization
+- [ ] Implement background model preloading
+- [ ] Cache models locally for faster access
 
-## Features
-1. **Menu Bar App** - Minimal UI, always accessible
-2. **Settings Window** - Configure model, shortcuts, audio feedback
-3. **Audio Feedback** - Sound effects when starting/stopping recording
-4. **Smart Model Selection** - Auto-detect best Whisper model for Mac
-5. **Global Shortcut** - Quick toggle for transcription (⌘⇧R)
-6. **Auto-paste** - Transcribed text goes directly to focused input
-7. **Visual Feedback** - Menu bar icon turns red when recording
+### ✅ Permissions Education
+- [ ] Add clear explanations for each permission type:
+  - Accessibility (for global shortcuts)
+  - Microphone (for voice recording)
+  - File System (for model downloads)
+- [ ] Create permission request flow with context
 
-## Architecture Notes
-- SwiftUI for modern, declarative UI
-- NSStatusItem for menu bar presence
-- Global event monitor for keyboard shortcuts
-- Background queue for transcription
-- UserDefaults for settings persistence
-- SettingsLink for proper Settings window integration (macOS 14+)
+## Phase 3: Onboarding Experience 🌟
 
-## Known Issues & TODOs
-- [x] Whisper.cpp integration complete
-- [ ] User must install whisper.cpp via: `brew install whisper-cpp` 
-- [ ] Accessibility permissions need proper handling
-- [ ] Model download progress could use cancel button
-- [ ] Custom keyboard shortcut configuration
-- [ ] Support for multiple languages
-- [ ] Transcription history/logs
+### ✅ Onboarding Flow Design
+Following design-language.md principles:
 
-## Installation Requirements
-Currently requires:
-1. **WhisperKit**: Swift Package Manager dependency (integrated in app)
-2. **Whisper models**: Downloaded automatically by WhisperKit
-3. **Permissions**: Microphone + Accessibility access (prompted automatically)
-4. **macOS 14.0+**: Required for WhisperKit
+#### Welcome Screen
+- [ ] Native macOS window design with `.regularMaterial`
+- [ ] App icon and title with `.title2` + `.semibold`
+- [ ] Brief app description with `.body` font
+- [ ] "Get Started" button with `PrimaryButtonStyle`
 
-## Major Improvements (WhisperKit vs whisper.cpp)
-- ✅ **No external dependencies** - Pure Swift integration
-- ✅ **Apple Silicon optimized** - Uses Core ML acceleration
-- ✅ **Native Swift async/await** - No subprocess calls
-- ✅ **Automatic model management** - WhisperKit handles downloads
-- ✅ **Better performance** - Core ML optimization for M1/M2/M3 Macs
+#### Model Selection Screen
+- [ ] Model picker with clear size/performance indicators
+- [ ] Recommended model highlighted (base model)
+- [ ] Download progress if needed
+- [ ] "Continue" button when ready
 
-## Next Steps
-- [ ] Add WhisperKit Swift Package dependency via Xcode
-- [x] Enhanced UI with WhisperKit status indicators  
-- [x] Custom keyboard shortcut configuration UI
-- [x] Realistic transcription simulation with timing
-- [ ] Replace simulation with real WhisperKit API calls
-- [ ] Test real-time transcription performance
+#### Permissions Setup Screen
+- [ ] Accessibility permission explanation
+- [ ] "Enable Accessibility" button opens System Settings
+- [ ] Microphone permission request
+- [ ] Permission status indicators with colors from design system
 
-## Latest Enhancements ✨
-- **WhisperKit Status Display** - Shows initialization progress in menu bar
-- **Enhanced Settings** - WhisperKit model management with live status
-- **Custom Shortcut UI** - Interactive shortcut configuration (framework ready)
-- **Realistic Simulation** - Duration-based transcription timing
-- **Better Model Names** - Clean display of WhisperKit model names
+#### Shortcut Configuration Screen
+- [ ] Show current shortcut (new default)
+- [ ] Allow customization with shortcut recorder
+- [ ] Visual shortcut display with `.monospaced` font
+- [ ] Test area to try the shortcut
+
+#### Try It Out Screen
+- [ ] Interactive demo area
+- [ ] "Press your shortcut to test" prompt
+- [ ] Real transcription test
+- [ ] Success feedback with green checkmark
+
+#### Completion Screen
+- [ ] Success message
+- [ ] Quick tips for usage
+- [ ] "Start Using Whispera" button
+- [ ] Menu bar integration note
+
+### ✅ Onboarding Technical Implementation
+- [ ] Create OnboardingWindow SwiftUI view
+- [ ] Implement step navigation with smooth transitions
+- [ ] Persist onboarding completion state
+- [ ] Handle permission state changes
+- [ ] Integrate with existing app lifecycle
+
+### ✅ Visual Design Components
+- [ ] Create onboarding-specific button styles
+- [ ] Design permission status indicators
+- [ ] Create model selection cards
+- [ ] Implement progress indicators
+- [ ] Add app icon and branding elements
+
+## Phase 4: Technical Infrastructure 🔧
+
+### ✅ Model Management
+- [ ] Implement robust model downloading
+- [ ] Add model caching and verification
+- [ ] Background model updates
+- [ ] Model switching without restart
+
+### ✅ Error Handling
+- [ ] Comprehensive error states
+- [ ] User-friendly error messages
+- [ ] Automatic error recovery
+- [ ] Logging for debugging
+
+### ✅ Performance Optimization
+- [ ] Lazy model loading
+- [ ] Memory management improvements
+- [ ] Background processing optimization
+- [ ] Startup time reduction
+
+## Phase 5: Polish & Release 💎
+
+### ✅ UI/UX Refinements
+- [ ] Animation improvements following design system
+- [ ] Accessibility enhancements
+- [ ] Dark mode testing
+- [ ] System integration polish
+
+### ✅ Testing & Quality
+- [ ] End-to-end onboarding testing
+- [ ] Permission flow testing
+- [ ] Model loading stress testing
+- [ ] Distribution testing on clean systems
+
+### ✅ Documentation
+- [ ] Update README with new features
+- [ ] Create user guide
+- [ ] Document new shortcut
+- [ ] Release notes preparation
+
+### ✅ Final Release
+- [ ] Version bump to v1.1.0
+- [ ] Final build and notarization
+- [ ] GitHub release with proper assets
+- [ ] Update distribution with working app
+
+## Implementation Priority
+
+### High Priority (This Session)
+1. **Fix ZIP distribution** - Critical for user adoption
+2. **Implement code signing** - Required for security
+3. **Change keyboard shortcut** - Fixes conflict
+4. **Basic onboarding flow** - Improves first-run experience
+
+### Medium Priority (Next Session)  
+1. **Model loading feedback** - Better UX
+2. **Complete onboarding polish** - Professional experience
+3. **Performance optimizations** - Smoother operation
+
+### Future Enhancements
+1. **Advanced model management** - Power user features
+2. **Analytics and telemetry** - Usage insights
+3. **Multi-language support** - Broader audience
+
+## Success Metrics
+
+- [ ] App opens without security warnings on fresh macOS install
+- [ ] User completes onboarding flow successfully
+- [ ] Permissions are granted through guided process
+- [ ] Model loads with clear feedback
+- [ ] Transcription works on first try
+- [ ] No conflicts with system shortcuts
+- [ ] Clean, professional distribution package
+
+---
+
+*This plan follows the Whispera design language emphasizing native macOS integration, clear user feedback, and accessibility-first design.*

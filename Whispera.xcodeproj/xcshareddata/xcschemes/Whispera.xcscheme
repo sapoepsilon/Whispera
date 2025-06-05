@@ -49,6 +49,16 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
+      <BuildableProductRunnable
+         runnableDebuggingMode = "0">
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "9A9A9A9A9A9A9A9A9A9A9A9A"
+            BuildableName = "Whispera.app"
+            BlueprintName = "Whispera"
+            ReferencedContainer = "container:Whispera.xcodeproj">
+         </BuildableReference>
+      </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
             key = ""

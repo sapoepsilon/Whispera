@@ -19,7 +19,7 @@ class AudioManager: NSObject, ObservableObject {
     
     private var audioRecorder: AVAudioRecorder?
     private var audioFileURL: URL?
-    private let whisperKitTranscriber = WhisperKitTranscriber.shared
+    let whisperKitTranscriber = WhisperKitTranscriber.shared
 	private let recordingIndicator = RecordingIndicatorManager()
     
     override init() {
@@ -119,7 +119,7 @@ class AudioManager: NSObject, ObservableObject {
         transcriptionError = nil
         
         do {
-            // Use WhisperKit for transcription (much simpler!)
+            // Always use real WhisperKit transcription
             let transcription = try await whisperKitTranscriber.transcribe(audioURL: fileURL)
             
             // Update UI on main thread

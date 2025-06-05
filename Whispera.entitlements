@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for global keyboard shortcuts -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    
+    <!-- Required for microphone access -->
+    <key>com.apple.security.device.microphone</key>
+    <true/>
+    
+    <!-- Required for app hardening -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    
+    <!-- Required for file access (for saving transcriptions, etc.) -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    
+    <!-- Required for network access (for WhisperKit model downloads) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <!-- Required for temporary file access -->
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+    <array>
+        <string>/tmp/</string>
+    </array>
+</dict>
+</plist>
