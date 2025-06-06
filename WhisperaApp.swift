@@ -243,22 +243,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		
 		guard let layer = button.layer else { return }
 		
-		// Set anchor point to center for proper rotation
-		layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+		// Continuous alpha animation (fade in/out)
+		let alphaAnimation = CABasicAnimation(keyPath: "opacity")
+		alphaAnimation.fromValue = 1.0
+		alphaAnimation.toValue = 0.3  // Fade to 30% opacity
+		alphaAnimation.duration = 0.8
+		alphaAnimation.repeatCount = .infinity
+		alphaAnimation.autoreverses = true  // This makes it fade back in
+		alphaAnimation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
 		
-		// Ensure the layer position is correct after changing anchor point
-		let bounds = layer.bounds
-		layer.position = CGPoint(x: bounds.midX, y: bounds.midY)
-		
-		// Continuous rotation animation
-		let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
-		rotation.fromValue = 0
-		rotation.toValue = Double.pi * 2  // Full 360° rotation
-		rotation.duration = 1.5
-		rotation.repeatCount = .infinity
-		rotation.timingFunction = CAMediaTimingFunction(name: .linear)
-		
-		layer.add(rotation, forKey: "downloadRotation")
+		layer.add(alphaAnimation, forKey: "downloadAlpha")
 	}
     
     private func addTranscriptionAnimation(to button: NSStatusBarButton) {

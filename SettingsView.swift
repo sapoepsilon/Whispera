@@ -48,9 +48,6 @@ struct SettingsView: View {
                 
                 if soundFeedback {
                     HStack {
-                        Text("Start Sound")
-                            .font(.headline)
-                        Spacer()
                         Picker("Start Sound", selection: $startSound) {
                             ForEach(getAvailableSounds(), id: \.self) { sound in
                                 Text(sound).tag(sound)
@@ -63,9 +60,6 @@ struct SettingsView: View {
                     }
                     
                     HStack {
-                        Text("Stop Sound")
-                            .font(.headline)
-                        Spacer()
                         Picker("Stop Sound", selection: $stopSound) {
                             ForEach(getAvailableSounds(), id: \.self) { sound in
                                 Text(sound).tag(sound)
@@ -80,9 +74,6 @@ struct SettingsView: View {
                 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Whisper Model")
-                            .font(.headline)
-                        Spacer()
                         
                         if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
                             VStack(alignment: .trailing, spacing: 4) {
@@ -101,7 +92,7 @@ struct SettingsView: View {
                             }
                         } else {
                             VStack(alignment: .trailing, spacing: 4) {
-                                Picker("Model", selection: $selectedModel) {
+                                Picker("Whisper Model", selection: $selectedModel) {
                                     ForEach(getModelOptions(), id: \.0) { model in
                                         Text(model.1).tag(model.0)
                                     }
@@ -243,6 +234,7 @@ struct SettingsView: View {
     
     private func getModelOptions() -> [(String, String)] {
         if availableModels.isEmpty {
+			availableModels = whisperKit.getRecommendedModels().supported
             return [("loading", "Loading models...")]
         }
         

@@ -103,7 +103,7 @@ struct OnboardingView: View {
     private var nextButtonText: String {
         switch currentStep {
         case 0: return "Get Started"
-        case 1: return (hasPermissions && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized) ? "Continue" : "Grant Permissions"
+        case 1: return (hasPermissions) ? "Continue" : "Grant Permissions"
         case 2: return audioManager.whisperKitTranscriber.isDownloadingModel ? "Downloading..." : "Continue"
         case 3: return "Set Shortcut"
         case 4: return "Continue"

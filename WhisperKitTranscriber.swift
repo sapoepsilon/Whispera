@@ -4,18 +4,13 @@ import WhisperKit
 
 @MainActor
 class WhisperKitTranscriber: ObservableObject {
-    @Published var isInitialized = false
-    @Published var isInitializing = false
-    @Published var initializationProgress: Double = 0.0
-    @Published var initializationStatus = "Starting..."
-    @Published var availableModels: [String] = []
-    @Published var currentModel: String?
-    @Published var downloadedModels: Set<String> = [] {
-        didSet {
-            // Persist downloaded models to UserDefaults
-            UserDefaults.standard.set(Array(downloadedModels), forKey: "downloadedModels")
-        }
-    }
+     var isInitialized = false
+     var isInitializing = false
+     var initializationProgress: Double = 0.0
+     var initializationStatus = "Starting..."
+     var availableModels: [String] = []
+     var currentModel: String?
+     var downloadedModels: Set<String> = []
     
     // WhisperKit model state tracking
     @Published var modelState: String = "unloaded"
@@ -23,10 +18,22 @@ class WhisperKitTranscriber: ObservableObject {
     @Published var isModelLoaded: Bool = false
     
 	private func modelCacheDirectory(for modelName: String) -> URL? {
-		guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+		guard let appSupport = FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask).first else {
 			return nil
 		}
 		return appSupport.appendingPathComponent("Whispera/Models/\(modelName)")
+	}
+	
+	var baseModelCacheDirectory: URL? {
+		guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+			return nil
+		}
+		return appSupport.appendingPathComponent("Whispera")
+	}
+	
+	private func whisperKitModelDirectory(for modelName: String?) -> URL? {
+		let name = modelName ?? ""
+		return baseModelCacheDirectory?.appendingPathComponent("models/argmaxinc/whisperkit-coreml/\(name)")
 	}
 	
     @Published var isDownloadingModel = false {
@@ -49,17 +56,11 @@ class WhisperKitTranscriber: ObservableObject {
         return instance
     }()
     
-    private init() {
-        // Load persisted downloaded models from UserDefaults
-        if let savedModels = UserDefaults.standard.array(forKey: "downloadedModels") as? [String] {
-            downloadedModels = Set(savedModels)
-            print("📚 Restored \(downloadedModels.count) downloaded models from storage: \(downloadedModels)")
-        }
-        
-        // Setup model directory
-        setupModelDirectory()
-        
-        // Don't start initialization in init - wait for explicit call
+	private init() {
+		Task{
+			downloadedModels = try await getDownloadedModels()
+			print("downloaded models: \(downloadedModels)")
+		}
     }
     
     func startInitialization() {
@@ -77,26 +78,6 @@ class WhisperKitTranscriber: ObservableObject {
         }
     }
     
-    func syncDownloadedModelsCache() async {
-        // Load previously saved models from UserDefaults
-        // Since WhisperKit doesn't provide API to check disk, we trust our cache
-        print("🔄 Loaded downloaded models cache: \(downloadedModels)")
-    }
-    
-    private func setupModelDirectory() {
-		guard let modelDir = modelCacheDirectory(for: "modelName") else { return }
-
-        // Create the base directory if it doesn't exist
-        // WhisperKit will create subdirectories as needed
-        do {
-            try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true, attributes: nil)
-            print("✅ Model directory ready at: \(modelDir.path)")
-            
-        } catch {
-            print("❌ Failed to create model directory: \(error)")
-        }
-    }
-    
     private func initialize() async {
         guard !isInitialized else {
             print("📋 WhisperKit already initialized")
@@ -111,7 +92,6 @@ class WhisperKitTranscriber: ObservableObject {
         
         // Sync our cache with what's actually on disk
         await updateProgress(0.6, "Checking for existing models...")
-        await syncDownloadedModelsCache()
 	
         if !downloadedModels.isEmpty {
             // Try to initialize WhisperKit with default configuration
@@ -120,7 +100,7 @@ class WhisperKitTranscriber: ObservableObject {
             do {
                 // Try to load with custom model directory
                 whisperKit = try await Task { @MainActor in
-                    let whisperKitInstance = try await WhisperKit(downloadBase: .applicationSupportDirectory)
+                    let whisperKitInstance = try await WhisperKit(downloadBase: baseModelCacheDirectory)
                     self.setupModelStateCallback(for: whisperKitInstance)
                     return whisperKitInstance
                 }.value
@@ -295,7 +275,7 @@ class WhisperKitTranscriber: ObservableObject {
             await updateDownloadProgress(0.6, "Loading \(model)...")
             // Use WhisperKit with specific model and custom model directory
             whisperKit = try await Task { @MainActor in
-                let config = WhisperKitConfig(model: model, downloadBase: .applicationSupportDirectory)
+                let config = WhisperKitConfig(model: model, downloadBase: baseModelCacheDirectory)
                 let whisperKitInstance = try await WhisperKit(config)
                 self.setupModelStateCallback(for: whisperKitInstance)
                 return whisperKitInstance
@@ -303,9 +283,6 @@ class WhisperKitTranscriber: ObservableObject {
             
             await updateDownloadProgress(0.9, "Finalizing model setup...")
             currentModel = model
-            
-            // Add to downloaded models set
-            self.addModelToCache(model)
             
             await updateDownloadProgress(1.0, "Model ready!")
             isDownloadingModel = false
@@ -329,14 +306,39 @@ class WhisperKitTranscriber: ObservableObject {
         }
     }
     
-    func getDownloadedModels() async throws -> Set<String> {
-        // For now, return our cached downloaded models
-        // WhisperKit doesn't provide a public API to check downloaded models on disk
-        // TODO: In the future, we could check the actual model directory if needed
-        print("📝 Using cached models: \(downloadedModels)")
-        return downloadedModels
-    }
-    
+	func getDownloadedModels() async throws -> Set<String> {
+		// Get the WhisperKit models base directory (without specific model name)
+		guard let baseDir = baseModelCacheDirectory?.appendingPathComponent("models/argmaxinc/whisperkit-coreml") else {
+			throw NSError(domain: "ModelManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not access WhisperKit models directory"])
+		}
+		
+		// Check if the models directory exists
+		guard FileManager.default.fileExists(atPath: baseDir.path) else {
+			print("📝 WhisperKit models directory doesn't exist yet")
+			return Set<String>()
+		}
+		
+		do {
+			let contents = try FileManager.default.contentsOfDirectory(
+				at: baseDir,
+				includingPropertiesForKeys: [.isDirectoryKey],
+				options: [.skipsHiddenFiles]
+			)
+		
+			let modelDirectories = try contents.filter { url in
+				let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
+				return resourceValues.isDirectory == true
+			}
+		
+			let modelNames = Set(modelDirectories.map { $0.lastPathComponent })
+			return modelNames
+			
+		} catch {
+			print("❌ Error reading WhisperKit models directory: \(error)")
+			throw error
+		}
+	}
+	
     func refreshAvailableModels() async throws {
         do {
             // Add timeout to prevent hanging
@@ -394,21 +396,20 @@ class WhisperKitTranscriber: ObservableObject {
         downloadingModelName = modelName
         downloadProgress = 0.0
         
-        do {
-            await updateDownloadProgress(0.2, "Starting download...")
-            
-            await updateDownloadProgress(0.6, "Downloading model...")
-            
-            // Use WhisperKit's download method with default location
-			let downloadedFolder = try await WhisperKit.download(variant: modelName, downloadBase: .applicationSupportDirectory)
+		do {
+			await updateDownloadProgress(0.2, "Starting download...")
+			
+			await updateDownloadProgress(0.2, "Downloading model...")
+			
+			// Use WhisperKit's download method with default location
+			let downloadedFolder = try await WhisperKit.download(variant: modelName, downloadBase: baseModelCacheDirectory	)
             print("📥 Model downloaded to: \(downloadedFolder)")
-            addModelToCache(modelName)
             
             await updateDownloadProgress(0.8, "Initializing model...")
             
             // Initialize WhisperKit with the specific model name and custom model directory
             whisperKit = try await Task { @MainActor in
-                let config = WhisperKitConfig(model: modelName, downloadBase: .applicationSupportDirectory)
+				let config = WhisperKitConfig(model: modelName, downloadBase: baseModelCacheDirectory)
                 let whisperKitInstance = try await WhisperKit(config)
                 self.setupModelStateCallback(for: whisperKitInstance)
                 return whisperKitInstance
@@ -479,7 +480,7 @@ class WhisperKitTranscriber: ObservableObject {
     }
     
     private func getApplicationSupportDirectory() -> URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let appSupport = FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask)[0]
         let appDirectory = appSupport.appendingPathComponent("Whispera")
         
         // Ensure app directory exists
@@ -495,12 +496,6 @@ class WhisperKitTranscriber: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "downloadedModels")
         print("🗑️ Cleared downloaded models cache")
     }
-    
-    func addModelToCache(_ modelName: String) {
-        downloadedModels.insert(modelName)
-        print("📥 Added \(modelName) to downloaded models cache")
-    }
-
     
     // MARK: - WhisperKit Model State Management
     
