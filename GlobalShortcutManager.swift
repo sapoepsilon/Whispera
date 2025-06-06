@@ -67,16 +67,6 @@ class GlobalShortcutManager: ObservableObject {
         let (modifiers, keyCode) = parseShortcut(currentShortcut)
         print("🎹 Setting up keyboard shortcut for \(currentShortcut) (keyCode: \(keyCode), modifiers: \(modifiers.rawValue))")
         
-        // Check if we have accessibility permissions
-        let hasPermissions = AXIsProcessTrusted()
-        print("🔐 Accessibility permissions check: \(hasPermissions)")
-        
-        if !hasPermissions {
-            print("❌ No accessibility permissions - requesting them...")
-            requestAccessibilityPermissions()
-            // Continue anyway to set up monitors (they might work in some cases)
-        }
-        
         // Set up global monitor (works when other apps are focused)
         print("🌍 Installing global monitor...")
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -162,7 +152,7 @@ class GlobalShortcutManager: ObservableObject {
                event.keyCode == expectedKeyCode
     }
     
-    private func requestAccessibilityPermissions() {
+    func requestAccessibilityPermissions() {
         print("🔐 Requesting accessibility permissions...")
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true]
         let accessEnabled = AXIsProcessTrustedWithOptions(options)

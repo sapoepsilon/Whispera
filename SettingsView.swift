@@ -4,7 +4,7 @@ import WhisperKit
 
 struct SettingsView: View {
     @AppStorage("globalShortcut") private var globalShortcut = "⌘⌥D"
-    @AppStorage("selectedModel") private var selectedModel = "openai_whisper-small.en"
+    @AppStorage("selectedModel") private var selectedModel = ""
     @AppStorage("autoDownloadModel") private var autoDownloadModel = true
     @AppStorage("soundFeedback") private var soundFeedback = true
     @AppStorage("startSound") private var startSound = "Tink"
@@ -77,18 +77,34 @@ struct SettingsView: View {
                 }
                 
                 HStack {
-                    Text("AI Model")
+                    Text("Whisper Model")
                         .font(.headline)
                     Spacer()
-                    Picker("Model", selection: $selectedModel) {
-                        ForEach(getModelOptions(), id: \.0) { model in
-                            Text(model.1).tag(model.0)
+                    
+                    if whisperKit.isDownloadingModel {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                Text("Downloading \(whisperKit.downloadingModelName ?? "model")...")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                            
+                            ProgressView(value: whisperKit.downloadProgress)
+                                .frame(width: 120, height: 4)
                         }
+                    } else {
+                        Picker("Model", selection: $selectedModel) {
+                            ForEach(getModelOptions(), id: \.0) { model in
+                                Text(model.1).tag(model.0)
+                            }
+                        }
+                        .frame(minWidth: 180)
                     }
-                    .frame(minWidth: 180)
                 }
                 
-                Text("Choose your AI model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions.")
+                Text("Choose your Whisper model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.leading, 4)
@@ -105,6 +121,18 @@ struct SettingsView: View {
                         .font(.headline)
                     Spacer()
                     Toggle("", isOn: $launchAtStartup)
+                }
+                
+                Divider()
+                
+                HStack {
+                    Text("Setup")
+                        .font(.headline)
+                    Spacer()
+                    Button("Show Onboarding Again") {
+                        showOnboardingAgain()
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
             .padding(20)
@@ -169,7 +197,7 @@ struct SettingsView: View {
     
     private func getModelOptions() -> [(String, String)] {
         if availableModels.isEmpty {
-            return [("openai_whisper-small.en", "Loading models...")]
+            return [("loading", "Loading models...")]
         }
         
         return availableModels.compactMap { model in
@@ -207,15 +235,13 @@ struct SettingsView: View {
                 let remoteModels = whisperKit.availableModels
                 let downloaded = try await whisperKit.getDownloadedModels()
                 
-                var allModels: [String] = []
-                allModels.append(contentsOf: [recommendedModels.default] + recommendedModels.supported)
+                // Use Set to automatically handle duplicates
+                var allModelsSet = Set<String>()
+                allModelsSet.insert(recommendedModels.default)
+                allModelsSet.formUnion(recommendedModels.supported)
+                allModelsSet.formUnion(remoteModels)
                 
-                let existingModels = Set(allModels)
-                for model in remoteModels {
-                    if !existingModels.contains(model) {
-                        allModels.append(model)
-                    }
-                }
+                var allModels = Array(allModelsSet)
                 
                 allModels.sort { (lhs, rhs) in
                     let lhsDownloaded = downloaded.contains(lhs)
@@ -230,6 +256,16 @@ struct SettingsView: View {
                 
                 await MainActor.run {
                     self.availableModels = allModels
+                    
+                    // Set default selection if none set or invalid
+                    if selectedModel.isEmpty || !allModels.contains(selectedModel) {
+                        // Find the first base model (preferred) or fallback to first available
+                        if let baseModel = allModels.first(where: { $0.contains("base.en") }) {
+                            selectedModel = baseModel
+                        } else if let firstModel = allModels.first {
+                            selectedModel = firstModel
+                        }
+                    }
                 }
             } catch {
                 print("Failed to load models: \(error)")
@@ -389,6 +425,15 @@ struct SettingsView: View {
             .appendingPathComponent("\(bundleIdentifier).plist")
         
         launchAtStartup = FileManager.default.fileExists(atPath: launchAgentURL.path)
+    }
+    
+    private func showOnboardingAgain() {
+        // Reset the onboarding completion flag
+        UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+        
+        // Post notification to show onboarding
+        NotificationCenter.default.post(name: NSNotification.Name("ShowOnboarding"), object: nil)
+        
     }
 }
 

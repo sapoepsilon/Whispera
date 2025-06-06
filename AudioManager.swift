@@ -24,28 +24,49 @@ class AudioManager: NSObject, ObservableObject {
     
     override init() {
         super.init()
-        setupAudio()
-        
-        // Initialize WhisperKit once
         whisperKitTranscriber.startInitialization()
     }
     
-    private func setupAudio() {
-        // macOS doesn't use AVAudioSession - permissions are handled at the system level
-        // Request microphone permission if needed
+	func setupAudio() {
+        checkAndRequestMicrophonePermission()
+    }
+    
+    private func checkAndRequestMicrophonePermission() {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .notDetermined:
+            print("🎤 Microphone permission not determined, requesting...")
             AVCaptureDevice.requestAccess(for: .audio) { granted in
-                if !granted {
-                    print("Microphone access denied")
+                DispatchQueue.main.async {
+                    if granted {
+                        print("✅ Microphone access granted")
+                    } else {
+                        print("❌ Microphone access denied")
+                        self.showMicrophonePermissionAlert()
+                    }
                 }
             }
         case .denied, .restricted:
-            print("Microphone access denied or restricted")
+            print("❌ Microphone access denied or restricted")
+            showMicrophonePermissionAlert()
         case .authorized:
-            break
+            print("✅ Microphone already authorized")
         @unknown default:
             break
+        }
+    }
+    
+    private func showMicrophonePermissionAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Microphone Access Required"
+        alert.informativeText = "Whispera needs access to your microphone to transcribe audio. Please grant permission in System Settings > Privacy & Security > Microphone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
     
@@ -59,9 +80,35 @@ class AudioManager: NSObject, ObservableObject {
     }
     
     private func startRecording() {
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let audioFilename = documentsPath.appendingPathComponent("recording_\(Date().timeIntervalSince1970).wav")
+        // Check permissions before recording
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            performStartRecording()
+        case .notDetermined:
+            // Request permission first
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self.performStartRecording()
+                    } else {
+                        self.showMicrophonePermissionAlert()
+                    }
+                }
+            }
+        case .denied, .restricted:
+            showMicrophonePermissionAlert()
+        @unknown default:
+            break
+        }
+    }
+    
+    private func performStartRecording() {
+        let appSupportPath = getApplicationSupportDirectory()
+        let audioFilename = appSupportPath.appendingPathComponent("recordings").appendingPathComponent("recording_\(Date().timeIntervalSince1970).wav")
         audioFileURL = audioFilename
+        
+        // Ensure recordings directory exists
+        try? FileManager.default.createDirectory(at: audioFilename.deletingLastPathComponent(), withIntermediateDirectories: true)
         
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
@@ -79,8 +126,15 @@ class AudioManager: NSObject, ObservableObject {
 //            recordingIndicator.showIndicator()
             
             playFeedbackSound(start: true)
+            print("🎤 Recording started successfully")
         } catch {
-            print("Failed to start recording: \(error)")
+            print("❌ Failed to start recording: \(error)")
+            // Show error alert
+            let alert = NSAlert()
+            alert.messageText = "Recording Error"
+            alert.informativeText = "Failed to start recording: \(error.localizedDescription)"
+            alert.alertStyle = .critical
+            alert.runModal()
         }
     }
     
@@ -158,5 +212,15 @@ class AudioManager: NSObject, ObservableObject {
         
         keyDownEvent?.post(tap: .cghidEventTap)
         keyUpEvent?.post(tap: .cghidEventTap)
+    }
+    
+    private func getApplicationSupportDirectory() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let appDirectory = appSupport.appendingPathComponent("Whispera")
+        
+        // Ensure app directory exists
+        try? FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true)
+        
+        return appDirectory
     }
 }

@@ -1,12 +1,13 @@
 import SwiftUI
 import AVFoundation
 
+
 struct OnboardingView: View {
     @ObservedObject var audioManager: AudioManager
     @ObservedObject var shortcutManager: GlobalShortcutManager
     
     @State private var currentStep = 0
-    @State private var selectedModel = "openai_whisper-small.en"
+    @State private var selectedModel = ""
     @State private var customShortcut = ""
     @State private var hasPermissions = false
     @State private var launchAtLogin = false
@@ -14,10 +15,10 @@ struct OnboardingView: View {
     
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
-    @AppStorage("selectedModel") private var storedModel = "openai_whisper-small.en"
+    @AppStorage("selectedModel") private var storedModel = ""
     @AppStorage("launchAtStartup") private var storedLaunchAtLogin = false
     
-    private let steps = ["Welcome", "Permissions", "Shortcut", "Settings", "Test", "Complete"]
+    private let steps = ["Welcome", "Permissions", "Model", "Shortcut", "Settings", "Test", "Complete"]
     
     var body: some View {
         VStack(spacing: 0) {
@@ -82,14 +83,16 @@ struct OnboardingView: View {
         case 0:
             WelcomeStepView()
         case 1:
-            PermissionsStepView(hasPermissions: $hasPermissions)
+			PermissionsStepView(hasPermissions: $hasPermissions, audioManager: audioManager, globalShortcutManager: shortcutManager)
         case 2:
-            ShortcutStepView(customShortcut: $customShortcut, showingShortcutCapture: $showingShortcutCapture)
+            ModelSelectionStepView(selectedModel: $selectedModel, audioManager: audioManager)
         case 3:
-            SettingsStepView(launchAtLogin: $launchAtLogin)
+            ShortcutStepView(customShortcut: $customShortcut, showingShortcutCapture: $showingShortcutCapture)
         case 4:
-            TestStepView(audioManager: audioManager)
+            SettingsStepView(launchAtLogin: $launchAtLogin)
         case 5:
+            TestStepView(audioManager: audioManager)
+        case 6:
             CompleteStepView()
         default:
             EmptyView()
@@ -99,19 +102,20 @@ struct OnboardingView: View {
     private var nextButtonText: String {
         switch currentStep {
         case 0: return "Get Started"
-        case 1: return hasPermissions ? "Continue" : "Grant Permissions"
-        case 2: return "Set Shortcut"
-        case 3: return "Continue"
-        case 4: return audioManager.lastTranscription != nil ? "Continue" : "Skip Test"
-        case 5: return "Finish Setup"
+        case 1: return (hasPermissions && checkMicrophonePermissionStatus()) ? "Continue" : "Grant Permissions"
+        case 2: return audioManager.whisperKitTranscriber.isDownloadingModel ? "Downloading..." : "Continue"
+        case 3: return "Set Shortcut"
+        case 4: return "Continue"
+        case 5: return audioManager.lastTranscription != nil ? "Continue" : "Skip Test"
+        case 6: return "Finish Setup"
         default: return "Next"
         }
     }
     
     private var canProceed: Bool {
         switch currentStep {
-        case 1: return hasPermissions
-        case 2: return audioManager.whisperKitTranscriber.isInitialized
+        case 1: return hasPermissions && checkMicrophonePermissionStatus()
+        case 2: return !audioManager.whisperKitTranscriber.isDownloadingModel
         default: return true
         }
     }
@@ -124,27 +128,25 @@ struct OnboardingView: View {
                 return
             }
         case 2:
-            // Store the selected model but don't switch during onboarding to avoid MPS crashes
-            // The model will be switched when the app starts normally
+            // Model selection step - model should already be downloaded
             storedModel = selectedModel
-            print("📝 Stored selected model: \(selectedModel) (will switch after onboarding)")
+        case 3:
             globalShortcut = customShortcut
             shortcutManager.currentShortcut = customShortcut
-        case 3:
-            storedLaunchAtLogin = launchAtLogin
         case 4:
+            storedLaunchAtLogin = launchAtLogin
+        case 5:
             if audioManager.lastTranscription == nil && nextButtonText != "Skip Test" {
-                // User needs to test with global shortcut first
                 return
             }
-        case 5:
+        case 6:
             completeOnboarding()
             return
         default:
             break
         }
         
-        withAnimation(.easeInOut(duration: 0.3)) {
+        withAnimation() {
             currentStep += 1
         }
     }
@@ -154,8 +156,16 @@ struct OnboardingView: View {
     }
     
     private func requestPermissions() {
+        // Request accessibility permissions
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true]
         AXIsProcessTrustedWithOptions(options)
+        
+        // Request microphone permissions if needed
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { _ in
+                // Permission response handled by the view update
+            }
+        }
         
         // Check again after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -166,9 +176,12 @@ struct OnboardingView: View {
     private func completeOnboarding() {
         hasCompletedOnboarding = true
         storedModel = selectedModel
-        
-        // Notify app delegate that onboarding is complete
+
         NotificationCenter.default.post(name: NSNotification.Name("OnboardingCompleted"), object: nil)
+    }
+    
+    private func checkMicrophonePermissionStatus() -> Bool {
+        return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 }
 
@@ -186,7 +199,7 @@ struct WelcomeStepView: View {
                     Text("Welcome to Whispera")
                         .font(.system(.largeTitle, design: .rounded, weight: .bold))
                     
-                    Text("AI-powered voice transcription for macOS")
+                    Text("Whisper-powered voice transcription for macOS")
                         .font(.title3)
                         .foregroundColor(.secondary)
                 }
@@ -230,6 +243,10 @@ struct WelcomeStepView: View {
 // MARK: - Permissions Step
 struct PermissionsStepView: View {
     @Binding var hasPermissions: Bool
+	@ObservedObject var audioManager: AudioManager
+	@ObservedObject var globalShortcutManager: GlobalShortcutManager
+    @State private var hasMicrophonePermission = false
+    @State private var permissionCheckTimer: Timer?
     
     var body: some View {
         VStack(spacing: 24) {
@@ -254,16 +271,47 @@ struct PermissionsStepView: View {
                     description: "Required for global keyboard shortcuts",
                     isGranted: hasPermissions
                 )
-                
+				
+				if !hasPermissions {
+					Button {
+						globalShortcutManager.requestAccessibilityPermissions()
+						startPermissionChecking()
+					} label: {
+						Text("Grant Accessibility Access")
+					}
+				}
+				
                 PermissionRowView(
                     icon: "mic.fill",
                     title: "Microphone Access",
                     description: "Required for voice recording",
-                    isGranted: true // Will be requested when first recording
+                    isGranted: hasMicrophonePermission
                 )
+				if !hasMicrophonePermission {
+					VStack(spacing: 8) {
+						Button {
+							audioManager.setupAudio()
+							// Trigger actual microphone usage to force system dialog
+							DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+								audioManager.toggleRecording()
+							}
+						} label: {
+							Text("Grant Microphone Access")
+						}
+						
+						Button {
+							openMicrophoneSettings()
+						} label: {
+							Text("Open Microphone Settings")
+								.font(.caption)
+						}
+						.buttonStyle(.plain)
+						.foregroundColor(.blue)
+					}
+				}
             }
             
-            if hasPermissions {
+            if hasPermissions && hasMicrophonePermission {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
@@ -275,18 +323,77 @@ struct PermissionsStepView: View {
                 .background(.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
             } else {
                 VStack(spacing: 12) {
-                    Text("After clicking \"Grant Permissions\", you'll see a system dialog.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    if !hasPermissions {
+                        Text("After clicking \"Grant Permissions\", you'll see a system dialog.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Go to System Settings > Privacy & Security > Accessibility and enable Whispera.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                     
-                    Text("Go to System Settings > Privacy & Security > Accessibility and enable Whispera.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+                    if !hasMicrophonePermission {
+                        VStack(spacing: 8) {
+                            Text("Microphone access will be requested when you first try to record.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                            
+                            Text("If Whispera doesn't appear in Microphone settings, try recording first to trigger the permission request.")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
                 }
                 .padding()
                 .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
             }
+        }
+        .onAppear {
+            checkMicrophonePermission()
+            checkAccessibilityPermission()
+        }
+        .onDisappear {
+            stopPermissionChecking()
+        }
+    }
+    
+    private func checkMicrophonePermission() {
+        hasMicrophonePermission = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+    
+    private func checkAccessibilityPermission() {
+        hasPermissions = AXIsProcessTrusted()
+    }
+    
+    private func startPermissionChecking() {
+        // Check immediately
+        checkAccessibilityPermission()
+        
+        // Then check every 0.5 seconds for changes
+        permissionCheckTimer?.invalidate()
+        permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            checkAccessibilityPermission()
+            checkMicrophonePermission()
+            
+            // Stop checking once both permissions are granted
+            if hasPermissions && hasMicrophonePermission {
+                stopPermissionChecking()
+            }
+        }
+    }
+    
+    private func stopPermissionChecking() {
+        permissionCheckTimer?.invalidate()
+        permissionCheckTimer = nil
+    }
+    
+    private func openMicrophoneSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+            NSWorkspace.shared.open(url)
         }
     }
 }
@@ -349,7 +456,7 @@ struct PermissionRowView: View {
                 .foregroundColor(isGranted ? .green : .gray)
         }
         .padding()
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -559,7 +666,7 @@ struct ShortcutOptionsView: View {
             .font(.caption)
         }
         .padding()
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
         .onDisappear {
             stopRecording()
         }
@@ -640,7 +747,7 @@ struct SettingRowView: View {
                 .labelsHidden()
         }
         .padding()
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -663,6 +770,11 @@ struct TestStepView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
+				
+				Text("The first transcription might take longer due to the model loading on your device. Especially if it is a larger model.")
+					.font(.callout)
+					.multilineTextAlignment(.center)
+
             }
             
             VStack(spacing: 16) {
@@ -737,9 +849,14 @@ struct TestStepView: View {
                 }
                 
                 if !audioManager.whisperKitTranscriber.isInitialized {
-                    Text("Waiting for AI model to load...")
+                    Text("Waiting for AI framework to initialize...")
                         .font(.caption)
                         .foregroundColor(.orange)
+                } else if !audioManager.whisperKitTranscriber.hasAnyModel() {
+                    Text("Please download a model first to enable transcription.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .multilineTextAlignment(.center)
                 } else {
                     Text("Ready for testing! Use your global shortcut to test.")
                         .font(.caption)
@@ -750,6 +867,212 @@ struct TestStepView: View {
         }
     }
 }
+
+// MARK: - Model Selection Step
+struct ModelSelectionStepView: View {
+    @Binding var selectedModel: String
+    @ObservedObject var audioManager: AudioManager
+    @State private var availableModels: [String] = []
+    @State private var isLoadingModels = false
+    @State private var loadingError: String?
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 16) {
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: 48))
+                    .foregroundColor(.blue)
+                
+                Text("Choose AI Model")
+                    .font(.system(.title, design: .rounded, weight: .semibold))
+                
+                Text("Select the AI model that best fits your needs. You can change this later in Settings.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            VStack(spacing: 16) {
+                HStack {
+                    Text("AI Model")
+                        .font(.headline)
+                    Spacer()
+                    
+                    if isLoadingModels {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Loading models...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Picker("Model", selection: $selectedModel) {
+                            ForEach(getModelOptions(), id: \.0) { model in
+                                Text(model.1).tag(model.0)
+                            }
+                        }
+                        .frame(minWidth: 220)
+                    }
+                }
+                
+                Text("Choose your AI model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+                
+                if let error = loadingError {
+                    Text("Error loading models: \(error)")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
+                
+                if audioManager.whisperKitTranscriber.isDownloadingModel {
+                    VStack(spacing: 8) {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Downloading \(audioManager.whisperKitTranscriber.downloadingModelName ?? "model")...")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                        
+                        ProgressView(value: audioManager.whisperKitTranscriber.downloadProgress)
+                            .frame(height: 4)
+                    }
+                    .padding()
+                    .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                }
+                
+                Text("Models are downloaded once and stored locally. Your voice data never leaves your Mac.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .onAppear {
+            loadAvailableModels()
+        }
+        .onChange(of: selectedModel) { newModel in
+            downloadModelIfNeeded(newModel)
+        }
+    }
+    
+    private func getModelOptions() -> [(String, String)] {
+        if availableModels.isEmpty {
+            return [("loading", "Loading models...")]
+        }
+        
+        return availableModels.compactMap { model in
+            let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
+            let displayName: String
+            
+            switch cleanName {
+            case "tiny.en": displayName = "Tiny (English) - 39MB"
+            case "tiny": displayName = "Tiny (Multilingual) - 39MB"
+            case "base.en": displayName = "Base (English) - 74MB"
+            case "base": displayName = "Base (Multilingual) - 74MB"
+            case "small.en": displayName = "Small (English) - 244MB"
+            case "small": displayName = "Small (Multilingual) - 244MB"
+            case "medium.en": displayName = "Medium (English) - 769MB"
+            case "medium": displayName = "Medium (Multilingual) - 769MB"
+            case "large-v2": displayName = "Large v2 (Multilingual) - 1.5GB"
+            case "large-v3": displayName = "Large v3 (Multilingual) - 1.5GB"
+            case "large-v3-turbo": displayName = "Large v3 Turbo (Multilingual) - 809MB"
+            case "distil-large-v2": displayName = "Distil Large v2 (Multilingual) - 756MB"
+            case "distil-large-v3": displayName = "Distil Large v3 (Multilingual) - 756MB"
+            default: displayName = cleanName.capitalized
+            }
+            
+            return (model, displayName)
+        }
+    }
+    
+    private func loadAvailableModels() {
+        isLoadingModels = true
+        loadingError = nil
+        
+        Task {
+            do {
+                // Use WhisperKitTranscriber to fetch available models
+                try await audioManager.whisperKitTranscriber.refreshAvailableModels()
+                let fetchedModels = audioManager.whisperKitTranscriber.availableModels
+                
+                await MainActor.run {
+                    self.availableModels = fetchedModels.sorted { lhs, rhs in
+                        getModelPriority(lhs) < getModelPriority(rhs)
+                    }
+                    self.isLoadingModels = false
+                    
+                    // Set default selection if none set or invalid
+                    if selectedModel.isEmpty || !fetchedModels.contains(selectedModel) {
+                        // Find the first base model (preferred) or fallback to first available
+                        if let baseModel = fetchedModels.first(where: { $0.contains("base.en") }) {
+                            selectedModel = baseModel
+                        } else if let firstModel = fetchedModels.first {
+                            selectedModel = firstModel
+                        } else {
+                            selectedModel = "openai_whisper-base.en"
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.loadingError = error.localizedDescription
+                    self.isLoadingModels = false
+                    // Use fallback models
+                    self.availableModels = [
+                        "openai_whisper-tiny.en",
+                        "openai_whisper-base.en", 
+                        "openai_whisper-small.en"
+                    ]
+                    if selectedModel.isEmpty {
+                        if let baseModel = self.availableModels.first(where: { $0.contains("base.en") }) {
+                            selectedModel = baseModel
+                        } else if let firstModel = self.availableModels.first {
+                            selectedModel = firstModel
+                        } else {
+                            selectedModel = "openai_whisper-base.en"
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func getModelPriority(_ modelName: String) -> Int {
+        let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
+        switch cleanName {
+        case "tiny.en", "tiny": return 1
+        case "base.en", "base": return 2
+        case "small.en", "small": return 3
+        case "medium.en", "medium": return 4
+        case "large-v2": return 5
+        case "large-v3": return 6
+        case "large-v3-turbo": return 7
+        case "distil-large-v2", "distil-large-v3": return 8
+        default: return 9
+        }
+    }
+    
+    private func downloadModelIfNeeded(_ modelId: String) {
+        // Only download if not already downloaded and not currently downloading
+        if !audioManager.whisperKitTranscriber.downloadedModels.contains(modelId) &&
+           !audioManager.whisperKitTranscriber.isDownloadingModel {
+            Task {
+                do {
+                    try await audioManager.whisperKitTranscriber.downloadModel(modelId)
+                } catch {
+                    await MainActor.run {
+                        loadingError = "Failed to download model: \(error.localizedDescription)"
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 // MARK: - Complete Step
 struct CompleteStepView: View {

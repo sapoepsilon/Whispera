@@ -35,6 +35,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
     private var recordingObserver: NSObjectProtocol?
+    private var downloadObserver: NSObjectProtocol?
     private var onboardingWindow: NSWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -52,6 +53,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // Show onboarding if first launch
             if !hasCompletedOnboarding {
                 showOnboarding()
+            }
+            
+            // Listen for show onboarding requests from settings
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("ShowOnboarding"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.showOnboarding()
             }
         }
     }
@@ -128,21 +138,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         onboardingWindow?.center()
         onboardingWindow?.makeKeyAndOrderFront(nil)
         
-        // Set app policy to regular when showing onboarding
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        
-        // Listen for onboarding completion
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("OnboardingCompleted"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.onboardingWindow?.close()
-            self?.onboardingWindow = nil
             NSApp.setActivationPolicy(.accessory)
-            
-            // Switch to the selected model after onboarding completes
+			self?.onboardingWindow?.close()
             Task { @MainActor in
                 self?.applyStoredModel()
             }
@@ -152,6 +156,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func observeRecordingState() {
         recordingObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("RecordingStateChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateStatusIcon()
+            }
+        }
+        
+        // Also observe download state changes
+        downloadObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("DownloadStateChanged"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -183,39 +198,101 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @MainActor
     private func updateStatusIcon() {
         if let button = statusItem?.button {
-            if audioManager.isTranscribing {
-                // Transcribing state - blue waveform icon following design language
-                button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Whispera - Transcribing")
-                button.image?.isTemplate = false
-                button.contentTintColor = .systemBlue
-                button.alphaValue = 1.0 // Reset alpha for transcribing state
-            } else if audioManager.isRecording {
-                // Recording state - listening waveform icon with animation
-                button.image = NSImage(systemSymbolName: "waveform.badge.mic", accessibilityDescription: "Whispera - Listening")
-                button.image?.isTemplate = false
-                button.contentTintColor = .systemRed
-                
-                // Add a subtle pulsing animation to show it's actively listening
+            let whisperKit = audioManager.whisperKitTranscriber
+            
+            // Clean up any previous subviews and stop any animations
+            button.subviews.removeAll()
+            button.layer?.removeAllAnimations()
+            
+            if whisperKit.isDownloadingModel {
+                // Downloading state - rotating download icon to indicate progress
+                button.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: "Whispera - Downloading")
+                button.image?.isTemplate = true
                 button.alphaValue = 1.0
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 1.0
-                    context.allowsImplicitAnimation = true
-                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    button.animator().alphaValue = 0.6
-                } completionHandler: {
-                    NSAnimationContext.runAnimationGroup { context in
-                        context.duration = 1.0
-                        context.allowsImplicitAnimation = true
-                        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                        button.animator().alphaValue = 1.0
-                    }
-                }
+                
+                // Add continuous rotation animation to indicate download
+                addDownloadAnimation(to: button)
+                
+            } else if audioManager.isTranscribing {
+                // Transcribing state - waveform icon with subtle pulse
+                button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Whispera - Transcribing")
+                button.image?.isTemplate = true
+                button.alphaValue = 1.0
+                
+                // Add gentle pulsing for transcription
+                addTranscriptionAnimation(to: button)
+                
+            } else if audioManager.isRecording {
+                // Recording state - filled microphone icon with stronger pulse
+                button.image = NSImage(systemSymbolName: "mic.circle.fill", accessibilityDescription: "Whispera - Recording")
+                button.image?.isTemplate = true
+                
+                // Add a stronger pulsing animation to show active recording
+                addRecordingAnimation(to: button)
             } else {
-                // Ready state - default microphone icon
+                // Ready state - default microphone icon, no animation
                 button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
                 button.image?.isTemplate = true
-                button.contentTintColor = nil
-                button.alphaValue = 1.0 // Reset alpha for normal state
+                button.alphaValue = 1.0
+            }
+        }
+    }
+    
+    private func addDownloadAnimation(to button: NSStatusBarButton) {
+        // Continuous rotation to indicate download progress
+        let rotation = CABasicAnimation(keyPath: "transform.rotation")
+        rotation.fromValue = 0
+        rotation.toValue = Double.pi
+        rotation.duration = 2.0
+        rotation.repeatCount = .infinity
+        rotation.timingFunction = CAMediaTimingFunction(name: .linear)
+        
+        button.wantsLayer = true
+        button.layer?.add(rotation, forKey: "downloadRotation")
+    }
+    
+    private func addTranscriptionAnimation(to button: NSStatusBarButton) {
+        // Gentle pulsing for transcription
+        button.alphaValue = 1.0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 1.5
+            context.allowsImplicitAnimation = true
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            button.animator().alphaValue = 0.7
+        } completionHandler: {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 1.5
+                context.allowsImplicitAnimation = true
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                button.animator().alphaValue = 1.0
+            } completionHandler: {
+                // Continue animation if still transcribing
+                if self.audioManager.isTranscribing {
+                    self.addTranscriptionAnimation(to: button)
+                }
+            }
+        }
+    }
+    
+    private func addRecordingAnimation(to button: NSStatusBarButton) {
+        // Stronger pulsing for recording
+        button.alphaValue = 1.0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.8
+            context.allowsImplicitAnimation = true
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            button.animator().alphaValue = 0.4
+        } completionHandler: {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.8
+                context.allowsImplicitAnimation = true
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                button.animator().alphaValue = 1.0
+            } completionHandler: {
+                // Continue animation if still recording
+                if self.audioManager.isRecording {
+                    self.addRecordingAnimation(to: button)
+                }
             }
         }
     }
@@ -246,6 +323,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     deinit {
         if let observer = recordingObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = downloadObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }

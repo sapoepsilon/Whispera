@@ -23,8 +23,8 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Mac Whisper needs access to your microphone to transcribe audio.</string>
+    <string>Whispera needs access to your microphone to transcribe audio.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Mac Whisper needs accessibility access to monitor global keyboard shortcuts.</string>
+    <string>Whispera needs accessibility access to monitor global keyboard shortcuts.</string>
 </dict>
 </plist>

@@ -57,7 +57,7 @@ struct MenuBarView: View {
                             .font(.system(.caption, design: .monospaced))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                            .background(Color.gray.opacity(0.2).opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
                     }
                 }
                 
@@ -159,7 +159,7 @@ struct MenuBarView: View {
 struct StatusCardView: View {
     @ObservedObject var audioManager: AudioManager
     @ObservedObject var whisperKit: WhisperKitTranscriber
-    @AppStorage("selectedModel") private var selectedModel = "openai_whisper-small.en"
+    @AppStorage("selectedModel") private var selectedModel = ""
     
     var body: some View {
         VStack(spacing: 12) {
@@ -248,7 +248,7 @@ struct StatusCardView: View {
                             HStack(spacing: 4) {
                                 ProgressView()
                                     .scaleEffect(0.5)
-                                Text("Loading \(whisperKit.downloadingModelName ?? "model")...")
+                                Text("Downloading \(whisperKit.downloadingModelName ?? "model")...")
                                     .font(.caption)
                                     .foregroundColor(.orange)
                             }
@@ -278,52 +278,104 @@ struct StatusCardView: View {
             }
         }
         .padding(16)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.gray.opacity(0.2).opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
     }
     
     private var statusColor: Color {
-        if audioManager.isTranscribing {
+        return StatusCardView.getStatusColor(
+            isRecording: audioManager.isRecording,
+            isTranscribing: audioManager.isTranscribing,
+            isDownloading: whisperKit.isDownloadingModel
+        )
+    }
+    
+    private var statusIcon: Image {
+        return StatusCardView.getStatusIcon(
+            isRecording: audioManager.isRecording,
+            isTranscribing: audioManager.isTranscribing,
+            isDownloading: whisperKit.isDownloadingModel
+        )
+    }
+    
+    // MARK: - Reusable Status Functions
+    
+    static func getStatusColor(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false) -> Color {
+        if isDownloading {
+            return .orange
+        } else if isTranscribing {
             return .blue
-        } else if audioManager.isRecording {
+        } else if isRecording {
             return .red
         } else {
             return .green
         }
     }
     
-    private var statusIcon: Image {
-        if audioManager.isTranscribing {
+    static func getStatusIcon(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false) -> Image {
+        if isDownloading {
+            return Image(systemName: "arrow.down.circle.fill")
+        } else if isTranscribing {
             return Image(systemName: "waveform")
-        } else if audioManager.isRecording {
+        } else if isRecording {
             return Image(systemName: "mic.fill")
         } else {
             return Image(systemName: "checkmark.circle.fill")
         }
     }
     
-    private var statusTitle: String {
-        if audioManager.isTranscribing {
+    static func getStatusTitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil) -> String {
+        if isDownloading {
+            return "Downloading Model..."
+        } else if isTranscribing {
             return "Transcribing..."
-        } else if audioManager.isRecording {
+        } else if isRecording {
             return "Recording..."
         } else {
             return "Ready"
         }
     }
     
-    private var statusSubtitle: String {
-        if audioManager.isTranscribing {
+    static func getStatusSubtitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil) -> String {
+        if isDownloading {
+            if let model = downloadingModel {
+                let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
+                return "Installing \(cleanName) model"
+            } else {
+                return "Installing AI model"
+            }
+        } else if isTranscribing {
             return "Converting speech to text"
-        } else if audioManager.isRecording {
+        } else if isRecording {
             return "Listening for voice input"
         } else {
             return "Press shortcut to start recording"
         }
     }
     
+    private var statusTitle: String {
+        return StatusCardView.getStatusTitle(
+            isRecording: audioManager.isRecording,
+            isTranscribing: audioManager.isTranscribing,
+            isDownloading: whisperKit.isDownloadingModel,
+            downloadingModel: whisperKit.downloadingModelName
+        )
+    }
+    
+    private var statusSubtitle: String {
+        return StatusCardView.getStatusSubtitle(
+            isRecording: audioManager.isRecording,
+            isTranscribing: audioManager.isTranscribing,
+            isDownloading: whisperKit.isDownloadingModel,
+            downloadingModel: whisperKit.downloadingModelName
+        )
+    }
+    
     private var currentModelDisplayName: String {
         // Always show what WhisperKit is actually using, or fall back to settings
         let modelName = whisperKit.currentModel ?? selectedModel
+        if modelName.isEmpty {
+            return "No Model"
+        }
         let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
         
         switch cleanName {
@@ -347,6 +399,9 @@ struct StatusCardView: View {
     private var currentModelSize: String {
         // Always show what WhisperKit is actually using, or fall back to settings
         let modelName = whisperKit.currentModel ?? selectedModel
+        if modelName.isEmpty {
+            return "—"
+        }
         let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
         
         switch cleanName {
@@ -457,7 +512,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(.quaternary)
+                    .fill(Color.gray.opacity(0.2))
                     .opacity(configuration.isPressed ? 0.7 : 1.0)
                     .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
             )
