@@ -5,7 +5,8 @@ import AVFoundation
 struct OnboardingView: View {
     @ObservedObject var audioManager: AudioManager
     @ObservedObject var shortcutManager: GlobalShortcutManager
-    
+	@ObservedObject private var whisperKit = WhisperKitTranscriber.shared
+
     @State private var currentStep = 0
     @State private var selectedModel = ""
     @State private var customShortcut = ""
@@ -102,7 +103,7 @@ struct OnboardingView: View {
     private var nextButtonText: String {
         switch currentStep {
         case 0: return "Get Started"
-        case 1: return (hasPermissions && checkMicrophonePermissionStatus()) ? "Continue" : "Grant Permissions"
+        case 1: return (hasPermissions && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized) ? "Continue" : "Grant Permissions"
         case 2: return audioManager.whisperKitTranscriber.isDownloadingModel ? "Downloading..." : "Continue"
         case 3: return "Set Shortcut"
         case 4: return "Continue"
@@ -114,7 +115,7 @@ struct OnboardingView: View {
     
     private var canProceed: Bool {
         switch currentStep {
-        case 1: return hasPermissions && checkMicrophonePermissionStatus()
+        case 1: return hasPermissions && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         case 2: return !audioManager.whisperKitTranscriber.isDownloadingModel
         default: return true
         }
@@ -247,6 +248,7 @@ struct PermissionsStepView: View {
 	@ObservedObject var globalShortcutManager: GlobalShortcutManager
     @State private var hasMicrophonePermission = false
     @State private var permissionCheckTimer: Timer?
+    @State private var accessibilityCheckTimer: Timer?
     
     var body: some View {
         VStack(spacing: 24) {
@@ -288,25 +290,10 @@ struct PermissionsStepView: View {
                     isGranted: hasMicrophonePermission
                 )
 				if !hasMicrophonePermission {
-					VStack(spacing: 8) {
-						Button {
-							audioManager.setupAudio()
-							// Trigger actual microphone usage to force system dialog
-							DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-								audioManager.toggleRecording()
-							}
-						} label: {
-							Text("Grant Microphone Access")
-						}
-						
-						Button {
-							openMicrophoneSettings()
-						} label: {
-							Text("Open Microphone Settings")
-								.font(.caption)
-						}
-						.buttonStyle(.plain)
-						.foregroundColor(.blue)
+					Button {
+						requestMicrophonePermission()
+					} label: {
+						Text("Grant Microphone Access")
 					}
 				}
             }
@@ -355,9 +342,11 @@ struct PermissionsStepView: View {
         .onAppear {
             checkMicrophonePermission()
             checkAccessibilityPermission()
+            startContinuousPermissionChecking()
         }
         .onDisappear {
             stopPermissionChecking()
+            stopContinuousPermissionChecking()
         }
     }
     
@@ -366,12 +355,16 @@ struct PermissionsStepView: View {
     }
     
     private func checkAccessibilityPermission() {
-        hasPermissions = AXIsProcessTrusted()
+        let newValue = AXIsProcessTrusted()
+        if newValue != hasPermissions {
+            hasPermissions = newValue
+        }
     }
     
     private func startPermissionChecking() {
         // Check immediately
         checkAccessibilityPermission()
+        checkMicrophonePermission()
         
         // Then check every 0.5 seconds for changes
         permissionCheckTimer?.invalidate()
@@ -391,11 +384,58 @@ struct PermissionsStepView: View {
         permissionCheckTimer = nil
     }
     
+    private func startContinuousPermissionChecking() {
+        // Start a timer that continuously checks for permission changes
+        accessibilityCheckTimer?.invalidate()
+        accessibilityCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
+            checkAccessibilityPermission()
+            checkMicrophonePermission()
+        }
+    }
+    
+    private func stopContinuousPermissionChecking() {
+        accessibilityCheckTimer?.invalidate()
+        accessibilityCheckTimer = nil
+    }
+    
+    private func requestMicrophonePermission() {
+        requestMicrophonePermissionFromUser { granted in
+            if granted {
+                self.checkMicrophonePermission()
+            }
+        }
+    }
+    
     private func openMicrophoneSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
             NSWorkspace.shared.open(url)
         }
     }
+	
+	private func requestMicrophonePermissionFromUser(completion: @escaping (Bool) -> Void) {
+		switch AVCaptureDevice.authorizationStatus(for: .audio) {
+		case .authorized:
+			print("authorized")
+			completion(true)
+			
+		case .notDetermined:
+			print("notDetermined")
+			AVCaptureDevice.requestAccess(for: .audio) { granted in
+				DispatchQueue.main.async {
+					completion(granted)
+				}
+			}
+			
+		case .denied, .restricted:
+			print("denied")
+			openMicrophoneSettings()
+			completion(false)
+			
+		@unknown default:
+			print("unknown")
+			completion(false)
+		}
+	}
 }
 
 // MARK: - Supporting Views
@@ -872,9 +912,13 @@ struct TestStepView: View {
 struct ModelSelectionStepView: View {
     @Binding var selectedModel: String
     @ObservedObject var audioManager: AudioManager
+	@ObservedObject private var whisperKit = WhisperKitTranscriber.shared
+	
     @State private var availableModels: [String] = []
     @State private var isLoadingModels = false
     @State private var loadingError: String?
+    @State private var errorMessage: String?
+    @State private var showingError = false
     
     var body: some View {
         VStack(spacing: 24) {
@@ -898,21 +942,40 @@ struct ModelSelectionStepView: View {
                         .font(.headline)
                     Spacer()
                     
-                    if isLoadingModels {
+                    if isLoadingModels || audioManager.whisperKitTranscriber.isModelLoading {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .scaleEffect(0.8)
-                            Text("Loading models...")
+                            Text(getModelStatusText())
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                     } else {
-                        Picker("Model", selection: $selectedModel) {
-                            ForEach(getModelOptions(), id: \.0) { model in
-                                Text(model.1).tag(model.0)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Picker("Model", selection: $selectedModel) {
+                                ForEach(getModelOptions(), id: \.0) { model in
+                                    Text(model.1).tag(model.0)
+                                }
+                            }
+                            .frame(minWidth: 220)
+                            
+                            if needsModelLoad {
+                                Button("Load Model") {
+                                    Task {
+                                        do {
+                                            try await audioManager.whisperKitTranscriber.switchModel(to: selectedModel)
+                                        } catch {
+                                            await MainActor.run {
+                                                errorMessage = "Failed to load model: \(error.localizedDescription)"
+                                                showingError = true
+                                            }
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
                             }
                         }
-                        .frame(minWidth: 220)
                     }
                 }
                 
@@ -957,6 +1020,32 @@ struct ModelSelectionStepView: View {
         .onChange(of: selectedModel) { newModel in
             downloadModelIfNeeded(newModel)
         }
+        .alert("Error", isPresented: $showingError) {
+            Button("OK") {
+                showingError = false
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred")
+        }
+    }
+    
+    private var needsModelLoad: Bool {
+        guard !selectedModel.isEmpty else { return false }
+        guard audioManager.whisperKitTranscriber.isInitialized else { return false }
+        guard !audioManager.whisperKitTranscriber.isDownloadingModel && !audioManager.whisperKitTranscriber.isModelLoading else { return false }
+        
+        // Check if selected model is different from currently loaded model
+        return selectedModel != audioManager.whisperKitTranscriber.currentModel
+    }
+    
+    private func getModelStatusText() -> String {
+        if isLoadingModels {
+            return "Loading models..."
+        } else if audioManager.whisperKitTranscriber.isModelLoading {
+            return "Loading \(selectedModel)..."
+        }
+        return ""
     }
     
     private func getModelOptions() -> [(String, String)] {
@@ -1020,6 +1109,8 @@ struct ModelSelectionStepView: View {
             } catch {
                 await MainActor.run {
                     self.loadingError = error.localizedDescription
+                    self.errorMessage = "Failed to load available models: \(error.localizedDescription)"
+                    self.showingError = true
                     self.isLoadingModels = false
                     // Use fallback models
                     self.availableModels = [
@@ -1066,6 +1157,8 @@ struct ModelSelectionStepView: View {
                 } catch {
                     await MainActor.run {
                         loadingError = "Failed to download model: \(error.localizedDescription)"
+                        errorMessage = "Failed to download model: \(error.localizedDescription)"
+                        showingError = true
                     }
                 }
             }

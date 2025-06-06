@@ -16,6 +16,19 @@ class WhisperKitTranscriber: ObservableObject {
             UserDefaults.standard.set(Array(downloadedModels), forKey: "downloadedModels")
         }
     }
+    
+    // WhisperKit model state tracking
+    @Published var modelState: String = "unloaded"
+    @Published var isModelLoading: Bool = false
+    @Published var isModelLoaded: Bool = false
+    
+	private func modelCacheDirectory(for modelName: String) -> URL? {
+		guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+			return nil
+		}
+		return appSupport.appendingPathComponent("Whispera/Models/\(modelName)")
+	}
+	
     @Published var isDownloadingModel = false {
         didSet {
             // Notify observers when download state changes
@@ -27,7 +40,7 @@ class WhisperKitTranscriber: ObservableObject {
     @Published var downloadProgress: Double = 0.0
     @Published var downloadingModelName: String?
     
-    @MainActor private var whisperKit: WhisperKit?
+    @MainActor var whisperKit: WhisperKit?
     @MainActor private var initializationTask: Task<Void, Never>?
     
     // Swift 6 compliant singleton pattern
@@ -42,6 +55,9 @@ class WhisperKitTranscriber: ObservableObject {
             downloadedModels = Set(savedModels)
             print("📚 Restored \(downloadedModels.count) downloaded models from storage: \(downloadedModels)")
         }
+        
+        // Setup model directory
+        setupModelDirectory()
         
         // Don't start initialization in init - wait for explicit call
     }
@@ -67,6 +83,20 @@ class WhisperKitTranscriber: ObservableObject {
         print("🔄 Loaded downloaded models cache: \(downloadedModels)")
     }
     
+    private func setupModelDirectory() {
+		guard let modelDir = modelCacheDirectory(for: "modelName") else { return }
+
+        // Create the base directory if it doesn't exist
+        // WhisperKit will create subdirectories as needed
+        do {
+            try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true, attributes: nil)
+            print("✅ Model directory ready at: \(modelDir.path)")
+            
+        } catch {
+            print("❌ Failed to create model directory: \(error)")
+        }
+    }
+    
     private func initialize() async {
         guard !isInitialized else {
             print("📋 WhisperKit already initialized")
@@ -75,9 +105,6 @@ class WhisperKitTranscriber: ObservableObject {
         }
         await updateProgress(0.1, "Loading WhisperKit framework...")
         try? await Task.sleep(nanoseconds: 500_000_000) // Small delay for UI feedback
-        
-        // WhisperKit will use its default cache location
-        print("📁 Using WhisperKit's default model cache")
         
         print("🔄 Initializing WhisperKit framework...")
         await updateProgress(0.3, "Setting up AI framework...")
@@ -91,9 +118,11 @@ class WhisperKitTranscriber: ObservableObject {
             await updateProgress(0.8, "Loading existing model...")
             
             do {
-                // Try to load with default configuration (WhisperKit will find best available model)
+                // Try to load with custom model directory
                 whisperKit = try await Task { @MainActor in
-                    return try await WhisperKit()
+                    let whisperKitInstance = try await WhisperKit(downloadBase: .applicationSupportDirectory)
+                    self.setupModelStateCallback(for: whisperKitInstance)
+                    return whisperKitInstance
                 }.value
                 
                 print("✅ WhisperKit initialized with existing models")
@@ -149,6 +178,9 @@ class WhisperKitTranscriber: ObservableObject {
                     guard let whisperKitInstance = self.whisperKit else {
                         throw WhisperKitError.notInitialized
                     }
+					if whisperKitInstance.modelState == .loading {
+						print("Model isn't loaded yet. \(whisperKitInstance.modelState )")
+					}
                     
                     // Additional MPS readiness check before transcription
                     if attempt > 1 {
@@ -261,10 +293,12 @@ class WhisperKitTranscriber: ObservableObject {
             print("👂🏼 Recommended models: \(recommendedModels)")
             
             await updateDownloadProgress(0.6, "Loading \(model)...")
-            // Use WhisperKit with specific model (let it handle the path resolution)
+            // Use WhisperKit with specific model and custom model directory
             whisperKit = try await Task { @MainActor in
-                let config = WhisperKitConfig(model: model)
-                return try await WhisperKit(config)
+                let config = WhisperKitConfig(model: model, downloadBase: .applicationSupportDirectory)
+                let whisperKitInstance = try await WhisperKit(config)
+                self.setupModelStateCallback(for: whisperKitInstance)
+                return whisperKitInstance
             }.value
             
             await updateDownloadProgress(0.9, "Finalizing model setup...")
@@ -365,16 +399,19 @@ class WhisperKitTranscriber: ObservableObject {
             
             await updateDownloadProgress(0.6, "Downloading model...")
             
-            // Use WhisperKit's download method with default cache location
-            _ = try await WhisperKit.download(variant: modelName)
+            // Use WhisperKit's download method with default location
+			let downloadedFolder = try await WhisperKit.download(variant: modelName, downloadBase: .applicationSupportDirectory)
+            print("📥 Model downloaded to: \(downloadedFolder)")
             addModelToCache(modelName)
             
             await updateDownloadProgress(0.8, "Initializing model...")
             
-            // Initialize or switch WhisperKit to use the newly downloaded model
+            // Initialize WhisperKit with the specific model name and custom model directory
             whisperKit = try await Task { @MainActor in
-                let config = WhisperKitConfig(model: modelName)
-                return try await WhisperKit(config)
+                let config = WhisperKitConfig(model: modelName, downloadBase: .applicationSupportDirectory)
+                let whisperKitInstance = try await WhisperKit(config)
+                self.setupModelStateCallback(for: whisperKitInstance)
+                return whisperKitInstance
             }.value
             currentModel = modelName
             print("✅ WhisperKit initialized with model: \(modelName)")
@@ -463,6 +500,57 @@ class WhisperKitTranscriber: ObservableObject {
         downloadedModels.insert(modelName)
         print("📥 Added \(modelName) to downloaded models cache")
     }
+
+    
+    // MARK: - WhisperKit Model State Management
+    
+    private func setupModelStateCallback(for whisperKitInstance: WhisperKit) {
+        whisperKitInstance.modelStateCallback = { [weak self] oldState, newState in
+            DispatchQueue.main.async {
+                self?.handleModelStateChange(from: oldState, to: newState)
+            }
+        }
+        
+        // Set initial state
+        handleModelStateChange(from: nil, to: whisperKitInstance.modelState)
+    }
+    
+    private func handleModelStateChange(from oldState: ModelState?, to newState: ModelState) {
+        let stateString = String(describing: newState)
+        modelState = stateString
+        isModelLoading = (newState == .loading || newState == .prewarming)
+        isModelLoaded = (newState == .loaded || newState == .prewarmed)
+        
+        print("🎯 WhisperKit model state changed: \(oldState.map(String.init(describing:)) ?? "nil") -> \(stateString)")
+        
+        // Post notification for other parts of the app
+        NotificationCenter.default.post(
+            name: NSNotification.Name("WhisperKitModelStateChanged"),
+            object: nil,
+            userInfo: [
+                "oldState": oldState.map(String.init(describing:)) ?? "unknown",
+                "newState": stateString,
+                "isLoading": isModelLoading,
+                "isLoaded": isModelLoaded
+            ]
+        )
+    }
+    
+    func getCurrentModelState() -> String {
+        guard let whisperKit = whisperKit else { return "unloaded" }
+        return String(describing: whisperKit.modelState)
+    }
+    
+    func isCurrentlyLoadingModel() -> Bool {
+        guard let whisperKit = whisperKit else { return false }
+        return whisperKit.modelState == .loading || whisperKit.modelState == .prewarming
+    }
+    
+    func isCurrentModelLoaded() -> Bool {
+        guard let whisperKit = whisperKit else { return false }
+        return whisperKit.modelState == .loaded || whisperKit.modelState == .prewarmed
+    }
+	
 }
 
 enum WhisperKitError: LocalizedError {

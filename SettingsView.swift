@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
     @State private var eventMonitor: Any?
+    @State private var errorMessage: String?
+    @State private var showingError = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -76,31 +78,64 @@ struct SettingsView: View {
                     }
                 }
                 
-                HStack {
-                    Text("Whisper Model")
-                        .font(.headline)
-                    Spacer()
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Whisper Model")
+                            .font(.headline)
+                        Spacer()
+                        
+                        if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
+                            VStack(alignment: .trailing, spacing: 4) {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                    Text(getModelStatusText())
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                }
+                                
+                                if whisperKit.isDownloadingModel {
+                                    ProgressView(value: whisperKit.downloadProgress)
+                                        .frame(width: 120, height: 4)
+                                }
+                            }
+                        } else {
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Picker("Model", selection: $selectedModel) {
+                                    ForEach(getModelOptions(), id: \.0) { model in
+                                        Text(model.1).tag(model.0)
+                                    }
+                                }
+                                .frame(minWidth: 180)
+                                
+								if whisperKit.whisperKit?.modelState == .unloaded {
+                                    Button("Load Model") {
+                                        Task {
+											do {
+												try await whisperKit.whisperKit?.loadModels()
+											} catch {
+												await MainActor.run {
+													errorMessage = "Failed to load model: \(error.localizedDescription)"
+													showingError = true
+												}
+											}
+										}
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.small)
+                                }
+                            }
+                        }
+                    }
                     
-                    if whisperKit.isDownloadingModel {
-                        VStack(alignment: .trailing, spacing: 4) {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .scaleEffect(0.6)
-                                Text("Downloading \(whisperKit.downloadingModelName ?? "model")...")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                            }
-                            
-                            ProgressView(value: whisperKit.downloadProgress)
-                                .frame(width: 120, height: 4)
-                        }
-                    } else {
-                        Picker("Model", selection: $selectedModel) {
-                            ForEach(getModelOptions(), id: \.0) { model in
-                                Text(model.1).tag(model.0)
-                            }
-                        }
-                        .frame(minWidth: 180)
+                    // Show current model status
+                    HStack {
+                        Text("Status:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(getCurrentModelStatusText())
+                            .font(.caption)
+                            .foregroundColor(getModelStatusColor())
                     }
                 }
                 
@@ -173,12 +208,23 @@ struct SettingsView: View {
             stopRecording()
         }
         .onChange(of: selectedModel) { newModel in
-            Task {
-                await switchToModel(newModel)
+            // Only auto-switch if auto-download is enabled
+            if autoDownloadModel {
+                Task {
+                    await switchToModel(newModel)
+                }
             }
         }
         .onChange(of: launchAtStartup) { newValue in
             setLaunchAtStartup(newValue)
+        }
+        .alert("Error", isPresented: $showingError) {
+            Button("OK") {
+                showingError = false
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred")
         }
     }
 
@@ -269,6 +315,10 @@ struct SettingsView: View {
                 }
             } catch {
                 print("Failed to load models: \(error)")
+                await MainActor.run {
+                    errorMessage = "Failed to load available models: \(error.localizedDescription)"
+                    showingError = true
+                }
             }
         }
     }
@@ -334,6 +384,10 @@ struct SettingsView: View {
             print("✅ Successfully switched to model: \(modelName)")
         } catch {
             print("❌ Failed to switch to model \(modelName): \(error)")
+            await MainActor.run {
+                errorMessage = "Failed to switch to model \(modelName): \(error.localizedDescription)"
+                showingError = true
+            }
         }
     }
     
@@ -434,6 +488,44 @@ struct SettingsView: View {
         // Post notification to show onboarding
         NotificationCenter.default.post(name: NSNotification.Name("ShowOnboarding"), object: nil)
         
+    }
+    
+    private func getModelStatusText() -> String {
+        if whisperKit.isDownloadingModel {
+            return "Downloading \(whisperKit.downloadingModelName ?? "model")..."
+        } else if whisperKit.isModelLoading {
+            return "Loading \(selectedModel)..."
+        }
+        return ""
+    }
+    
+    private func getCurrentModelStatusText() -> String {
+        if whisperKit.isDownloadingModel {
+            return "Downloading..."
+        } else if whisperKit.isModelLoading {
+            return "Loading..."
+        } else if whisperKit.isModelLoaded {
+            if let currentModel = whisperKit.currentModel {
+                let cleanName = currentModel.replacingOccurrences(of: "openai_whisper-", with: "")
+                return "Loaded: \(cleanName)"
+            } else {
+                return "Model loaded"
+            }
+        } else if whisperKit.isInitialized {
+			return whisperKit.whisperKit?.modelState == .unloaded ? "Different model selected" : "No model loaded"
+        } else {
+            return "Initializing..."
+        }
+    }
+    
+    private func getModelStatusColor() -> Color {
+        if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
+            return .orange
+        } else if whisperKit.isModelLoaded {
+			return whisperKit.whisperKit?.modelState == .unloaded ? .orange : .green
+        } else {
+            return .secondary
+        }
     }
 }
 

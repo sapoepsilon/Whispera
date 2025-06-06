@@ -121,7 +121,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showOnboarding() {
         let onboardingView = OnboardingView(
             audioManager: audioManager,
-            shortcutManager: shortcutManager
+            shortcutManager: shortcutManager,
         )
         
         let hostingController = NSHostingController(rootView: onboardingView)
@@ -238,18 +238,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     
-    private func addDownloadAnimation(to button: NSStatusBarButton) {
-        // Continuous rotation to indicate download progress
-        let rotation = CABasicAnimation(keyPath: "transform.rotation")
-        rotation.fromValue = 0
-        rotation.toValue = Double.pi
-        rotation.duration = 2.0
-        rotation.repeatCount = .infinity
-        rotation.timingFunction = CAMediaTimingFunction(name: .linear)
-        
-        button.wantsLayer = true
-        button.layer?.add(rotation, forKey: "downloadRotation")
-    }
+	private func addDownloadAnimation(to button: NSStatusBarButton) {
+		button.wantsLayer = true
+		
+		guard let layer = button.layer else { return }
+		
+		// Set anchor point to center for proper rotation
+		layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+		
+		// Ensure the layer position is correct after changing anchor point
+		let bounds = layer.bounds
+		layer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+		
+		// Continuous rotation animation
+		let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
+		rotation.fromValue = 0
+		rotation.toValue = Double.pi * 2  // Full 360° rotation
+		rotation.duration = 1.5
+		rotation.repeatCount = .infinity
+		rotation.timingFunction = CAMediaTimingFunction(name: .linear)
+		
+		layer.add(rotation, forKey: "downloadRotation")
+	}
     
     private func addTranscriptionAnimation(to button: NSStatusBarButton) {
         // Gentle pulsing for transcription
