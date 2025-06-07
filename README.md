@@ -2,6 +2,10 @@
 
 A native macOS tool that replaces the built-in dictation with OpenAI's Whisper for superior transcription accuracy.
 
+## Demo: 
+
+https://github.com/user-attachments/assets/1da72bbb-a1cf-46ee-a997-893f1939e626
+
 ## Features
 
 - **Enhanced Accuracy**: Leverages WhisperKit for significantly better transcription than macOS dictation
