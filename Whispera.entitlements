@@ -10,22 +10,23 @@
     <key>com.apple.security.device.microphone</key>
     <true/>
     
+    <!-- Required for audio recording in sandbox -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    
     <!-- Required for app hardening -->
     <key>com.apple.security.app-sandbox</key>
-    <true/>
+    <false/>
     
-    <!-- Required for file access (for saving transcriptions, etc.) -->
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
+    <!-- Network access is unrestricted without sandbox -->
+    <!-- File access is unrestricted without sandbox -->
     
-    <!-- Required for network access (for WhisperKit model downloads) -->
-    <key>com.apple.security.network.client</key>
+    <!-- Hardened Runtime entitlements for notarization -->
+    <key>com.apple.security.cs.allow-jit</key>
     <true/>
-    
-    <!-- Required for temporary file access -->
-    <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
-    <array>
-        <string>/tmp/</string>
-    </array>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
 </dict>
 </plist>

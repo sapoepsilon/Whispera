@@ -6,19 +6,17 @@ class GlobalShortcutManager: ObservableObject {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var audioManager: AudioManager?
-    @Published var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌥⌘R"
-    
+	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
+	
     init() {
-        print("🚀 GlobalShortcutManager initializing...")
         setupShortcut()
         
-        // Listen for shortcut changes
         NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌥⌘R"
+            let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
             if newShortcut != self?.currentShortcut {
                 print("🔄 Shortcut changed from \(self?.currentShortcut ?? "nil") to \(newShortcut)")
                 self?.currentShortcut = newShortcut

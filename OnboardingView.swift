@@ -115,7 +115,7 @@ struct OnboardingView: View {
     
     private var canProceed: Bool {
         switch currentStep {
-        case 1: return hasPermissions && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        case 1: return hasPermissions
         case 2: return !audioManager.whisperKitTranscriber.isDownloadingModel
         default: return true
         }

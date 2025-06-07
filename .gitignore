@@ -111,3 +111,14 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Distribution and release scripts with credentials
+scripts/release-distribute.sh
+dist/
+*.dmg
+*.zip
+
+# Code signing and distribution
+*.mobileprovision
+*.p12
+*.cer
