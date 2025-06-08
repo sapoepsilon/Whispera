@@ -3,19 +3,19 @@ import AVFoundation
 import AppKit
 
 @MainActor
-class AudioManager: NSObject, ObservableObject {
-    @Published var isRecording = false {
+@Observable class AudioManager: NSObject {
+     var isRecording = false {
         didSet {
             NotificationCenter.default.post(name: NSNotification.Name("RecordingStateChanged"), object: nil)
         }
     }
-    @Published var lastTranscription: String?
-    @Published var isTranscribing = false {
+     var lastTranscription: String?
+     var isTranscribing = false {
         didSet {
             NotificationCenter.default.post(name: NSNotification.Name("RecordingStateChanged"), object: nil)
         }
     }
-    @Published var transcriptionError: String?
+     var transcriptionError: String?
     
     private var audioRecorder: AVAudioRecorder?
     private var audioFileURL: URL?

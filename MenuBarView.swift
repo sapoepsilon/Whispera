@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct MenuBarView: View {
-    @ObservedObject var audioManager: AudioManager
+    @Bindable var audioManager: AudioManager
     @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
 		@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
     
@@ -157,7 +157,7 @@ struct MenuBarView: View {
 
 // MARK: - Status Card
 struct StatusCardView: View {
-    @ObservedObject var audioManager: AudioManager
+    @Bindable var audioManager: AudioManager
     @ObservedObject var whisperKit: WhisperKitTranscriber
     @AppStorage("selectedModel") private var selectedModel = ""
     
