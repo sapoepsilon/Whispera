@@ -10,6 +10,8 @@ struct SettingsView: View {
     @AppStorage("startSound") private var startSound = "Tink"
     @AppStorage("stopSound") private var stopSound = "Pop"
     @AppStorage("launchAtStartup") private var launchAtStartup = false
+    @AppStorage("enableTranslation") private var enableTranslation = false
+    @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
     @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
     @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
@@ -143,6 +145,37 @@ struct SettingsView: View {
                 }
                 
                 HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Translation Mode")
+                            .font(.headline)
+                        Text("Translate speech to English instead of transcribing")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $enableTranslation)
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Source Language")
+                                .font(.headline)
+                            Text("Language of the audio to transcribe")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Picker("Language", selection: $selectedLanguage) {
+                            ForEach(Constants.sortedLanguageNames, id: \.self) { language in
+                                Text(language.capitalized).tag(language)
+                            }
+                        }
+                        .frame(minWidth: 120)
+                    }
+                }
+                
+                HStack {
                     Text("Launch at Startup")
                         .font(.headline)
                     Spacer()
@@ -189,7 +222,7 @@ struct SettingsView: View {
             
             Spacer()
         }
-        .frame(width: 400, height: 420)
+        .frame(width: 400, height: 450)
         .background(.regularMaterial)
         .onAppear {
             loadAvailableModels()

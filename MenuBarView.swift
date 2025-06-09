@@ -4,8 +4,8 @@ import AppKit
 struct MenuBarView: View {
     @ObservedObject var audioManager: AudioManager
     @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
-		@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
-    
+	@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
+
     var body: some View {
         VStack(spacing: 0) {
             // Header with app icon and title - following design language
@@ -160,7 +160,8 @@ struct StatusCardView: View {
     @ObservedObject var audioManager: AudioManager
     @ObservedObject var whisperKit: WhisperKitTranscriber
     @AppStorage("selectedModel") private var selectedModel = ""
-    
+	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
+
     var body: some View {
         VStack(spacing: 12) {
             // Main status section
@@ -268,6 +269,24 @@ struct StatusCardView: View {
                             .foregroundColor(.blue)
                         
                         Spacer()
+
+                        // Translation toggle
+                        Button(action: {
+                            audioManager.enableTranslation.toggle()
+                            print("🟠 StatusCardView - Translation toggled to: \(audioManager.enableTranslation)")
+                        }) {
+                            HStack(spacing: 2) {
+                                Image(systemName: audioManager.enableTranslation ? "arrow.right" : "doc.text")
+                                    .font(.system(size: 8))
+								Text(audioManager.enableTranslation ? "\(Constants.languageCode(for: selectedLanguage))" : "TXT")
+                                    .font(.system(.caption2, design: .rounded, weight: .medium))
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(audioManager.enableTranslation ? .orange.opacity(0.2) : .gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                            .foregroundColor(audioManager.enableTranslation ? .orange : .secondary)
+                        }
+                        .buttonStyle(.plain)
                         
                         // Model size indicator
                         Text(currentModelSize)
@@ -323,11 +342,11 @@ struct StatusCardView: View {
         }
     }
     
-    static func getStatusTitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil) -> String {
+    static func getStatusTitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false) -> String {
         if isDownloading {
             return "Downloading Model..."
         } else if isTranscribing {
-            return "Transcribing..."
+            return enableTranslation ? "Translating..." : "Transcribing..."
         } else if isRecording {
             return "Recording..."
         } else {
@@ -335,7 +354,7 @@ struct StatusCardView: View {
         }
     }
     
-    static func getStatusSubtitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil) -> String {
+    static func getStatusSubtitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false) -> String {
         if isDownloading {
             if let model = downloadingModel {
                 let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
@@ -344,7 +363,7 @@ struct StatusCardView: View {
                 return "Installing AI model"
             }
         } else if isTranscribing {
-            return "Converting speech to text"
+            return enableTranslation ? "Converting speech to English" : "Converting speech to text"
         } else if isRecording {
             return "Listening for voice input"
         } else {
@@ -357,7 +376,8 @@ struct StatusCardView: View {
             isRecording: audioManager.isRecording,
             isTranscribing: audioManager.isTranscribing,
             isDownloading: whisperKit.isDownloadingModel,
-            downloadingModel: whisperKit.downloadingModelName
+            downloadingModel: whisperKit.downloadingModelName,
+            enableTranslation: audioManager.enableTranslation
         )
     }
     
@@ -366,7 +386,8 @@ struct StatusCardView: View {
             isRecording: audioManager.isRecording,
             isTranscribing: audioManager.isTranscribing,
             isDownloading: whisperKit.isDownloadingModel,
-            downloadingModel: whisperKit.downloadingModelName
+            downloadingModel: whisperKit.downloadingModelName,
+            enableTranslation: audioManager.enableTranslation
         )
     }
     
