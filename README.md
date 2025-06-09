@@ -15,7 +15,9 @@ https://github.com/user-attachments/assets/1da72bbb-a1cf-46ee-a997-893f1939e626
 
 ## Roadmap
 
-- [ ] Multi-language support beyond English
+- [x] Multi-language support beyond English 
+  - **PR**: https://github.com/sapoepsilon/Whispera/pull/2
+  - **Release**: https://github.com/sapoepsilon/Whispera/releases/tag/v1.0.3
 - [ ] Real-time translation capabilities
 - [ ] Additional customization options
 
