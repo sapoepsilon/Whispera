@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import AppKit
+import SwiftUI
 
 @MainActor
 class AudioManager: NSObject, ObservableObject {
@@ -16,6 +17,8 @@ class AudioManager: NSObject, ObservableObject {
         }
     }
     @Published var transcriptionError: String?
+    
+    @AppStorage("enableTranslation") var enableTranslation = false
     
     private var audioRecorder: AVAudioRecorder?
     private var audioFileURL: URL?
@@ -71,7 +74,7 @@ class AudioManager: NSObject, ObservableObject {
     }
     
     func toggleRecording() {
-        print("🎙️ toggleRecording called, current state: \(isRecording)")
+        print("🎙️ toggleRecording called, current state: \(isRecording), translation: \(enableTranslation)")
         if isRecording {
             stopRecording()
         } else {
@@ -138,7 +141,7 @@ class AudioManager: NSObject, ObservableObject {
         }
     }
     
-    private func stopRecording() {
+	private func stopRecording() {
         audioRecorder?.stop()
         audioRecorder = nil
         isRecording = false
@@ -150,7 +153,7 @@ class AudioManager: NSObject, ObservableObject {
         
         if let audioFileURL = audioFileURL {
             Task {
-                await transcribeAudio(fileURL: audioFileURL)
+				await transcribeAudio(fileURL: audioFileURL, enableTranslation: self.enableTranslation)
             }
         }
     }
@@ -168,13 +171,13 @@ class AudioManager: NSObject, ObservableObject {
     }
 	
     
-    private func transcribeAudio(fileURL: URL) async {
+	private func transcribeAudio(fileURL: URL, enableTranslation: Bool) async {
         isTranscribing = true
         transcriptionError = nil
         
         do {
             // Always use real WhisperKit transcription
-            let transcription = try await whisperKitTranscriber.transcribe(audioURL: fileURL)
+            let transcription = try await whisperKitTranscriber.transcribe(audioURL: fileURL, enableTranslation: enableTranslation)
             
             // Update UI on main thread
             await MainActor.run {

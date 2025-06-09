@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import WhisperKit
+import SwiftUI
 
 @MainActor
 class WhisperKitTranscriber: ObservableObject {
@@ -12,6 +13,8 @@ class WhisperKitTranscriber: ObservableObject {
      var currentModel: String?
      var downloadedModels: Set<String> = []
     
+    @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
+        
     // WhisperKit model state tracking
     @Published var modelState: String = "unloaded"
     @Published var isModelLoading: Bool = false
@@ -131,7 +134,7 @@ class WhisperKitTranscriber: ObservableObject {
         }
     }
     
-    func transcribe(audioURL: URL) async throws -> String {
+    func transcribe(audioURL: URL, enableTranslation: Bool) async throws -> String {
         guard isInitialized else {
             throw WhisperKitError.notInitialized
         }
@@ -140,16 +143,32 @@ class WhisperKitTranscriber: ObservableObject {
             throw WhisperKitError.noModelLoaded
         }
         
-        // Additional readiness check to ensure WhisperKit is truly ready
         guard await isWhisperKitReady() else {
             throw WhisperKitError.notReady
         }
         
-        print("🎤 Starting transcription of: \(audioURL.lastPathComponent)")
-        
-        // Implement retry mechanism for MPS resource loading failures
         let maxRetries = 3
         var lastError: Error?
+		let task: DecodingTask = enableTranslation ? .transcribe : .translate // For some reason this gets reversed
+		let languageCode = Constants.languageCode(for: selectedLanguage)
+
+		print("transcripting mode: \(task.description) language: \(languageCode)")
+		let	optionS = DecodingOptions(
+				verbose: false,
+				task: task,
+				language: languageCode,
+				temperature: 0.0,
+				temperatureFallbackCount: 1,
+				sampleLength: 224,
+				usePrefillPrompt: true,
+				usePrefillCache: true,
+				detectLanguage: enableTranslation,
+				skipSpecialTokens: true,
+				withoutTimestamps: false,
+				wordTimestamps: true,
+				clipTimestamps: [0]
+			)
+
         
         for attempt in 1...maxRetries {
             do {
@@ -162,13 +181,11 @@ class WhisperKitTranscriber: ObservableObject {
 						print("Model isn't loaded yet. \(whisperKitInstance.modelState )")
 					}
                     
-                    // Additional MPS readiness check before transcription
                     if attempt > 1 {
                         print("🔄 Re-checking MPS readiness before retry...")
                         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s for MPS
                     }
-                    
-                    return try await whisperKitInstance.transcribe(audioPath: audioURL.path)
+					return try await whisperKitInstance.transcribe(audioPath: audioURL.path, decodeOptions: optionS)
                 }.value
                 
                 if !result.isEmpty {
@@ -398,9 +415,8 @@ class WhisperKitTranscriber: ObservableObject {
         
 		do {
 			await updateDownloadProgress(0.2, "Starting download...")
-			
 			await updateDownloadProgress(0.2, "Downloading model...")
-			
+
 			// Use WhisperKit's download method with default location
 			let downloadedFolder = try await WhisperKit.download(variant: modelName, downloadBase: baseModelCacheDirectory	)
             print("📥 Model downloaded to: \(downloadedFolder)")

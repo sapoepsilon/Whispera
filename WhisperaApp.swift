@@ -7,11 +7,12 @@ struct WhisperaApp: App {
     
     var body: some Scene {
         Settings {
-            SettingsView()
+			SettingsView()
+				.frame(height: 500)
         }
         .windowResizability(.contentSize)
         .windowToolbarStyle(.unified(showsTitle: true))
-        .defaultPosition(.center)
+		.defaultPosition(.center)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About Whispera") {
@@ -127,7 +128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: onboardingView)
         
         onboardingWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
