@@ -5,7 +5,7 @@ import AVFoundation
 struct OnboardingView: View {
     @ObservedObject var audioManager: AudioManager
     @ObservedObject var shortcutManager: GlobalShortcutManager
-	@ObservedObject private var whisperKit = WhisperKitTranscriber.shared
+	@Bindable private var whisperKit = WhisperKitTranscriber.shared
 
     @State private var currentStep = 0
     @State private var selectedModel = ""
@@ -19,6 +19,7 @@ struct OnboardingView: View {
     @AppStorage("selectedModel") private var storedModel = ""
     @AppStorage("launchAtStartup") private var storedLaunchAtLogin = false
     @AppStorage("enableTranslation") private var enableTranslation = false
+    @AppStorage("enableStreaming") private var enableStreaming = true
     @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
     
     private let steps = ["Welcome", "Permissions", "Model", "Shortcut", "Settings", "Test", "Complete"]
@@ -978,7 +979,7 @@ struct TestStepView: View {
 struct ModelSelectionStepView: View {
     @Binding var selectedModel: String
     @ObservedObject var audioManager: AudioManager
-	@ObservedObject private var whisperKit = WhisperKitTranscriber.shared
+	@Bindable private var whisperKit = WhisperKitTranscriber.shared
 	
     @State private var availableModels: [String] = []
     @State private var isLoadingModels = false

@@ -3,9 +3,9 @@ import AppKit
 
 struct MenuBarView: View {
     @ObservedObject var audioManager: AudioManager
-    @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
-	@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
-
+    @Bindable private var whisperKit = WhisperKitTranscriber.shared
+		@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
+    
     var body: some View {
         VStack(spacing: 0) {
             // Header with app icon and title - following design language
@@ -158,7 +158,7 @@ struct MenuBarView: View {
 // MARK: - Status Card
 struct StatusCardView: View {
     @ObservedObject var audioManager: AudioManager
-    @ObservedObject var whisperKit: WhisperKitTranscriber
+    @Bindable var whisperKit: WhisperKitTranscriber
     @AppStorage("selectedModel") private var selectedModel = ""
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
 

@@ -11,8 +11,9 @@ struct SettingsView: View {
     @AppStorage("stopSound") private var stopSound = "Pop"
     @AppStorage("launchAtStartup") private var launchAtStartup = false
     @AppStorage("enableTranslation") private var enableTranslation = false
+    @AppStorage("enableStreaming") private var enableStreaming = true
     @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
-    @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
+    @Bindable private var whisperKit = WhisperKitTranscriber.shared
     @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
     @State private var eventMonitor: Any?
@@ -156,6 +157,18 @@ struct SettingsView: View {
                     Toggle("", isOn: $enableTranslation)
                 }
                 
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Streaming Mode")
+                            .font(.headline)
+                        Text("Use live streaming transcription")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $enableStreaming)
+                }
+                
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -193,6 +206,7 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.bordered)
                 }
+				
             }
             .padding(20)
             

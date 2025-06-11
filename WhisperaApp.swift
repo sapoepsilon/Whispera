@@ -38,6 +38,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var recordingObserver: NSObjectProtocol?
     private var downloadObserver: NSObjectProtocol?
     private var onboardingWindow: NSWindow?
+    private var liveTranscriptionWindow: LiveTranscriptionWindow?
+    private var debugConfirmedWindow: DebugConfirmedWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupDefaultsIfNeeded()
@@ -50,6 +52,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             shortcutManager.setAudioManager(audioManager)
             observeRecordingState()
             observeWindowState()
+            
+            // Initialize live transcription window
+            liveTranscriptionWindow = LiveTranscriptionWindow()
+			
+            
+            // Initialize debug confirmed window
+            debugConfirmedWindow = DebugConfirmedWindow()
             
             // Show onboarding if first launch
             if !hasCompletedOnboarding {

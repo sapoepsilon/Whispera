@@ -16,9 +16,11 @@ class AudioManager: NSObject, ObservableObject {
             NotificationCenter.default.post(name: NSNotification.Name("RecordingStateChanged"), object: nil)
         }
     }
+    @Published var isStreaming = false
     @Published var transcriptionError: String?
     
     @AppStorage("enableTranslation") var enableTranslation = false
+    @AppStorage("enableStreaming") var enableStreaming = true
     
     private var audioRecorder: AVAudioRecorder?
     private var audioFileURL: URL?
@@ -37,22 +39,18 @@ class AudioManager: NSObject, ObservableObject {
     private func checkAndRequestMicrophonePermission() {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .notDetermined:
-            print("🎤 Microphone permission not determined, requesting...")
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 DispatchQueue.main.async {
                     if granted {
-                        print("✅ Microphone access granted")
                     } else {
-                        print("❌ Microphone access denied")
                         self.showMicrophonePermissionAlert()
                     }
                 }
             }
         case .denied, .restricted:
-            print("❌ Microphone access denied or restricted")
             showMicrophonePermissionAlert()
         case .authorized:
-            print("✅ Microphone already authorized")
+			print("✅ Microphone already authorized")
         @unknown default:
             break
         }
@@ -74,11 +72,82 @@ class AudioManager: NSObject, ObservableObject {
     }
     
     func toggleRecording() {
-        print("🎙️ toggleRecording called, current state: \(isRecording), translation: \(enableTranslation)")
-        if isRecording {
-            stopRecording()
+		        if enableStreaming {
+            Task {
+                if isStreaming {
+                    await stopStreamingTranscription()
+                } else {
+                    await startStreamingTranscription()
+                }
+            }
         } else {
-            startRecording()
+            if isRecording {
+                stopRecording()
+            } else {
+                startRecording()
+            }
+        }
+    }
+
+    private func stopStreamingTranscription() async {
+        let finalTranscription = await whisperKitTranscriber.stopStreaming()
+        
+        await MainActor.run {
+            isStreaming = false
+            isTranscribing = false
+            lastTranscription = finalTranscription
+            
+            if !finalTranscription.isEmpty {
+                pasteToFocusedApp(finalTranscription)
+            }
+            
+            playFeedbackSound(start: false)
+        }
+    }
+    
+    private func startStreamingTranscription() async {
+        // Check permissions before streaming
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            await performStreamingTranscription()
+        case .notDetermined:
+            // Request permission first
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        Task {
+                            await self.performStreamingTranscription()
+                        }
+                    } else {
+                        self.showMicrophonePermissionAlert()
+                    }
+                }
+            }
+        case .denied, .restricted:
+            showMicrophonePermissionAlert()
+        @unknown default:
+            break
+        }
+    }
+    
+    private func performStreamingTranscription() async {
+        await MainActor.run {
+            isStreaming = true
+            isTranscribing = true
+            transcriptionError = nil
+            playFeedbackSound(start: true)
+        }
+        
+        do {
+            try await whisperKitTranscriber.stream()
+        } catch {
+            await MainActor.run {
+                isStreaming = false
+                isTranscribing = false
+                transcriptionError = error.localizedDescription
+                lastTranscription = "Streaming failed: \(error.localizedDescription)"
+                playFeedbackSound(start: false)
+            }
         }
     }
     
@@ -129,9 +198,7 @@ class AudioManager: NSObject, ObservableObject {
 //            recordingIndicator.showIndicator()
             
             playFeedbackSound(start: true)
-            print("🎤 Recording started successfully")
         } catch {
-            print("❌ Failed to start recording: \(error)")
             // Show error alert
             let alert = NSAlert()
             alert.messageText = "Recording Error"
@@ -176,7 +243,7 @@ class AudioManager: NSObject, ObservableObject {
         transcriptionError = nil
         
         do {
-            // Always use real WhisperKit transcription
+            // Use file-based transcription (streaming is handled separately)
             let transcription = try await whisperKitTranscriber.transcribe(audioURL: fileURL, enableTranslation: enableTranslation)
             
             // Update UI on main thread
@@ -205,16 +272,17 @@ class AudioManager: NSObject, ObservableObject {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         
-        // Simulate Cmd+V
-        let source = CGEventSource(stateID: .combinedSessionState)
-        let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
-        let keyUpEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
-        
-        keyDownEvent?.flags = .maskCommand
-        keyUpEvent?.flags = .maskCommand
-        
-        keyDownEvent?.post(tap: .cghidEventTap)
-        keyUpEvent?.post(tap: .cghidEventTap)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let source = CGEventSource(stateID: .combinedSessionState)
+            let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
+            let keyUpEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
+            
+            keyDownEvent?.flags = .maskCommand
+            keyUpEvent?.flags = .maskCommand
+            
+            keyDownEvent?.post(tap: .cghidEventTap)
+            keyUpEvent?.post(tap: .cghidEventTap)
+        }
     }
     
     private func getApplicationSupportDirectory() -> URL {

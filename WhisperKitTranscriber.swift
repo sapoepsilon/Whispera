@@ -2,23 +2,63 @@ import Foundation
 import AVFoundation
 import WhisperKit
 import SwiftUI
+import AppKit
 
 @MainActor
-class WhisperKitTranscriber: ObservableObject {
+@Observable class WhisperKitTranscriber {
      var isInitialized = false
      var isInitializing = false
+	 var shouldStreamAudio: Bool = true
      var initializationProgress: Double = 0.0
      var initializationStatus = "Starting..."
      var availableModels: [String] = []
      var currentModel: String?
      var downloadedModels: Set<String> = []
+	 var currentText: String = ""
+	 
+	 // Live transcription state
+	 var pendingText: String = ""
+	 var lastPendingText: String = ""
+	 var shouldShowWindow: Bool = false
+	 var isTranscribing: Bool = false
+	 
+	 // Debug confirmed text state
+	 var confirmedText: String = ""
+	 var shouldShowDebugWindow: Bool = false
+	 var decodingOptions: DecodingOptions?
+	 // Get the display text for the window - use pending text
+	 var displayText: String {
+	 	return pendingText
+	 }
+	 
+	 // Get the latest word from pending text
+	 var latestWord: String {
+	 	let words = pendingText.split(separator: " ")
+	 	return words.last?.description ?? ""
+	 }
+	 
+	 // Clear live transcription state
+	 func clearLiveTranscriptionState() {
+	 	pendingText = ""
+	 	lastPendingText = ""
+	 	shouldShowWindow = false
+	 	isTranscribing = false
+	 	shouldShowDebugWindow = false
+	 }
     
-    @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
+    private var selectedLanguage: String {
+        get {
+            UserDefaults.standard.string(forKey: "selectedLanguage") ?? Constants.defaultLanguageName
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "selectedLanguage")
+        }
+    }
         
     // WhisperKit model state tracking
-    @Published var modelState: String = "unloaded"
-    @Published var isModelLoading: Bool = false
-    @Published var isModelLoaded: Bool = false
+    var modelState: String = "unloaded"
+    var isModelLoading: Bool = false
+    var isModelLoaded: Bool = false
     
 	private func modelCacheDirectory(for modelName: String) -> URL? {
 		guard let appSupport = FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask).first else {
@@ -39,7 +79,7 @@ class WhisperKitTranscriber: ObservableObject {
 		return baseModelCacheDirectory?.appendingPathComponent("models/argmaxinc/whisperkit-coreml/\(name)")
 	}
 	
-    @Published var isDownloadingModel = false {
+    var isDownloadingModel = false {
         didSet {
             // Notify observers when download state changes
             if isDownloadingModel != oldValue {
@@ -47,10 +87,11 @@ class WhisperKitTranscriber: ObservableObject {
             }
         }
     }
-    @Published var downloadProgress: Double = 0.0
-    @Published var downloadingModelName: String?
+    var downloadProgress: Double = 0.0
+    var downloadingModelName: String?
     
     @MainActor var whisperKit: WhisperKit?
+	@MainActor var audioStreamer: AudioStreamTranscriber?
     @MainActor private var initializationTask: Task<Void, Never>?
     
     // Swift 6 compliant singleton pattern
@@ -62,13 +103,11 @@ class WhisperKitTranscriber: ObservableObject {
 	private init() {
 		Task{
 			downloadedModels = try await getDownloadedModels()
-			print("downloaded models: \(downloadedModels)")
 		}
     }
     
     func startInitialization() {
         guard initializationTask == nil else { 
-            print("📋 WhisperKit initialization already in progress...")
             return 
         }
         
@@ -83,14 +122,12 @@ class WhisperKitTranscriber: ObservableObject {
     
     private func initialize() async {
         guard !isInitialized else {
-            print("📋 WhisperKit already initialized")
             isInitializing = false
             return
         }
         await updateProgress(0.1, "Loading WhisperKit framework...")
         try? await Task.sleep(nanoseconds: 500_000_000) // Small delay for UI feedback
         
-        print("🔄 Initializing WhisperKit framework...")
         await updateProgress(0.3, "Setting up AI framework...")
         
         // Sync our cache with what's actually on disk
@@ -107,53 +144,254 @@ class WhisperKitTranscriber: ObservableObject {
                     self.setupModelStateCallback(for: whisperKitInstance)
                     return whisperKitInstance
                 }.value
-                
-                print("✅ WhisperKit initialized with existing models")
             } catch {
-                print("⚠️ Failed to initialize with existing models: \(error)")
-                print("📋 Will initialize WhisperKit when first model is downloaded")
             }
         } else {
             // No models downloaded yet - we'll initialize when first model is downloaded
-            print("📋 No models downloaded yet - WhisperKit will be initialized with first model download")
         }
         
         await updateProgress(1.0, "Ready for model selection!")
         isInitialized = true
         isInitializing = false
         
-        print("✅ WhisperKit framework initialized - ready for transcription")
-        
         initializationTask = nil
     }
-    
+	private func showModelNotLoadedAlert() {
+		Task { @MainActor in
+			let alert = NSAlert()
+			alert.messageText = "Model Not Loaded"
+			alert.informativeText = "Please load a Whisper model first before using streaming mode. You can do this in Settings."
+			alert.alertStyle = .warning
+			alert.addButton(withTitle: "OK")
+			alert.runModal()
+		}
+	}
+	
+	private func initializeStreamer() async {
+		// Return early if already initialized
+		guard audioStreamer == nil else { 
+			return 
+		}
+		
+		guard let whisperKit = whisperKit else {
+			showModelNotLoadedAlert()
+			return
+		}
+		
+		guard let tokenizer = whisperKit.tokenizer else {
+			showModelNotLoadedAlert()
+			return
+		}
+		
+		// Get textDecoder (model should be loaded)
+		let textDecoder = whisperKit.textDecoder
+		
+		guard let decodingOptions else {
+			print("Decoding options not set yet, waiting...")
+			return
+		}
+		
+		audioStreamer = AudioStreamTranscriber(
+			audioEncoder: whisperKit.audioEncoder,
+			featureExtractor: whisperKit.featureExtractor,
+			segmentSeeker: whisperKit.segmentSeeker,
+			textDecoder: textDecoder,
+			tokenizer: tokenizer,
+			audioProcessor: whisperKit.audioProcessor,
+			decodingOptions: decodingOptions,
+			requiredSegmentsForConfirmation: 1,
+			stateChangeCallback: { [weak self] oldState, newState in
+				Task { @MainActor in
+					guard let self = self else { return }
+					
+					let formatter = DateFormatter()
+					formatter.dateFormat = "HH:mm:ss.SSS"
+					let timestamp = formatter.string(from: Date())
+					let newUnconfirmedText = if !newState.unconfirmedSegments.isEmpty {
+						newState.unconfirmedSegments
+							.map { $0.text.trimmingCharacters(in: .whitespaces) }
+							.joined(separator: " ")
+						
+						
+					} else {
+						""
+					}
+					// Only update pending text if it actually changed
+					if newUnconfirmedText != self.lastPendingText {
+						self.lastPendingText = self.pendingText
+						self.pendingText = newUnconfirmedText
+						self.checkForFinalConfirmation()
+					}
+					
+					// Show window when we have pending text
+					let shouldShow = !self.pendingText.isEmpty
+					
+					if shouldShow != self.shouldShowWindow {
+						self.shouldShowWindow = shouldShow
+					}
+					
+					// Keep current text for backward compatibility
+					let hasCurrentText = !newState.currentText.isEmpty &&
+					!newState.currentText.contains("Waiting for speech")
+					
+					if hasCurrentText && newState.currentText != oldState.currentText {
+						self.currentText = newState.currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+					}
+					// Handle confirmed segments for debug window
+					if !newState.confirmedSegments.isEmpty &&
+						newState.confirmedSegments.count != oldState.confirmedSegments.count {
+						let newConfirmedText = newState.confirmedSegments
+							.map { $0.text.trimmingCharacters(in: .whitespaces) }
+							.joined(separator: " ")
+						
+						if newConfirmedText != self.confirmedText {
+							self.confirmedText = newConfirmedText
+							self.shouldShowDebugWindow = !newConfirmedText.isEmpty
+							
+							// Check if we're waiting for confirmation
+							self.checkForFinalConfirmation()
+						}
+					}
+					
+					// When recording stops, add any remaining unconfirmed text
+					if !newState.isRecording {
+						let unconfirmedText = newState.unconfirmedText.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+						if !unconfirmedText.isEmpty && !self.confirmedText.hasSuffix(unconfirmedText) {
+							// Split into words for better overlap detection
+							let confirmedWords = self.confirmedText.split(separator: " ").map(String.init)
+							let unconfirmedWords = unconfirmedText.split(separator: " ").map(String.init)
+							
+							var textToAppend = unconfirmedText
+							
+							// Check for word-level overlap
+							if !confirmedWords.isEmpty && !unconfirmedWords.isEmpty {
+								// Try to find overlap starting from the end of confirmed text
+								for overlapSize in (1...min(confirmedWords.count, unconfirmedWords.count)).reversed() {
+									let confirmedTail = confirmedWords.suffix(overlapSize)
+									let unconfirmedHead = unconfirmedWords.prefix(overlapSize)
+									
+									if confirmedTail.elementsEqual(unconfirmedHead) {
+										// Found word-level overlap, append only the non-overlapping part
+										let remainingWords = unconfirmedWords.dropFirst(overlapSize)
+										textToAppend = remainingWords.joined(separator: " ")
+										break
+									}
+								}
+							}
+							
+							if !textToAppend.isEmpty {
+								self.confirmedText += " " + textToAppend
+							}
+						}
+						self.clearLiveTranscriptionState()
+					} else if !newState.isRecording && newState.unconfirmedText.isEmpty {
+						self.clearLiveTranscriptionState()
+					}
+				}
+			}
+		)
+		
+	}
+	
     private func updateProgress(_ progress: Double, _ status: String) async {
         await MainActor.run {
             self.initializationProgress = progress
             self.initializationStatus = status
         }
     }
+	
+	func checkIfWhisperKitIsAvailable() async throws {
+		guard isInitialized else {
+			throw WhisperKitError.notInitialized
+		}
+		guard whisperKit != nil else {
+			throw WhisperKitError.noModelLoaded
+		}
+		guard await isWhisperKitReady() else {
+			throw WhisperKitError.notReady
+		}
+	}
+	
+	func stream() async throws {
+		try await checkIfWhisperKitIsAvailable()
+		await initializeStreamer()
+		confirmedText = ""
+		isTranscribing = true
+		try await audioStreamer?.startStreamTranscription()
+	}
+	
+	private var isWaitingForConfirmation = false
+	private var confirmationContinuation: CheckedContinuation<Void, Never>?
+	
+	func stopStreaming() async -> String {
+		await audioStreamer?.stopStreamTranscription()
+		
+		// Wait until transcription is complete
+		while isTranscribing {
+			try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+		}
+		
+		return confirmedText
+	}
+	
+	private func waitForFinalConfirmation() async {
+		// If there are no unconfirmed segments, return immediately
+		guard audioStreamer != nil else { return }
+		
+		// Set up waiting state
+		isWaitingForConfirmation = true
+		
+		// Wait for confirmation or timeout after 3 seconds
+		await withTimeout(seconds: 3.0) {
+			await withCheckedContinuation { continuation in
+				self.confirmationContinuation = continuation
+				
+				// Check immediately if already confirmed
+				Task { @MainActor in
+					self.checkForFinalConfirmation()
+				}
+			}
+		}
+		
+		// Clean up
+		isWaitingForConfirmation = false
+		confirmationContinuation = nil
+	}
+	
+	private func checkForFinalConfirmation() {
+		// If we're waiting and there are no unconfirmed segments, we're done
+		if isWaitingForConfirmation && pendingText.isEmpty {
+			confirmationContinuation?.resume()
+			confirmationContinuation = nil
+		}
+	}
+	
+	private func withTimeout(seconds: TimeInterval, operation: @escaping () async -> Void) async {
+		await withTaskGroup(of: Void.self) { group in
+			group.addTask {
+				await operation()
+			}
+			
+			group.addTask {
+				try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+			}
+			
+			// Wait for first task to complete, then cancel all
+			await group.next()
+			group.cancelAll()
+		}
+	}
     
-    func transcribe(audioURL: URL, enableTranslation: Bool) async throws -> String {
-        guard isInitialized else {
-            throw WhisperKitError.notInitialized
-        }
+	func transcribe(audioURL: URL, enableTranslation: Bool) async throws -> String {
+		try await checkIfWhisperKitIsAvailable()
         
-        guard whisperKit != nil else {
-            throw WhisperKitError.noModelLoaded
-        }
-        
-        guard await isWhisperKitReady() else {
-            throw WhisperKitError.notReady
-        }
-        
+        // Implement retry mechanism for MPS resource loading failures
         let maxRetries = 3
         var lastError: Error?
 		let task: DecodingTask = enableTranslation ? .transcribe : .translate // For some reason this gets reversed
 		let languageCode = Constants.languageCode(for: selectedLanguage)
 
-		print("transcripting mode: \(task.description) language: \(languageCode)")
-		let	optionS = DecodingOptions(
+		decodingOptions = DecodingOptions(
 				verbose: false,
 				task: task,
 				language: languageCode,
@@ -178,21 +416,18 @@ class WhisperKitTranscriber: ObservableObject {
                         throw WhisperKitError.notInitialized
                     }
 					if whisperKitInstance.modelState == .loading {
-						print("Model isn't loaded yet. \(whisperKitInstance.modelState )")
 					}
                     
                     if attempt > 1 {
-                        print("🔄 Re-checking MPS readiness before retry...")
                         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s for MPS
                     }
-					return try await whisperKitInstance.transcribe(audioPath: audioURL.path, decodeOptions: optionS)
+					return try await whisperKitInstance.transcribe(audioPath: audioURL.path, decodeOptions: decodingOptions)
                 }.value
                 
                 if !result.isEmpty {
                     let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
                     
                     if !transcription.isEmpty {
-                        print("✅ WhisperKit transcription completed: \(transcription)")
                         
                         // Clean up processed file if different from original
                         if audioURL != audioURL {
@@ -201,11 +436,9 @@ class WhisperKitTranscriber: ObservableObject {
                         
                         return transcription
                     } else {
-                        print("⚠️ Transcription returned empty text")
                         return "No speech detected"
                     }
                 } else {
-                    print("⚠️ No transcription segments returned")
                     return "No speech detected"
                 }
                 
@@ -218,21 +451,17 @@ class WhisperKitTranscriber: ObservableObject {
                    errorString.contains("MPSGraphComputePackage") ||
                    errorString.contains("Metal") {
                     
-                    print("⚠️ Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
                     
                     if attempt < maxRetries {
                         // Exponential backoff: 1s, 2s, 4s
                         let delayNanoseconds = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
-                        print("⏳ Waiting \(delayNanoseconds / 1_000_000_000)s before retry...")
                         try? await Task.sleep(nanoseconds: delayNanoseconds)
                         
                         // Force MPS to reinitialize by giving it more time
-                        print("🔄 Allowing MPS to reinitialize...")
                         try? await Task.sleep(nanoseconds: 1_000_000_000) // Additional 1s for MPS
                     }
                 } else {
                     // Non-MPS error, don't retry
-                    print("❌ WhisperKit transcription failed with non-retryable error: \(error)")
                     break
                 }
             }
@@ -268,13 +497,11 @@ class WhisperKitTranscriber: ObservableObject {
             throw WhisperKitError.modelNotFound(model)
         }
         
-        print("🔄 Switching to model: \(model)")
         
         // Check if model is already downloaded
         let currentlyDownloadedModels = try await getDownloadedModels()
         
         if !currentlyDownloadedModels.contains(model) {
-            print("📥 Model \(model) not found locally, downloading first...")
             try await downloadModel(model)
             return // downloadModel already creates the WhisperKit instance
         }
@@ -286,8 +513,7 @@ class WhisperKitTranscriber: ObservableObject {
         do {
             await updateDownloadProgress(0.2, "Preparing to load \(model)...")
             
-            let recommendedModels = WhisperKit.recommendedModels()
-            print("👂🏼 Recommended models: \(recommendedModels)")
+            _ = WhisperKit.recommendedModels()
             
             await updateDownloadProgress(0.6, "Loading \(model)...")
             // Use WhisperKit with specific model and custom model directory
@@ -305,13 +531,11 @@ class WhisperKitTranscriber: ObservableObject {
             isDownloadingModel = false
             downloadingModelName = nil
             
-            print("✅ Switched to model: \(model)")
         } catch {
             isDownloadingModel = false
             downloadingModelName = nil
             downloadProgress = 0.0
             
-            print("❌ Failed to switch to model \(model): \(error)")
             throw WhisperKitError.transcriptionFailed("Failed to load model: \(error.localizedDescription)")
         }
     }
@@ -331,7 +555,6 @@ class WhisperKitTranscriber: ObservableObject {
 		
 		// Check if the models directory exists
 		guard FileManager.default.fileExists(atPath: baseDir.path) else {
-			print("📝 WhisperKit models directory doesn't exist yet")
 			return Set<String>()
 		}
 		
@@ -351,7 +574,6 @@ class WhisperKitTranscriber: ObservableObject {
 			return modelNames
 			
 		} catch {
-			print("❌ Error reading WhisperKit models directory: \(error)")
 			throw error
 		}
 	}
@@ -367,9 +589,7 @@ class WhisperKitTranscriber: ObservableObject {
             let uniqueModels = Array(Set(fetchedModels)).sorted()
             availableModels = uniqueModels
             
-            print("✅ Refreshed available models: \(availableModels.count) unique models")
         } catch {
-            print("❌ Failed to refresh available models, using defaults: \(error)")
             // Fallback to defaults instead of throwing
             availableModels = ["openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small", "openai_whisper-small.en"]
         }
@@ -418,8 +638,7 @@ class WhisperKitTranscriber: ObservableObject {
 			await updateDownloadProgress(0.2, "Downloading model...")
 
 			// Use WhisperKit's download method with default location
-			let downloadedFolder = try await WhisperKit.download(variant: modelName, downloadBase: baseModelCacheDirectory	)
-            print("📥 Model downloaded to: \(downloadedFolder)")
+			_ = try await WhisperKit.download(variant: modelName, downloadBase: baseModelCacheDirectory	)
             
             await updateDownloadProgress(0.8, "Initializing model...")
             
@@ -431,13 +650,10 @@ class WhisperKitTranscriber: ObservableObject {
                 return whisperKitInstance
             }.value
             currentModel = modelName
-            print("✅ WhisperKit initialized with model: \(modelName)")
             
             await updateDownloadProgress(1.0, "Model ready!")
-            print("✅ Successfully downloaded model: \(modelName)")
             
         } catch {
-            print("❌ Failed to download model \(modelName): \(error)")
             throw error
         }
         
@@ -469,7 +685,6 @@ class WhisperKitTranscriber: ObservableObject {
             // Buffer is already zeroed (silent)
             try audioFile.write(from: silentBuffer)
         } catch {
-            print("⚠️ Failed to create silent audio file: \(error)")
         }
         
         return audioURL
@@ -531,6 +746,7 @@ class WhisperKitTranscriber: ObservableObject {
         modelState = stateString
         isModelLoading = (newState == .loading || newState == .prewarming)
         isModelLoaded = (newState == .loaded || newState == .prewarmed)
+		
         
         print("🎯 WhisperKit model state changed: \(oldState.map(String.init(describing:)) ?? "nil") -> \(stateString)")
         
