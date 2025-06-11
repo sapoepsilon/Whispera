@@ -41,6 +41,7 @@ import AppKit
 	 func clearLiveTranscriptionState() {
 	 	pendingText = ""
 	 	lastPendingText = ""
+	 	currentText = ""
 	 	shouldShowWindow = false
 	 	isTranscribing = false
 	 	shouldShowDebugWindow = false
@@ -263,6 +264,11 @@ import AppKit
 					print("Error processing final buffer: \(error)")
 				}
 			}
+		}
+		
+		// Clear live transcription state to hide windows and reset text
+		await MainActor.run {
+			clearLiveTranscriptionState()
 		}
 		
 		return confirmedText
