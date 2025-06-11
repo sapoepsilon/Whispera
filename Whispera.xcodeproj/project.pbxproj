@@ -24,6 +24,7 @@
 		D6B81FB42DEFF5CC00D32F2A /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6B81FB32DEFF5CC00D32F2A /* WhisperKit */; };
 		D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */; };
 		D6B81FB72DEFFE4100D32F2A /* LlamaViewForOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B81FB82DEFFE4200D32F2A /* LlamaViewForOnboarding.swift */; };
+		D6C81FC92E0001AB00D32F2A /* ContextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +44,7 @@
 		D66570372DF502FA00EEA9D6 /* LlamaState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaState.swift; sourceTree = "<group>"; };
 		D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
 		D6B81FB82DEFFE4200D32F2A /* LlamaViewForOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaViewForOnboarding.swift; sourceTree = "<group>"; };
+		D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +76,7 @@
 				2A2A2A2A2A2A2A2A2A2A2A2D /* AudioManager.swift */,
 				D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */,
 				D6B81FB82DEFFE4200D32F2A /* LlamaViewForOnboarding.swift */,
+				D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2F /* GlobalShortcutManager.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */,
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */,
@@ -173,6 +176,7 @@
 				D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */,
 				D64B1B292DF11A7B00D2CEAB /* OnboardingView.swift in Sources */,
 				D6B81FB72DEFFE4100D32F2A /* LlamaViewForOnboarding.swift in Sources */,
+				D6C81FC92E0001AB00D32F2A /* ContextProvider.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1F /* GlobalShortcutManager.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A21 /* WhisperKitTranscriber.swift in Sources */,
 			);

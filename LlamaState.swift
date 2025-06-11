@@ -275,14 +275,22 @@ struct CommandResult: Identifiable {
 			return nil
 		}
 		
+		// Get current system context
+		let context = ContextProvider.shared.getCurrentContext()
+		
 		let systemPrompt = """
 		You are a bash command generator for macOS. Your role is to output ONLY the bash command that accomplishes the user's request.
+		
+		Current System Context:
+		\(context)
+		
 		Rules:
 		1. Output ONLY the command, no explanations or markdown
 		2. If unclear, output a clarifying question starting with "CLARIFY:"
 		3. For dangerous operations, output "DANGEROUS:" followed by the command
 		4. Use macOS-specific commands when appropriate
 		5. Never output multiple commands unless using && or ;
+		6. Use the current directory context when relevant (e.g., "list files" should use current directory)
 		"""
 		
 		// Log the request in a cleaner format
