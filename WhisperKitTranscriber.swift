@@ -94,6 +94,12 @@ import AppKit
 	@MainActor var audioStreamer: AudioStreamTranscriber?
     @MainActor private var initializationTask: Task<Void, Never>?
     
+    // Manual streaming properties (WhisperAX approach)
+    @MainActor private var transcriptionTask: Task<Void, Never>?
+    private var lastBufferSize: Int = 0
+    private var realtimeDelayInterval: Double = 1.0
+    private var currentChunks: [Int: (chunkText: [String], fallbacks: Int)] = [:]
+    
     // Swift 6 compliant singleton pattern
     static let shared: WhisperKitTranscriber = {
         let instance = WhisperKitTranscriber()
