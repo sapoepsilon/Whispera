@@ -408,6 +408,121 @@ import AppKit
 		transcriptionTask?.cancel()
 		transcriptionTask = nil
 	}
+	
+	private func transcribeCurrentBuffer(delayInterval: Float = 1.0) async throws {
+		guard let whisperKit = whisperKit else { return }
+		
+		// Check if model is actually loaded
+		guard whisperKit.modelState == .loaded || whisperKit.modelState == .prewarmed else {
+			await MainActor.run {
+				pendingText = "Model not loaded..."
+			}
+			try await Task.sleep(nanoseconds: 500_000_000) // Wait 500ms
+			return
+		}
+		
+		// Retrieve the current audio buffer from the audio processor
+		let currentBuffer = whisperKit.audioProcessor.audioSamples
+		
+		// Calculate the size and duration of the next buffer segment
+		let nextBufferSize = currentBuffer.count - lastBufferSize
+		let nextBufferSeconds = Float(nextBufferSize) / Float(WhisperKit.sampleRate)
+		
+		// Only run the transcribe if the next buffer has at least `delayInterval` seconds of audio
+		guard nextBufferSeconds > delayInterval else {
+			await MainActor.run {
+				if pendingText.isEmpty {
+					pendingText = "Waiting for speech..."
+				}
+			}
+			try await Task.sleep(nanoseconds: 100_000_000) // sleep for 100ms for next buffer
+			return
+		}
+		
+		// Store this for next iterations
+		lastBufferSize = currentBuffer.count
+		
+		// Transcribe the current buffer
+		let transcription = try await transcribeAudioSamples(Array(currentBuffer))
+		
+		await MainActor.run {
+			guard let segments = transcription?.segments else {
+				return
+			}
+			
+			// Update confirmed segments and pending text like the original approach
+			if segments.count > 1 { // Using 2 for confirmation like WhisperAX default
+				let numberOfSegmentsToConfirm = segments.count - 1
+				let confirmedSegmentsArray = Array(segments.prefix(numberOfSegmentsToConfirm))
+				let remainingSegments = Array(segments.suffix(1))
+				
+				// Add new confirmed text
+				let newConfirmedText = confirmedSegmentsArray
+					.map { $0.text.trimmingCharacters(in: .whitespaces) }
+					.joined(separator: " ")
+				
+				if !newConfirmedText.isEmpty && !confirmedText.hasSuffix(newConfirmedText) {
+					if !confirmedText.isEmpty {
+						confirmedText += " " + newConfirmedText
+					} else {
+						confirmedText = newConfirmedText
+					}
+				}
+				
+				// Update pending text with unconfirmed segments
+				pendingText = remainingSegments
+					.map { $0.text.trimmingCharacters(in: .whitespaces) }
+					.joined(separator: " ")
+			} else {
+				// All segments are unconfirmed
+				pendingText = segments
+					.map { $0.text.trimmingCharacters(in: .whitespaces) }
+					.joined(separator: " ")
+			}
+			
+			// Show window when we have pending text
+			shouldShowWindow = !pendingText.isEmpty
+		}
+	}
+	
+	private func transcribeAudioSamples(_ samples: [Float]) async throws -> TranscriptionResult? {
+		guard let whisperKit = whisperKit else { return nil }
+		
+		let languageCode = Constants.languageCode(for: selectedLanguage)
+		let task: DecodingTask = .transcribe // Always transcribe for streaming
+		
+		let options = DecodingOptions(
+			verbose: false,
+			task: task,
+			language: languageCode,
+			temperature: 0.0,
+			temperatureFallbackCount: 3, // More fallbacks for better accuracy
+			sampleLength: 448, // Larger context window
+			usePrefillPrompt: true,
+			usePrefillCache: true,
+			skipSpecialTokens: true,
+			withoutTimestamps: false,
+			wordTimestamps: true,
+			clipTimestamps: [0]
+		)
+		
+		// Decoding callback for real-time updates
+		let decodingCallback: ((TranscriptionProgress) -> Bool?) = { progress in
+			Task { @MainActor in
+				// Update current text for decoder preview
+				self.currentText = progress.text
+			}
+			return nil // Continue transcription
+		}
+		
+		let transcriptionResults: [TranscriptionResult] = try await whisperKit.transcribe(
+			audioArray: samples,
+			decodeOptions: options,
+			callback: decodingCallback
+		)
+		
+		return transcriptionResults.first
+	}
     
 	func transcribe(audioURL: URL, enableTranslation: Bool) async throws -> String {
 		try await checkIfWhisperKitIsAvailable()
