@@ -310,10 +310,10 @@ import AppKit
 		guard isInitialized else {
 			throw WhisperKitError.notInitialized
 		}
-		guard whisperKit != nil else {
+		guard let whisperKit = whisperKit else {
 			throw WhisperKitError.noModelLoaded
 		}
-		guard await isWhisperKitReady() else {
+		guard whisperKit.modelState == .loaded || whisperKit.modelState == .prewarmed else {
 			throw WhisperKitError.notReady
 		}
 	}
