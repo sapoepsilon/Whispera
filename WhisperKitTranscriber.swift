@@ -320,21 +320,75 @@ import AppKit
 	
 	func stream() async throws {
 		try await checkIfWhisperKitIsAvailable()
-		await initializeStreamer()
+		
+		guard let whisperKit = whisperKit else {
+			throw WhisperKitError.noModelLoaded
+		}
+		
+		// Reset state
 		confirmedText = ""
+		pendingText = ""
+		lastBufferSize = 0
+		currentChunks = [:]
+		
+		// Start audio recording
+		guard await AudioProcessor.requestRecordPermission() else {
+			throw WhisperKitError.transcriptionFailed("Microphone access denied")
+		}
+		
 		isTranscribing = true
-		try await audioStreamer?.startStreamTranscription()
+		
+		try whisperKit.audioProcessor.startRecordingLive { _ in
+			// Audio buffer callback - we don't need to do anything here
+			// The realtimeLoop will handle checking the buffer
+		}
+		
+		// Start the realtime transcription loop
+		realtimeLoop()
 	}
 	
-	private var isWaitingForConfirmation = false
-	private var confirmationContinuation: CheckedContinuation<Void, Never>?
-	
 	func stopStreaming() async -> String {
-		await audioStreamer?.stopStreamTranscription()
+		// Stop recording first
+		whisperKit?.audioProcessor.stopRecording()
 		
-		// Wait until transcription is complete
-		while isTranscribing {
-			try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+		// Stop the transcription loop
+		stopRealtimeTranscription()
+		
+		// Process any remaining audio in the buffer
+		if let whisperKit = whisperKit {
+			let remainingBuffer = whisperKit.audioProcessor.audioSamples
+			if remainingBuffer.count > lastBufferSize {
+				// Transcribe final buffer
+				do {
+					let finalTranscription = try await transcribeAudioSamples(Array(remainingBuffer))
+					await MainActor.run {
+						if let segments = finalTranscription?.segments {
+							let finalText = segments
+								.map { $0.text.trimmingCharacters(in: .whitespaces) }
+								.joined(separator: " ")
+							
+							if !finalText.isEmpty {
+								if !confirmedText.isEmpty {
+									confirmedText += " " + finalText
+								} else {
+									confirmedText = finalText
+								}
+							}
+						}
+						
+						// Add any remaining pending text
+						if !pendingText.isEmpty {
+							if !confirmedText.isEmpty {
+								confirmedText += " " + pendingText
+							} else {
+								confirmedText = pendingText
+							}
+						}
+					}
+				} catch {
+					print("Error processing final buffer: \(error)")
+				}
+			}
 		}
 		
 		return confirmedText
