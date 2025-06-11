@@ -91,7 +91,6 @@ import AppKit
     var downloadingModelName: String?
     
     @MainActor var whisperKit: WhisperKit?
-	@MainActor var audioStreamer: AudioStreamTranscriber?
     @MainActor private var initializationTask: Task<Void, Never>?
     
     // Manual streaming properties (WhisperAX approach)
@@ -173,131 +172,6 @@ import AppKit
 		}
 	}
 	
-	private func initializeStreamer() async {
-		// Return early if already initialized
-		guard audioStreamer == nil else { 
-			return 
-		}
-		
-		guard let whisperKit = whisperKit else {
-			showModelNotLoadedAlert()
-			return
-		}
-		
-		guard let tokenizer = whisperKit.tokenizer else {
-			showModelNotLoadedAlert()
-			return
-		}
-		
-		// Get textDecoder (model should be loaded)
-		let textDecoder = whisperKit.textDecoder
-		
-		guard let decodingOptions else {
-			print("Decoding options not set yet, waiting...")
-			return
-		}
-		
-		audioStreamer = AudioStreamTranscriber(
-			audioEncoder: whisperKit.audioEncoder,
-			featureExtractor: whisperKit.featureExtractor,
-			segmentSeeker: whisperKit.segmentSeeker,
-			textDecoder: textDecoder,
-			tokenizer: tokenizer,
-			audioProcessor: whisperKit.audioProcessor,
-			decodingOptions: decodingOptions,
-			requiredSegmentsForConfirmation: 1,
-			stateChangeCallback: { [weak self] oldState, newState in
-				Task { @MainActor in
-					guard let self = self else { return }
-					
-					let formatter = DateFormatter()
-					formatter.dateFormat = "HH:mm:ss.SSS"
-					let timestamp = formatter.string(from: Date())
-					let newUnconfirmedText = if !newState.unconfirmedSegments.isEmpty {
-						newState.unconfirmedSegments
-							.map { $0.text.trimmingCharacters(in: .whitespaces) }
-							.joined(separator: " ")
-						
-						
-					} else {
-						""
-					}
-					// Only update pending text if it actually changed
-					if newUnconfirmedText != self.lastPendingText {
-						self.lastPendingText = self.pendingText
-						self.pendingText = newUnconfirmedText
-						self.checkForFinalConfirmation()
-					}
-					
-					// Show window when we have pending text
-					let shouldShow = !self.pendingText.isEmpty
-					
-					if shouldShow != self.shouldShowWindow {
-						self.shouldShowWindow = shouldShow
-					}
-					
-					// Keep current text for backward compatibility
-					let hasCurrentText = !newState.currentText.isEmpty &&
-					!newState.currentText.contains("Waiting for speech")
-					
-					if hasCurrentText && newState.currentText != oldState.currentText {
-						self.currentText = newState.currentText.trimmingCharacters(in: .whitespacesAndNewlines)
-					}
-					// Handle confirmed segments for debug window
-					if !newState.confirmedSegments.isEmpty &&
-						newState.confirmedSegments.count != oldState.confirmedSegments.count {
-						let newConfirmedText = newState.confirmedSegments
-							.map { $0.text.trimmingCharacters(in: .whitespaces) }
-							.joined(separator: " ")
-						
-						if newConfirmedText != self.confirmedText {
-							self.confirmedText = newConfirmedText
-							self.shouldShowDebugWindow = !newConfirmedText.isEmpty
-							
-							// Check if we're waiting for confirmation
-							self.checkForFinalConfirmation()
-						}
-					}
-					
-					// When recording stops, add any remaining unconfirmed text
-					if !newState.isRecording {
-						let unconfirmedText = newState.unconfirmedText.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-						if !unconfirmedText.isEmpty && !self.confirmedText.hasSuffix(unconfirmedText) {
-							// Split into words for better overlap detection
-							let confirmedWords = self.confirmedText.split(separator: " ").map(String.init)
-							let unconfirmedWords = unconfirmedText.split(separator: " ").map(String.init)
-							
-							var textToAppend = unconfirmedText
-							
-							// Check for word-level overlap
-							if !confirmedWords.isEmpty && !unconfirmedWords.isEmpty {
-								// Try to find overlap starting from the end of confirmed text
-								for overlapSize in (1...min(confirmedWords.count, unconfirmedWords.count)).reversed() {
-									let confirmedTail = confirmedWords.suffix(overlapSize)
-									let unconfirmedHead = unconfirmedWords.prefix(overlapSize)
-									
-									if confirmedTail.elementsEqual(unconfirmedHead) {
-										// Found word-level overlap, append only the non-overlapping part
-										let remainingWords = unconfirmedWords.dropFirst(overlapSize)
-										textToAppend = remainingWords.joined(separator: " ")
-										break
-									}
-								}
-							}
-							
-							if !textToAppend.isEmpty {
-								self.confirmedText += " " + textToAppend
-							}
-						}
-						self.clearLiveTranscriptionState()
-					} else if !newState.isRecording && newState.unconfirmedText.isEmpty {
-						self.clearLiveTranscriptionState()
-					}
-				}
-			}
-		)
-		
-	}
 	
     private func updateProgress(_ progress: Double, _ status: String) async {
         await MainActor.run {
@@ -394,53 +268,6 @@ import AppKit
 		return confirmedText
 	}
 	
-	private func waitForFinalConfirmation() async {
-		// If there are no unconfirmed segments, return immediately
-		guard audioStreamer != nil else { return }
-		
-		// Set up waiting state
-		isWaitingForConfirmation = true
-		
-		// Wait for confirmation or timeout after 3 seconds
-		await withTimeout(seconds: 3.0) {
-			await withCheckedContinuation { continuation in
-				self.confirmationContinuation = continuation
-				
-				// Check immediately if already confirmed
-				Task { @MainActor in
-					self.checkForFinalConfirmation()
-				}
-			}
-		}
-		
-		// Clean up
-		isWaitingForConfirmation = false
-		confirmationContinuation = nil
-	}
-	
-	private func checkForFinalConfirmation() {
-		// If we're waiting and there are no unconfirmed segments, we're done
-		if isWaitingForConfirmation && pendingText.isEmpty {
-			confirmationContinuation?.resume()
-			confirmationContinuation = nil
-		}
-	}
-	
-	private func withTimeout(seconds: TimeInterval, operation: @escaping () async -> Void) async {
-		await withTaskGroup(of: Void.self) { group in
-			group.addTask {
-				await operation()
-			}
-			
-			group.addTask {
-				try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-			}
-			
-			// Wait for first task to complete, then cancel all
-			await group.next()
-			group.cancelAll()
-		}
-	}
 	
 	// MARK: - Manual Streaming Methods (WhisperAX approach)
 	
