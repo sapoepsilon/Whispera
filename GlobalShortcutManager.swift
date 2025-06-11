@@ -70,7 +70,7 @@ class GlobalShortcutManager: ObservableObject {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if self?.matchesShortcut(event: event, expectedModifiers: modifiers, expectedKeyCode: keyCode) == true {
                 print("🎯 Global shortcut detected!")
-                self?.handleHotKey()
+				self?.handleHotKey()
             }
         }
         
@@ -79,7 +79,7 @@ class GlobalShortcutManager: ObservableObject {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if self?.matchesShortcut(event: event, expectedModifiers: modifiers, expectedKeyCode: keyCode) == true {
                 print("🎯 Local shortcut detected!")
-                self?.handleHotKey()
+				self?.handleHotKey()
                 return nil // Consume the event
             }
             return event
@@ -189,9 +189,9 @@ class GlobalShortcutManager: ObservableObject {
         }
     }
     
-    private func handleHotKey() {
+	private func handleHotKey() {
         Task { @MainActor in
-            audioManager?.toggleRecording()
+			audioManager?.toggleRecording()
         }
     }
     

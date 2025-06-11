@@ -15,6 +15,16 @@ struct Model: Identifiable {
 	var status: String?
 }
 
+struct CommandResult: Identifiable {
+	var id = UUID()
+	var userRequest: String
+	var generatedCommand: String
+	var output: String
+	var error: String?
+	var executionTime: Date
+	var success: Bool
+}
+
 @MainActor
 @Observable class LlamaState {
 	static let shared = LlamaState()
@@ -24,6 +34,11 @@ struct Model: Identifiable {
 	var undownloadedModels: [Model] = []
 	var currentlyLoadedModel: String? = nil
 	let NS_PER_S = 1_000_000_000.0
+	
+	// Command execution tracking
+	var commandHistory: [CommandResult] = []
+	var lastGeneratedCommand: String? = nil
+	var isExecutingCommand = false
 	
 	private var llamaContext: LlamaContext?
 	private var defaultModelUrl: URL? {
@@ -209,5 +224,182 @@ struct Model: Identifiable {
 		
 		await llamaContext.clear()
 		messageLog = ""
+	}
+	
+	/// Complete text with system prompt using chat template
+	func completeWithSystemPrompt(systemMessage: String, userMessage: String) async {
+		guard let llamaContext else {
+			messageLog += "Error: No model loaded\n"
+			return
+		}
+		
+		// Only show user message for cleaner log
+		messageLog += "\n💬 \(userMessage)\n"
+		
+		let t_start = DispatchTime.now().uptimeNanoseconds
+		let response = await llamaContext.completeWithSystemPrompt(
+			systemMessage: systemMessage, 
+			userMessage: userMessage
+		)
+		let t_end = DispatchTime.now().uptimeNanoseconds
+		
+		let _ = Double(t_end - t_start) / NS_PER_S
+		
+		messageLog += response
+		messageLog += "\n"
+	}
+	
+	/// Generate bash command from user request
+	func generateBashCommand(userRequest: String) async -> String? {
+		guard let llamaContext else {
+			messageLog += "Error: No model loaded\n"
+			return nil
+		}
+		
+		let systemPrompt = """
+		You are a bash command generator for macOS. Your role is to output ONLY the bash command that accomplishes the user's request.
+		Rules:
+		1. Output ONLY the command, no explanations or markdown
+		2. If unclear, output a clarifying question starting with "CLARIFY:"
+		3. For dangerous operations, output "DANGEROUS:" followed by the command
+		4. Use macOS-specific commands when appropriate
+		5. Never output multiple commands unless using && or ;
+		"""
+		
+		// Log the request in a cleaner format
+		messageLog += "\n💬 \(userRequest)\n"
+		
+		let response = await llamaContext.completeWithSystemPrompt(
+			systemMessage: systemPrompt,
+			userMessage: userRequest
+		)
+		
+		// Clean up the response - remove common LLM tokens and artifacts
+		var cleanedCommand = response.trimmingCharacters(in: .whitespacesAndNewlines)
+		
+		// Remove common LLM end tokens
+		let tokensToRemove = ["<|im_end|>", "<|im_start|>", "<|end|>", "<|assistant|>", "<|user|>", "<|system|>"]
+		for token in tokensToRemove {
+			cleanedCommand = cleanedCommand.replacingOccurrences(of: token, with: "")
+		}
+		
+		// Remove any remaining angle bracket artifacts
+		if let range = cleanedCommand.range(of: "<|") {
+			cleanedCommand = String(cleanedCommand[..<range.lowerBound])
+		}
+		
+		// Final trim
+		cleanedCommand = cleanedCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+		
+		// Store the generated command
+		lastGeneratedCommand = cleanedCommand
+		
+		messageLog += "→ \(cleanedCommand)\n"
+		
+		return cleanedCommand
+	}
+	
+	/// Execute a bash command safely
+	func executeCommand(_ command: String) async -> CommandResult {
+		isExecutingCommand = true
+		defer { isExecutingCommand = false }
+		
+		// Log execution start with cleaner format
+		messageLog += "⚡ Executing: \(command)\n"
+		
+		let process = Process()
+		let pipe = Pipe()
+		
+		process.standardOutput = pipe
+		process.standardError = pipe
+		process.executableURL = URL(fileURLWithPath: "/bin/bash")
+		process.arguments = ["-c", command]
+		
+		var output = ""
+		var errorOutput = ""
+		var success = false
+		
+		do {
+			try process.run()
+			
+			// Set a timeout
+			let timeoutQueue = DispatchQueue(label: "command.timeout")
+			let timeoutItem = DispatchWorkItem {
+				if process.isRunning {
+					process.terminate()
+					errorOutput = "Command timed out after 30 seconds"
+				}
+			}
+			timeoutQueue.asyncAfter(deadline: .now() + 30, execute: timeoutItem)
+			
+			process.waitUntilExit()
+			timeoutItem.cancel()
+			
+			// Read output
+			let data = pipe.fileHandleForReading.readDataToEndOfFile()
+			if let outputString = String(data: data, encoding: .utf8) {
+				output = outputString
+			}
+			
+			success = process.terminationStatus == 0
+			
+			if !success {
+				errorOutput = "Command exited with status: \(process.terminationStatus)"
+			}
+			
+		} catch {
+			errorOutput = "Failed to execute command: \(error.localizedDescription)"
+		}
+		
+		let result = CommandResult(
+			userRequest: lastGeneratedCommand ?? command,
+			generatedCommand: command,
+			output: output,
+			error: errorOutput.isEmpty ? nil : errorOutput,
+			executionTime: Date(),
+			success: success
+		)
+		
+		// Add to history
+		commandHistory.append(result)
+		
+		// Update message log with cleaner format
+		if !output.isEmpty {
+			messageLog += "📤 \(output)"
+			if !output.hasSuffix("\n") {
+				messageLog += "\n"
+			}
+		}
+		if !errorOutput.isEmpty {
+			messageLog += "❌ \(errorOutput)\n"
+		}
+		messageLog += success ? "✅ Done\n" : "❌ Failed\n"
+		
+		return result
+	}
+	
+	/// Generate and execute bash command from user request
+	func generateAndExecuteBashCommand(userRequest: String) async -> CommandResult? {
+		guard let command = await generateBashCommand(userRequest: userRequest) else {
+			return nil
+		}
+		
+		// Check for clarification needed
+		if command.hasPrefix("CLARIFY:") {
+			let clarification = String(command.dropFirst(8)).trimmingCharacters(in: .whitespaces)
+			messageLog += "❓ \(clarification)\n"
+			return nil
+		}
+		
+		// Check for dangerous command
+		if command.hasPrefix("DANGEROUS:") {
+			let actualCommand = String(command.dropFirst(10)).trimmingCharacters(in: .whitespaces)
+			messageLog += "⚠️ Potentially dangerous: \(actualCommand)\n"
+			lastGeneratedCommand = actualCommand
+			return nil
+		}
+		
+		// Execute the command
+		return await executeCommand(command)
 	}
 }

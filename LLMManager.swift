@@ -89,6 +89,7 @@ actor LlamaContext {
 		ctx_params.n_threads_batch = Int32(n_threads)
 		
 		let context = llama_init_from_model(model, ctx_params)
+
 		guard let context else {
 			print("Could not load context!")
 			throw LlamaError.couldNotInitializeContext
@@ -303,6 +304,69 @@ actor LlamaContext {
 		tokens_list.removeAll()
 		temporary_invalid_cchars.removeAll()
 		llama_memory_clear(llama_get_memory(context), true)
+	}
+	
+	/// Complete text with system prompt using chat template
+	func completeWithSystemPrompt(systemMessage: String, userMessage: String) -> String {
+		// Use withCString to ensure proper memory management for C strings
+		return systemMessage.withCString { systemCStr in
+			return userMessage.withCString { userCStr in
+				return "system".withCString { systemRoleCStr in
+					return "user".withCString { userRoleCStr in
+						let chat: [llama_chat_message] = [
+							llama_chat_message(role: systemRoleCStr, content: systemCStr),
+							llama_chat_message(role: userRoleCStr, content: userCStr)
+						]
+						
+						// Start with a reasonable buffer size and expand if needed
+						var bufferSize = 4096
+						var promptBuffer = [CChar](repeating: 0, count: bufferSize)
+						
+						var n_chars = llama_chat_apply_template(
+							nil, // Use the model's default template
+							chat,
+							chat.count,
+							true, // Add assistant role prefix
+							&promptBuffer,
+							Int32(bufferSize)
+						)
+						
+						// If buffer was too small, allocate a larger one
+						if n_chars > bufferSize {
+							bufferSize = Int(n_chars) + 1
+							promptBuffer = [CChar](repeating: 0, count: bufferSize)
+							n_chars = llama_chat_apply_template(
+								nil,
+								chat,
+								chat.count,
+								true,
+								&promptBuffer,
+								Int32(bufferSize)
+							)
+						}
+						
+						if n_chars <= 0 {
+							print("Error: Failed to apply chat template.")
+							return ""
+						}
+						
+						let formattedPrompt = String(cString: promptBuffer)
+						print("Formatted prompt: \(formattedPrompt)")
+						
+						// Use the existing completion system
+						completion_init(text: formattedPrompt)
+						
+						var response = ""
+						while !is_done {
+							let token = completion_loop()
+							response += token
+						}
+						
+						return response
+					}
+				}
+			}
+		}
 	}
 	
 	private func tokenize(text: String, add_bos: Bool) -> [llama_token] {

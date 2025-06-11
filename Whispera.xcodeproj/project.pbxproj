@@ -15,12 +15,15 @@
 		1A1A1A1A1A1A1A1A1A1A1A21 /* WhisperKitTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */; };
 		D6077E982DF10E77009E7404 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D6077E972DF10E77009E7404 /* Assets.xcassets */; };
 		D6460C9F2DF10709006433DA /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */; };
+		D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D648B7CA2DF9FF8B006079ED /* Constants.swift */; };
 		D64B1B292DF11A7B00D2CEAB /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */; };
 		D66570332DF4E01B00EEA9D6 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D66570322DF4E01B00EEA9D6 /* llama.xcframework */; };
 		D66570362DF4E65300EEA9D6 /* LLMManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66570352DF4E65000EEA9D6 /* LLMManager.swift */; };
 		D66570382DF502FD00EEA9D6 /* LlamaState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66570372DF502FA00EEA9D6 /* LlamaState.swift */; };
+		D69B300D2DFA0E020024A2DA /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D69B300C2DFA0E020024A2DA /* MarkdownUI */; };
 		D6B81FB42DEFF5CC00D32F2A /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6B81FB32DEFF5CC00D32F2A /* WhisperKit */; };
 		D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */; };
+		D6B81FB72DEFFE4100D32F2A /* LlamaViewForOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B81FB82DEFFE4200D32F2A /* LlamaViewForOnboarding.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,11 +36,13 @@
 		3A3A3A3A3A3A3A3A3A3A3A3A /* Whispera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Whispera.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D6077E972DF10E77009E7404 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D648B7CA2DF9FF8B006079ED /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D66570322DF4E01B00EEA9D6 /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = llama.xcframework; sourceTree = "<group>"; };
 		D66570352DF4E65000EEA9D6 /* LLMManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMManager.swift; sourceTree = "<group>"; };
 		D66570372DF502FA00EEA9D6 /* LlamaState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaState.swift; sourceTree = "<group>"; };
 		D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
+		D6B81FB82DEFFE4200D32F2A /* LlamaViewForOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaViewForOnboarding.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -45,6 +50,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D69B300D2DFA0E020024A2DA /* MarkdownUI in Frameworks */,
 				D6B81FB42DEFF5CC00D32F2A /* WhisperKit in Frameworks */,
 				D66570332DF4E01B00EEA9D6 /* llama.xcframework in Frameworks */,
 			);
@@ -56,6 +62,7 @@
 		6A6A6A6A6A6A6A6A6A6A6A6A = {
 			isa = PBXGroup;
 			children = (
+				D648B7CA2DF9FF8B006079ED /* Constants.swift */,
 				D66570372DF502FA00EEA9D6 /* LlamaState.swift */,
 				D66570352DF4E65000EEA9D6 /* LLMManager.swift */,
 				D6077E972DF10E77009E7404 /* Assets.xcassets */,
@@ -66,6 +73,7 @@
 				2A2A2A2A2A2A2A2A2A2A2A2C /* SettingsView.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2D /* AudioManager.swift */,
 				D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */,
+				D6B81FB82DEFFE4200D32F2A /* LlamaViewForOnboarding.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2F /* GlobalShortcutManager.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */,
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */,
@@ -127,6 +135,7 @@
 			mainGroup = 6A6A6A6A6A6A6A6A6A6A6A6A;
 			packageReferences = (
 				D6B81FB22DEFF5CC00D32F2A /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				D69B300B2DFA0E020024A2DA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 			);
 			productRefGroup = 8A8A8A8A8A8A8A8A8A8A8A8A /* Products */;
 			projectDirPath = "";
@@ -155,6 +164,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A1A1A1A1A1A1A1A1A1A1A1A /* WhisperaApp.swift in Sources */,
+				D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */,
 				D66570382DF502FD00EEA9D6 /* LlamaState.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1B /* MenuBarView.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1C /* SettingsView.swift in Sources */,
@@ -162,6 +172,7 @@
 				1A1A1A1A1A1A1A1A1A1A1A1D /* AudioManager.swift in Sources */,
 				D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */,
 				D64B1B292DF11A7B00D2CEAB /* OnboardingView.swift in Sources */,
+				D6B81FB72DEFFE4100D32F2A /* LlamaViewForOnboarding.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1F /* GlobalShortcutManager.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A21 /* WhisperKitTranscriber.swift in Sources */,
 			);
@@ -361,6 +372,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		D69B300B2DFA0E020024A2DA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
 		D6B81FB22DEFF5CC00D32F2A /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
@@ -372,6 +391,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D69B300C2DFA0E020024A2DA /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D69B300B2DFA0E020024A2DA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
 		D6B81FB32DEFF5CC00D32F2A /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D6B81FB22DEFF5CC00D32F2A /* XCRemoteSwiftPackageReference "WhisperKit" */;

@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import AppKit
+import SwiftUI
 
 @MainActor
 @Observable class AudioManager: NSObject {
@@ -15,8 +16,12 @@ import AppKit
             NotificationCenter.default.post(name: NSNotification.Name("RecordingStateChanged"), object: nil)
         }
     }
-     var transcriptionError: String?
-    
+	var transcriptionError: String?
+	
+
+	@ObservationIgnored
+	@AppStorage("enableTranslation") var enableTranslation = false
+	
     private var audioRecorder: AVAudioRecorder?
     private var audioFileURL: URL?
     let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -71,7 +76,7 @@ import AppKit
     }
     
     func toggleRecording() {
-        print("🎙️ toggleRecording called, current state: \(isRecording)")
+
         if isRecording {
             stopRecording()
         } else {
@@ -138,7 +143,7 @@ import AppKit
         }
     }
     
-    private func stopRecording() {
+	private func stopRecording() {
         audioRecorder?.stop()
         audioRecorder = nil
         isRecording = false
@@ -150,7 +155,7 @@ import AppKit
         
         if let audioFileURL = audioFileURL {
             Task {
-                await transcribeAudio(fileURL: audioFileURL)
+				await transcribeAudio(fileURL: audioFileURL, enableTranslation: self.enableTranslation)
             }
         }
     }
@@ -168,13 +173,13 @@ import AppKit
     }
 	
     
-    private func transcribeAudio(fileURL: URL) async {
+	private func transcribeAudio(fileURL: URL, enableTranslation: Bool) async {
         isTranscribing = true
         transcriptionError = nil
         
         do {
             // Always use real WhisperKit transcription
-            let transcription = try await whisperKitTranscriber.transcribe(audioURL: fileURL)
+            let transcription = try await whisperKitTranscriber.transcribe(audioURL: fileURL, enableTranslation: enableTranslation)
             
             // Update UI on main thread
             await MainActor.run {

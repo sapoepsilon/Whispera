@@ -2,6 +2,10 @@
 
 A native macOS tool that replaces the built-in dictation with OpenAI's Whisper for superior transcription accuracy.
 
+## Demo: 
+
+https://github.com/user-attachments/assets/1da72bbb-a1cf-46ee-a997-893f1939e626
+
 ## Features
 
 - **Enhanced Accuracy**: Leverages WhisperKit for significantly better transcription than macOS dictation
@@ -11,7 +15,9 @@ A native macOS tool that replaces the built-in dictation with OpenAI's Whisper f
 
 ## Roadmap
 
-- [ ] Multi-language support beyond English
+- [x] Multi-language support beyond English 
+  - **PR**: https://github.com/sapoepsilon/Whispera/pull/2
+  - **Release**: https://github.com/sapoepsilon/Whispera/releases/tag/v1.0.3
 - [ ] Real-time translation capabilities
 - [ ] Additional customization options
 
