@@ -4,7 +4,9 @@ import AppKit
 struct MenuBarView: View {
     @Bindable var audioManager: AudioManager
     @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
+    @Bindable private var llamaState = LlamaState.shared
 	@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
+	@AppStorage("globalCommandShortcut") private var commandShortcutKey = "⌘⌥C"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,16 +50,32 @@ struct MenuBarView: View {
                     .disabled(audioManager.isTranscribing)
                     
                     // Shortcut display - design language compliant
-                    HStack {
-                        Text("Global Shortcut")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(shortcutKey)
-                            .font(.system(.caption, design: .monospaced))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.gray.opacity(0.2).opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text("Text Mode")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(shortcutKey)
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
+                                .foregroundColor(.blue)
+                        }
+                        
+                        HStack {
+                            Text("Command Mode")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(commandShortcutKey)
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.orange.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
+                                .foregroundColor(.orange)
+                        }
                     }
                 }
                 
@@ -124,6 +142,22 @@ struct MenuBarView: View {
             } else if let transcription = audioManager.lastTranscription {
                 TranscriptionResultView(text: transcription)
             }
+			
+			// Command approval
+			if llamaState.showCommandApproval, let command = llamaState.pendingCommand {
+				CommandApprovalView(
+					command: command,
+					userRequest: llamaState.pendingUserRequest ?? "",
+					onApprove: {
+						Task {
+							let _ = await llamaState.executeApprovedCommand()
+						}
+					},
+					onCancel: {
+						llamaState.cancelPendingCommand()
+					}
+				)
+			}
         }
         .frame(width: 320)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -549,5 +583,73 @@ struct TertiaryButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.7 : 1.0)
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Command Approval View
+struct CommandApprovalView: View {
+    let command: String
+    let userRequest: String
+    let onApprove: () -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                Text("Command Approval Required")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            
+            // User request
+            if !userRequest.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Voice Request:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(userRequest)
+                        .font(.body)
+                        .padding(8)
+                        .background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                }
+            }
+            
+            // Generated command
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Generated Command:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(command)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(8)
+                    .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                    .textSelection(.enabled)
+            }
+            
+            // Action buttons
+            HStack(spacing: 12) {
+                Button("Execute") {
+                    onApprove()
+                }
+                .buttonStyle(PrimaryButtonStyle(isRecording: false))
+                
+                Button("Cancel") {
+                    onCancel()
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+        }
+        .padding(16)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
     }
 }

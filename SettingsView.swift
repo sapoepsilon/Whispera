@@ -12,6 +12,8 @@ struct SettingsView: View {
     @AppStorage("launchAtStartup") private var launchAtStartup = false
     @AppStorage("enableTranslation") private var enableTranslation = false
     @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
+    @AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
+    @AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
     @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
     @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
@@ -172,6 +174,57 @@ struct SettingsView: View {
                             }
                         }
                         .frame(minWidth: 120)
+                    }
+                }
+                
+                Divider()
+                
+                // Command Mode Settings
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Command Mode")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Command Shortcut")
+                                .font(.headline)
+                            Text("Global shortcut for voice-to-command mode")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Text(globalCommandShortcut)
+                            .font(.system(.body, design: .monospaced))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.orange.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
+                            .foregroundColor(.orange)
+                    }
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Auto-Execute Commands")
+                                .font(.headline)
+                            Text("Execute commands immediately without approval")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $autoExecuteCommands)
+                    }
+                    
+                    if autoExecuteCommands {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Dangerous commands will still require approval")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
                 }
                 

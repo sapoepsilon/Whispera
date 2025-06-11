@@ -40,10 +40,19 @@ struct CommandResult: Identifiable {
 	@ObservationIgnored
 	@AppStorage("selectedLLMModel") private var selectedLLMModel: String = ""
 	
+	// Auto-execution setting
+	@ObservationIgnored
+	@AppStorage("autoExecuteCommands") private var autoExecuteCommands: Bool = false
+	
 	// Command execution tracking
 	var commandHistory: [CommandResult] = []
 	var lastGeneratedCommand: String? = nil
 	var isExecutingCommand = false
+	
+	// Command approval state
+	var showCommandApproval = false
+	var pendingCommand: String? = nil
+	var pendingUserRequest: String? = nil
 	
 	private var llamaContext: LlamaContext?
 	private var defaultModelUrl: URL? {
@@ -405,12 +414,45 @@ struct CommandResult: Identifiable {
 		if command.hasPrefix("DANGEROUS:") {
 			let actualCommand = String(command.dropFirst(10)).trimmingCharacters(in: .whitespaces)
 			messageLog += "⚠️ Potentially dangerous: \(actualCommand)\n"
-			lastGeneratedCommand = actualCommand
+			// Always require approval for dangerous commands
+			pendingCommand = actualCommand
+			pendingUserRequest = userRequest
+			showCommandApproval = true
 			return nil
 		}
 		
+		// Check auto-execution setting
+		if autoExecuteCommands {
+			// Execute immediately without approval
+			return await executeCommand(command)
+		} else {
+			// Show approval dialog
+			pendingCommand = command
+			pendingUserRequest = userRequest
+			showCommandApproval = true
+			return nil
+		}
+	}
+	
+	/// Execute the pending command after approval
+	func executeApprovedCommand() async -> CommandResult? {
+		guard let command = pendingCommand else { return nil }
+		
+		// Clear approval state
+		showCommandApproval = false
+		let _ = pendingUserRequest ?? ""
+		pendingCommand = nil
+		pendingUserRequest = nil
+		
 		// Execute the command
 		return await executeCommand(command)
+	}
+	
+	/// Cancel the pending command
+	func cancelPendingCommand() {
+		showCommandApproval = false
+		pendingCommand = nil
+		pendingUserRequest = nil
 	}
 	
 	/// Auto-load the previously saved model on startup
