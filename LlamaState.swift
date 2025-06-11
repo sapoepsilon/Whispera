@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 struct Model: Identifiable {
 	var id = UUID()
@@ -35,6 +36,10 @@ struct CommandResult: Identifiable {
 	var currentlyLoadedModel: String? = nil
 	let NS_PER_S = 1_000_000_000.0
 	
+	// Model persistence
+	@ObservationIgnored
+	@AppStorage("selectedLLMModel") private var selectedLLMModel: String = ""
+	
 	// Command execution tracking
 	var commandHistory: [CommandResult] = []
 	var lastGeneratedCommand: String? = nil
@@ -49,6 +54,8 @@ struct CommandResult: Identifiable {
 	private init() {
 		loadModelsFromDisk()
 		loadDefaultModels()
+		// Auto-load the saved model if available
+		loadSavedModel()
 	}
 	
 	private func loadModelsFromDisk() {
@@ -134,6 +141,9 @@ struct CommandResult: Identifiable {
 			llamaContext = try LlamaContext.create_context(path: modelUrl.path())
 			messageLog += "Loaded model \(modelUrl.lastPathComponent)\n"
 			currentlyLoadedModel = modelUrl.lastPathComponent
+			
+			// Save the loaded model for persistence
+			selectedLLMModel = modelUrl.lastPathComponent
 			
 			// Assuming that the model is successfully loaded, update the downloaded models
 			updateDownloadedModels(modelName: modelUrl.lastPathComponent, status: "downloaded")
@@ -401,5 +411,30 @@ struct CommandResult: Identifiable {
 		
 		// Execute the command
 		return await executeCommand(command)
+	}
+	
+	/// Auto-load the previously saved model on startup
+	private func loadSavedModel() {
+		guard !selectedLLMModel.isEmpty else {
+			print("📱 No saved LLM model to load")
+			return
+		}
+		
+		let savedModelURL = getDocumentsDirectory().appendingPathComponent(selectedLLMModel)
+		
+		if FileManager.default.fileExists(atPath: savedModelURL.path) {
+			do {
+				try loadModel(modelUrl: savedModelURL)
+				print("✅ Auto-loaded saved model: \(selectedLLMModel)")
+			} catch {
+				print("❌ Failed to auto-load saved model \(selectedLLMModel): \(error.localizedDescription)")
+				// Clear the invalid saved model
+				selectedLLMModel = ""
+			}
+		} else {
+			print("⚠️ Saved model file not found: \(selectedLLMModel)")
+			// Clear the invalid saved model
+			selectedLLMModel = ""
+		}
 	}
 }

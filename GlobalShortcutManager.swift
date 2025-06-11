@@ -5,8 +5,11 @@ import ApplicationServices
 class GlobalShortcutManager: ObservableObject {
     private var globalMonitor: Any?
     private var localMonitor: Any?
+    private var commandGlobalMonitor: Any?
+    private var commandLocalMonitor: Any?
     private var audioManager: AudioManager?
 	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
+	var currentCommandShortcut: String = UserDefaults.standard.string(forKey: "globalCommandShortcut") ?? "⌘⌥C"
 	
     init() {
         setupShortcut()
@@ -17,9 +20,12 @@ class GlobalShortcutManager: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
-            if newShortcut != self?.currentShortcut {
-                print("🔄 Shortcut changed from \(self?.currentShortcut ?? "nil") to \(newShortcut)")
+            let newCommandShortcut = UserDefaults.standard.string(forKey: "globalCommandShortcut") ?? "⌘⌥C"
+            
+            if newShortcut != self?.currentShortcut || newCommandShortcut != self?.currentCommandShortcut {
+                print("🔄 Shortcuts changed - Text: \(self?.currentShortcut ?? "nil") → \(newShortcut), Command: \(self?.currentCommandShortcut ?? "nil") → \(newCommandShortcut)")
                 self?.currentShortcut = newShortcut
+                self?.currentCommandShortcut = newCommandShortcut
                 self?.setupShortcut()
             }
         }
@@ -61,25 +67,47 @@ class GlobalShortcutManager: ObservableObject {
             self.localMonitor = nil
             print("🗑️ Removed old local monitor")
         }
+        if let monitor = commandGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            self.commandGlobalMonitor = nil
+            print("🗑️ Removed old command global monitor")
+        }
+        if let monitor = commandLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            self.commandLocalMonitor = nil
+            print("🗑️ Removed old command local monitor")
+        }
         
+        // Setup text shortcut
         let (modifiers, keyCode) = parseShortcut(currentShortcut)
-        print("🎹 Setting up keyboard shortcut for \(currentShortcut) (keyCode: \(keyCode), modifiers: \(modifiers.rawValue))")
+        print("🎹 Setting up text shortcut for \(currentShortcut) (keyCode: \(keyCode), modifiers: \(modifiers.rawValue))")
         
-        // Set up global monitor (works when other apps are focused)
-        print("🌍 Installing global monitor...")
+        // Setup command shortcut
+        let (commandModifiers, commandKeyCode) = parseShortcut(currentCommandShortcut)
+        print("🎹 Setting up command shortcut for \(currentCommandShortcut) (keyCode: \(commandKeyCode), modifiers: \(commandModifiers.rawValue))")
+        
+        // Set up global monitors (works when other apps are focused)
+        print("🌍 Installing global monitors...")
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if self?.matchesShortcut(event: event, expectedModifiers: modifiers, expectedKeyCode: keyCode) == true {
-                print("🎯 Global shortcut detected!")
-				self?.handleHotKey()
+                print("🎯 Global text shortcut detected!")
+				self?.handleTextHotKey()
+            } else if self?.matchesShortcut(event: event, expectedModifiers: commandModifiers, expectedKeyCode: commandKeyCode) == true {
+                print("🎯 Global command shortcut detected!")
+				self?.handleCommandHotKey()
             }
         }
         
-        // Also set up local monitor as fallback (works when app is focused)
-        print("🏠 Installing local monitor as fallback...")
+        // Also set up local monitors as fallback (works when app is focused)
+        print("🏠 Installing local monitors as fallback...")
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if self?.matchesShortcut(event: event, expectedModifiers: modifiers, expectedKeyCode: keyCode) == true {
-                print("🎯 Local shortcut detected!")
-				self?.handleHotKey()
+                print("🎯 Local text shortcut detected!")
+				self?.handleTextHotKey()
+                return nil // Consume the event
+            } else if self?.matchesShortcut(event: event, expectedModifiers: commandModifiers, expectedKeyCode: commandKeyCode) == true {
+                print("🎯 Local command shortcut detected!")
+				self?.handleCommandHotKey()
                 return nil // Consume the event
             }
             return event
@@ -189,9 +217,15 @@ class GlobalShortcutManager: ObservableObject {
         }
     }
     
-	private func handleHotKey() {
+	private func handleTextHotKey() {
         Task { @MainActor in
-			audioManager?.toggleRecording()
+			audioManager?.toggleRecording(mode: .text)
+        }
+    }
+	
+	private func handleCommandHotKey() {
+        Task { @MainActor in
+			audioManager?.toggleRecording(mode: .command)
         }
     }
     
@@ -200,6 +234,12 @@ class GlobalShortcutManager: ObservableObject {
             NSEvent.removeMonitor(monitor)
         }
         if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = commandGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = commandLocalMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }

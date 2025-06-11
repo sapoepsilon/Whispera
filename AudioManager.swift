@@ -3,6 +3,11 @@ import AVFoundation
 import AppKit
 import SwiftUI
 
+enum RecordingMode {
+	case text    // Speech to text (copy to clipboard)
+	case command // Speech to command (execute via LLM)
+}
+
 @MainActor
 @Observable class AudioManager: NSObject {
      var isRecording = false {
@@ -17,6 +22,7 @@ import SwiftUI
         }
     }
 	var transcriptionError: String?
+	var currentRecordingMode: RecordingMode = .text
 	
 
 	@ObservationIgnored
@@ -75,7 +81,10 @@ import SwiftUI
         }
     }
     
-    func toggleRecording() {
+    func toggleRecording(mode: RecordingMode = .text) {
+		// Set the recording mode before starting
+		currentRecordingMode = mode
+		print("🎤 Toggle recording - Mode: \(mode)")
 
         if isRecording {
             stopRecording()
@@ -186,8 +195,15 @@ import SwiftUI
                 lastTranscription = transcription
                 isTranscribing = false
                 
-                // Paste to focused app
-                pasteToFocusedApp(transcription)
+                // Route based on recording mode
+                switch currentRecordingMode {
+                case .text:
+                    // Traditional behavior - paste to focused app
+                    pasteToFocusedApp(transcription)
+                case .command:
+                    // Send to LLM for command generation and execution
+                    processCommandMode(transcription: transcription)
+                }
             }
             
         } catch {
@@ -228,4 +244,13 @@ import SwiftUI
         
         return appDirectory
     }
+	
+	private func processCommandMode(transcription: String) {
+		print("🤖 Processing command mode transcription: \(transcription)")
+		
+		Task {
+			// Generate and execute command using LlamaState
+			let _ = await LlamaState.shared.generateAndExecuteBashCommand(userRequest: transcription)
+		}
+	}
 }
