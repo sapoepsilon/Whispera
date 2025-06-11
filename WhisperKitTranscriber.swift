@@ -387,6 +387,27 @@ import AppKit
 			group.cancelAll()
 		}
 	}
+	
+	// MARK: - Manual Streaming Methods (WhisperAX approach)
+	
+	private func realtimeLoop() {
+		transcriptionTask = Task {
+			while isTranscribing {
+				do {
+					try await transcribeCurrentBuffer(delayInterval: Float(realtimeDelayInterval))
+				} catch {
+					print("Error in realtime loop: \(error.localizedDescription)")
+					break
+				}
+			}
+		}
+	}
+	
+	private func stopRealtimeTranscription() {
+		isTranscribing = false
+		transcriptionTask?.cancel()
+		transcriptionTask = nil
+	}
     
 	func transcribe(audioURL: URL, enableTranslation: Bool) async throws -> String {
 		try await checkIfWhisperKitIsAvailable()
