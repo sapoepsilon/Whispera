@@ -34,6 +34,20 @@ You'll need these from your Apple Developer account:
 
 ### Step 3: Set Up GitHub Repository Secrets
 
+#### Option A: Using GitHub CLI (Recommended)
+
+```bash
+# Set up all repository secrets using GitHub CLI
+gh secret set APPLE_ID --body "your-apple-id@example.com"
+gh secret set APP_SPECIFIC_PASSWORD --body "abcd-efgh-ijkl-mnop"
+gh secret set TEAM_ID --body "NK28QT38A3"
+gh secret set DEVELOPER_ID_P12 --body "$(base64 -i YourCert.p12)"
+gh secret set DEVELOPER_ID_PASSWORD --body "your-cert-password"
+gh secret set KEYCHAIN_PASSWORD --body "$(openssl rand -base64 32)"
+```
+
+#### Option B: Using GitHub Web Interface
+
 Go to your GitHub repository → Settings → Secrets and variables → Actions
 
 Add these **Repository secrets**:
@@ -124,8 +138,17 @@ This automatically:
 
 ### Debug Steps
 
-1. **Check secrets**: Ensure all 6 secrets are set in repository settings
+1. **Check secrets**: Verify all secrets are set
+   ```bash
+   # List all repository secrets
+   gh secret list
+   ```
 2. **Review logs**: Go to Actions tab → failed workflow → review detailed logs
+   ```bash
+   # View latest workflow run
+   gh run list --limit 1
+   gh run view --log-failed
+   ```
 3. **Test locally**: Run `scripts/bump-version.sh 1.0.0` to test version bumping
 4. **Verify certificates**: Check your Developer ID certificate is valid
 
@@ -140,9 +163,17 @@ This automatically:
 ### Updating Secrets
 
 If you need to rotate credentials:
-1. Generate new app-specific password
-2. Update the corresponding secret in GitHub
-3. Next release will use new credentials
+```bash
+# Update individual secrets
+gh secret set APPLE_ID --body "new-apple-id@example.com"
+gh secret set APP_SPECIFIC_PASSWORD --body "new-password"
+
+# Or update certificate
+gh secret set DEVELOPER_ID_P12 --body "$(base64 -i NewCert.p12)"
+gh secret set DEVELOPER_ID_PASSWORD --body "new-cert-password"
+```
+
+Next release will automatically use the new credentials.
 
 ### Modifying Workflows
 
@@ -164,11 +195,20 @@ Users can download directly from the [Releases page](../../releases).
 
 ## 🎯 Quick Start Checklist
 
-- [ ] Set up all 6 GitHub repository secrets
-- [ ] Verify Developer ID certificate is valid
+- [ ] Export your Developer ID certificate as `.p12` file
+- [ ] Set up all 6 GitHub repository secrets using GitHub CLI:
+  ```bash
+  gh secret set APPLE_ID --body "your-email@example.com"
+  gh secret set APP_SPECIFIC_PASSWORD --body "your-app-password"
+  gh secret set TEAM_ID --body "YOUR_TEAM_ID" 
+  gh secret set DEVELOPER_ID_P12 --body "$(base64 -i YourCert.p12)"
+  gh secret set DEVELOPER_ID_PASSWORD --body "cert-password"
+  gh secret set KEYCHAIN_PASSWORD --body "$(openssl rand -base64 32)"
+  ```
+- [ ] Verify secrets are set: `gh secret list`
 - [ ] Test with a sample tag: `git tag v1.0.0-test && git push origin v1.0.0-test`
-- [ ] Check release appears in [Actions](../../actions)
+- [ ] Check release appears: `gh run list`
 - [ ] Download and test the generated DMG
-- [ ] Delete test tag: `git tag -d v1.0.0-test && git push origin :v1.0.0-test`
+- [ ] Clean up test: `git tag -d v1.0.0-test && git push origin :v1.0.0-test`
 
 Your automated pipeline is ready! 🎉
