@@ -2,9 +2,9 @@ name: Build and Test
 
 on:
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   workflow_dispatch:
 
 env:
@@ -14,163 +14,92 @@ env:
 jobs:
   build-and-test:
     runs-on: macos-14
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Setup Xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: latest-stable
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
 
-    - name: Cache Swift Package Manager
-      uses: actions/cache@v4
-      with:
-        path: |
-          .build
-          ~/Library/Developer/Xcode/DerivedData
-        key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
-        restore-keys: |
-          ${{ runner.os }}-spm-
+      - name: Cache Swift Package Manager
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
 
-    - name: Resolve Swift Package Dependencies
-      run: |
-        xcodebuild -resolvePackageDependencies -project "${APP_NAME}.xcodeproj" -scheme "${SCHEME_NAME}"
+      - name: Resolve Swift Package Dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies -project "${APP_NAME}.xcodeproj" -scheme "${SCHEME_NAME}"
 
-    - name: Build for testing
-      run: |
-        xcodebuild build-for-testing \
-                   -project "${APP_NAME}.xcodeproj" \
-                   -scheme "${SCHEME_NAME}" \
-                   -destination "platform=macOS" \
-                   -configuration Debug \
-                   -derivedDataPath build/DerivedData \
-                   CODE_SIGN_IDENTITY="" \
-                   CODE_SIGNING_REQUIRED=NO
+      - name: Build for testing
+        run: |
+          xcodebuild build-for-testing \
+                     -project "${APP_NAME}.xcodeproj" \
+                     -scheme "${SCHEME_NAME}" \
+                     -destination "platform=macOS" \
+                     -configuration Debug \
+                     -derivedDataPath build/DerivedData \
+                     CODE_SIGN_IDENTITY="" \
+                     CODE_SIGNING_REQUIRED=NO
 
-    - name: Run unit tests
-      run: |
-        xcodebuild test-without-building \
-                   -project "${APP_NAME}.xcodeproj" \
-                   -scheme "${SCHEME_NAME}" \
-                   -destination "platform=macOS" \
-                   -derivedDataPath build/DerivedData \
-                   -testPlan "Whispera" \
-                   -only-testing WhisperaUnitTests
+      - name: Run unit tests
+        run: |
+          xcodebuild test-without-building \
+                     -project "${APP_NAME}.xcodeproj" \
+                     -scheme "${SCHEME_NAME}" \
+                     -destination "platform=macOS" \
+                     -derivedDataPath build/DerivedData \
+                     -testPlan "Whispera" \
+                     -only-testing WhisperaUnitTests
 
-    - name: Run UI tests
-      run: |
-        xcodebuild test-without-building \
-                   -project "${APP_NAME}.xcodeproj" \
-                   -scheme "${SCHEME_NAME}" \
-                   -destination "platform=macOS" \
-                   -derivedDataPath build/DerivedData \
-                   -testPlan "Whispera" \
-                   -only-testing WhisperaUITests
-      continue-on-error: true # UI tests may be flaky in CI environment
+      - name: Run UI tests
+        run: |
+          xcodebuild test-without-building \
+                     -project "${APP_NAME}.xcodeproj" \
+                     -scheme "${SCHEME_NAME}" \
+                     -destination "platform=macOS" \
+                     -derivedDataPath build/DerivedData \
+                     -testPlan "Whispera" \
+                     -only-testing WhisperaUITests
+        continue-on-error: true # UI tests may be flaky in CI environment
 
-    - name: Build release (no signing)
-      run: |
-        xcodebuild -project "${APP_NAME}.xcodeproj" \
-                   -scheme "${SCHEME_NAME}" \
-                   -configuration Release \
-                   -destination "platform=macOS" \
-                   CODE_SIGN_IDENTITY="" \
-                   CODE_SIGNING_REQUIRED=NO \
-                   build
+      - name: Build release (no signing)
+        run: |
+          xcodebuild -project "${APP_NAME}.xcodeproj" \
+                     -scheme "${SCHEME_NAME}" \
+                     -configuration Release \
+                     -destination "platform=macOS" \
+                     CODE_SIGN_IDENTITY="" \
+                     CODE_SIGNING_REQUIRED=NO \
+                     build
 
-    - name: Check for SwiftUI deprecations
-      run: |
-        # Look for deprecated SwiftUI APIs
-        if grep -r "\.navigationBarTitle\|\.navigationBarItems" --include="*.swift" . ; then
-          echo "⚠️ Found deprecated SwiftUI APIs"
-        fi
+      - name: Check for SwiftUI deprecations
+        run: |
+          # Look for deprecated SwiftUI APIs
+          if grep -r "\.navigationBarTitle\|\.navigationBarItems" --include="*.swift" . ; then
+            echo "⚠️ Found deprecated SwiftUI APIs"
+          fi
 
-    - name: Analyze code size
-      run: |
-        # Basic code metrics
-        echo "📊 Code Statistics:"
-        find . -name "*.swift" -not -path "./build/*" -not -path "./DerivedData/*" | wc -l | xargs echo "Swift files:"
-        find . -name "*.swift" -not -path "./build/*" -not -path "./DerivedData/*" -exec wc -l {} + | tail -1 | xargs echo "Total lines:"
+      - name: Analyze code size
+        run: |
+          # Basic code metrics
+          echo "📊 Code Statistics:"
+          find . -name "*.swift" -not -path "./build/*" -not -path "./DerivedData/*" | wc -l | xargs echo "Swift files:"
+          find . -name "*.swift" -not -path "./build/*" -not -path "./DerivedData/*" -exec wc -l {} + | tail -1 | xargs echo "Total lines:"
 
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results
-        path: |
-          build/DerivedData/Logs/Test/
-          build/
-        retention-days: 3
-
-    - name: Comment PR with test results
-      if: github.event_name == 'pull_request' && always()
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const fs = require('fs');
-          const path = require('path');
-          
-          // Create a simple test report comment
-          const testStatus = '${{ job.status }}' === 'success' ? '✅ All tests passed' : '⚠️ Some tests failed';
-          const buildStatus = '${{ job.status }}' === 'success' ? '✅ Build successful' : '❌ Build failed';
-          
-          const comment = `## 🧪 Test Results
-          
-          ${buildStatus}
-          ${testStatus}
-          
-          **Build Configuration:** Release (unsigned)
-          **Platform:** macOS
-          **Xcode:** Latest stable
-          
-          _This is an automated test run for PR validation._`;
-          
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: comment
-          });
-
-  code-quality:
-    runs-on: macos-14
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Setup Xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: latest-stable
-
-    - name: SwiftLint
-      run: |
-        # Install SwiftLint if available
-        if command -v swiftlint >/dev/null 2>&1; then
-          echo "Running SwiftLint..."
-          swiftlint --reporter github-actions-logging
-        else
-          echo "SwiftLint not available, skipping..."
-        fi
-      continue-on-error: true
-
-    - name: Check for TODO/FIXME comments
-      run: |
-        echo "🔍 Scanning for TODO/FIXME comments..."
-        find . -name "*.swift" -not -path "./build/*" -not -path "./DerivedData/*" -exec grep -Hn "TODO\|FIXME\|XXX\|HACK" {} \; || echo "No TODO/FIXME comments found"
-
-    - name: Security scan
-      run: |
-        echo "🔒 Basic security checks..."
-        # Check for potential security issues
-        if grep -r "NSAppTransportSecurity\|NSAllowsArbitraryLoads" --include="*.plist" . ; then
-          echo "⚠️ Found ATS bypass - review security implications"
-        fi
-        
-        # Check for hardcoded secrets (basic patterns)
-        if grep -r "password\s*=\|secret\s*=\|key\s*=" --include="*.swift" . ; then
-          echo "⚠️ Potential hardcoded secrets found"
-        fi
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            build/DerivedData/Logs/Test/
+            build/
+          retention-days: 3
