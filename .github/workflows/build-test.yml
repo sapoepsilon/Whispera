@@ -42,16 +42,14 @@ jobs:
         run: |
           echo "🔨 Building Whispera app..."
           
-          # Build using xcodebuild with settings that work locally
+          # Build using scheme with destination platform to avoid C compilation issues
           xcodebuild build \
                      -project "${APP_NAME}.xcodeproj" \
                      -scheme "${SCHEME_NAME}" \
                      -configuration Debug \
-                     -sdk macosx \
-                     -arch arm64 \
+                     -destination "platform=macOS,arch=arm64" \
                      CODE_SIGN_IDENTITY="-" \
-                     CODE_SIGNING_REQUIRED=NO \
-                     ONLY_ACTIVE_ARCH=NO
+                     CODE_SIGNING_REQUIRED=NO
           
           # Check if the main app binary was created
           if [ -d "/Users/runner/Library/Developer/Xcode/DerivedData/${APP_NAME}-"*/Build/Products/Debug/"${APP_NAME}.app" ]; then
