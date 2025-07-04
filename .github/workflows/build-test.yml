@@ -42,27 +42,24 @@ jobs:
         run: |
           echo "🔨 Building Whispera app..."
           
-          # Build using xcodebuild with explicit flags to bypass signing
+          # Build using xcodebuild with settings that work locally
           xcodebuild build \
                      -project "${APP_NAME}.xcodeproj" \
                      -scheme "${SCHEME_NAME}" \
                      -configuration Debug \
-                     -destination "generic/platform=macOS" \
-                     -derivedDataPath build/DerivedData \
-                     CODE_SIGN_IDENTITY="" \
+                     -sdk macosx \
+                     -arch arm64 \
+                     CODE_SIGN_IDENTITY="-" \
                      CODE_SIGNING_REQUIRED=NO \
-                     DEVELOPMENT_TEAM="" \
-                     -skipPackagePluginValidation \
-                     -onlyUsePackageVersionsFromResolvedFile || echo "⚠️ Build failed as expected due to test targets requiring signing"
+                     ONLY_ACTIVE_ARCH=NO
           
           # Check if the main app binary was created
-          if [ -d "build/DerivedData/Build/Products/Debug/${APP_NAME}.app" ]; then
+          if [ -d "/Users/runner/Library/Developer/Xcode/DerivedData/${APP_NAME}-"*/Build/Products/Debug/"${APP_NAME}.app" ]; then
             echo "✅ Main app built successfully"
-            ls -la "build/DerivedData/Build/Products/Debug/${APP_NAME}.app"
+            ls -la /Users/runner/Library/Developer/Xcode/DerivedData/${APP_NAME}-*/Build/Products/Debug/"${APP_NAME}.app"
           else
-            echo "ℹ️ App bundle not found at expected location"
-            echo "Checking for other build outputs..."
-            find build -name "*.app" -type d 2>/dev/null || echo "No .app bundles found"
+            echo "❌ Build failed - app bundle not found"
+            exit 1
           fi
 
       - name: Check for SwiftUI deprecations
