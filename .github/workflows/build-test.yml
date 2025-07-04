@@ -57,7 +57,9 @@ jobs:
                      -destination "platform=macOS" \
                      -derivedDataPath build/DerivedData \
                      -testPlan "Whispera" \
-                     -only-testing WhisperaUnitTests
+                     -only-testing WhisperaUnitTests \
+                     CODE_SIGN_IDENTITY="" \
+                     CODE_SIGNING_REQUIRED=NO
 
       - name: Run UI tests
         run: |
@@ -67,7 +69,9 @@ jobs:
                      -destination "platform=macOS" \
                      -derivedDataPath build/DerivedData \
                      -testPlan "Whispera" \
-                     -only-testing WhisperaUITests
+                     -only-testing WhisperaUITests \
+                     CODE_SIGN_IDENTITY="" \
+                     CODE_SIGNING_REQUIRED=NO
         continue-on-error: true # UI tests may be flaky in CI environment
 
       - name: Build release (no signing)
