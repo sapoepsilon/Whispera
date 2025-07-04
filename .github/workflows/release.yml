@@ -1,0 +1,158 @@
+name: Release Whispera
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.3)'
+        required: true
+        type: string
+
+env:
+  APP_NAME: "Whispera"
+  SCHEME_NAME: "Whispera"
+  BUILD_CONFIGURATION: "Release"
+
+jobs:
+  release:
+    runs-on: macos-14
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    - name: Get version from tag or input
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          VERSION="${{ inputs.version }}"
+        else
+          VERSION=${GITHUB_REF#refs/tags/v}
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+        echo "Release version: $VERSION"
+
+    - name: Bump version in project
+      run: |
+        chmod +x scripts/bump-version.sh
+        ./scripts/bump-version.sh "${{ steps.version.outputs.version }}"
+
+    - name: Setup signing keychain
+      env:
+        DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+        DEVELOPER_ID_PASSWORD: ${{ secrets.DEVELOPER_ID_PASSWORD }}
+        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      run: |
+        chmod +x scripts/setup-keychain.sh
+        ./scripts/setup-keychain.sh
+
+    - name: Build and archive
+      run: |
+        set -e
+        
+        # Clean previous builds
+        rm -rf build/Release
+        mkdir -p build/Release
+        
+        # Build and archive
+        xcodebuild -project "${APP_NAME}.xcodeproj" \
+                   -scheme "${SCHEME_NAME}" \
+                   -configuration "${BUILD_CONFIGURATION}" \
+                   -archivePath "./build/Release/${APP_NAME}.xcarchive" \
+                   -destination "generic/platform=macOS" \
+                   CODE_SIGN_IDENTITY="" \
+                   CODE_SIGNING_REQUIRED=NO \
+                   archive
+
+    - name: Export app
+      run: |
+        xcodebuild -exportArchive \
+                   -archivePath "./build/Release/${APP_NAME}.xcarchive" \
+                   -exportPath "./build/Release" \
+                   -exportOptionsPlist "scripts/ExportOptions-dev.plist"
+
+    - name: Sign and notarize
+      env:
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
+        TEAM_ID: ${{ secrets.TEAM_ID }}
+      run: |
+        chmod +x scripts/release-distribute-ci.sh
+        ./scripts/release-distribute-ci.sh
+
+    - name: Create release notes
+      id: release_notes
+      run: |
+        # Get commits since last tag
+        LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        if [ -n "$LAST_TAG" ]; then
+          COMMITS=$(git log ${LAST_TAG}..HEAD --oneline --pretty=format:"- %s")
+        else
+          COMMITS=$(git log --oneline --pretty=format:"- %s" -10)
+        fi
+        
+        cat > release_notes.md << EOF
+        ## What's Changed
+        
+        ${COMMITS}
+        
+        ## Download
+        
+        Download the \`Whispera.dmg\` file below and drag the app to your Applications folder.
+        
+        ## System Requirements
+        
+        - macOS 13.0 or later
+        - Apple Silicon or Intel Mac
+        - Microphone access permission
+        
+        ## Installation Notes
+        
+        1. Download and mount the DMG file
+        2. Drag Whispera to Applications folder
+        3. First launch: Right-click → Open (to bypass Gatekeeper)
+        4. Grant microphone and accessibility permissions when prompted
+        EOF
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: "Whispera ${{ steps.version.outputs.version }}"
+        body_path: release_notes.md
+        files: |
+          dist/Whispera.dmg
+          dist/Whispera.app.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Cleanup keychain
+      if: always()
+      run: |
+        # Clean up temporary keychain
+        if [ -f "scripts/setup-keychain.sh" ]; then
+          security delete-keychain whispera-signing.keychain-db 2>/dev/null || true
+        fi
+
+    - name: Upload build artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: |
+          build/
+          *.log
+        retention-days: 7

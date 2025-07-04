@@ -122,3 +122,6 @@ dist/
 *.mobileprovision
 *.p12
 *.cer
+
+# Claude
+.mcp.json
