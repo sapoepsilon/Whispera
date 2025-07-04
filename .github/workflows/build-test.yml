@@ -45,7 +45,9 @@ jobs:
                    -scheme "${SCHEME_NAME}" \
                    -destination "platform=macOS" \
                    -configuration Debug \
-                   -derivedDataPath build/DerivedData
+                   -derivedDataPath build/DerivedData \
+                   CODE_SIGN_IDENTITY="" \
+                   CODE_SIGNING_REQUIRED=NO
 
     - name: Run unit tests
       run: |
