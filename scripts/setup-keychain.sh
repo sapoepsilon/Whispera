@@ -33,11 +33,15 @@ security delete-keychain "$KEYCHAIN_NAME" 2>/dev/null || true
 # Create temporary certificate file
 CERT_FILE="$(mktemp -t whispera-cert).p12"
 echo "📜 Decoding certificate..."
+echo "🔍 Base64 data length: ${#DEVELOPER_ID_P12} characters"
 echo "$DEVELOPER_ID_P12" | base64 --decode > "$CERT_FILE"
 
 # Verify certificate file was created successfully
 if [ ! -f "$CERT_FILE" ] || [ ! -s "$CERT_FILE" ]; then
     echo "❌ Error: Failed to decode certificate"
+    echo "🔍 Temp file: $CERT_FILE"
+    echo "🔍 File exists: $([ -f "$CERT_FILE" ] && echo "yes" || echo "no")"
+    echo "🔍 File size: $([ -f "$CERT_FILE" ] && ls -l "$CERT_FILE" || echo "file not found")"
     rm -f "$CERT_FILE"
     exit 1
 fi
@@ -53,11 +57,22 @@ security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
 
 # Import certificate
 echo "📥 Importing signing certificate..."
+echo "🔍 Certificate file size: $(ls -lh "$CERT_FILE" | awk '{print $5}')"
+echo "🔍 Certificate file type: $(file "$CERT_FILE")"
+
+# Try to import with verbose output
 security import "$CERT_FILE" \
     -k "$KEYCHAIN_NAME" \
     -P "$DEVELOPER_ID_PASSWORD" \
     -T /usr/bin/codesign \
-    -T /usr/bin/security
+    -T /usr/bin/security \
+    -f pkcs12 \
+    -A
+
+# Show what was imported immediately after import
+echo "🔍 Checking keychain contents after import..."
+security find-identity -v "$KEYCHAIN_NAME" || echo "No identities found"
+security find-certificate -a "$KEYCHAIN_NAME" || echo "No certificates found"
 
 # Set key partition list (required for macOS 10.12+)
 echo "🔧 Setting key partition list..."
