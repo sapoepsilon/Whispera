@@ -42,7 +42,8 @@ jobs:
         run: |
           echo "🔨 Building Whispera app..."
           
-          # Build using scheme with destination platform to avoid C compilation issues
+          # Build using scheme (includes test targets but they won't be run)
+          # Using destination platform to avoid C compilation issues
           xcodebuild build \
                      -project "${APP_NAME}.xcodeproj" \
                      -scheme "${SCHEME_NAME}" \
