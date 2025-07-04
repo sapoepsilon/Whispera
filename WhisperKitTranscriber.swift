@@ -113,7 +113,14 @@ import SwiftUI
     var modelState: String = "unloaded"
     var isModelLoading: Bool = false
     var isModelLoaded: Bool = false
-	var selectedModel: String?
+	var selectedModel: String? {
+        get {
+            UserDefaults.standard.string(forKey: "selectedModel")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "selectedModel")
+        }
+    }
     
 	private func modelCacheDirectory(for modelName: String) -> URL? {
 		guard let appSupport = FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask).first else {
@@ -751,6 +758,9 @@ import SwiftUI
             
             await updateLoadProgress(0.9, "Finalizing model setup...")
             currentModel = modelName
+            
+            // Sync selectedModel with currentModel when loading succeeds
+            selectedModel = modelName
             
             // Store as last used model for auto-loading next time
             lastUsedModel = modelName

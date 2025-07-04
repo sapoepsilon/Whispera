@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -14,6 +14,9 @@
 		1A1A1A1A1A1A1A1A1A1A1A1F /* GlobalShortcutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A2F /* GlobalShortcutManager.swift */; };
 		1A1A1A1A1A1A1A1A1A1A1A21 /* WhisperKitTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */; };
 		D6077E982DF10E77009E7404 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D6077E972DF10E77009E7404 /* Assets.xcassets */; };
+		D63850C22E17907D000FD465 /* ModelSynchronizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63850BC2E17907D000FD465 /* ModelSynchronizationTests.swift */; };
+		D63850C32E17907D000FD465 /* SettingsViewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63850C02E17907D000FD465 /* SettingsViewUITests.swift */; };
+		D63850C42E17907D000FD465 /* WhisperKitTranscriberTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63850BD2E17907D000FD465 /* WhisperKitTranscriberTests.swift */; };
 		D6460C9F2DF10709006433DA /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */; };
 		D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D648B7CA2DF9FF8B006079ED /* Constants.swift */; };
 		D64B1B292DF11A7B00D2CEAB /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */; };
@@ -22,6 +25,23 @@
 		D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */; };
 		D6C81FC92E0001AB00D32F2A /* ContextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D63850D12E179188000FD465 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EAEAEAEAEAEAEAEAEAEAEAEA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9A9A9A9A9A9A9A9A9A9A9A9A;
+			remoteInfo = Whispera;
+		};
+		D63850E22E1791AF000FD465 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EAEAEAEAEAEAEAEAEAEAEAEA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9A9A9A9A9A9A9A9A9A9A9A9A;
+			remoteInfo = Whispera;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		2A2A2A2A2A2A2A2A2A2A2A2A /* WhisperaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperaApp.swift; sourceTree = "<group>"; };
@@ -33,11 +53,21 @@
 		3A3A3A3A3A3A3A3A3A3A3A3A /* Whispera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Whispera.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D6077E972DF10E77009E7404 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D63850BC2E17907D000FD465 /* ModelSynchronizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSynchronizationTests.swift; sourceTree = "<group>"; };
+		D63850BD2E17907D000FD465 /* WhisperKitTranscriberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitTranscriberTests.swift; sourceTree = "<group>"; };
+		D63850C02E17907D000FD465 /* SettingsViewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewUITests.swift; sourceTree = "<group>"; };
+		D63850CB2E179188000FD465 /* WhisperaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D63850DE2E1791AF000FD465 /* WhisperaUnitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperaUnitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D648B7CA2DF9FF8B006079ED /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
 		D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		D63850CC2E179188000FD465 /* WhisperaUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUITests; sourceTree = "<group>"; };
+		D63850DF2E1791AF000FD465 /* WhisperaUnitTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUnitTests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		5A5A5A5A5A5A5A5A5A5A5A5A /* Frameworks */ = {
@@ -49,6 +79,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D63850C82E179188000FD465 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D63850DB2E1791AF000FD465 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -57,6 +101,8 @@
 			children = (
 				D648B7CA2DF9FF8B006079ED /* Constants.swift */,
 				D6077E972DF10E77009E7404 /* Assets.xcassets */,
+				D63850CC2E179188000FD465 /* WhisperaUITests */,
+				D63850DF2E1791AF000FD465 /* WhisperaUnitTests */,
 				8A8A8A8A8A8A8A8A8A8A8A8A /* Products */,
 				2A2A2A2A2A2A2A2A2A2A2A2A /* WhisperaApp.swift */,
 				D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */,
@@ -66,6 +112,8 @@
 				D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */,
 				D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2F /* GlobalShortcutManager.swift */,
+				D63850BE2E17907D000FD465 /* WhisperaTests */,
+				D63850C12E17907D000FD465 /* WhisperaUITests */,
 				2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */,
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */,
 			);
@@ -75,8 +123,27 @@
 			isa = PBXGroup;
 			children = (
 				3A3A3A3A3A3A3A3A3A3A3A3A /* Whispera.app */,
+				D63850CB2E179188000FD465 /* WhisperaUITests.xctest */,
+				D63850DE2E1791AF000FD465 /* WhisperaUnitTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		D63850BE2E17907D000FD465 /* WhisperaTests */ = {
+			isa = PBXGroup;
+			children = (
+				D63850BC2E17907D000FD465 /* ModelSynchronizationTests.swift */,
+				D63850BD2E17907D000FD465 /* WhisperKitTranscriberTests.swift */,
+			);
+			path = WhisperaTests;
+			sourceTree = "<group>";
+		};
+		D63850C12E17907D000FD465 /* WhisperaUITests */ = {
+			isa = PBXGroup;
+			children = (
+				D63850C02E17907D000FD465 /* SettingsViewUITests.swift */,
+			);
+			path = WhisperaUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -99,6 +166,52 @@
 			productReference = 3A3A3A3A3A3A3A3A3A3A3A3A /* Whispera.app */;
 			productType = "com.apple.product-type.application";
 		};
+		D63850CA2E179188000FD465 /* WhisperaUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D63850D32E179188000FD465 /* Build configuration list for PBXNativeTarget "WhisperaUITests" */;
+			buildPhases = (
+				D63850C72E179188000FD465 /* Sources */,
+				D63850C82E179188000FD465 /* Frameworks */,
+				D63850C92E179188000FD465 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D63850D22E179188000FD465 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D63850CC2E179188000FD465 /* WhisperaUITests */,
+			);
+			name = WhisperaUITests;
+			packageProductDependencies = (
+			);
+			productName = WhisperaUITests;
+			productReference = D63850CB2E179188000FD465 /* WhisperaUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		D63850DD2E1791AF000FD465 /* WhisperaUnitTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D63850E42E1791AF000FD465 /* Build configuration list for PBXNativeTarget "WhisperaUnitTests" */;
+			buildPhases = (
+				D63850DA2E1791AF000FD465 /* Sources */,
+				D63850DB2E1791AF000FD465 /* Frameworks */,
+				D63850DC2E1791AF000FD465 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D63850E32E1791AF000FD465 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D63850DF2E1791AF000FD465 /* WhisperaUnitTests */,
+			);
+			name = WhisperaUnitTests;
+			packageProductDependencies = (
+			);
+			productName = WhisperaUnitTests;
+			productReference = D63850DE2E1791AF000FD465 /* WhisperaUnitTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -106,11 +219,19 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1500;
+				LastSwiftUpdateCheck = 1630;
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					9A9A9A9A9A9A9A9A9A9A9A9A = {
 						CreatedOnToolsVersion = 15.0;
+					};
+					D63850CA2E179188000FD465 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = 9A9A9A9A9A9A9A9A9A9A9A9A;
+					};
+					D63850DD2E1791AF000FD465 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = 9A9A9A9A9A9A9A9A9A9A9A9A;
 					};
 				};
 			};
@@ -132,11 +253,27 @@
 			projectRoot = "";
 			targets = (
 				9A9A9A9A9A9A9A9A9A9A9A9A /* Whispera */,
+				D63850CA2E179188000FD465 /* WhisperaUITests */,
+				D63850DD2E1791AF000FD465 /* WhisperaUnitTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		D63850C92E179188000FD465 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D63850DC2E1791AF000FD465 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DADADADADADADADADADADADA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -166,7 +303,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D63850C72E179188000FD465 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D63850DA2E1791AF000FD465 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D63850D22E179188000FD465 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9A9A9A9A9A9A9A9A9A9A9A9A /* Whispera */;
+			targetProxy = D63850D12E179188000FD465 /* PBXContainerItemProxy */;
+		};
+		D63850E32E1791AF000FD465 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9A9A9A9A9A9A9A9A9A9A9A9A /* Whispera */;
+			targetProxy = D63850E22E1791AF000FD465 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		BBBBBBBBBBBBBBBBBBBBBBB1 /* Debug */ = {
@@ -224,6 +388,102 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		D63850D42E179188000FD465 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NK28QT38A3;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sapoepsilon.WhisperaUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Whispera;
+			};
+			name = Debug;
+		};
+		D63850D52E179188000FD465 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NK28QT38A3;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sapoepsilon.WhisperaUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Whispera;
+			};
+			name = Release;
+		};
+		D63850E52E1791AF000FD465 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NK28QT38A3;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sapoepsilon.WhisperaUnitTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Whispera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Whispera";
+			};
+			name = Debug;
+		};
+		D63850E62E1791AF000FD465 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NK28QT38A3;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sapoepsilon.WhisperaUnitTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Whispera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Whispera";
 			};
 			name = Release;
 		};
@@ -344,6 +604,24 @@
 			buildConfigurations = (
 				BBBBBBBBBBBBBBBBBBBBBBB1 /* Debug */,
 				BBBBBBBBBBBBBBBBBBBBBBB2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D63850D32E179188000FD465 /* Build configuration list for PBXNativeTarget "WhisperaUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D63850D42E179188000FD465 /* Debug */,
+				D63850D52E179188000FD465 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D63850E42E1791AF000FD465 /* Build configuration list for PBXNativeTarget "WhisperaUnitTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D63850E52E1791AF000FD465 /* Debug */,
+				D63850E62E1791AF000FD465 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

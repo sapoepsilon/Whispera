@@ -99,12 +99,19 @@ struct SettingsView: View {
                             }
                         } else {
                             VStack(alignment: .trailing, spacing: 4) {
-								Picker("Whisper model", selection: $selectedModel) {
+								Picker("Whisper model", selection: Binding(
+									get: { whisperKit.selectedModel ?? selectedModel },
+									set: { newValue in
+										selectedModel = newValue
+										whisperKit.selectedModel = newValue
+									}
+								)) {
 									ForEach(whisperKit.availableModels, id: \.self) { model in
-										Text(WhisperKitTranscriber.getModelDisplayName(for: model))
+										Text(WhisperKitTranscriber.getModelDisplayName(for: model)).tag(model)
 									}
 								}
 								.frame(minWidth: 180)
+								.accessibilityIdentifier("Whisper model")
                                 
 								if !whisperKit.isCurrentModelLoaded() {
                                     Button("Load Model") {
@@ -134,6 +141,7 @@ struct SettingsView: View {
                         Text(getCurrentModelStatusText())
                             .font(.caption)
                             .foregroundColor(getModelStatusColor())
+                            .accessibilityIdentifier("modelStatusText")
                     }
                 }
                 
@@ -234,6 +242,10 @@ struct SettingsView: View {
             loadAvailableModels()
             checkLaunchAtStartupStatus()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("WhisperKitModelStateChanged"))) { _ in
+            // Force UI update when model state changes
+            loadAvailableModels()
+        }
         .onDisappear {
             stopRecording()
         }
@@ -303,13 +315,18 @@ struct SettingsView: View {
                 await MainActor.run {
                     self.availableModels = allModels
                     
-                    // Set default selection if none set or invalid
-                    if selectedModel.isEmpty || !allModels.contains(selectedModel) {
-                        // Find the first base model (preferred) or fallback to first available
+                    // Sync selectedModel with current loaded model if one exists
+                    if let currentModel = whisperKit.currentModel, allModels.contains(currentModel) {
+                        selectedModel = currentModel
+                        whisperKit.selectedModel = currentModel
+                    } else if selectedModel.isEmpty || !allModels.contains(selectedModel) {
+                        // Set default selection if none set or invalid
                         if let baseModel = allModels.first(where: { $0.contains("base.en") }) {
                             selectedModel = baseModel
+                            whisperKit.selectedModel = baseModel
                         } else if let firstModel = allModels.first {
                             selectedModel = firstModel
+                            whisperKit.selectedModel = firstModel
                         }
                     }
                 }
@@ -504,6 +521,10 @@ struct SettingsView: View {
         } else if whisperKit.isModelLoaded {
             if let currentModel = whisperKit.currentModel {
                 let cleanName = currentModel.replacingOccurrences(of: "openai_whisper-", with: "")
+                // Check if the currently selected model differs from the loaded model
+                if let selectedModel = whisperKit.selectedModel, selectedModel != currentModel {
+                    return "Loaded: \(cleanName) (different model selected)"
+                }
                 return "Loaded: \(cleanName)"
             } else {
                 return "Model loaded"
@@ -519,7 +540,11 @@ struct SettingsView: View {
         if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
             return .orange
         } else if whisperKit.isModelLoaded {
-			return whisperKit.isCurrentModelLoaded() ? .green : .orange
+            // Check if selected model matches current model
+            if let selectedModel = whisperKit.selectedModel, let currentModel = whisperKit.currentModel {
+                return selectedModel == currentModel ? .green : .orange
+            }
+            return whisperKit.isCurrentModelLoaded() ? .green : .orange
         } else {
             return .secondary
         }
