@@ -181,3 +181,4 @@ struct OnboardingView: View {
         return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 }
+	
