@@ -8,9 +8,8 @@ struct WhisperaApp: App {
     var body: some Scene {
         Settings {
 			SettingsView()
-				.frame(height: 500)
         }
-        .windowResizability(.contentSize)
+		.windowResizability(.automatic)
         .windowToolbarStyle(.unified(showsTitle: true))
 		.defaultPosition(.center)
         .commands {
@@ -37,6 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
     private var recordingObserver: NSObjectProtocol?
     private var downloadObserver: NSObjectProtocol?
+    private var modelStateObserver: NSObjectProtocol?
     private var onboardingWindow: NSWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -168,6 +168,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Also observe download state changes
         downloadObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("DownloadStateChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateStatusIcon()
+            }
+        }
+        
+        // Observe model state changes for menu bar updates
+        modelStateObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("WhisperKitModelStateChanged"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -331,6 +342,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = downloadObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = modelStateObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }

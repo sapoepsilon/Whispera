@@ -17,13 +17,9 @@
 		D6460C9F2DF10709006433DA /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */; };
 		D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D648B7CA2DF9FF8B006079ED /* Constants.swift */; };
 		D64B1B292DF11A7B00D2CEAB /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */; };
-		D66570332DF4E01B00EEA9D6 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D66570322DF4E01B00EEA9D6 /* llama.xcframework */; };
-		D66570362DF4E65300EEA9D6 /* LLMManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66570352DF4E65000EEA9D6 /* LLMManager.swift */; };
-		D66570382DF502FD00EEA9D6 /* LlamaState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66570372DF502FA00EEA9D6 /* LlamaState.swift */; };
 		D69B300D2DFA0E020024A2DA /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D69B300C2DFA0E020024A2DA /* MarkdownUI */; };
 		D6B81FB42DEFF5CC00D32F2A /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6B81FB32DEFF5CC00D32F2A /* WhisperKit */; };
 		D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */; };
-		D6B81FB72DEFFE4100D32F2A /* LlamaViewForOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B81FB82DEFFE4200D32F2A /* LlamaViewForOnboarding.swift */; };
 		D6C81FC92E0001AB00D32F2A /* ContextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */; };
 /* End PBXBuildFile section */
 
@@ -39,11 +35,7 @@
 		D6077E972DF10E77009E7404 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D648B7CA2DF9FF8B006079ED /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
-		D66570322DF4E01B00EEA9D6 /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = llama.xcframework; sourceTree = "<group>"; };
-		D66570352DF4E65000EEA9D6 /* LLMManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMManager.swift; sourceTree = "<group>"; };
-		D66570372DF502FA00EEA9D6 /* LlamaState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaState.swift; sourceTree = "<group>"; };
 		D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
-		D6B81FB82DEFFE4200D32F2A /* LlamaViewForOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaViewForOnboarding.swift; sourceTree = "<group>"; };
 		D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -54,7 +46,6 @@
 			files = (
 				D69B300D2DFA0E020024A2DA /* MarkdownUI in Frameworks */,
 				D6B81FB42DEFF5CC00D32F2A /* WhisperKit in Frameworks */,
-				D66570332DF4E01B00EEA9D6 /* llama.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,8 +56,6 @@
 			isa = PBXGroup;
 			children = (
 				D648B7CA2DF9FF8B006079ED /* Constants.swift */,
-				D66570372DF502FA00EEA9D6 /* LlamaState.swift */,
-				D66570352DF4E65000EEA9D6 /* LLMManager.swift */,
 				D6077E972DF10E77009E7404 /* Assets.xcassets */,
 				8A8A8A8A8A8A8A8A8A8A8A8A /* Products */,
 				2A2A2A2A2A2A2A2A2A2A2A2A /* WhisperaApp.swift */,
@@ -75,12 +64,10 @@
 				2A2A2A2A2A2A2A2A2A2A2A2C /* SettingsView.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2D /* AudioManager.swift */,
 				D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */,
-				D6B81FB82DEFFE4200D32F2A /* LlamaViewForOnboarding.swift */,
 				D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2F /* GlobalShortcutManager.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */,
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */,
-				D66570322DF4E01B00EEA9D6 /* llama.xcframework */,
 			);
 			sourceTree = "<group>";
 		};
@@ -168,14 +155,11 @@
 			files = (
 				1A1A1A1A1A1A1A1A1A1A1A1A /* WhisperaApp.swift in Sources */,
 				D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */,
-				D66570382DF502FD00EEA9D6 /* LlamaState.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1B /* MenuBarView.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1C /* SettingsView.swift in Sources */,
-				D66570362DF4E65300EEA9D6 /* LLMManager.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1D /* AudioManager.swift in Sources */,
 				D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */,
 				D64B1B292DF11A7B00D2CEAB /* OnboardingView.swift in Sources */,
-				D6B81FB72DEFFE4100D32F2A /* LlamaViewForOnboarding.swift in Sources */,
 				D6C81FC92E0001AB00D32F2A /* ContextProvider.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1F /* GlobalShortcutManager.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A21 /* WhisperKitTranscriber.swift in Sources */,

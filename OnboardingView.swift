@@ -1,13 +1,11 @@
 import SwiftUI
 import AVFoundation
-import llama
 import Hub
 
 
 struct OnboardingView: View {
 	@Bindable var audioManager: AudioManager
     @ObservedObject var shortcutManager: GlobalShortcutManager
-	@ObservedObject private var whisperKit = WhisperKitTranscriber.shared
 
     @State private var currentStep = 0
     @State private var selectedModel = ""
@@ -23,24 +21,20 @@ struct OnboardingView: View {
     @AppStorage("enableTranslation") private var enableTranslation = false
     @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
     
-    private let steps = ["Welcome", "Permissions", "Model", "Shortcut", "Settings", "Test", "LLM Model", "Complete"]
+    private let steps = ["Welcome", "Permissions", "Model", "Shortcut", "Settings", "Test", "Complete"]
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             VStack(spacing: 8) {
                 Text("Welcome to Whispera")
                     .font(.system(.title, design: .rounded, weight: .semibold))
                     .foregroundColor(.primary)
-                
-                // Progress indicator
                 OnboardingProgressView(currentStep: currentStep, totalSteps: steps.count)
             }
             .padding(.horizontal, 40)
             .padding(.top, 30)
             .padding(.bottom, 20)
             
-            // Content area
             ScrollView {
                 VStack(spacing: 30) {
                     stepContent
@@ -98,8 +92,6 @@ struct OnboardingView: View {
         case 5:
             TestStepView(audioManager: audioManager, enableTranslation: $enableTranslation, selectedLanguage: $selectedLanguage)
         case 6:
-			LlamaViewForOnboarding()
-		case 7:
             CompleteStepView()
         default:
             EmptyView()
@@ -114,8 +106,7 @@ struct OnboardingView: View {
         case 3: return "Set Shortcut"
         case 4: return "Continue"
         case 5: return audioManager.lastTranscription != nil ? "Continue" : "Skip Test"
-		case 6: return "Continue"
-        case 7: return "Finish Setup"
+		case 6: return "Finish Setup"
         default: return "Next"
         }
     }
@@ -148,9 +139,6 @@ struct OnboardingView: View {
                 return
             }
         case 6:
-			// LLM step - optional, user can continue
-			break
-		case 7:
             completeOnboarding()
             return
         default:
@@ -986,7 +974,6 @@ struct TestStepView: View {
 struct ModelSelectionStepView: View {
     @Binding var selectedModel: String
     @Bindable var audioManager: AudioManager
-	@ObservedObject private var whisperKit = WhisperKitTranscriber.shared
 	
     @State private var availableModels: [String] = []
     @State private var isLoadingModels = false
@@ -1001,10 +988,10 @@ struct ModelSelectionStepView: View {
                     .font(.system(size: 48))
                     .foregroundColor(.blue)
                 
-                Text("Choose AI Model")
+                Text("Choose Whisper Model")
                     .font(.system(.title, design: .rounded, weight: .semibold))
                 
-                Text("Select the AI model that best fits your needs. You can change this later in Settings.")
+                Text("Select the Whisper model that best fits your needs. You can change this later in Settings.")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -1053,7 +1040,7 @@ struct ModelSelectionStepView: View {
                     }
                 }
                 
-                Text("Choose your AI model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions.")
+                Text("Choose your Whisper model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.leading)
@@ -1128,26 +1115,7 @@ struct ModelSelectionStepView: View {
         }
         
         return availableModels.compactMap { model in
-            let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
-            let displayName: String
-            
-            switch cleanName {
-            case "tiny.en": displayName = "Tiny (English) - 39MB"
-            case "tiny": displayName = "Tiny (Multilingual) - 39MB"
-            case "base.en": displayName = "Base (English) - 74MB"
-            case "base": displayName = "Base (Multilingual) - 74MB"
-            case "small.en": displayName = "Small (English) - 244MB"
-            case "small": displayName = "Small (Multilingual) - 244MB"
-            case "medium.en": displayName = "Medium (English) - 769MB"
-            case "medium": displayName = "Medium (Multilingual) - 769MB"
-            case "large-v2": displayName = "Large v2 (Multilingual) - 1.5GB"
-            case "large-v3": displayName = "Large v3 (Multilingual) - 1.5GB"
-            case "large-v3-turbo": displayName = "Large v3 Turbo (Multilingual) - 809MB"
-            case "distil-large-v2": displayName = "Distil Large v2 (Multilingual) - 756MB"
-            case "distil-large-v3": displayName = "Distil Large v3 (Multilingual) - 756MB"
-            default: displayName = cleanName.capitalized
-            }
-            
+            let displayName = WhisperKitTranscriber.getModelDisplayName(for: model)
             return (model, displayName)
         }
     }
@@ -1164,7 +1132,7 @@ struct ModelSelectionStepView: View {
                 
                 await MainActor.run {
                     self.availableModels = fetchedModels.sorted { lhs, rhs in
-                        getModelPriority(lhs) < getModelPriority(rhs)
+                        WhisperKitTranscriber.getModelPriority(for: lhs) < WhisperKitTranscriber.getModelPriority(for: rhs)
                     }
                     self.isLoadingModels = false
                     
@@ -1206,34 +1174,21 @@ struct ModelSelectionStepView: View {
         }
     }
     
-    private func getModelPriority(_ modelName: String) -> Int {
-        let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
-        switch cleanName {
-        case "tiny.en", "tiny": return 1
-        case "base.en", "base": return 2
-        case "small.en", "small": return 3
-        case "medium.en", "medium": return 4
-        case "large-v2": return 5
-        case "large-v3": return 6
-        case "large-v3-turbo": return 7
-        case "distil-large-v2", "distil-large-v3": return 8
-        default: return 9
-        }
-    }
-    
     private func downloadModelIfNeeded(_ modelId: String) {
         // Only download if not already downloaded and not currently downloading
-        if !audioManager.whisperKitTranscriber.downloadedModels.contains(modelId) &&
-           !audioManager.whisperKitTranscriber.isDownloadingModel {
-            Task {
-                do {
-                    try await audioManager.whisperKitTranscriber.downloadModel(modelId)
-                } catch {
-                    await MainActor.run {
-                        loadingError = "Failed to download model: \(error.localizedDescription)"
-                        errorMessage = "Failed to download model: \(error.localizedDescription)"
-                        showingError = true
-                    }
+        guard !audioManager.whisperKitTranscriber.downloadedModels.contains(modelId) &&
+              !audioManager.whisperKitTranscriber.isDownloadingModel else {
+            return // Already downloaded or downloading
+        }
+        
+        Task {
+            do {
+                try await audioManager.whisperKitTranscriber.downloadModel(modelId)
+            } catch {
+                await MainActor.run {
+                    loadingError = "Failed to download model: \(error.localizedDescription)"
+                    errorMessage = "Failed to download model: \(error.localizedDescription)"
+                    showingError = true
                 }
             }
         }
