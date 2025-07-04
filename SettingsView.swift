@@ -112,23 +112,6 @@ struct SettingsView: View {
 								}
 								.frame(minWidth: 180)
 								.accessibilityIdentifier("Whisper model")
-                                
-								if !whisperKit.isCurrentModelLoaded() {
-                                    Button("Load Model") {
-                                        Task {
-											do {
-												try await whisperKit.loadCurrentModel()
-											} catch {
-												await MainActor.run {
-													errorMessage = "Failed to load model: \(error.localizedDescription)"
-													showingError = true
-												}
-											}
-										}
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
-                                }
                             }
                         }
                     }
@@ -142,6 +125,8 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(getModelStatusColor())
                             .accessibilityIdentifier("modelStatusText")
+						
+						Text("Current memory usage: \(getMemoryUsage().description) MB")
                     }
                 }
                 
@@ -236,7 +221,7 @@ struct SettingsView: View {
             
             Spacer()
         }
-        .frame(width: 400, height: 450)
+        .frame(width: 400, height: 520)
         .background(.regularMaterial)
         .onAppear {
             loadAvailableModels()
@@ -514,26 +499,27 @@ struct SettingsView: View {
     }
     
     private func getCurrentModelStatusText() -> String {
-        if whisperKit.isDownloadingModel {
-            return "Downloading..."
-        } else if whisperKit.isModelLoading {
-            return "Loading..."
-        } else if whisperKit.isModelLoaded {
-            if let currentModel = whisperKit.currentModel {
-                let cleanName = currentModel.replacingOccurrences(of: "openai_whisper-", with: "")
-                // Check if the currently selected model differs from the loaded model
-                if let selectedModel = whisperKit.selectedModel, selectedModel != currentModel {
-                    return "Loaded: \(cleanName) (different model selected)"
-                }
-                return "Loaded: \(cleanName)"
-            } else {
-                return "Model loaded"
-            }
-        } else if whisperKit.isInitialized {
-			return !whisperKit.isCurrentModelLoaded() ? "Different model selected" : "No model loaded"
-        } else {
-            return "Initializing..."
-        }
+		return whisperKit.modelState
+//        if whisperKit.isDownloadingModel {
+//            return "Downloading..."
+//        } else if whisperKit.isModelLoading {
+//            return "Loading..."
+//        } else if whisperKit.isModelLoaded {
+//            if let currentModel = whisperKit.currentModel {
+//                let cleanName = currentModel.replacingOccurrences(of: "openai_whisper-", with: "")
+//                // Check if the currently selected model differs from the loaded model
+//                if let selectedModel = whisperKit.selectedModel, selectedModel != currentModel {
+//                    return "Loaded: \(cleanName) (different model selected)"
+//                }
+//                return "Loaded: \(cleanName)"
+//            } else {
+//                return "Model loaded"
+//            }
+//        } else if whisperKit.isInitialized {
+//			return !whisperKit.isCurrentModelLoaded() ? "Different model selected" : "No model loaded"
+//        } else {
+//            return "Initializing..."
+//        }
     }
     
     private func getModelStatusColor() -> Color {

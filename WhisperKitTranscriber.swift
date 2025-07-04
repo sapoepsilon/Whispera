@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import WhisperKit
 import SwiftUI
+import OSLog
 
 
 @MainActor
@@ -166,14 +167,14 @@ import SwiftUI
 	private init() {
 		Task{
 			downloadedModels = try await getDownloadedModels()
-			print("downloaded models: \(downloadedModels)")
+			AppLogger.shared.transcriber.log("downloaded models: \(self.downloadedModels)")
 		}
     }
     
     func startInitialization() {
         guard initializationTask == nil else { 
-            print("📋 WhisperKit initialization already in progress...")
-            return 
+			AppLogger.shared.transcriber.log("📋 WhisperKit initialization already in progress...")
+            return
         }
         
         isInitializing = true
@@ -187,14 +188,14 @@ import SwiftUI
     
     private func initialize() async {
         guard !isInitialized else {
-            print("📋 WhisperKit already initialized")
+            AppLogger.shared.transcriber.log("📋 WhisperKit already initialized")
             isInitializing = false
             return
         }
         await updateProgress(0.1, "Loading WhisperKit framework...")
         try? await Task.sleep(nanoseconds: 500_000_000) // Small delay for UI feedback
         
-        print("🔄 Initializing WhisperKit framework...")
+        AppLogger.shared.transcriber.log("🔄 Initializing WhisperKit framework...")
         await updateProgress(0.3, "Setting up AI framework...")
         
         // Sync our cache with what's actually on disk
@@ -212,49 +213,48 @@ import SwiftUI
                     return whisperKitInstance
                 }.value
                 
-                print("✅ WhisperKit initialized with existing models")
+                AppLogger.shared.transcriber.log("✅ WhisperKit initialized with existing models")
                 
                 // Try to auto-load the last used model
                 await updateProgress(0.9, "Loading last used model...")
                 try await autoLoadLastModel()
                 
             } catch {
-                print("⚠️ Failed to initialize with existing models: \(error)")
-                print("📋 Will initialize WhisperKit when first model is downloaded")
+                AppLogger.shared.transcriber.log("⚠️ Failed to initialize with existing models: \(error)")
+                AppLogger.shared.transcriber.log("📋 Will initialize WhisperKit when first model is downloaded")
             }
         } else {
             // No models downloaded yet - we'll initialize when first model is downloaded
-            print("📋 No models downloaded yet - WhisperKit will be initialized with first model download")
+            AppLogger.shared.transcriber.log("📋 No models downloaded yet - WhisperKit will be initialized with first model download")
         }
         
         await updateProgress(1.0, "Ready for model selection!")
         isInitialized = true
         isInitializing = false
-        
-        print("✅ WhisperKit framework initialized - ready for transcription")
-        
+        AppLogger.shared.transcriber.log("✅ WhisperKit framework initialized - ready for transcription")
         initializationTask = nil
     }
     
     private func autoLoadLastModel() async throws {
         guard let lastModel = lastUsedModel else {
-            print("📋 No last used model found, will use default when needed")
+            AppLogger.shared.transcriber.log("📋 No last used model found, will use default when needed")
             return
         }
         
         guard downloadedModels.contains(lastModel) else {
-            print("⚠️ Last used model '\(lastModel)' is no longer available, clearing preference")
+            AppLogger.shared.transcriber.log("⚠️ Last used model '\(lastModel)' is no longer available, clearing preference")
             lastUsedModel = nil
             return
         }
         
         do {
-            print("🔄 Auto-loading last used model: \(lastModel)")
+            AppLogger.shared.transcriber.log("🔄 Auto-loading last used model: \(lastModel)")
             try await loadModel(lastModel)
-            print("✅ Successfully auto-loaded last used model: \(lastModel)")
+			try await refreshAvailableModels()
+            AppLogger.shared.transcriber.log("✅ Successfully auto-loaded last used model: \(lastModel)")
         } catch {
-            print("⚠️ Failed to auto-load last used model '\(lastModel)': \(error)")
-            print("📋 Clearing invalid model preference")
+            AppLogger.shared.transcriber.log("⚠️ Failed to auto-load last used model '\(lastModel)': \(error)")
+            AppLogger.shared.transcriber.log("📋 Clearing invalid model preference")
             lastUsedModel = nil
             throw error
         }
@@ -291,7 +291,7 @@ import SwiftUI
         let task: DecodingTask = enableTranslation ? .transcribe : .translate // For some reason this gets reversed
         let languageCode = Constants.languageCode(for: selectedLanguage)
         
-        print("Creating decoding options - mode: \(task.description) language: \(languageCode)")
+        AppLogger.shared.transcriber.log("Creating decoding options - mode: \(task.description) language: \(languageCode)")
         
         return DecodingOptions(
             verbose: false,
@@ -345,7 +345,7 @@ import SwiftUI
             savedWordTimestamps = wordTimestamps
         }
         
-        print("🔧 Updated decoding options - temperature: \(savedTemperature), sampleLength: \(savedSampleLength)")
+		AppLogger.shared.transcriber.log("🔧 Updated decoding options - temperature: \(self.savedTemperature), sampleLength: \(self.savedSampleLength)")
     }
     
     func getCurrentDecodingOptions(enableTranslation: Bool) -> DecodingOptions {
@@ -356,18 +356,18 @@ import SwiftUI
     
     func reloadCurrentModelIfNeeded() async throws {
         guard let currentModel = currentModel else {
-            print("📋 No current model to reload")
+            AppLogger.shared.transcriber.log("📋 No current model to reload")
             return
         }
         
-        print("🔄 Reloading current model: \(currentModel)")
+        AppLogger.shared.transcriber.log("🔄 Reloading current model: \(currentModel)")
         try await loadModel(currentModel)
     }
     
     func updateLanguageSettings(_ newLanguage: String) {
         let oldLanguage = selectedLanguage
         selectedLanguage = newLanguage
-        print("🔧 Updated language: \(oldLanguage) -> \(newLanguage)")
+        AppLogger.shared.transcriber.log("🔧 Updated language: \(oldLanguage) -> \(newLanguage)")
     }
     
     func updateTranscriptionQuality(
@@ -382,7 +382,7 @@ import SwiftUI
             usePrefillPrompt: usePrefillPrompt,
             usePrefillCache: usePrefillCache
         )
-        print("🔧 Updated transcription quality settings")
+        AppLogger.shared.transcriber.log("🔧 Updated transcription quality settings")
     }
     
     func updateAdvancedSettings(
@@ -395,7 +395,7 @@ import SwiftUI
             withoutTimestamps: withoutTimestamps,
             wordTimestamps: wordTimestamps
         )
-        print("🔧 Updated advanced transcription settings")
+        AppLogger.shared.transcriber.log("🔧 Updated advanced transcription settings")
     }
     
     func resetDecodingOptionsToDefaults() {
@@ -407,7 +407,7 @@ import SwiftUI
         savedSkipSpecialTokens = true
         savedWithoutTimestamps = false
         savedWordTimestamps = true
-        print("🔄 Reset all decoding options to defaults")
+        AppLogger.shared.transcriber.log("🔄 Reset all decoding options to defaults")
     }
     
     func getDecodingOptionsStatus() -> [String: Any] {
@@ -452,11 +452,11 @@ import SwiftUI
                         throw WhisperKitError.notInitialized
                     }
 					if whisperKitInstance.modelState == .loading {
-						print("Model isn't loaded yet. \(whisperKitInstance.modelState )")
+						AppLogger.shared.transcriber.log("Model isn't loaded yet. \(whisperKitInstance.modelState )")
 					}
                     
                     if attempt > 1 {
-                        print("🔄 Re-checking MPS readiness before retry...")
+                        AppLogger.shared.transcriber.log("🔄 Re-checking MPS readiness before retry...")
                         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s for MPS
                     }
 					return try await whisperKitInstance.transcribe(audioPath: audioURL.path, decodeOptions: decodingOptions)
@@ -466,20 +466,19 @@ import SwiftUI
                     let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
                     
                     if !transcription.isEmpty {
-                        print("✅ WhisperKit transcription completed: \(transcription)")
+                        AppLogger.shared.transcriber.log("✅ WhisperKit transcription completed: \(transcription)")
                         
-                        // Clean up processed file if different from original
                         if audioURL != audioURL {
                             try? FileManager.default.removeItem(at: audioURL)
                         }
                         
                         return transcription
                     } else {
-                        print("⚠️ Transcription returned empty text")
+                        AppLogger.shared.transcriber.log("⚠️ Transcription returned empty text")
                         return "No speech detected"
                     }
                 } else {
-                    print("⚠️ No transcription segments returned")
+                    AppLogger.shared.transcriber.log("⚠️ No transcription segments returned")
                     return "No speech detected"
                 }
                 
@@ -492,21 +491,21 @@ import SwiftUI
                    errorString.contains("MPSGraphComputePackage") ||
                    errorString.contains("Metal") {
                     
-                    print("⚠️ Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
+                    AppLogger.shared.transcriber.log("⚠️ Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
                     
                     if attempt < maxRetries {
                         // Exponential backoff: 1s, 2s, 4s
                         let delayNanoseconds = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
-                        print("⏳ Waiting \(delayNanoseconds / 1_000_000_000)s before retry...")
+                        AppLogger.shared.transcriber.log("⏳ Waiting \(delayNanoseconds / 1_000_000_000)s before retry...")
                         try? await Task.sleep(nanoseconds: delayNanoseconds)
                         
                         // Force MPS to reinitialize by giving it more time
-                        print("🔄 Allowing MPS to reinitialize...")
+                        AppLogger.shared.transcriber.log("🔄 Allowing MPS to reinitialize...")
                         try? await Task.sleep(nanoseconds: 1_000_000_000) // Additional 1s for MPS
                     }
                 } else {
                     // Non-MPS error, don't retry
-                    print("❌ WhisperKit transcription failed with non-retryable error: \(error)")
+                    AppLogger.shared.transcriber.log("❌ WhisperKit transcription failed with non-retryable error: \(error)")
                     break
                 }
             }
@@ -535,7 +534,7 @@ import SwiftUI
     func switchModel(to model: String) async throws {
         // Check if there's already a model operation in progress
         if let existingTask = modelOperationTask {
-            print("⏳ Waiting for existing model operation to complete...")
+            AppLogger.shared.transcriber.log("⏳ Waiting for existing model operation to complete...")
             try await existingTask.value
         }
         
@@ -564,14 +563,14 @@ import SwiftUI
             throw WhisperKitError.modelNotFound(model)
         }
         
-        print("🔄 Switching to model: \(model)")
+        AppLogger.shared.transcriber.log("🔄 Switching to model: \(model)")
         
         // Check if model is already downloaded
         let currentlyDownloadedModels = try await getDownloadedModels()
         downloadedModels = currentlyDownloadedModels
         
         if !currentlyDownloadedModels.contains(model) {
-            print("📥 Model \(model) not found locally, downloading first...")
+            AppLogger.shared.transcriber.log("📥 Model \(model) not found locally, downloading first...")
             try await performDownloadModel(model)
             return // downloadModel already creates the WhisperKit instance
         }
@@ -602,7 +601,7 @@ import SwiftUI
 		
 		// Check if the models directory exists
 		guard FileManager.default.fileExists(atPath: baseDir.path) else {
-			print("📝 WhisperKit models directory doesn't exist yet")
+			AppLogger.shared.transcriber.log("📝 WhisperKit models directory doesn't exist yet")
 			return Set<String>()
 		}
 		
@@ -622,7 +621,7 @@ import SwiftUI
 			return modelNames
 			
 		} catch {
-			print("❌ Error reading WhisperKit models directory: \(error)")
+			AppLogger.shared.transcriber.log("❌ Error reading WhisperKit models directory: \(error)")
 			throw error
 		}
 	}
@@ -638,9 +637,9 @@ import SwiftUI
             let uniqueModels = Array(Set(fetchedModels)).sorted()
             availableModels = uniqueModels
             
-            print("✅ Refreshed available models: \(availableModels.count) unique models")
+			AppLogger.shared.transcriber.log("✅ Refreshed available models: \(self.availableModels.count) unique models")
         } catch {
-            print("❌ Failed to refresh available models, using defaults: \(error)")
+            AppLogger.shared.transcriber.log("❌ Failed to refresh available models, using defaults: \(error)")
             // Fallback to defaults instead of throwing
             availableModels = ["openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small", "openai_whisper-small.en"]
         }
@@ -682,7 +681,7 @@ import SwiftUI
     func downloadModel(_ modelName: String) async throws {
         // Check if there's already a model operation in progress
         if let existingTask = modelOperationTask {
-            print("⏳ Waiting for existing model operation to complete...")
+            AppLogger.shared.transcriber.log("⏳ Waiting for existing model operation to complete...")
             try await existingTask.value
         }
         
@@ -715,7 +714,7 @@ import SwiftUI
 					await self.updateDownloadProgress(progress.fractionCompleted * 0.8, "Downloading \(modelName)...")
 				}
 			}
-            print("📥 Model downloaded to: \(downloadedFolder)")
+            AppLogger.shared.transcriber.log("📥 Model downloaded to: \(downloadedFolder)")
             
             // Update downloaded models cache
             downloadedModels.insert(modelName)
@@ -725,10 +724,10 @@ import SwiftUI
             // Now load the downloaded model
             try await loadModel(modelName)
             
-            print("✅ Successfully downloaded and loaded model: \(modelName)")
+            AppLogger.shared.transcriber.log("✅ Successfully downloaded and loaded model: \(modelName)")
             
         } catch {
-            print("❌ Failed to download model \(modelName): \(error)")
+            AppLogger.shared.transcriber.log("❌ Failed to download model \(modelName): \(error)")
             throw error
         }
         
@@ -745,10 +744,9 @@ import SwiftUI
             await updateLoadProgress(0.2, "Preparing to load \(modelName)...")
             
             let recommendedModels = WhisperKit.recommendedModels()
-            print("👂🏼 Recommended models: \(recommendedModels)")
+			print("👂🏼 Recommended models: \(recommendedModels)")
             
             await updateLoadProgress(0.6, "Loading \(modelName)...")
-            // Use WhisperKit with specific model and custom model directory
             whisperKit = try await Task { @MainActor in
                 let config = WhisperKitConfig(model: modelName, downloadBase: baseModelCacheDirectory)
                 let whisperKitInstance = try await WhisperKit(config)
@@ -767,10 +765,10 @@ import SwiftUI
             
             await updateLoadProgress(1.0, "Model ready!")
             
-            print("✅ Successfully loaded model: \(modelName) (saved as last used)")
+            AppLogger.shared.transcriber.log("✅ Successfully loaded model: \(modelName) (saved as last used)")
             
         } catch {
-            print("❌ Failed to load model \(modelName): \(error)")
+            AppLogger.shared.transcriber.log("❌ Failed to load model \(modelName): \(error)")
             throw WhisperKitError.transcriptionFailed("Failed to load model: \(error.localizedDescription)")
         }
         
@@ -801,7 +799,7 @@ import SwiftUI
             // Buffer is already zeroed (silent)
             try audioFile.write(from: silentBuffer)
         } catch {
-            print("⚠️ Failed to create silent audio file: \(error)")
+            AppLogger.shared.transcriber.log("⚠️ Failed to create silent audio file: \(error)")
         }
         
         return audioURL
@@ -881,7 +879,7 @@ import SwiftUI
     func clearDownloadedModelsCache() {
         downloadedModels.removeAll()
         UserDefaults.standard.removeObject(forKey: "downloadedModels")
-        print("🗑️ Cleared downloaded models cache")
+        AppLogger.shared.transcriber.log("🗑️ Cleared downloaded models cache")
     }
     
     // MARK: - WhisperKit Model State Management
@@ -903,7 +901,7 @@ import SwiftUI
         isModelLoading = (newState == .loading || newState == .prewarming)
         isModelLoaded = (newState == .loaded || newState == .prewarmed)
         
-        print("🎯 WhisperKit model state changed: \(oldState.map(String.init(describing:)) ?? "nil") -> \(stateString)")
+        AppLogger.shared.transcriber.log("🎯 WhisperKit model state changed: \(oldState.map(String.init(describing:)) ?? "nil") -> \(stateString)")
         
         // Post notification for other parts of the app
         NotificationCenter.default.post(
@@ -947,6 +945,7 @@ import SwiftUI
             try await loadModel(recommended.default)
         }
     }
+	
 	
 }
 
