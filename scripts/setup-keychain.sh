@@ -72,20 +72,28 @@ security list-keychains -s "$KEYCHAIN_NAME" login.keychain
 
 # Verify certificate is available
 echo "✅ Verifying certificate installation..."
-CERT_COUNT=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" | grep -c "Developer ID Application" || echo "0")
+
+# First, show all available identities for debugging
+echo "📋 All available identities in keychain:"
+security find-identity -v -p codesigning "$KEYCHAIN_NAME"
+
+# Count Developer ID certificates (more flexible pattern)
+CERT_COUNT=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" | grep -c "Developer ID" || echo "0")
 
 if [ "$CERT_COUNT" -eq 0 ]; then
-    echo "❌ Error: No Developer ID Application certificates found in keychain"
+    echo "❌ Error: No Developer ID certificates found in keychain"
+    echo "Available certificates:"
+    security find-identity -v "$KEYCHAIN_NAME"
     security delete-keychain "$KEYCHAIN_NAME" 2>/dev/null || true
     rm -f "$CERT_FILE"
     exit 1
 fi
 
-echo "🎯 Found $CERT_COUNT Developer ID Application certificate(s)"
+echo "🎯 Found $CERT_COUNT Developer ID certificate(s)"
 
 # Show available identities (without private keys)
 echo "📋 Available signing identities:"
-security find-identity -v -p codesigning "$KEYCHAIN_NAME" | grep "Developer ID Application"
+security find-identity -v -p codesigning "$KEYCHAIN_NAME" | grep "Developer ID" || security find-identity -v -p codesigning "$KEYCHAIN_NAME"
 
 # Clean up certificate file
 rm -f "$CERT_FILE"
