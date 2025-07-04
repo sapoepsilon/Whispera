@@ -12,15 +12,20 @@ struct SettingsView: View {
     @AppStorage("launchAtStartup") private var launchAtStartup = false
     @AppStorage("enableTranslation") private var enableTranslation = false
     @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
-    @ObservedObject private var whisperKit = WhisperKitTranscriber.shared
+    @AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
+    @AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
+	var whisperKit = WhisperKitTranscriber.shared
     @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
     @State private var eventMonitor: Any?
     @State private var errorMessage: String?
     @State private var showingError = false
+    @State private var showingLLMSettings = false
+    @State private var showingToolsSettings = false
+    @State private var showingSafetySettings = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        ScrollView {
             VStack(spacing: 16) {
                 HStack {
                     Text("Global Shortcut")
@@ -94,29 +99,19 @@ struct SettingsView: View {
                             }
                         } else {
                             VStack(alignment: .trailing, spacing: 4) {
-                                Picker("Whisper Model", selection: $selectedModel) {
-                                    ForEach(getModelOptions(), id: \.0) { model in
-                                        Text(model.1).tag(model.0)
-                                    }
-                                }
-                                .frame(minWidth: 180)
-                                
-								if whisperKit.whisperKit?.modelState == .unloaded {
-                                    Button("Load Model") {
-                                        Task {
-											do {
-												try await whisperKit.whisperKit?.loadModels()
-											} catch {
-												await MainActor.run {
-													errorMessage = "Failed to load model: \(error.localizedDescription)"
-													showingError = true
-												}
-											}
-										}
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
-                                }
+								Picker("Whisper model", selection: Binding(
+									get: { whisperKit.selectedModel ?? selectedModel },
+									set: { newValue in
+										selectedModel = newValue
+										whisperKit.selectedModel = newValue
+									}
+								)) {
+									ForEach(whisperKit.availableModels, id: \.self) { model in
+										Text(WhisperKitTranscriber.getModelDisplayName(for: model)).tag(model)
+									}
+								}
+								.frame(minWidth: 180)
+								.accessibilityIdentifier("Whisper model")
                             }
                         }
                     }
@@ -129,6 +124,9 @@ struct SettingsView: View {
                         Text(getCurrentModelStatusText())
                             .font(.caption)
                             .foregroundColor(getModelStatusColor())
+                            .accessibilityIdentifier("modelStatusText")
+						
+						Text("Current memory usage: \(getMemoryUsage().description) MB")
                     }
                 }
                 
@@ -175,6 +173,8 @@ struct SettingsView: View {
                     }
                 }
                 
+                Divider()
+    
                 HStack {
                     Text("Launch at Startup")
                         .font(.headline)
@@ -183,7 +183,6 @@ struct SettingsView: View {
                 }
                 
                 Divider()
-                
                 HStack {
                     Text("Setup")
                         .font(.headline)
@@ -222,11 +221,15 @@ struct SettingsView: View {
             
             Spacer()
         }
-        .frame(width: 400, height: 450)
+        .frame(width: 400, height: 520)
         .background(.regularMaterial)
         .onAppear {
             loadAvailableModels()
             checkLaunchAtStartupStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("WhisperKitModelStateChanged"))) { _ in
+            // Force UI update when model state changes
+            loadAvailableModels()
         }
         .onDisappear {
             stopRecording()
@@ -265,37 +268,6 @@ struct SettingsView: View {
         AXIsProcessTrusted()
     }
     
-    private func getModelOptions() -> [(String, String)] {
-        if availableModels.isEmpty {
-			availableModels = whisperKit.getRecommendedModels().supported
-            return [("loading", "Loading models...")]
-        }
-        
-        return availableModels.compactMap { model in
-            let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
-            let displayName: String
-            
-            switch cleanName {
-            case "tiny.en": displayName = "Tiny (English) - 39MB"
-            case "tiny": displayName = "Tiny (Multilingual) - 39MB"
-            case "base.en": displayName = "Base (English) - 74MB"
-            case "base": displayName = "Base (Multilingual) - 74MB"
-            case "small.en": displayName = "Small (English) - 244MB"
-            case "small": displayName = "Small (Multilingual) - 244MB"
-            case "medium.en": displayName = "Medium (English) - 769MB"
-            case "medium": displayName = "Medium (Multilingual) - 769MB"
-            case "large-v2": displayName = "Large v2 (Multilingual) - 1.5GB"
-            case "large-v3": displayName = "Large v3 (Multilingual) - 1.5GB"
-            case "large-v3-turbo": displayName = "Large v3 Turbo (Multilingual) - 809MB"
-            case "distil-large-v2": displayName = "Distil Large v2 (Multilingual) - 756MB"
-            case "distil-large-v3": displayName = "Distil Large v3 (Multilingual) - 756MB"
-            default: displayName = cleanName.capitalized
-            }
-            
-            return (model, displayName)
-        }
-    }
-    
     private func loadAvailableModels() {
         guard whisperKit.isInitialized else { return }
         
@@ -322,19 +294,24 @@ struct SettingsView: View {
                         return lhsDownloaded && !rhsDownloaded
                     }
                     
-                    return getModelPriority(lhs) < getModelPriority(rhs)
+                    return WhisperKitTranscriber.getModelPriority(for: lhs) < WhisperKitTranscriber.getModelPriority(for: rhs)
                 }
                 
                 await MainActor.run {
                     self.availableModels = allModels
                     
-                    // Set default selection if none set or invalid
-                    if selectedModel.isEmpty || !allModels.contains(selectedModel) {
-                        // Find the first base model (preferred) or fallback to first available
+                    // Sync selectedModel with current loaded model if one exists
+                    if let currentModel = whisperKit.currentModel, allModels.contains(currentModel) {
+                        selectedModel = currentModel
+                        whisperKit.selectedModel = currentModel
+                    } else if selectedModel.isEmpty || !allModels.contains(selectedModel) {
+                        // Set default selection if none set or invalid
                         if let baseModel = allModels.first(where: { $0.contains("base.en") }) {
                             selectedModel = baseModel
+                            whisperKit.selectedModel = baseModel
                         } else if let firstModel = allModels.first {
                             selectedModel = firstModel
+                            whisperKit.selectedModel = firstModel
                         }
                     }
                 }
@@ -345,21 +322,6 @@ struct SettingsView: View {
                     showingError = true
                 }
             }
-        }
-    }
-    
-    private func getModelPriority(_ modelName: String) -> Int {
-        let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
-        switch cleanName {
-        case "tiny.en", "tiny": return 1
-        case "base.en", "base": return 2
-        case "small.en", "small": return 3
-        case "medium.en", "medium": return 4
-        case "large-v2": return 5
-        case "large-v3": return 6
-        case "large-v3-turbo": return 7
-        case "distil-large-v2", "distil-large-v3": return 8
-        default: return 9
         }
     }
     
@@ -515,6 +477,18 @@ struct SettingsView: View {
         
     }
     
+    private func showLLMSettings() {
+        showingLLMSettings = true
+    }
+    
+    private func showToolsSettings() {
+        showingToolsSettings = true
+    }
+    
+    private func showSafetySettings() {
+        showingSafetySettings = true
+    }
+    
     private func getModelStatusText() -> String {
         if whisperKit.isDownloadingModel {
             return "Downloading \(whisperKit.downloadingModelName ?? "model")..."
@@ -525,29 +499,38 @@ struct SettingsView: View {
     }
     
     private func getCurrentModelStatusText() -> String {
-        if whisperKit.isDownloadingModel {
-            return "Downloading..."
-        } else if whisperKit.isModelLoading {
-            return "Loading..."
-        } else if whisperKit.isModelLoaded {
-            if let currentModel = whisperKit.currentModel {
-                let cleanName = currentModel.replacingOccurrences(of: "openai_whisper-", with: "")
-                return "Loaded: \(cleanName)"
-            } else {
-                return "Model loaded"
-            }
-        } else if whisperKit.isInitialized {
-			return whisperKit.whisperKit?.modelState == .unloaded ? "Different model selected" : "No model loaded"
-        } else {
-            return "Initializing..."
-        }
+		return whisperKit.modelState
+//        if whisperKit.isDownloadingModel {
+//            return "Downloading..."
+//        } else if whisperKit.isModelLoading {
+//            return "Loading..."
+//        } else if whisperKit.isModelLoaded {
+//            if let currentModel = whisperKit.currentModel {
+//                let cleanName = currentModel.replacingOccurrences(of: "openai_whisper-", with: "")
+//                // Check if the currently selected model differs from the loaded model
+//                if let selectedModel = whisperKit.selectedModel, selectedModel != currentModel {
+//                    return "Loaded: \(cleanName) (different model selected)"
+//                }
+//                return "Loaded: \(cleanName)"
+//            } else {
+//                return "Model loaded"
+//            }
+//        } else if whisperKit.isInitialized {
+//			return !whisperKit.isCurrentModelLoaded() ? "Different model selected" : "No model loaded"
+//        } else {
+//            return "Initializing..."
+//        }
     }
     
     private func getModelStatusColor() -> Color {
         if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
             return .orange
         } else if whisperKit.isModelLoaded {
-			return whisperKit.whisperKit?.modelState == .unloaded ? .orange : .green
+            // Check if selected model matches current model
+            if let selectedModel = whisperKit.selectedModel, let currentModel = whisperKit.currentModel {
+                return selectedModel == currentModel ? .green : .orange
+            }
+            return whisperKit.isCurrentModelLoaded() ? .green : .orange
         } else {
             return .secondary
         }

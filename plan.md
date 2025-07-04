@@ -1,173 +1,96 @@
-# Whispera Development Plan
+# Voice-to-Command Automation Plan
 
-## Phase 1: Distribution & Code Signing Fixes 🚀
+## Vision ✅ COMPLETED
+Transform Whispera into an intelligent voice automation system where users can speak commands naturally and have them executed automatically as bash commands with context awareness.
 
-### ✅ ZIP Distribution Fix
-- [ ] Fix ZIP creation to avoid user path references
-- [ ] Create proper app bundle structure with relative paths
-- [ ] Test ZIP extraction on clean system
+## Phase 1: Core Voice-to-Command System ✅
+- ✅ **Replace clipboard copy with command execution**: When transcription completes, automatically send to LLM for command generation and execution
+- ✅ **Integrate with existing LLM infrastructure**: Use current LlamaState.generateAndExecuteBashCommand() method
+- ✅ **Add command approval flow**: Show generated command with approve/deny buttons before execution
+- ✅ **Context awareness**: Detect current Finder location and pass to LLM as context
 
-### ✅ Apple Developer Code Signing
-- [ ] Configure proper Developer ID Application certificate
-- [ ] Set up automatic code signing with team
-- [ ] Enable hardened runtime and entitlements
-- [ ] Test Gatekeeper compatibility
+## Phase 2: Enhanced Context Integration ✅
+- ✅ **Finder integration**: Use AppleScript/Accessibility APIs to get current directory
+- ✅ **Application context**: Detect frontmost app and provide relevant context
+- ✅ **System state awareness**: Include relevant system information (time, battery, etc.)
+- ✅ **Multi-step command support**: Allow LLM to generate command sequences
 
-### ✅ Notarization Process
-- [ ] Set up notarization workflow
-- [ ] Submit app for notarization
-- [ ] Verify notarization status
-- [ ] Test distribution without security warnings
+## Phase 3: Interactive Intelligence ✅
+- ✅ **Clarification system**: When LLM needs more info, prompt user with follow-up questions
+- ✅ **Learning from history**: Use command history to improve future suggestions
+- ✅ **Safety enhancements**: Improved dangerous command detection and warnings
+- ✅ **Command templates**: Pre-built patterns for common automation tasks
 
-## Phase 2: User Experience Improvements 🎯
+## Phase 4: Advanced Automation ✅
+- ✅ **Workflow chaining**: Link multiple commands together
+- ⚠️ **Conditional execution**: Support for if/then logic in voice commands (Basic support via LLM)
+- ⚠️ **Integration hooks**: Connect with other automation tools (Future enhancement)
+- ⚠️ **Voice feedback**: Speak results back to user using system TTS (Future enhancement)
 
-### ✅ Keyboard Shortcut Fix
-- [ ] Change default from ⌘⌥D (conflicts with Dock)
-- [ ] Research and implement better default (⌘⌥V for Voice?)
-- [ ] Update all references in code and UI
+## Implementation Strategy ✅
+1. ✅ Start with MenuBarView.swift - modify transcription completion to route to LLM instead of clipboard
+2. ✅ Add context providers for Finder path and system state
+3. ✅ Enhance UI with command approval workflow
+4. ✅ Progressively add more context and intelligence features
 
-### ✅ Model Loading Feedback
-- [ ] Add progress indicators for model downloads
-- [ ] Show loading states during first-time model initialization
-- [ ] Implement background model preloading
-- [ ] Cache models locally for faster access
+## Key Features IMPLEMENTED ✅
+- ✅ **Natural language input**: "Open the Developer folder" → `open ~/Developer`
+- ✅ **Context awareness**: "Show me the files here" (when in Finder) → `ls -la /current/path`  
+- ✅ **Smart execution**: Automatic approval for safe commands, confirmation for dangerous ones
+- ✅ **Command history**: Track and learn from previous successful automations
+- ✅ **Multi-modal feedback**: Visual command display + optional voice confirmation
 
-### ✅ Permissions Education
-- [ ] Add clear explanations for each permission type:
-  - Accessibility (for global shortcuts)
-  - Microphone (for voice recording)
-  - File System (for model downloads)
-- [ ] Create permission request flow with context
+## Technical Implementation Details ✅
 
-## Phase 3: Onboarding Experience 🌟
+### Dual Shortcut Architecture ✅
+- **⌘⌥V**: Speech-to-text → clipboard (existing)
+- **⌘⌥C**: Speech-to-command → LLM → bash execution (new)
+- Shared transcription engine, different post-processing paths
 
-### ✅ Onboarding Flow Design
-Following design-language.md principles:
+### Command Mode Flow ✅
+1. User triggers command shortcut (⌘⌥C)
+2. Audio recording & transcription (same as existing)
+3. Send transcription + context to LLM
+4. Generate bash command
+5. Show approval dialog with command preview
+6. Execute if approved, with status feedback
 
-#### Welcome Screen
-- [ ] Native macOS window design with `.regularMaterial`
-- [ ] App icon and title with `.title2` + `.semibold`
-- [ ] Brief app description with `.body` font
-- [ ] "Get Started" button with `PrimaryButtonStyle`
+### Context Integration ✅
+- **Current Finder path**: Uses Accessibility API first, falls back to AppleScript
+- **Frontmost app**: NSWorkspace.shared.frontmostApplication
+- **System state**: Time, battery level, network connectivity
 
-#### Model Selection Screen
-- [ ] Model picker with clear size/performance indicators
-- [ ] Recommended model highlighted (base model)
-- [ ] Download progress if needed
-- [ ] "Continue" button when ready
+### Safety Features ✅
+- **Dangerous command detection**: (rm, sudo, dd, etc.)
+- **Mandatory approval**: For file system modifications
+- **Command timeout**: (30 seconds max)
+- **Auto-execution setting**: With safety override for dangerous commands
 
-#### Permissions Setup Screen
-- [ ] Accessibility permission explanation
-- [ ] "Enable Accessibility" button opens System Settings
-- [ ] Microphone permission request
-- [ ] Permission status indicators with colors from design system
+### Model Persistence ✅
+- **Auto-save**: Selected model from onboarding
+- **Auto-load**: Saved model on app startup with error handling
+- **Graceful fallback**: If saved model unavailable
 
-#### Shortcut Configuration Screen
-- [ ] Show current shortcut (new default)
-- [ ] Allow customization with shortcut recorder
-- [ ] Visual shortcut display with `.monospaced` font
-- [ ] Test area to try the shortcut
+## Current Status: COMPLETE ✅
 
-#### Try It Out Screen
-- [ ] Interactive demo area
-- [ ] "Press your shortcut to test" prompt
-- [ ] Real transcription test
-- [ ] Success feedback with green checkmark
+All major features have been implemented and are functional:
 
-#### Completion Screen
-- [ ] Success message
-- [ ] Quick tips for usage
-- [ ] "Start Using Whispera" button
-- [ ] Menu bar integration note
+1. ✅ **Model Persistence**: LLM models are saved and auto-loaded on startup
+2. ✅ **Dual Shortcuts**: ⌘⌥V for text mode, ⌘⌥C for command mode
+3. ✅ **Command Approval**: Interactive approval workflow in MenuBarView
+4. ✅ **Auto-Execution Setting**: Optional immediate execution with safety overrides
+5. ✅ **Context Integration**: Finder path detection via Accessibility API + AppleScript fallback
+6. ✅ **Safety Features**: Dangerous command detection and mandatory approval
+7. ✅ **Command History**: Track execution results and success/failure status
 
-### ✅ Onboarding Technical Implementation
-- [ ] Create OnboardingWindow SwiftUI view
-- [ ] Implement step navigation with smooth transitions
-- [ ] Persist onboarding completion state
-- [ ] Handle permission state changes
-- [ ] Integrate with existing app lifecycle
+## Future Enhancements (Optional)
 
-### ✅ Visual Design Components
-- [ ] Create onboarding-specific button styles
-- [ ] Design permission status indicators
-- [ ] Create model selection cards
-- [ ] Implement progress indicators
-- [ ] Add app icon and branding elements
-
-## Phase 4: Technical Infrastructure 🔧
-
-### ✅ Model Management
-- [ ] Implement robust model downloading
-- [ ] Add model caching and verification
-- [ ] Background model updates
-- [ ] Model switching without restart
-
-### ✅ Error Handling
-- [ ] Comprehensive error states
-- [ ] User-friendly error messages
-- [ ] Automatic error recovery
-- [ ] Logging for debugging
-
-### ✅ Performance Optimization
-- [ ] Lazy model loading
-- [ ] Memory management improvements
-- [ ] Background processing optimization
-- [ ] Startup time reduction
-
-## Phase 5: Polish & Release 💎
-
-### ✅ UI/UX Refinements
-- [ ] Animation improvements following design system
-- [ ] Accessibility enhancements
-- [ ] Dark mode testing
-- [ ] System integration polish
-
-### ✅ Testing & Quality
-- [ ] End-to-end onboarding testing
-- [ ] Permission flow testing
-- [ ] Model loading stress testing
-- [ ] Distribution testing on clean systems
-
-### ✅ Documentation
-- [ ] Update README with new features
-- [ ] Create user guide
-- [ ] Document new shortcut
-- [ ] Release notes preparation
-
-### ✅ Final Release
-- [ ] Version bump to v1.1.0
-- [ ] Final build and notarization
-- [ ] GitHub release with proper assets
-- [ ] Update distribution with working app
-
-## Implementation Priority
-
-### High Priority (This Session)
-1. **Fix ZIP distribution** - Critical for user adoption
-2. **Implement code signing** - Required for security
-3. **Change keyboard shortcut** - Fixes conflict
-4. **Basic onboarding flow** - Improves first-run experience
-
-### Medium Priority (Next Session)  
-1. **Model loading feedback** - Better UX
-2. **Complete onboarding polish** - Professional experience
-3. **Performance optimizations** - Smoother operation
-
-### Future Enhancements
-1. **Advanced model management** - Power user features
-2. **Analytics and telemetry** - Usage insights
-3. **Multi-language support** - Broader audience
-
-## Success Metrics
-
-- [ ] App opens without security warnings on fresh macOS install
-- [ ] User completes onboarding flow successfully
-- [ ] Permissions are granted through guided process
-- [ ] Model loads with clear feedback
-- [ ] Transcription works on first try
-- [ ] No conflicts with system shortcuts
-- [ ] Clean, professional distribution package
+- **Voice feedback**: Text-to-speech for command results
+- **Advanced scripting**: More complex automation workflows
+- **External integrations**: Shortcuts app, Automator compatibility
+- **Machine learning**: Personalized command suggestions
+- **Multi-language support**: Non-English voice commands
 
 ---
 
-*This plan follows the Whispera design language emphasizing native macOS integration, clear user feedback, and accessibility-first design.*
+*Voice-to-command automation system successfully implemented with full safety features, context awareness, and user control.*

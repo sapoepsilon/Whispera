@@ -1,0 +1,43 @@
+{
+  "configurations" : [
+    {
+      "id" : "3E809F93-B972-4BBB-9E48-5D6AF93F2582",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "environmentVariableEntries" : [
+      {
+        "key" : "",
+        "value" : ""
+      }
+    ],
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Whispera.xcodeproj",
+      "identifier" : "9A9A9A9A9A9A9A9A9A9A9A9A",
+      "name" : "Whispera"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:Whispera.xcodeproj",
+        "identifier" : "D63850CA2E179188000FD465",
+        "name" : "WhisperaUITests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:Whispera.xcodeproj",
+        "identifier" : "D63850DD2E1791AF000FD465",
+        "name" : "WhisperaUnitTests"
+      }
+    }
+  ],
+  "version" : 1
+}
