@@ -122,7 +122,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showOnboarding() {
         let onboardingView = OnboardingView(
             audioManager: audioManager,
-            shortcutManager: shortcutManager,
+            shortcutManager: shortcutManager
         )
         
         let hostingController = NSHostingController(rootView: onboardingView)
