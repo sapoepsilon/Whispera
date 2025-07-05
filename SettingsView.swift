@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
     @AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
     @AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
+    @AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	var whisperKit = WhisperKitTranscriber.shared
     
     // MARK: - Injected Dependencies
@@ -260,6 +261,18 @@ struct SettingsView: View {
                         .font(.headline)
                     Spacer()
                     Toggle("", isOn: $autoDownloadModel)
+                }
+                
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Streaming Transcription")
+                            .font(.headline)
+                        Text("Process audio in real-time instead of saving to file")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $useStreamingTranscription)
                 }
                 
                 HStack {
