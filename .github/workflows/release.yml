@@ -19,7 +19,9 @@ env:
 jobs:
   release:
     runs-on: macos-14
-    
+    permissions:
+      contents: write  # Required to create releases
+      
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
