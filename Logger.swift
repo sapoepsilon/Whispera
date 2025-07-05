@@ -15,6 +15,7 @@ class AppLogger {
 	lazy var network = Logger(subsystem: subsystem, category: "Network")
 	lazy var database = Logger(subsystem: subsystem, category: "Database")
 	lazy var general = Logger(subsystem: subsystem, category: "General")
+	lazy var audioManager = Logger(subsystem: subsystem, category: "AudioManager")
 	lazy var transcriber = Logger(subsystem: subsystem, category: "WhisperTranscriber")
 	
 	private init() {}

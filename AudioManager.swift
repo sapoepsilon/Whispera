@@ -26,9 +26,18 @@ enum RecordingMode {
 	
 	@ObservationIgnored
 	@AppStorage("enableTranslation") var enableTranslation = false
+	@ObservationIgnored
+	@AppStorage("useStreamingTranscription") var useStreamingTranscription = true
 	
 	private var audioRecorder: AVAudioRecorder?
 	private var audioFileURL: URL?
+	
+	// Streaming audio properties
+	private var audioEngine: AVAudioEngine?
+	private var inputNode: AVAudioInputNode?
+	private var audioBuffer: [Float] = []
+	private let maxBufferSize = 16000 * 30 // 30 seconds at 16kHz
+	private let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 	private let recordingIndicator = RecordingIndicatorManager()
 	
@@ -37,8 +46,123 @@ enum RecordingMode {
 		whisperKitTranscriber.startInitialization()
 	}
 	
+	
 	func setupAudio() {
 		checkAndRequestMicrophonePermission()
+		if useStreamingTranscription {
+			setupAudioEngine()
+		} else {
+			// If switching to file mode, clean up streaming resources
+			cleanupAudioEngine()
+		}
+	}
+	
+	private func cleanupAudioEngine() {
+		guard audioEngine != nil else { return }
+		stopAudioEngine()
+	}
+	
+	private func setupAudioEngine() {
+		if audioEngine == nil {
+			audioEngine = AVAudioEngine()
+		}
+		
+		guard let audioEngine = audioEngine else {
+			AppLogger.shared.audioManager.error("❌ Failed to create audio engine")
+			return
+		}
+		
+		// Only setup if not already running
+		if !audioEngine.isRunning {
+			inputNode = audioEngine.inputNode
+			guard let inputNode = inputNode else {
+				print("❌ Failed to get input node")
+				return
+			}
+			
+			let inputFormat = inputNode.outputFormat(forBus: 0)
+			AppLogger.shared.audioManager.log("🎤 Input format: \(inputFormat)")
+			AppLogger.shared.audioManager.log("🎤 Installing initial microphone tap for streaming setup")
+			inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
+				self?.processAudioBuffer(buffer, originalFormat: inputFormat)
+			}
+			print("✅ Initial microphone tap installed - mic indicator should be ON")
+			
+			do {
+				try audioEngine.start()
+				print("✅ Audio engine started successfully for streaming")
+			} catch {
+				print("❌ Failed to start audio engine: \(error)")
+				print("⚠️ Falling back to file-based recording")
+				// Automatically switch to file-based mode if streaming fails
+				useStreamingTranscription = false
+			}
+		}
+	}
+	
+	private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, originalFormat: AVAudioFormat) {
+		guard let targetFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1) else {
+			print("❌ Failed to create target format")
+			return
+		}
+		
+		if originalFormat != targetFormat {
+			guard let converter = AVAudioConverter(from: originalFormat, to: targetFormat) else {
+				print("❌ Failed to create audio converter")
+				return
+			}
+			
+			let ratio = targetFormat.sampleRate / originalFormat.sampleRate
+			let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+			
+			guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCount) else {
+				print("❌ Failed to create converted buffer")
+				return
+			}
+			
+			var error: NSError?
+			converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
+				outStatus.pointee = .haveData
+				return buffer
+			}
+			
+			if let error = error {
+				print("❌ Audio conversion error: \(error)")
+				return
+			}
+			
+			// Process converted buffer
+			extractFloatData(from: convertedBuffer)
+		} else {
+			// No conversion needed
+			extractFloatData(from: buffer)
+		}
+	}
+	
+	private func extractFloatData(from buffer: AVAudioPCMBuffer) {
+		guard let channelData = buffer.floatChannelData?[0] else { return }
+		let frameCount = Int(buffer.frameLength)
+		
+		let audioData = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
+		
+		audioBuffer.append(contentsOf: audioData)
+		
+		if audioBuffer.count > maxBufferSize {
+			let excessCount = audioBuffer.count - maxBufferSize
+			audioBuffer.removeFirst(excessCount)
+		}
+	}
+	
+	private func stopAudioEngine() {
+		if let inputNode = inputNode {
+			print("🔇 Removing microphone tap during engine cleanup")
+			inputNode.removeTap(onBus: 0)
+			print("✅ Microphone tap removed during cleanup")
+		}
+		audioEngine?.stop()
+		audioEngine = nil
+		inputNode = nil
+		print("🛑 Audio engine stopped and cleaned up")
 	}
 	
 	private func checkAndRequestMicrophonePermission() {
@@ -83,7 +207,6 @@ enum RecordingMode {
 	func toggleRecording(mode: RecordingMode = .text) {
 		// Set the recording mode before starting
 		currentRecordingMode = mode
-		print("🎤 Toggle recording - Mode: \(mode)")
 		
 		if isRecording {
 			stopRecording()
@@ -96,13 +219,21 @@ enum RecordingMode {
 		// Check permissions before recording
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
 		case .authorized:
-			performStartRecording()
+			if useStreamingTranscription {
+				startStreamingRecording()
+			} else {
+				performStartRecording()
+			}
 		case .notDetermined:
 			// Request permission first
 			AVCaptureDevice.requestAccess(for: .audio) { granted in
 				DispatchQueue.main.async {
 					if granted {
-						self.performStartRecording()
+						if self.useStreamingTranscription {
+							self.startStreamingRecording()
+						} else {
+							self.performStartRecording()
+						}
 					} else {
 						self.showMicrophonePermissionAlert()
 					}
@@ -135,9 +266,6 @@ enum RecordingMode {
 			audioRecorder?.record()
 			isRecording = true
 			
-			// Show visual indicator
-			//            recordingIndicator.showIndicator()
-			
 			playFeedbackSound(start: true)
 			print("🎤 Recording started successfully")
 		} catch {
@@ -152,6 +280,14 @@ enum RecordingMode {
 	}
 	
 	private func stopRecording() {
+		if useStreamingTranscription {
+			stopStreamingRecording()
+		} else {
+			stopFileBasedRecording()
+		}
+	}
+	
+	private func stopFileBasedRecording() {
 		audioRecorder?.stop()
 		audioRecorder = nil
 		isRecording = false
@@ -168,6 +304,88 @@ enum RecordingMode {
 		}
 	}
 	
+	// MARK: - Streaming Recording Methods
+	
+	private func startStreamingRecording() {
+		audioBuffer.removeAll()
+		
+		if audioEngine?.isRunning != true {
+			setupAudioEngine()
+		} else {
+			// Engine is running, just reinstall the tap for microphone access
+			guard let inputNode = inputNode else { 
+				print("❌ No input node available for tap installation")
+				return 
+			}
+			let inputFormat = inputNode.outputFormat(forBus: 0)
+			print("🎤 Installing microphone tap for streaming recording")
+			inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
+				self?.processAudioBuffer(buffer, originalFormat: inputFormat)
+			}
+			print("✅ Microphone tap installed - mic indicator should be ON")
+		}
+		
+		isRecording = true
+		playFeedbackSound(start: true)
+		print("🎤 Streaming recording started")
+	}
+	
+	private func stopStreamingRecording() {
+		isRecording = false
+		playFeedbackSound(start: false)
+		
+		// Get the accumulated audio buffer
+		let capturedAudio = audioBuffer
+		
+		// Clear buffer for next recording
+		audioBuffer.removeAll()
+		
+		if !capturedAudio.isEmpty {
+			Task {
+				await transcribeAudioBuffer(audioArray: capturedAudio, enableTranslation: self.enableTranslation)
+			}
+		} else {
+			print("⚠️ No audio captured during streaming recording")
+		}
+		
+		if let inputNode = inputNode {
+			inputNode.removeTap(onBus: 0)
+			print("🔇 Tap removed")
+		}
+		audioEngine?.stop()
+		audioEngine?.reset()
+		AppLogger.shared.audioManager.log("🛑 Streaming recording stopped, microphone released")
+	}
+	
+	private func transcribeAudioBuffer(audioArray: [Float], enableTranslation: Bool) async {
+		isTranscribing = true
+		transcriptionError = nil
+		
+		do {
+			// Use the new audio array transcription method
+			let transcription = try await whisperKitTranscriber.transcribeAudioArray(audioArray, enableTranslation: enableTranslation)
+			
+			// Update UI on main thread
+			await MainActor.run {
+				lastTranscription = transcription
+				isTranscribing = false
+				
+				// Route based on recording mode
+				switch currentRecordingMode {
+				case .text:
+					// Traditional behavior - paste to focused app
+					pasteToFocusedApp(transcription)
+				}
+			}
+		} catch {
+			await MainActor.run {
+				transcriptionError = error.localizedDescription
+				lastTranscription = "Transcription failed: \(error.localizedDescription)"
+				isTranscribing = false
+			}
+		}
+	}
+	
 	private func playFeedbackSound(start: Bool) {
 		guard UserDefaults.standard.bool(forKey: "soundFeedback") else { return }
 		
@@ -180,7 +398,7 @@ enum RecordingMode {
 		NSSound(named: soundName)?.play()
 	}
 	
-	
+
 	private func transcribeAudio(fileURL: URL, enableTranslation: Bool) async {
 		isTranscribing = true
 		transcriptionError = nil

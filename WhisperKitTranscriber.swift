@@ -353,13 +353,11 @@ import OSLog
     }
     
     // MARK: - Dynamic Settings Management
-    
     func reloadCurrentModelIfNeeded() async throws {
         guard let currentModel = currentModel else {
             AppLogger.shared.transcriber.log("📋 No current model to reload")
             return
         }
-        
         AppLogger.shared.transcriber.log("🔄 Reloading current model: \(currentModel)")
         try await loadModel(currentModel)
     }
@@ -531,6 +529,111 @@ import OSLog
         }
     }
     
+    func transcribeAudioArray(_ audioArray: [Float], enableTranslation: Bool) async throws -> String {
+        guard isInitialized else {
+            throw WhisperKitError.notInitialized
+        }
+        
+        guard whisperKit != nil else {
+            throw WhisperKitError.noModelLoaded
+        }
+        
+        guard await isWhisperKitReady() else {
+            throw WhisperKitError.notReady
+        }
+        
+        // Ensure audio array is not empty
+        guard !audioArray.isEmpty else {
+            AppLogger.shared.transcriber.log("⚠️ Empty audio array provided")
+            return "No audio data provided"
+        }
+        
+        let maxRetries = 3
+        var lastError: Error?
+        // Use centralized decoding options
+        let decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
+        
+        AppLogger.shared.transcriber.log("🎵 Starting audio array transcription with \(audioArray.count) samples")
+        
+        for attempt in 1...maxRetries {
+            do {
+                // Ensure transcription happens on MainActor for Swift 6 compliance
+                let result = try await Task { @MainActor in
+                    guard let whisperKitInstance = self.whisperKit else {
+                        throw WhisperKitError.notInitialized
+                    }
+                    
+                    if whisperKitInstance.modelState == .loading {
+                        AppLogger.shared.transcriber.log("Model isn't loaded yet. \(whisperKitInstance.modelState)")
+                    }
+                    
+                    if attempt > 1 {
+                        AppLogger.shared.transcriber.log("🔄 Re-checking MPS readiness before retry...")
+                        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s for MPS
+                    }
+                    
+                    return try await whisperKitInstance.transcribe(audioArray: audioArray, decodeOptions: decodingOptions)
+                }.value
+                
+                if !result.isEmpty {
+                    let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    if !transcription.isEmpty {
+                        AppLogger.shared.transcriber.log("✅ WhisperKit audio array transcription completed: \(transcription)")
+                        return transcription
+                    } else {
+                        AppLogger.shared.transcriber.log("⚠️ Transcription returned empty text")
+                        return "No speech detected"
+                    }
+                } else {
+                    AppLogger.shared.transcriber.log("⚠️ No transcription segments returned")
+                    return "No speech detected"
+                }
+                
+            } catch {
+                lastError = error
+                let errorString = error.localizedDescription
+                
+                // Check if this is an MPS resource loading error that we can retry
+                if errorString.contains("Failed to open resource file") || 
+                   errorString.contains("MPSGraphComputePackage") ||
+                   errorString.contains("Metal") {
+                    
+                    AppLogger.shared.transcriber.log("⚠️ Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
+                    
+                    if attempt < maxRetries {
+                        // Exponential backoff: 1s, 2s, 4s
+                        let delayNanoseconds = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
+                        AppLogger.shared.transcriber.log("⏳ Waiting \(delayNanoseconds / 1_000_000_000)s before retry...")
+                        try? await Task.sleep(nanoseconds: delayNanoseconds)
+                        
+                        // Force MPS to reinitialize by giving it more time
+                        AppLogger.shared.transcriber.log("🔄 Allowing MPS to reinitialize...")
+                        try? await Task.sleep(nanoseconds: 1_000_000_000) // Additional 1s for MPS
+                    }
+                } else {
+                    // Non-MPS error, don't retry
+                    AppLogger.shared.transcriber.log("❌ WhisperKit audio array transcription failed with non-retryable error: \(error)")
+                    break
+                }
+            }
+        }
+        
+        // All retries failed, throw the last error
+        if let error = lastError {
+            let errorString = error.localizedDescription
+            if errorString.contains("Failed to open resource file") || 
+               errorString.contains("MPSGraphComputePackage") ||
+               errorString.contains("Metal") {
+                throw WhisperKitError.transcriptionFailed("Metal Performance Shaders failed to load resources after \(maxRetries) attempts. Please restart the app.")
+            } else {
+                throw WhisperKitError.transcriptionFailed(error.localizedDescription)
+            }
+        } else {
+            throw WhisperKitError.transcriptionFailed("Transcription failed for unknown reason")
+        }
+    }
+    
     func switchModel(to model: String) async throws {
         // Check if there's already a model operation in progress
         if let existingTask = modelOperationTask {
@@ -582,7 +685,6 @@ import OSLog
     private func updateDownloadProgress(_ progress: Double, _ status: String) async {
         await MainActor.run {
             self.downloadProgress = progress
-            // You could also update a download status message if needed
         }
     }
     
@@ -711,19 +813,13 @@ import OSLog
 			// Use WhisperKit's download method with default location
 			let downloadedFolder = try await WhisperKit.download(variant: modelName, downloadBase: baseModelCacheDirectory) { progress in
 				Task {
-					await self.updateDownloadProgress(progress.fractionCompleted * 0.8, "Downloading \(modelName)...")
+					await self.updateDownloadProgress(progress.fractionCompleted, "Downloading \(modelName)...")
 				}
 			}
             AppLogger.shared.transcriber.log("📥 Model downloaded to: \(downloadedFolder)")
             
-            // Update downloaded models cache
             downloadedModels.insert(modelName)
-            
-            await updateDownloadProgress(0.8, "Download complete, loading model...")
-            
-            // Now load the downloaded model
             try await loadModel(modelName)
-            
             AppLogger.shared.transcriber.log("✅ Successfully downloaded and loaded model: \(modelName)")
             
         } catch {
