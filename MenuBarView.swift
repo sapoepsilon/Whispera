@@ -6,6 +6,11 @@ struct MenuBarView: View {
 	var whisperKit = WhisperKitTranscriber.shared
 	@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
 	@AppStorage("globalCommandShortcut") private var commandShortcutKey = "⌘⌥C"
+    @AppStorage("enableTranslation") private var enableTranslation = false
+    
+    // MARK: - Injected Dependencies
+    @State var permissionManager: PermissionManager
+    @State var updateManager: UpdateManager
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,10 +30,57 @@ struct MenuBarView: View {
             
             // Main content
             VStack(spacing: 16) {
+                // Update notification banner (if available)
+                if let latestVersion = updateManager.latestVersion,
+                   AppVersion(latestVersion) > AppVersion.current {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("Update Available")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                            Spacer()
+                        }
+                        
+                        HStack {
+                            Text("Whispera \(latestVersion)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            if updateManager.isUpdateDownloaded {
+                                Button("Install") {
+                                    Task {
+                                        try? await updateManager.installDownloadedUpdate()
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            } else {
+                                Button("Update") {
+                                    Task {
+                                        try? await updateManager.downloadUpdate()
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+                        }
+                    }
+                    .padding(8)
+                    .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(.blue.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                
                 // Status card
                 StatusCardView(
                     audioManager: audioManager,
-                    whisperKit: whisperKit
+                    whisperKit: whisperKit,
+                    permissionManager: permissionManager
                 )
                 
                 // Controls
@@ -51,7 +103,7 @@ struct MenuBarView: View {
                     // Shortcut display - design language compliant
                     VStack(spacing: 8) {
                         HStack {
-                            Text("Text Mode")
+                            Text(enableTranslation ? "Translation" : "Transcription")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Spacer()
@@ -164,6 +216,7 @@ struct MenuBarView: View {
 struct StatusCardView: View {
     @Bindable var audioManager: AudioManager
     var whisperKit: WhisperKitTranscriber
+    var permissionManager: PermissionManager
     @AppStorage("selectedModel") private var selectedModel = ""
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
 
@@ -193,6 +246,27 @@ struct StatusCardView: View {
                 }
                 
                 Spacer()
+            }
+            
+            // Permission status section
+            if permissionManager.needsPermissions {
+                HStack {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(.orange)
+                            .frame(width: 8, height: 8)
+                        
+                        Text("Permissions")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Text(permissionManager.missingPermissionsDescription)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
             }
             
             // AI Model section with current model display
@@ -309,7 +383,8 @@ struct StatusCardView: View {
         return StatusCardView.getStatusColor(
             isRecording: audioManager.isRecording,
             isTranscribing: audioManager.isTranscribing,
-            isDownloading: whisperKit.isDownloadingModel
+            isDownloading: whisperKit.isDownloadingModel,
+            needsPermissions: permissionManager.needsPermissions
         )
     }
     
@@ -317,14 +392,17 @@ struct StatusCardView: View {
         return StatusCardView.getStatusIcon(
             isRecording: audioManager.isRecording,
             isTranscribing: audioManager.isTranscribing,
-            isDownloading: whisperKit.isDownloadingModel
+            isDownloading: whisperKit.isDownloadingModel,
+            needsPermissions: permissionManager.needsPermissions
         )
     }
     
     // MARK: - Reusable Status Functions
     
-    static func getStatusColor(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false) -> Color {
-        if isDownloading {
+    static func getStatusColor(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, needsPermissions: Bool = false) -> Color {
+        if needsPermissions {
+            return .orange
+        } else if isDownloading {
             return .orange
         } else if isTranscribing {
             return .blue
@@ -335,8 +413,10 @@ struct StatusCardView: View {
         }
     }
     
-    static func getStatusIcon(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false) -> Image {
-        if isDownloading {
+    static func getStatusIcon(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, needsPermissions: Bool = false) -> Image {
+        if needsPermissions {
+            return Image(systemName: "exclamationmark.triangle.fill")
+        } else if isDownloading {
             return Image(systemName: "arrow.down.circle.fill")
         } else if isTranscribing {
             return Image(systemName: "waveform")
@@ -347,8 +427,10 @@ struct StatusCardView: View {
         }
     }
     
-    static func getStatusTitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false) -> String {
-        if isDownloading {
+    static func getStatusTitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false, needsPermissions: Bool = false) -> String {
+        if needsPermissions {
+            return "Permissions Required"
+        } else if isDownloading {
             return "Downloading Model..."
         } else if isTranscribing {
             return enableTranslation ? "Translating..." : "Transcribing..."
@@ -359,8 +441,10 @@ struct StatusCardView: View {
         }
     }
     
-    static func getStatusSubtitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false) -> String {
-        if isDownloading {
+    static func getStatusSubtitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false, needsPermissions: Bool = false) -> String {
+        if needsPermissions {
+            return "Grant required permissions to continue"
+        } else if isDownloading {
             if let model = downloadingModel {
                 let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
                 return "Installing \(cleanName) model"
@@ -382,7 +466,8 @@ struct StatusCardView: View {
             isTranscribing: audioManager.isTranscribing,
             isDownloading: whisperKit.isDownloadingModel,
             downloadingModel: whisperKit.downloadingModelName,
-            enableTranslation: audioManager.enableTranslation
+            enableTranslation: audioManager.enableTranslation,
+            needsPermissions: permissionManager.needsPermissions
         )
     }
     
@@ -392,7 +477,8 @@ struct StatusCardView: View {
             isTranscribing: audioManager.isTranscribing,
             isDownloading: whisperKit.isDownloadingModel,
             downloadingModel: whisperKit.downloadingModelName,
-            enableTranslation: audioManager.enableTranslation
+            enableTranslation: audioManager.enableTranslation,
+            needsPermissions: permissionManager.needsPermissions
         )
     }
     
