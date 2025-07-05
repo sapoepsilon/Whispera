@@ -132,4 +132,8 @@ echo "🔑 Keychain: $KEYCHAIN_NAME"
 echo "⏰ Auto-lock: 6 hours"
 
 # Set environment variable for subsequent steps
-echo "SIGNING_KEYCHAIN=$KEYCHAIN_NAME" >> "$GITHUB_ENV"
+if [ -n "$GITHUB_ENV" ]; then
+    echo "SIGNING_KEYCHAIN=$KEYCHAIN_NAME" >> "$GITHUB_ENV"
+else
+    echo "🔧 Local run - GITHUB_ENV not set, skipping environment variable export"
+fi
