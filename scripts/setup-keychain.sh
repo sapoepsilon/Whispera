@@ -16,9 +16,17 @@ if [ -z "$DEVELOPER_ID_P12" ]; then
     exit 1
 fi
 
-if [ -z "$DEVELOPER_ID_PASSWORD" ]; then
+if [ -z "${DEVELOPER_ID_PASSWORD+x}" ]; then
     echo "❌ Error: DEVELOPER_ID_PASSWORD environment variable not set"
     exit 1
+fi
+
+# Handle empty password (certificate exported without password)
+if [ -z "$DEVELOPER_ID_PASSWORD" ]; then
+    echo "🔑 Using certificate with empty password"
+    CERT_PASSWORD=""
+else
+    CERT_PASSWORD="$DEVELOPER_ID_PASSWORD"
 fi
 
 if [ -z "$KEYCHAIN_PASSWORD" ]; then
@@ -63,7 +71,7 @@ echo "🔍 Certificate file type: $(file "$CERT_FILE")"
 # Try to import with verbose output
 security import "$CERT_FILE" \
     -k "$KEYCHAIN_NAME" \
-    -P "$DEVELOPER_ID_PASSWORD" \
+    -P "$CERT_PASSWORD" \
     -T /usr/bin/codesign \
     -T /usr/bin/security \
     -f pkcs12 \
@@ -71,8 +79,14 @@ security import "$CERT_FILE" \
 
 # Show what was imported immediately after import
 echo "🔍 Checking keychain contents after import..."
+echo "All identities in keychain:"
 security find-identity -v "$KEYCHAIN_NAME" || echo "No identities found"
+echo "All certificates in keychain:"
 security find-certificate -a "$KEYCHAIN_NAME" || echo "No certificates found"
+echo "Codesigning identities specifically:"
+security find-identity -v -p codesigning "$KEYCHAIN_NAME" || echo "No codesigning identities found"
+echo "Certificate details:"
+security find-certificate -a -p "$KEYCHAIN_NAME" | openssl x509 -noout -text 2>/dev/null | grep -A5 -B5 "Key Usage" || echo "Could not read certificate details"
 
 # Set key partition list (required for macOS 10.12+)
 echo "🔧 Setting key partition list..."
