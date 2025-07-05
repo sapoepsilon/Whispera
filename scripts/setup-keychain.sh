@@ -92,8 +92,8 @@ echo "✅ Verifying certificate installation..."
 echo "📋 All available identities in keychain:"
 security find-identity -v -p codesigning "$KEYCHAIN_NAME"
 
-# Count Developer ID certificates (more flexible pattern)
-CERT_COUNT=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" | grep -c "Developer ID" || echo "0")
+# Count Developer ID certificates (more flexible pattern - accept both types)
+CERT_COUNT=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" | grep -c -E "(Developer ID|3rd Party Mac Developer)" || echo "0")
 
 if [ "$CERT_COUNT" -eq 0 ]; then
     echo "❌ Error: No Developer ID certificates found in keychain"
@@ -104,11 +104,11 @@ if [ "$CERT_COUNT" -eq 0 ]; then
     exit 1
 fi
 
-echo "🎯 Found $CERT_COUNT Developer ID certificate(s)"
+echo "🎯 Found $CERT_COUNT code signing certificate(s)"
 
 # Show available identities (without private keys)
 echo "📋 Available signing identities:"
-security find-identity -v -p codesigning "$KEYCHAIN_NAME" | grep "Developer ID" || security find-identity -v -p codesigning "$KEYCHAIN_NAME"
+security find-identity -v -p codesigning "$KEYCHAIN_NAME" | grep -E "(Developer ID|3rd Party Mac Developer)" || security find-identity -v -p codesigning "$KEYCHAIN_NAME"
 
 # Clean up certificate file
 rm -f "$CERT_FILE"

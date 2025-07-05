@@ -11,7 +11,7 @@ EXPORT_PATH="./build/Release"
 DIST_PATH="./dist"
 
 # Get Developer ID from keychain (set up by setup-keychain.sh)
-DEVELOPER_ID=$(security find-identity -v -p codesigning "${SIGNING_KEYCHAIN:-whispera-signing.keychain-db}" | grep "Developer ID" | head -1 | sed -n 's/.*"\(.*\)".*/\1/p')
+DEVELOPER_ID=$(security find-identity -v -p codesigning "${SIGNING_KEYCHAIN:-whispera-signing.keychain-db}" | grep -E "(Developer ID|3rd Party Mac Developer)" | head -1 | sed -n 's/.*"\(.*\)".*/\1/p')
 
 # Validate environment variables
 if [ -z "$APPLE_ID" ]; then
