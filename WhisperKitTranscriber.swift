@@ -353,13 +353,11 @@ import OSLog
     }
     
     // MARK: - Dynamic Settings Management
-    
     func reloadCurrentModelIfNeeded() async throws {
         guard let currentModel = currentModel else {
             AppLogger.shared.transcriber.log("📋 No current model to reload")
             return
         }
-        
         AppLogger.shared.transcriber.log("🔄 Reloading current model: \(currentModel)")
         try await loadModel(currentModel)
     }
@@ -582,7 +580,6 @@ import OSLog
     private func updateDownloadProgress(_ progress: Double, _ status: String) async {
         await MainActor.run {
             self.downloadProgress = progress
-            // You could also update a download status message if needed
         }
     }
     
@@ -711,19 +708,13 @@ import OSLog
 			// Use WhisperKit's download method with default location
 			let downloadedFolder = try await WhisperKit.download(variant: modelName, downloadBase: baseModelCacheDirectory) { progress in
 				Task {
-					await self.updateDownloadProgress(progress.fractionCompleted * 0.8, "Downloading \(modelName)...")
+					await self.updateDownloadProgress(progress.fractionCompleted, "Downloading \(modelName)...")
 				}
 			}
             AppLogger.shared.transcriber.log("📥 Model downloaded to: \(downloadedFolder)")
             
-            // Update downloaded models cache
             downloadedModels.insert(modelName)
-            
-            await updateDownloadProgress(0.8, "Download complete, loading model...")
-            
-            // Now load the downloaded model
             try await loadModel(modelName)
-            
             AppLogger.shared.transcriber.log("✅ Successfully downloaded and loaded model: \(modelName)")
             
         } catch {

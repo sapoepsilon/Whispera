@@ -35,39 +35,41 @@ struct SettingsView: View {
     @State private var removingModelId: String?
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                // MARK: - App Version Section
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Whispera")
-                            .font(.headline)
-                        Text(AppVersion.current.displayString)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    if updateManager.isCheckingForUpdates {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Button("Check for Updates") {
-                            Task {
-                                do {
-                                    let hasUpdate = try await updateManager.checkForUpdates()
-                                    if !hasUpdate {
-                                        showNoUpdateAlert()
+        TabView {
+            // MARK: - General Tab
+            ScrollView {
+                VStack(spacing: 16) {
+                    // MARK: - App Version Section
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Whispera")
+                                .font(.headline)
+							Text(AppVersion.current.displayString)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if updateManager.isCheckingForUpdates {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Button("Check for Updates") {
+                                Task {
+                                    do {
+                                        let hasUpdate = try await updateManager.checkForUpdates()
+                                        if !hasUpdate {
+                                            showNoUpdateAlert()
+                                        }
+                                    } catch {
+                                        errorMessage = "Failed to check for updates: \(error.localizedDescription)"
+                                        showingError = true
                                     }
-                                } catch {
-                                    errorMessage = "Failed to check for updates: \(error.localizedDescription)"
-                                    showingError = true
                                 }
                             }
+                            .buttonStyle(.bordered)
+                            .disabled(updateManager.isCheckingForUpdates)
                         }
-                        .buttonStyle(.bordered)
-                        .disabled(updateManager.isCheckingForUpdates)
                     }
-                }
                 
                 // MARK: - Update Notification Banner
                 if let latestVersion = updateManager.latestVersion,
@@ -176,7 +178,7 @@ struct SettingsView: View {
                             }
                         }
                         .frame(minWidth: 120)
-                        .onChange(of: startSound) { _ in
+						.onChange(of: startSound) {
                             previewSound(startSound)
                         }
                     }
@@ -188,7 +190,7 @@ struct SettingsView: View {
                             }
                         }
                         .frame(minWidth: 120)
-                        .onChange(of: stopSound) { _ in
+                        .onChange(of: stopSound) {
                             previewSound(stopSound)
                         }
                     }
@@ -208,8 +210,11 @@ struct SettingsView: View {
                                 }
                                 
                                 if whisperKit.isDownloadingModel {
-                                    ProgressView(value: whisperKit.downloadProgress)
-                                        .frame(width: 120, height: 4)
+									HStack {
+										ProgressView(value: whisperKit.downloadProgress)
+											.frame(width: 120, height: 4)
+										Text("\(whisperKit.downloadProgress * 100, specifier: "%.1f")%")
+									}
                                 }
                             }
                         } else {
@@ -307,85 +312,91 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.bordered)
                 }
-            }
-            .padding(20)
-            
-            if permissionManager.needsPermissions {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: permissionManager.permissionStatusIcon)
-                            .foregroundColor(.orange)
-                        Text("Required Permissions")
-                            .font(.headline)
-                            .foregroundColor(.orange)
-                        Spacer()
-                    }
-                    
-                    Text(permissionManager.missingPermissionsDescription)
-                        .font(.body)
-                    
-                    if !permissionManager.microphonePermissionGranted {
+                
+                if permissionManager.needsPermissions {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("• Microphone access required for voice recording")
-                                .font(.caption)
+                            Image(systemName: permissionManager.permissionStatusIcon)
+                                .foregroundColor(.orange)
+                            Text("Required Permissions")
+                                .font(.headline)
+                                .foregroundColor(.orange)
                             Spacer()
-                            Button("Open Settings") {
-                                permissionManager.openMicrophoneSettings()
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
                         }
-                    }
-                    
-                    if !permissionManager.accessibilityPermissionGranted {
-                        HStack {
-                            Text("• Accessibility access required for global shortcuts")
-                                .font(.caption)
-                            Spacer()
-                            Button("Open Settings") {
-                                permissionManager.openAccessibilitySettings()
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                    
-                    Button("Open System Settings") {
-                        permissionManager.openSystemSettings()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding(12)
-                .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(.orange.opacity(0.3), lineWidth: 1)
-                )
-                .padding(.horizontal, 20)
-            }
-            
-            // MARK: - Storage & Downloads Section
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Storage & Downloads")
-                        .font(.headline)
-                    Spacer()
-                    if appLibraryManager.isCalculatingStorage {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                    } else {
-                        Button("Refresh") {
-                            Task {
-                                await appLibraryManager.refreshStorageInfo()
+                        
+                        Text(permissionManager.missingPermissionsDescription)
+                            .font(.body)
+                        
+                        if !permissionManager.microphonePermissionGranted {
+                            HStack {
+                                Text("• Microphone access required for voice recording")
+                                    .font(.caption)
+                                Spacer()
+                                Button("Open Settings") {
+                                    permissionManager.openMicrophoneSettings()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                             }
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        
+                        if !permissionManager.accessibilityPermissionGranted {
+                            HStack {
+                                Text("• Accessibility access required for global shortcuts")
+                                    .font(.caption)
+                                Spacer()
+                                Button("Open Settings") {
+                                    permissionManager.openAccessibilitySettings()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        
+                        Button("Open System Settings") {
+                            permissionManager.openSystemSettings()
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
+                    .padding(12)
+                    .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(.orange.opacity(0.3), lineWidth: 1)
+                    )
                 }
                 
+                Spacer()
+            }
+            .padding(20)
+        }
+        .tabItem {
+            Label("General", systemImage: "gear")
+        }
+        
+        // MARK: - Storage & Downloads Tab
+        ScrollView {
+            VStack(spacing: 16) {
                 // Storage Summary
                 VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Storage")
+                            .font(.headline)
+                        Spacer()
+                        if appLibraryManager.isCalculatingStorage {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        } else {
+                            Button("Refresh") {
+                                Task {
+                                    await appLibraryManager.refreshStorageInfo()
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                    
                     HStack {
                         Image(systemName: "internaldrive")
                             .foregroundColor(.blue)
@@ -432,13 +443,21 @@ struct SettingsView: View {
                         .stroke(.blue.opacity(0.3), lineWidth: 1)
                 )
                 
+                Divider()
+                
                 // Downloads Location
                 VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Update Downloads")
+                            .font(.headline)
+                        Spacer()
+                    }
+                    
                     HStack {
                         Image(systemName: "arrow.down.circle")
                             .foregroundColor(.green)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Update Downloads")
+                            Text("Download Location")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                             if let location = updateManager.downloadLocation {
@@ -465,12 +484,16 @@ struct SettingsView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(.green.opacity(0.3), lineWidth: 1)
                 )
+                
+                Spacer()
             }
-			.padding(.horizontal, 20)
-
-            Spacer()
+            .padding(20)
         }
-        .frame(width: 400, height: 520)
+        .tabItem {
+            Label("Storage & Downloads", systemImage: "internaldrive")
+        }
+    }
+        .frame(width: 450, height: 520)
         .background(.regularMaterial)
         .onAppear {
             loadAvailableModels()
@@ -513,24 +536,16 @@ struct SettingsView: View {
                     confirmationStep = 0
                 }
                 Button("Continue", role: .destructive) {
-                    confirmationStep = 1
-                    showingClearAllConfirmation = true
-                }
-            } else if confirmationStep == 1 {
-                Button("Cancel", role: .cancel) {
-                    confirmationStep = 0
-                }
-                Button("Yes, I'm fucking sure", role: .destructive) {
-                    Task {
-                        do {
-                            try await appLibraryManager.removeAllModels()
-                            confirmationStep = 0
-                        } catch {
-                            errorMessage = "Failed to clear models: \(error.localizedDescription)"
-                            showingError = true
-                            confirmationStep = 0
-                        }
-                    }
+					Task {
+						do {
+							try await appLibraryManager.removeAllModels()
+							confirmationStep = 0
+						} catch {
+							errorMessage = "Failed to clear models: \(error.localizedDescription)"
+							showingError = true
+							confirmationStep = 0
+						}
+					}
                 }
             }
         } message: {
