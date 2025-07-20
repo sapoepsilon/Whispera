@@ -7,6 +7,7 @@ set -e
 
 VERSION="$1"
 PROJECT_FILE="Whispera.xcodeproj/project.pbxproj"
+INFO_PLIST="Info.plist"
 
 if [ -z "$VERSION" ]; then
     echo "❌ Error: Version number required"
@@ -15,73 +16,77 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-# Validate version format (basic semantic versioning)
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "❌ Error: Invalid version format. Use semantic versioning (e.g., 1.0.3)"
     exit 1
 fi
 
-echo "🔢 Bumping version to $VERSION..."
-
-# Check if project file exists
 if [ ! -f "$PROJECT_FILE" ]; then
     echo "❌ Error: Project file not found: $PROJECT_FILE"
     exit 1
 fi
 
-# Parse version components
+if [ ! -f "$INFO_PLIST" ]; then
+    echo "❌ Error: Info.plist not found: $INFO_PLIST"
+    exit 1
+fi
+
 IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-BUILD_NUMBER=$(date +%Y%m%d%H%M)
+
+CURRENT_BUILD=$(grep -A1 "CFBundleVersion" "$INFO_PLIST" | grep "<string>" | sed 's/.*<string>\(.*\)<\/string>/\1/' | tr -d '\t' | tr -d ' ')
+if [[ "$CURRENT_BUILD" =~ ^[0-9]+$ ]]; then
+    BUILD_NUMBER=$((CURRENT_BUILD + 1))
+else
+    echo "⚠️ Could not parse current build number, using patch version as build number"
+    BUILD_NUMBER="$PATCH"
+fi
 
 echo "📋 Version components:"
 echo "  MARKETING_VERSION: $VERSION"
-echo "  CURRENT_PROJECT_VERSION: $BUILD_NUMBER"
+echo "  BUILD_NUMBER: $BUILD_NUMBER"
 
-# Create backup
 cp "$PROJECT_FILE" "$PROJECT_FILE.backup"
+cp "$INFO_PLIST" "$INFO_PLIST.backup"
 
-# Update MARKETING_VERSION (version visible to users)
 sed -i '' "s/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $VERSION/g" "$PROJECT_FILE"
-
-# Update CURRENT_PROJECT_VERSION (build number)
 sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*/CURRENT_PROJECT_VERSION = $BUILD_NUMBER/g" "$PROJECT_FILE"
-
-# Verify changes
+sed -i '' -e "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>.*<\/string>/<string>$VERSION<\/string>/;}" "$INFO_PLIST"
+sed -i '' -e "/<key>CFBundleVersion<\/key>/{n;s/<string>.*<\/string>/<string>$BUILD_NUMBER<\/string>/;}" "$INFO_PLIST"
 echo "🔍 Verifying changes..."
 MARKETING_COUNT=$(grep -c "MARKETING_VERSION = $VERSION" "$PROJECT_FILE")
 BUILD_COUNT=$(grep -c "CURRENT_PROJECT_VERSION = $BUILD_NUMBER" "$PROJECT_FILE")
 
-echo "  MARKETING_VERSION entries updated: $MARKETING_COUNT"
-echo "  CURRENT_PROJECT_VERSION entries updated: $BUILD_COUNT"
+INFO_VERSION=$(grep -A1 "CFBundleShortVersionString" "$INFO_PLIST" | grep "<string>" | sed 's/.*<string>\(.*\)<\/string>/\1/' | tr -d '\t' | tr -d ' ')
+INFO_BUILD=$(grep -A1 "CFBundleVersion" "$INFO_PLIST" | grep "<string>" | sed 's/.*<string>\(.*\)<\/string>/\1/' | tr -d '\t' | tr -d ' ')
 
-if [ "$MARKETING_COUNT" -eq 0 ] || [ "$BUILD_COUNT" -eq 0 ]; then
+echo "  project.pbxproj: MARKETING_VERSION entries updated: $MARKETING_COUNT"
+echo "  project.pbxproj: CURRENT_PROJECT_VERSION entries updated: $BUILD_COUNT"
+echo "  Info.plist: CFBundleShortVersionString = $INFO_VERSION"
+echo "  Info.plist: CFBundleVersion = $INFO_BUILD"
+
+if [ "$MARKETING_COUNT" -eq 0 ] || [ "$BUILD_COUNT" -eq 0 ] || [ "$INFO_VERSION" != "$VERSION" ] || [ "$INFO_BUILD" != "$BUILD_NUMBER" ]; then
     echo "❌ Error: Version update failed"
-    echo "Restoring backup..."
+    echo "Restoring backups..."
     mv "$PROJECT_FILE.backup" "$PROJECT_FILE"
+    mv "$INFO_PLIST.backup" "$INFO_PLIST"
     exit 1
 fi
 
-# Update Info.plist if it has hardcoded versions
-if [ -f "Info.plist" ]; then
-    echo "📝 Checking Info.plist..."
-    if grep -q "CFBundleShortVersionString.*[0-9]" Info.plist; then
-        echo "⚠️ Info.plist contains hardcoded version - consider using build settings variables"
-    fi
-fi
-
-# Clean up backup
 rm "$PROJECT_FILE.backup"
+rm "$INFO_PLIST.backup"
 
 echo "✅ Version successfully updated to $VERSION (build $BUILD_NUMBER)"
 
-# Show git diff for verification
 echo "📄 Changes made:"
-git diff --no-index /dev/null "$PROJECT_FILE" | grep "^\+" | grep -E "(MARKETING_VERSION|CURRENT_PROJECT_VERSION)" || true
+echo "project.pbxproj:"
+git diff "$PROJECT_FILE" | grep -E "(MARKETING_VERSION|CURRENT_PROJECT_VERSION)" || true
+echo ""
+echo "Info.plist:"
+git diff "$INFO_PLIST" | grep -E "(CFBundleShortVersionString|CFBundleVersion)" -A1 -B1 || true
 
-# Optional: Commit the version bump
 if [ "${2:-}" == "--commit" ]; then
     echo "📝 Committing version bump..."
-    git add "$PROJECT_FILE"
+    git add "$PROJECT_FILE" "$INFO_PLIST"
     git commit -m "bump: version $VERSION (build $BUILD_NUMBER)"
     echo "✅ Version bump committed"
 fi

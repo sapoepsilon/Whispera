@@ -34,7 +34,7 @@ struct SettingsView: View {
     @State private var showingClearAllConfirmation = false
     @State private var confirmationStep = 0
     @State private var removingModelId: String?
-    
+	
     var body: some View {
         TabView {
             // MARK: - General Tab
@@ -45,7 +45,7 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Whispera")
                                 .font(.headline)
-							Text(AppVersion.current.displayString)
+							Text(AppVersion.current.versionString)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
