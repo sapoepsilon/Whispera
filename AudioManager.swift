@@ -23,6 +23,11 @@ enum RecordingMode {
 	var transcriptionError: String?
 	var currentRecordingMode: RecordingMode = .text
 	
+	// Recording duration tracking
+	var recordingDuration: TimeInterval = 0.0
+	private var recordingStartTime: Date?
+	private var recordingTimer: Timer?
+	
 	
 	@ObservationIgnored
 	@AppStorage("enableTranslation") var enableTranslation = false
@@ -36,7 +41,7 @@ enum RecordingMode {
 	private var audioEngine: AVAudioEngine?
 	private var inputNode: AVAudioInputNode?
 	private var audioBuffer: [Float] = []
-	private let maxBufferSize = 16000 * 30 // 30 seconds at 16kHz
+	private let maxBufferSize = 16000 * 1800 // 30 minutes at 16kHz
 	private let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 	private let recordingIndicator = RecordingIndicatorManager()
@@ -46,15 +51,44 @@ enum RecordingMode {
 		whisperKitTranscriber.startInitialization()
 	}
 	
-	
 	func setupAudio() {
 		checkAndRequestMicrophonePermission()
 		if useStreamingTranscription {
 			setupAudioEngine()
 		} else {
-			// If switching to file mode, clean up streaming resources
 			cleanupAudioEngine()
 		}
+	}
+	
+	// MARK: - Recording Duration Management
+	private func startRecordingTimer() {
+		recordingStartTime = Date()
+		recordingDuration = 0.0
+		
+		recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+			guard let self = self, let startTime = self.recordingStartTime else { return }
+			Task { @MainActor in
+				self.recordingDuration = Date().timeIntervalSince(startTime)
+			}
+		}
+	}
+	
+	private func stopRecordingTimer() {
+		recordingTimer?.invalidate()
+		recordingTimer = nil
+		recordingStartTime = nil
+	}
+	
+	private func resetRecordingTimer() {
+		recordingDuration = 0.0
+		recordingStartTime = nil
+	}
+	
+	func formattedRecordingDuration() -> String {
+		let minutes = Int(recordingDuration) / 60
+		let seconds = Int(recordingDuration) % 60
+		let milliseconds = Int((recordingDuration.truncatingRemainder(dividingBy: 1)) * 10)
+		return String(format: "%02d:%02d.%01d", minutes, seconds, milliseconds)
 	}
 	
 	private func cleanupAudioEngine() {
@@ -265,6 +299,7 @@ enum RecordingMode {
 			audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
 			audioRecorder?.record()
 			isRecording = true
+			startRecordingTimer()
 			
 			playFeedbackSound(start: true)
 			print("🎤 Recording started successfully")
@@ -291,6 +326,7 @@ enum RecordingMode {
 		audioRecorder?.stop()
 		audioRecorder = nil
 		isRecording = false
+		stopRecordingTimer()
 		
 		// Hide visual indicator
 		//        recordingIndicator.hideIndicator()
@@ -301,6 +337,11 @@ enum RecordingMode {
 			Task {
 				await transcribeAudio(fileURL: audioFileURL, enableTranslation: self.enableTranslation)
 			}
+		}
+		
+		// Reset timer after a brief delay to allow UI to show final duration
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+			self.resetRecordingTimer()
 		}
 	}
 	
@@ -318,26 +359,25 @@ enum RecordingMode {
 				return 
 			}
 			let inputFormat = inputNode.outputFormat(forBus: 0)
-			print("🎤 Installing microphone tap for streaming recording")
+			AppLogger.shared.audioManager.debug("🎤 Installing microphone tap for streaming recording")
 			inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
 				self?.processAudioBuffer(buffer, originalFormat: inputFormat)
 			}
-			print("✅ Microphone tap installed - mic indicator should be ON")
+			AppLogger.shared.audioManager.info("✅ Microphone tap installed - mic indicator should be ON")
 		}
 		
 		isRecording = true
+		startRecordingTimer()
 		playFeedbackSound(start: true)
 		print("🎤 Streaming recording started")
 	}
 	
 	private func stopStreamingRecording() {
 		isRecording = false
+		stopRecordingTimer()
 		playFeedbackSound(start: false)
 		
-		// Get the accumulated audio buffer
 		let capturedAudio = audioBuffer
-		
-		// Clear buffer for next recording
 		audioBuffer.removeAll()
 		
 		if !capturedAudio.isEmpty {
@@ -355,6 +395,11 @@ enum RecordingMode {
 		audioEngine?.stop()
 		audioEngine?.reset()
 		AppLogger.shared.audioManager.log("🛑 Streaming recording stopped, microphone released")
+		
+		// Reset timer after a brief delay to allow UI to show final duration
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+			self.resetRecordingTimer()
+		}
 	}
 	
 	private func transcribeAudioBuffer(audioArray: [Float], enableTranslation: Bool) async {
@@ -362,7 +407,6 @@ enum RecordingMode {
 		transcriptionError = nil
 		
 		do {
-			// Use the new audio array transcription method
 			let transcription = try await whisperKitTranscriber.transcribeAudioArray(audioArray, enableTranslation: enableTranslation)
 			
 			// Update UI on main thread

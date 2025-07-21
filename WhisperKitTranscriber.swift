@@ -408,6 +408,106 @@ import OSLog
         AppLogger.shared.transcriber.log("🔄 Reset all decoding options to defaults")
     }
     
+    private enum TranscriptionInput {
+        case audioPath(String)
+        case audioArray([Float])
+    }
+    
+    private func performTranscription(input: TranscriptionInput, enableTranslation: Bool, logPrefix: String) async throws -> String {
+        guard isInitialized else {
+            throw WhisperKitError.notInitialized
+        }
+        
+        guard whisperKit != nil else {
+            throw WhisperKitError.noModelLoaded
+        }
+        
+        guard await isWhisperKitReady() else {
+            throw WhisperKitError.notReady
+        }
+        
+        let maxRetries = 3
+        var lastError: Error?
+        let decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
+        
+        for attempt in 1...maxRetries {
+            do {
+                let result = try await Task { @MainActor in
+                    guard let whisperKitInstance = self.whisperKit else {
+                        throw WhisperKitError.notInitialized
+                    }
+                    
+                    if whisperKitInstance.modelState == .loading {
+                        AppLogger.shared.transcriber.log("Model isn't loaded yet. \(whisperKitInstance.modelState)")
+                    }
+                    
+                    if attempt > 1 {
+                        AppLogger.shared.transcriber.log("🔄 Re-checking MPS readiness before retry...")
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    }
+                    
+                    switch input {
+                    case .audioPath(let path):
+                        return try await whisperKitInstance.transcribe(audioPath: path, decodeOptions: decodingOptions)
+                    case .audioArray(let array):
+                        return try await whisperKitInstance.transcribe(audioArray: array, decodeOptions: decodingOptions)
+                    }
+                }.value
+                
+                if !result.isEmpty {
+                    let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    if !transcription.isEmpty {
+                        AppLogger.shared.transcriber.log("✅ WhisperKit \(logPrefix) transcription completed: \(transcription)")
+                        return transcription
+                    } else {
+                        AppLogger.shared.transcriber.log("⚠️ Transcription returned empty text")
+                        return "No speech detected"
+                    }
+                } else {
+                    AppLogger.shared.transcriber.log("⚠️ No transcription segments returned")
+                    return "No speech detected"
+                }
+                
+            } catch {
+                lastError = error
+                let errorString = error.localizedDescription
+                
+                if errorString.contains("Failed to open resource file") || 
+                   errorString.contains("MPSGraphComputePackage") ||
+                   errorString.contains("Metal") {
+                    
+                    AppLogger.shared.transcriber.log("⚠️ Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
+                    
+                    if attempt < maxRetries {
+                        let delayNanoseconds = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
+                        AppLogger.shared.transcriber.log("⏳ Waiting \(delayNanoseconds / 1_000_000_000)s before retry...")
+                        try? await Task.sleep(nanoseconds: delayNanoseconds)
+                        
+                        AppLogger.shared.transcriber.log("🔄 Allowing MPS to reinitialize...")
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    }
+                } else {
+                    AppLogger.shared.transcriber.log("❌ WhisperKit \(logPrefix) transcription failed with non-retryable error: \(error)")
+                    break
+                }
+            }
+        }
+        
+        if let error = lastError {
+            let errorString = error.localizedDescription
+            if errorString.contains("Failed to open resource file") || 
+               errorString.contains("MPSGraphComputePackage") ||
+               errorString.contains("Metal") {
+                throw WhisperKitError.transcriptionFailed("Metal Performance Shaders failed to load resources after \(maxRetries) attempts. Please restart the app.")
+            } else {
+                throw WhisperKitError.transcriptionFailed(error.localizedDescription)
+            }
+        } else {
+            throw WhisperKitError.transcriptionFailed("Transcription failed for unknown reason")
+        }
+    }
+    
     func getDecodingOptionsStatus() -> [String: Any] {
         return [
             "temperature": savedTemperature,
@@ -424,214 +524,26 @@ import OSLog
     }
     
     func transcribe(audioURL: URL, enableTranslation: Bool) async throws -> String {
-        guard isInitialized else {
-            throw WhisperKitError.notInitialized
-        }
-        
-        guard whisperKit != nil else {
-            throw WhisperKitError.noModelLoaded
-        }
-        
-        guard await isWhisperKitReady() else {
-            throw WhisperKitError.notReady
-        }
-        
-        let maxRetries = 3
-        var lastError: Error?
-        // Use centralized decoding options
-        let decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
-
-        
-        for attempt in 1...maxRetries {
-            do {
-                // Ensure transcription happens on MainActor for Swift 6 compliance
-                let result = try await Task { @MainActor in
-                    guard let whisperKitInstance = self.whisperKit else {
-                        throw WhisperKitError.notInitialized
-                    }
-					if whisperKitInstance.modelState == .loading {
-						AppLogger.shared.transcriber.log("Model isn't loaded yet. \(whisperKitInstance.modelState )")
-					}
-                    
-                    if attempt > 1 {
-                        AppLogger.shared.transcriber.log("🔄 Re-checking MPS readiness before retry...")
-                        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s for MPS
-                    }
-					return try await whisperKitInstance.transcribe(audioPath: audioURL.path, decodeOptions: decodingOptions)
-                }.value
-                
-                if !result.isEmpty {
-                    let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-                    
-                    if !transcription.isEmpty {
-                        AppLogger.shared.transcriber.log("✅ WhisperKit transcription completed: \(transcription)")
-                        
-                        if audioURL != audioURL {
-                            try? FileManager.default.removeItem(at: audioURL)
-                        }
-                        
-                        return transcription
-                    } else {
-                        AppLogger.shared.transcriber.log("⚠️ Transcription returned empty text")
-                        return "No speech detected"
-                    }
-                } else {
-                    AppLogger.shared.transcriber.log("⚠️ No transcription segments returned")
-                    return "No speech detected"
-                }
-                
-            } catch {
-                lastError = error
-                let errorString = error.localizedDescription
-                
-                // Check if this is an MPS resource loading error that we can retry
-                if errorString.contains("Failed to open resource file") || 
-                   errorString.contains("MPSGraphComputePackage") ||
-                   errorString.contains("Metal") {
-                    
-                    AppLogger.shared.transcriber.log("⚠️ Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
-                    
-                    if attempt < maxRetries {
-                        // Exponential backoff: 1s, 2s, 4s
-                        let delayNanoseconds = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
-                        AppLogger.shared.transcriber.log("⏳ Waiting \(delayNanoseconds / 1_000_000_000)s before retry...")
-                        try? await Task.sleep(nanoseconds: delayNanoseconds)
-                        
-                        // Force MPS to reinitialize by giving it more time
-                        AppLogger.shared.transcriber.log("🔄 Allowing MPS to reinitialize...")
-                        try? await Task.sleep(nanoseconds: 1_000_000_000) // Additional 1s for MPS
-                    }
-                } else {
-                    // Non-MPS error, don't retry
-                    AppLogger.shared.transcriber.log("❌ WhisperKit transcription failed with non-retryable error: \(error)")
-                    break
-                }
-            }
-        }
-        
-        // Clean up processed file if different from original
-        if audioURL != audioURL {
-            try? FileManager.default.removeItem(at: audioURL)
-        }
-        
-        // All retries failed, throw the last error
-        if let error = lastError {
-            let errorString = error.localizedDescription
-            if errorString.contains("Failed to open resource file") || 
-               errorString.contains("MPSGraphComputePackage") ||
-               errorString.contains("Metal") {
-                throw WhisperKitError.transcriptionFailed("Metal Performance Shaders failed to load resources after \(maxRetries) attempts. Please restart the app.")
-            } else {
-                throw WhisperKitError.transcriptionFailed(error.localizedDescription)
-            }
-        } else {
-            throw WhisperKitError.transcriptionFailed("Transcription failed for unknown reason")
-        }
+        return try await performTranscription(
+            input: .audioPath(audioURL.path),
+            enableTranslation: enableTranslation,
+            logPrefix: ""
+        )
     }
     
     func transcribeAudioArray(_ audioArray: [Float], enableTranslation: Bool) async throws -> String {
-        guard isInitialized else {
-            throw WhisperKitError.notInitialized
-        }
-        
-        guard whisperKit != nil else {
-            throw WhisperKitError.noModelLoaded
-        }
-        
-        guard await isWhisperKitReady() else {
-            throw WhisperKitError.notReady
-        }
-        
-        // Ensure audio array is not empty
         guard !audioArray.isEmpty else {
             AppLogger.shared.transcriber.log("⚠️ Empty audio array provided")
             return "No audio data provided"
         }
         
-        let maxRetries = 3
-        var lastError: Error?
-        // Use centralized decoding options
-        let decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
-        
         AppLogger.shared.transcriber.log("🎵 Starting audio array transcription with \(audioArray.count) samples")
         
-        for attempt in 1...maxRetries {
-            do {
-                // Ensure transcription happens on MainActor for Swift 6 compliance
-                let result = try await Task { @MainActor in
-                    guard let whisperKitInstance = self.whisperKit else {
-                        throw WhisperKitError.notInitialized
-                    }
-                    
-                    if whisperKitInstance.modelState == .loading {
-                        AppLogger.shared.transcriber.log("Model isn't loaded yet. \(whisperKitInstance.modelState)")
-                    }
-                    
-                    if attempt > 1 {
-                        AppLogger.shared.transcriber.log("🔄 Re-checking MPS readiness before retry...")
-                        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s for MPS
-                    }
-                    
-                    return try await whisperKitInstance.transcribe(audioArray: audioArray, decodeOptions: decodingOptions)
-                }.value
-                
-                if !result.isEmpty {
-                    let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-                    
-                    if !transcription.isEmpty {
-                        AppLogger.shared.transcriber.log("✅ WhisperKit audio array transcription completed: \(transcription)")
-                        return transcription
-                    } else {
-                        AppLogger.shared.transcriber.log("⚠️ Transcription returned empty text")
-                        return "No speech detected"
-                    }
-                } else {
-                    AppLogger.shared.transcriber.log("⚠️ No transcription segments returned")
-                    return "No speech detected"
-                }
-                
-            } catch {
-                lastError = error
-                let errorString = error.localizedDescription
-                
-                // Check if this is an MPS resource loading error that we can retry
-                if errorString.contains("Failed to open resource file") || 
-                   errorString.contains("MPSGraphComputePackage") ||
-                   errorString.contains("Metal") {
-                    
-                    AppLogger.shared.transcriber.log("⚠️ Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
-                    
-                    if attempt < maxRetries {
-                        // Exponential backoff: 1s, 2s, 4s
-                        let delayNanoseconds = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
-                        AppLogger.shared.transcriber.log("⏳ Waiting \(delayNanoseconds / 1_000_000_000)s before retry...")
-                        try? await Task.sleep(nanoseconds: delayNanoseconds)
-                        
-                        // Force MPS to reinitialize by giving it more time
-                        AppLogger.shared.transcriber.log("🔄 Allowing MPS to reinitialize...")
-                        try? await Task.sleep(nanoseconds: 1_000_000_000) // Additional 1s for MPS
-                    }
-                } else {
-                    // Non-MPS error, don't retry
-                    AppLogger.shared.transcriber.log("❌ WhisperKit audio array transcription failed with non-retryable error: \(error)")
-                    break
-                }
-            }
-        }
-        
-        // All retries failed, throw the last error
-        if let error = lastError {
-            let errorString = error.localizedDescription
-            if errorString.contains("Failed to open resource file") || 
-               errorString.contains("MPSGraphComputePackage") ||
-               errorString.contains("Metal") {
-                throw WhisperKitError.transcriptionFailed("Metal Performance Shaders failed to load resources after \(maxRetries) attempts. Please restart the app.")
-            } else {
-                throw WhisperKitError.transcriptionFailed(error.localizedDescription)
-            }
-        } else {
-            throw WhisperKitError.transcriptionFailed("Transcription failed for unknown reason")
-        }
+        return try await performTranscription(
+            input: .audioArray(audioArray),
+            enableTranslation: enableTranslation,
+            logPrefix: "audio array"
+        )
     }
     
     func switchModel(to model: String) async throws {

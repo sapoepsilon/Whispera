@@ -205,7 +205,7 @@ struct MenuBarView: View {
     
     private var buttonText: String {
         if audioManager.isRecording {
-            return "Stop Recording"
+            return "Stop Recording (\(audioManager.formattedRecordingDuration()))"
         } else {
             return "Start Recording"
         }
@@ -441,7 +441,7 @@ struct StatusCardView: View {
         }
     }
     
-    static func getStatusSubtitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false, needsPermissions: Bool = false) -> String {
+    static func getStatusSubtitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false, needsPermissions: Bool = false, recordingDuration: String = "") -> String {
         if needsPermissions {
             return "Grant required permissions to continue"
         } else if isDownloading {
@@ -454,7 +454,7 @@ struct StatusCardView: View {
         } else if isTranscribing {
             return enableTranslation ? "Converting speech to English" : "Converting speech to text"
         } else if isRecording {
-            return "Listening for voice input"
+            return "Recording for \(recordingDuration)"
         } else {
             return "Press shortcut to start recording"
         }
@@ -478,7 +478,8 @@ struct StatusCardView: View {
             isDownloading: whisperKit.isDownloadingModel,
             downloadingModel: whisperKit.downloadingModelName,
             enableTranslation: audioManager.enableTranslation,
-            needsPermissions: permissionManager.needsPermissions
+            needsPermissions: permissionManager.needsPermissions,
+            recordingDuration: audioManager.formattedRecordingDuration()
         )
     }
     
