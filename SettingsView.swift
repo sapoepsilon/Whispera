@@ -13,16 +13,139 @@ struct SettingsView: View {
     @AppStorage("enableTranslation") private var enableTranslation = false
     @AppStorage("enableStreaming") private var enableStreaming = true
     @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
-    @Bindable private var whisperKit = WhisperKitTranscriber.shared
+    @AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
+    @AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
+    @AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
+	var whisperKit = WhisperKitTranscriber.shared
+    
+    // MARK: - Injected Dependencies
+    @State var permissionManager: PermissionManager
+    @State var updateManager: UpdateManager
+    @State var appLibraryManager: AppLibraryManager
     @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
     @State private var eventMonitor: Any?
     @State private var errorMessage: String?
     @State private var showingError = false
-    
+    @State private var showingLLMSettings = false
+    @State private var showingToolsSettings = false
+    @State private var showingSafetySettings = false
+    @State private var showingNoUpdateAlert = false
+    @State private var showingStorageDetails = false
+    @State private var showingClearAllConfirmation = false
+    @State private var confirmationStep = 0
+    @State private var removingModelId: String?
+	
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(spacing: 16) {
+        TabView {
+            // MARK: - General Tab
+            ScrollView {
+                VStack(spacing: 16) {
+                    // MARK: - App Version Section
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Whispera")
+                                .font(.headline)
+							Text(AppVersion.current.versionString)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if updateManager.isCheckingForUpdates {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Button("Check for Updates") {
+                                Task {
+                                    do {
+                                        let hasUpdate = try await updateManager.checkForUpdates()
+                                        if !hasUpdate {
+                                            showNoUpdateAlert()
+                                        }
+                                    } catch {
+                                        errorMessage = "Failed to check for updates: \(error.localizedDescription)"
+                                        showingError = true
+                                    }
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(updateManager.isCheckingForUpdates)
+                        }
+                    }
+                
+                // MARK: - Update Notification Banner
+                if let latestVersion = updateManager.latestVersion,
+                   AppVersion(latestVersion) > AppVersion.current {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("Update Available")
+                                .font(.headline)
+                                .foregroundColor(.blue)
+                            Spacer()
+                        }
+                        
+                        Text("Whispera \(latestVersion) is available")
+                            .font(.body)
+                        
+                        if let releaseNotes = updateManager.releaseNotes, !releaseNotes.isEmpty {
+                            Text(releaseNotes)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(3)
+                        }
+                        
+                        HStack {
+                            if updateManager.isUpdateDownloaded {
+                                Button("Install Now") {
+                                    Task {
+                                        do {
+                                            try await updateManager.installDownloadedUpdate()
+                                        } catch {
+                                            errorMessage = "Failed to install update: \(error.localizedDescription)"
+                                            showingError = true
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                            } else {
+                                Button("Download Update") {
+                                    Task {
+                                        do {
+                                            try await updateManager.downloadUpdate()
+                                        } catch {
+                                            errorMessage = "Failed to download update: \(error.localizedDescription)"
+                                            showingError = true
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(updateManager.isDownloadingUpdate)
+                            }
+                            
+                            if updateManager.isDownloadingUpdate {
+                                ProgressView(value: updateManager.downloadProgress)
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Button("View Release Notes") {
+                                    if let url = URL(string: "https://github.com/\(AppVersion.Constants.githubRepo)/releases/tag/v\(latestVersion)") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(.blue.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                
+                Divider()
                 HStack {
                     Text("Global Shortcut")
                         .font(.headline)
@@ -57,7 +180,7 @@ struct SettingsView: View {
                             }
                         }
                         .frame(minWidth: 120)
-                        .onChange(of: startSound) { _ in
+						.onChange(of: startSound) {
                             previewSound(startSound)
                         }
                     }
@@ -69,7 +192,7 @@ struct SettingsView: View {
                             }
                         }
                         .frame(minWidth: 120)
-                        .onChange(of: stopSound) { _ in
+                        .onChange(of: stopSound) {
                             previewSound(stopSound)
                         }
                     }
@@ -89,35 +212,28 @@ struct SettingsView: View {
                                 }
                                 
                                 if whisperKit.isDownloadingModel {
-                                    ProgressView(value: whisperKit.downloadProgress)
-                                        .frame(width: 120, height: 4)
+									HStack {
+										ProgressView(value: whisperKit.downloadProgress)
+											.frame(width: 120, height: 4)
+										Text("\(whisperKit.downloadProgress * 100, specifier: "%.1f")%")
+									}
                                 }
                             }
                         } else {
                             VStack(alignment: .trailing, spacing: 4) {
-                                Picker("Whisper Model", selection: $selectedModel) {
-                                    ForEach(getModelOptions(), id: \.0) { model in
-                                        Text(model.1).tag(model.0)
-                                    }
-                                }
-                                .frame(minWidth: 180)
-                                
-								if whisperKit.whisperKit?.modelState == .unloaded {
-                                    Button("Load Model") {
-                                        Task {
-											do {
-												try await whisperKit.whisperKit?.loadModels()
-											} catch {
-												await MainActor.run {
-													errorMessage = "Failed to load model: \(error.localizedDescription)"
-													showingError = true
-												}
-											}
-										}
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
-                                }
+								Picker("Whisper model", selection: Binding(
+									get: { whisperKit.selectedModel ?? selectedModel },
+									set: { newValue in
+										selectedModel = newValue
+										whisperKit.selectedModel = newValue
+									}
+								)) {
+									ForEach(whisperKit.availableModels, id: \.self) { model in
+										Text(WhisperKitTranscriber.getModelDisplayName(for: model)).tag(model)
+									}
+								}
+								.frame(minWidth: 180)
+								.accessibilityIdentifier("Whisper model")
                             }
                         }
                     }
@@ -130,6 +246,9 @@ struct SettingsView: View {
                         Text(getCurrentModelStatusText())
                             .font(.caption)
                             .foregroundColor(getModelStatusColor())
+                            .accessibilityIdentifier("modelStatusText")
+						
+						Text("Current memory usage: \(getMemoryUsage().description) MB")
                     }
                 }
                 
@@ -143,6 +262,18 @@ struct SettingsView: View {
                         .font(.headline)
                     Spacer()
                     Toggle("", isOn: $autoDownloadModel)
+                }
+                
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Streaming Transcription")
+                            .font(.headline)
+                        Text("Process audio in real-time (max 30 minutes) instead of saving to file")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $useStreamingTranscription)
                 }
                 
                 HStack {
@@ -188,6 +319,8 @@ struct SettingsView: View {
                     }
                 }
                 
+                Divider()
+    
                 HStack {
                     Text("Launch at Startup")
                         .font(.headline)
@@ -196,7 +329,6 @@ struct SettingsView: View {
                 }
                 
                 Divider()
-                
                 HStack {
                     Text("Setup")
                         .font(.headline)
@@ -206,41 +338,196 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.bordered)
                 }
-				
+                
+                if permissionManager.needsPermissions {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: permissionManager.permissionStatusIcon)
+                                .foregroundColor(.orange)
+                            Text("Required Permissions")
+                                .font(.headline)
+                                .foregroundColor(.orange)
+                            Spacer()
+                        }
+                        
+                        Text(permissionManager.missingPermissionsDescription)
+                            .font(.body)
+                        
+                        if !permissionManager.microphonePermissionGranted {
+                            HStack {
+                                Text("• Microphone access required for voice recording")
+                                    .font(.caption)
+                                Spacer()
+                                Button("Open Settings") {
+                                    permissionManager.openMicrophoneSettings()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        
+                        if !permissionManager.accessibilityPermissionGranted {
+                            HStack {
+                                Text("• Accessibility access required for global shortcuts")
+                                    .font(.caption)
+                                Spacer()
+                                Button("Open Settings") {
+                                    permissionManager.openAccessibilitySettings()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        
+                        Button("Open System Settings") {
+                            permissionManager.openSystemSettings()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding(12)
+                    .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(.orange.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                
+                Spacer()
             }
             .padding(20)
-            
-            if needsPermissions {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Required Permissions")
-                        .font(.headline)
-                        .foregroundColor(.orange)
-                    
-                    if !microphonePermissionGranted {
-                        Text("• Microphone access required")
-                            .font(.caption)
-                    }
-                    
-                    if !accessibilityPermissionGranted {
-                        Text("• Accessibility access required")
-                            .font(.caption)
-                    }
-                    
-                    Button("Open System Settings") {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding(.horizontal, 20)
-            }
-            
-            Spacer()
         }
-        .frame(width: 400, height: 450)
+        .tabItem {
+            Label("General", systemImage: "gear")
+        }
+        
+        // MARK: - Storage & Downloads Tab
+        ScrollView {
+            VStack(spacing: 16) {
+                // Storage Summary
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Storage")
+                            .font(.headline)
+                        Spacer()
+                        if appLibraryManager.isCalculatingStorage {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        } else {
+                            Button("Refresh") {
+                                Task {
+                                    await appLibraryManager.refreshStorageInfo()
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                    
+                    HStack {
+                        Image(systemName: "internaldrive")
+                            .foregroundColor(.blue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("WhisperKit Models")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(appLibraryManager.getStorageSummary())
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("Show in Finder") {
+                            appLibraryManager.openAppLibraryInFinder()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    
+                    if appLibraryManager.hasModels {
+                        HStack {
+                            Button("View Details") {
+                                showingStorageDetails.toggle()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            
+                            Spacer()
+                            
+                            Button("Clear All Models") {
+                                showingClearAllConfirmation = true
+                                confirmationStep = 0
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .foregroundColor(.red)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(.blue.opacity(0.3), lineWidth: 1)
+                )
+                
+                Divider()
+                
+                // Downloads Location
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Update Downloads")
+                            .font(.headline)
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Image(systemName: "arrow.down.circle")
+                            .foregroundColor(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Download Location")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            if let location = updateManager.downloadLocation {
+                                Text("Latest: \(URL(fileURLWithPath: location).lastPathComponent)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("No updates downloaded")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button("Open Downloads") {
+                            appLibraryManager.openDownloadsInFinder()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(12)
+                .background(.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(.green.opacity(0.3), lineWidth: 1)
+                )
+                
+                Spacer()
+            }
+            .padding(20)
+        }
+        .tabItem {
+            Label("Storage & Downloads", systemImage: "internaldrive")
+        }
+    }
+        .frame(width: 450, height: 520)
         .background(.regularMaterial)
         .onAppear {
             loadAvailableModels()
             checkLaunchAtStartupStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("WhisperKitModelStateChanged"))) { _ in
+            // Force UI update when model state changes
+            loadAvailableModels()
         }
         .onDisappear {
             stopRecording()
@@ -264,50 +551,45 @@ struct SettingsView: View {
         } message: {
             Text(errorMessage ?? "An unknown error occurred")
         }
+        .alert("Storage Details", isPresented: $showingStorageDetails) {
+            Button("OK") { }
+        } message: {
+            Text(appLibraryManager.getDetailedStorageInfo().joined(separator: "\n"))
+        }
+        .alert("Clear All Models", isPresented: $showingClearAllConfirmation) {
+            if confirmationStep == 0 {
+                Button("Cancel", role: .cancel) {
+                    confirmationStep = 0
+                }
+                Button("Continue", role: .destructive) {
+					Task {
+						do {
+							try await appLibraryManager.removeAllModels()
+							confirmationStep = 0
+						} catch {
+							errorMessage = "Failed to clear models: \(error.localizedDescription)"
+							showingError = true
+							confirmationStep = 0
+						}
+					}
+                }
+            }
+        } message: {
+            if confirmationStep == 0 {
+                Text("This will permanently delete all downloaded WhisperKit models. You'll need to re-download them if you want to use them again.\n\nStorage to be freed: \(appLibraryManager.totalStorageFormatted)")
+            } else {
+                Text("Are you absolutely certain? This action cannot be undone.\n\nAll \(appLibraryManager.modelsCount) models will be permanently deleted.")
+            }
+        }
     }
 
     
-    private var needsPermissions: Bool {
-        !microphonePermissionGranted || !accessibilityPermissionGranted
-    }
-    
-    private var microphonePermissionGranted: Bool {
-        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-    }
-    
-    private var accessibilityPermissionGranted: Bool {
-        AXIsProcessTrusted()
-    }
-    
-    private func getModelOptions() -> [(String, String)] {
-        if availableModels.isEmpty {
-			availableModels = whisperKit.getRecommendedModels().supported
-            return [("loading", "Loading models...")]
-        }
-        
-        return availableModels.compactMap { model in
-            let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
-            let displayName: String
-            
-            switch cleanName {
-            case "tiny.en": displayName = "Tiny (English) - 39MB"
-            case "tiny": displayName = "Tiny (Multilingual) - 39MB"
-            case "base.en": displayName = "Base (English) - 74MB"
-            case "base": displayName = "Base (Multilingual) - 74MB"
-            case "small.en": displayName = "Small (English) - 244MB"
-            case "small": displayName = "Small (Multilingual) - 244MB"
-            case "medium.en": displayName = "Medium (English) - 769MB"
-            case "medium": displayName = "Medium (Multilingual) - 769MB"
-            case "large-v2": displayName = "Large v2 (Multilingual) - 1.5GB"
-            case "large-v3": displayName = "Large v3 (Multilingual) - 1.5GB"
-            case "large-v3-turbo": displayName = "Large v3 Turbo (Multilingual) - 809MB"
-            case "distil-large-v2": displayName = "Distil Large v2 (Multilingual) - 756MB"
-            case "distil-large-v3": displayName = "Distil Large v3 (Multilingual) - 756MB"
-            default: displayName = cleanName.capitalized
-            }
-            
-            return (model, displayName)
-        }
+    private func showNoUpdateAlert() {
+        let alert = NSAlert()
+        alert.messageText = "No Updates Available"
+        alert.informativeText = "You're running the latest version of Whispera."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
     
     private func loadAvailableModels() {
@@ -336,19 +618,24 @@ struct SettingsView: View {
                         return lhsDownloaded && !rhsDownloaded
                     }
                     
-                    return getModelPriority(lhs) < getModelPriority(rhs)
+                    return WhisperKitTranscriber.getModelPriority(for: lhs) < WhisperKitTranscriber.getModelPriority(for: rhs)
                 }
                 
                 await MainActor.run {
                     self.availableModels = allModels
                     
-                    // Set default selection if none set or invalid
-                    if selectedModel.isEmpty || !allModels.contains(selectedModel) {
-                        // Find the first base model (preferred) or fallback to first available
+                    // Sync selectedModel with current loaded model if one exists
+                    if let currentModel = whisperKit.currentModel, allModels.contains(currentModel) {
+                        selectedModel = currentModel
+                        whisperKit.selectedModel = currentModel
+                    } else if selectedModel.isEmpty || !allModels.contains(selectedModel) {
+                        // Set default selection if none set or invalid
                         if let baseModel = allModels.first(where: { $0.contains("base.en") }) {
                             selectedModel = baseModel
+                            whisperKit.selectedModel = baseModel
                         } else if let firstModel = allModels.first {
                             selectedModel = firstModel
+                            whisperKit.selectedModel = firstModel
                         }
                     }
                 }
@@ -359,21 +646,6 @@ struct SettingsView: View {
                     showingError = true
                 }
             }
-        }
-    }
-    
-    private func getModelPriority(_ modelName: String) -> Int {
-        let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
-        switch cleanName {
-        case "tiny.en", "tiny": return 1
-        case "base.en", "base": return 2
-        case "small.en", "small": return 3
-        case "medium.en", "medium": return 4
-        case "large-v2": return 5
-        case "large-v3": return 6
-        case "large-v3-turbo": return 7
-        case "distil-large-v2", "distil-large-v3": return 8
-        default: return 9
         }
     }
     
@@ -529,6 +801,18 @@ struct SettingsView: View {
         
     }
     
+    private func showLLMSettings() {
+        showingLLMSettings = true
+    }
+    
+    private func showToolsSettings() {
+        showingToolsSettings = true
+    }
+    
+    private func showSafetySettings() {
+        showingSafetySettings = true
+    }
+    
     private func getModelStatusText() -> String {
         if whisperKit.isDownloadingModel {
             return "Downloading \(whisperKit.downloadingModelName ?? "model")..."
@@ -539,31 +823,59 @@ struct SettingsView: View {
     }
     
     private func getCurrentModelStatusText() -> String {
-        if whisperKit.isDownloadingModel {
-            return "Downloading..."
-        } else if whisperKit.isModelLoading {
-            return "Loading..."
-        } else if whisperKit.isModelLoaded {
-            if let currentModel = whisperKit.currentModel {
-                let cleanName = currentModel.replacingOccurrences(of: "openai_whisper-", with: "")
-                return "Loaded: \(cleanName)"
-            } else {
-                return "Model loaded"
-            }
-        } else if whisperKit.isInitialized {
-			return whisperKit.whisperKit?.modelState == .unloaded ? "Different model selected" : "No model loaded"
-        } else {
-            return "Initializing..."
-        }
+		return whisperKit.modelState
+//        if whisperKit.isDownloadingModel {
+//            return "Downloading..."
+//        } else if whisperKit.isModelLoading {
+//            return "Loading..."
+//        } else if whisperKit.isModelLoaded {
+//            if let currentModel = whisperKit.currentModel {
+//                let cleanName = currentModel.replacingOccurrences(of: "openai_whisper-", with: "")
+//                // Check if the currently selected model differs from the loaded model
+//                if let selectedModel = whisperKit.selectedModel, selectedModel != currentModel {
+//                    return "Loaded: \(cleanName) (different model selected)"
+//                }
+//                return "Loaded: \(cleanName)"
+//            } else {
+//                return "Model loaded"
+//            }
+//        } else if whisperKit.isInitialized {
+//			return !whisperKit.isCurrentModelLoaded() ? "Different model selected" : "No model loaded"
+//        } else {
+//            return "Initializing..."
+//        }
     }
     
     private func getModelStatusColor() -> Color {
         if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
             return .orange
         } else if whisperKit.isModelLoaded {
-			return whisperKit.whisperKit?.modelState == .unloaded ? .orange : .green
+            // Check if selected model matches current model
+            if let selectedModel = whisperKit.selectedModel, let currentModel = whisperKit.currentModel {
+                return selectedModel == currentModel ? .green : .orange
+            }
+            return whisperKit.isCurrentModelLoaded() ? .green : .orange
         } else {
             return .secondary
+        }
+    }
+    
+    private func getMemoryUsage() -> Int {
+        // Simple memory usage calculation
+        let task = mach_task_self_
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
+        
+        let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(task, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        
+        if kerr == KERN_SUCCESS {
+            return Int(info.resident_size) / 1024 / 1024 // Convert to MB
+        } else {
+            return 0
         }
     }
 }

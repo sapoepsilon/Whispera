@@ -2,10 +2,16 @@ import SwiftUI
 import AppKit
 
 struct MenuBarView: View {
-    @ObservedObject var audioManager: AudioManager
-    @Bindable private var whisperKit = WhisperKitTranscriber.shared
-		@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
+    @Bindable var audioManager: AudioManager
+	var whisperKit = WhisperKitTranscriber.shared
+	@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
+	@AppStorage("globalCommandShortcut") private var commandShortcutKey = "⌘⌥C"
+    @AppStorage("enableTranslation") private var enableTranslation = false
     
+    // MARK: - Injected Dependencies
+    @State var permissionManager: PermissionManager
+    @State var updateManager: UpdateManager
+
     var body: some View {
         VStack(spacing: 0) {
             // Header with app icon and title - following design language
@@ -24,10 +30,57 @@ struct MenuBarView: View {
             
             // Main content
             VStack(spacing: 16) {
+                // Update notification banner (if available)
+                if let latestVersion = updateManager.latestVersion,
+                   AppVersion(latestVersion) > AppVersion.current {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("Update Available")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                            Spacer()
+                        }
+                        
+                        HStack {
+                            Text("Whispera \(latestVersion)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            if updateManager.isUpdateDownloaded {
+                                Button("Install") {
+                                    Task {
+                                        try? await updateManager.installDownloadedUpdate()
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            } else {
+                                Button("Update") {
+                                    Task {
+                                        try? await updateManager.downloadUpdate()
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+                        }
+                    }
+                    .padding(8)
+                    .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(.blue.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                
                 // Status card
                 StatusCardView(
                     audioManager: audioManager,
-                    whisperKit: whisperKit
+                    whisperKit: whisperKit,
+                    permissionManager: permissionManager
                 )
                 
                 // Controls
@@ -48,16 +101,19 @@ struct MenuBarView: View {
                     .disabled(audioManager.isTranscribing)
                     
                     // Shortcut display - design language compliant
-                    HStack {
-                        Text("Global Shortcut")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(shortcutKey)
-                            .font(.system(.caption, design: .monospaced))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.gray.opacity(0.2).opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text(enableTranslation ? "Translation" : "Transcription")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(shortcutKey)
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
+                                .foregroundColor(.blue)
+                        }
                     }
                 }
                 
@@ -124,6 +180,7 @@ struct MenuBarView: View {
             } else if let transcription = audioManager.lastTranscription {
                 TranscriptionResultView(text: transcription)
             }
+		
         }
         .frame(width: 320)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -148,7 +205,7 @@ struct MenuBarView: View {
     
     private var buttonText: String {
         if audioManager.isRecording {
-            return "Stop Recording"
+            return "Stop Recording (\(audioManager.formattedRecordingDuration()))"
         } else {
             return "Start Recording"
         }
@@ -157,8 +214,9 @@ struct MenuBarView: View {
 
 // MARK: - Status Card
 struct StatusCardView: View {
-    @ObservedObject var audioManager: AudioManager
-    @Bindable var whisperKit: WhisperKitTranscriber
+    @Bindable var audioManager: AudioManager
+    var whisperKit: WhisperKitTranscriber
+    var permissionManager: PermissionManager
     @AppStorage("selectedModel") private var selectedModel = ""
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
 
@@ -188,6 +246,27 @@ struct StatusCardView: View {
                 }
                 
                 Spacer()
+            }
+            
+            // Permission status section
+            if permissionManager.needsPermissions {
+                HStack {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(.orange)
+                            .frame(width: 8, height: 8)
+                        
+                        Text("Permissions")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Text(permissionManager.missingPermissionsDescription)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
             }
             
             // AI Model section with current model display
@@ -304,7 +383,8 @@ struct StatusCardView: View {
         return StatusCardView.getStatusColor(
             isRecording: audioManager.isRecording,
             isTranscribing: audioManager.isTranscribing,
-            isDownloading: whisperKit.isDownloadingModel
+            isDownloading: whisperKit.isDownloadingModel,
+            needsPermissions: permissionManager.needsPermissions
         )
     }
     
@@ -312,14 +392,17 @@ struct StatusCardView: View {
         return StatusCardView.getStatusIcon(
             isRecording: audioManager.isRecording,
             isTranscribing: audioManager.isTranscribing,
-            isDownloading: whisperKit.isDownloadingModel
+            isDownloading: whisperKit.isDownloadingModel,
+            needsPermissions: permissionManager.needsPermissions
         )
     }
     
     // MARK: - Reusable Status Functions
     
-    static func getStatusColor(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false) -> Color {
-        if isDownloading {
+    static func getStatusColor(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, needsPermissions: Bool = false) -> Color {
+        if needsPermissions {
+            return .orange
+        } else if isDownloading {
             return .orange
         } else if isTranscribing {
             return .blue
@@ -330,8 +413,10 @@ struct StatusCardView: View {
         }
     }
     
-    static func getStatusIcon(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false) -> Image {
-        if isDownloading {
+    static func getStatusIcon(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, needsPermissions: Bool = false) -> Image {
+        if needsPermissions {
+            return Image(systemName: "exclamationmark.triangle.fill")
+        } else if isDownloading {
             return Image(systemName: "arrow.down.circle.fill")
         } else if isTranscribing {
             return Image(systemName: "waveform")
@@ -342,8 +427,10 @@ struct StatusCardView: View {
         }
     }
     
-    static func getStatusTitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false) -> String {
-        if isDownloading {
+    static func getStatusTitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false, needsPermissions: Bool = false) -> String {
+        if needsPermissions {
+            return "Permissions Required"
+        } else if isDownloading {
             return "Downloading Model..."
         } else if isTranscribing {
             return enableTranslation ? "Translating..." : "Transcribing..."
@@ -354,18 +441,20 @@ struct StatusCardView: View {
         }
     }
     
-    static func getStatusSubtitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false) -> String {
-        if isDownloading {
+    static func getStatusSubtitle(isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false, downloadingModel: String? = nil, enableTranslation: Bool = false, needsPermissions: Bool = false, recordingDuration: String = "") -> String {
+        if needsPermissions {
+            return "Grant required permissions to continue"
+        } else if isDownloading {
             if let model = downloadingModel {
                 let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
                 return "Installing \(cleanName) model"
             } else {
-                return "Installing AI model"
+                return "Installing Whisper model"
             }
         } else if isTranscribing {
             return enableTranslation ? "Converting speech to English" : "Converting speech to text"
         } else if isRecording {
-            return "Listening for voice input"
+            return "Recording for \(recordingDuration)"
         } else {
             return "Press shortcut to start recording"
         }
@@ -377,7 +466,8 @@ struct StatusCardView: View {
             isTranscribing: audioManager.isTranscribing,
             isDownloading: whisperKit.isDownloadingModel,
             downloadingModel: whisperKit.downloadingModelName,
-            enableTranslation: audioManager.enableTranslation
+            enableTranslation: audioManager.enableTranslation,
+            needsPermissions: permissionManager.needsPermissions
         )
     }
     
@@ -387,7 +477,9 @@ struct StatusCardView: View {
             isTranscribing: audioManager.isTranscribing,
             isDownloading: whisperKit.isDownloadingModel,
             downloadingModel: whisperKit.downloadingModelName,
-            enableTranslation: audioManager.enableTranslation
+            enableTranslation: audioManager.enableTranslation,
+            needsPermissions: permissionManager.needsPermissions,
+            recordingDuration: audioManager.formattedRecordingDuration()
         )
     }
     
@@ -549,5 +641,161 @@ struct TertiaryButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.7 : 1.0)
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Command Approval View
+struct CommandApprovalView: View {
+    let command: String
+    let userRequest: String
+    let onApprove: () -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                Text("Command Approval Required")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            
+            // User request
+            if !userRequest.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Voice Request:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(userRequest)
+                        .font(.body)
+                        .padding(8)
+                        .background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                }
+            }
+            
+            // Generated command
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Generated Command:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(command)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(8)
+                    .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                    .textSelection(.enabled)
+            }
+            
+            // Action buttons
+            HStack(spacing: 12) {
+                Button("Execute") {
+                    onApprove()
+                }
+                .buttonStyle(PrimaryButtonStyle(isRecording: false))
+                
+                Button("Cancel") {
+                    onCancel()
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+        }
+        .padding(16)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+    }
+}
+
+// MARK: - Clarification View
+struct ClarificationView: View {
+    let question: String
+    let originalRequest: String
+    let onSubmit: (String) -> Void
+    let onCancel: () -> Void
+    
+    @State private var response: String = ""
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: "questionmark.circle.fill")
+                    .foregroundColor(.blue)
+                Text("Clarification Needed")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            
+            // Original request
+            if !originalRequest.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Original Request:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(originalRequest)
+                        .font(.body)
+                        .padding(8)
+                        .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                }
+            }
+            
+            // Clarification question
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Question:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(question)
+                    .font(.body)
+                    .padding(8)
+                    .background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            }
+            
+            // Response input
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Your Response:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                TextEditor(text: $response)
+                    .frame(height: 60)
+                    .padding(8)
+                    .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+            }
+            
+            // Action buttons
+            HStack(spacing: 12) {
+                Button("Submit") {
+                    onSubmit(response)
+                    response = ""
+                }
+                .buttonStyle(PrimaryButtonStyle(isRecording: false))
+                .disabled(response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                
+                Button("Cancel") {
+                    onCancel()
+                    response = ""
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+        }
+        .padding(16)
+        .background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+        )
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
     }
 }
