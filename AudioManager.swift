@@ -36,7 +36,7 @@ enum RecordingMode {
 	private var audioEngine: AVAudioEngine?
 	private var inputNode: AVAudioInputNode?
 	private var audioBuffer: [Float] = []
-	private let maxBufferSize = 16000 * 30 // 30 seconds at 16kHz
+	private let maxBufferSize = 16000 * 1800 // 30 minutes at 16kHz
 	private let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 	private let recordingIndicator = RecordingIndicatorManager()

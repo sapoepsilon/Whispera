@@ -267,7 +267,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Streaming Transcription")
                             .font(.headline)
-                        Text("Process audio in real-time instead of saving to file")
+                        Text("Process audio in real-time (max 30 minutes) instead of saving to file")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
