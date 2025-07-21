@@ -80,6 +80,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // Initialize debug confirmed window
             debugConfirmedWindow = DebugConfirmedWindow()
             
+            // Initialize live transcription window
+            liveTranscriptionWindow = LiveTranscriptionWindow()
+            
+            // Initialize debug confirmed window
+            debugConfirmedWindow = DebugConfirmedWindow()
+            
             // Show onboarding if first launch
             if !hasCompletedOnboarding {
                 showOnboarding()

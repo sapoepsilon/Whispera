@@ -393,6 +393,20 @@ struct SettingsView: View {
                 }
                 
                 Spacer()
+				HStack {
+					Text(whisperKit.isTranscribing ? "Stop" : "Stream")
+						.font(.headline)
+					Spacer()
+					Button {
+						Task{
+							try await whisperKit.stream()
+						}
+					} label: {
+						Text("Stream")
+					}
+
+				}
+				
             }
             .padding(20)
         }

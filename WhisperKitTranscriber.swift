@@ -10,7 +10,7 @@ import AppKit
 @Observable class WhisperKitTranscriber {
      var isInitialized = false
      var isInitializing = false
-	 var shouldStreamAudio: Bool = true
+	 var isStreamingAudio: Bool = false
      var initializationProgress: Double = 0.0
      var initializationStatus = "Starting..."
      var availableModels: [String] = []
@@ -40,9 +40,9 @@ import AppKit
 	 func clearLiveTranscriptionState() {
 	 	pendingText = ""
 	 	lastPendingText = ""
-	 	currentText = ""
 	 	shouldShowWindow = false
 	 	isTranscribing = false
+	 	confirmedText = ""
 	 	shouldShowDebugWindow = false
 	 }
     
@@ -185,6 +185,7 @@ import AppKit
     var loadProgress: Double = 0.0
 		
     @MainActor var whisperKit: WhisperKit?
+	@MainActor var audioStreamer: AudioStreamTranscriber?
     @MainActor private var initializationTask: Task<Void, Never>?
     @MainActor private var modelOperationTask: Task<Void, Error>?
     
@@ -296,6 +297,92 @@ import AppKit
         }
     }
     
+	private func initializeStreamer() {
+		let decodingOptions = DecodingOptions(
+			verbose: false,
+			task: .transcribe,
+			language: "ru-RU", // todo: make it real language
+			temperature: 0.0,
+			temperatureFallbackCount: 1,
+			sampleLength: 224,
+			usePrefillPrompt: false,
+			usePrefillCache: true,
+			skipSpecialTokens: true,
+			withoutTimestamps: false,
+			wordTimestamps: true,
+			clipTimestamps: [0]
+		)
+		guard let whisperKit = whisperKit else {
+			print("WhisperKit not initialized yet")
+			return
+		}
+		
+		guard let tokenizer = whisperKit.tokenizer else {
+			print("WhisperKit tokenizer not initialized yet")
+			return
+		}
+		
+		audioStreamer = AudioStreamTranscriber(
+			audioEncoder: whisperKit.audioEncoder,
+			featureExtractor: whisperKit.featureExtractor,
+			segmentSeeker: whisperKit.segmentSeeker,
+			textDecoder: whisperKit.textDecoder,
+			tokenizer: tokenizer,
+			audioProcessor: whisperKit.audioProcessor,
+			decodingOptions: decodingOptions,
+			requiredSegmentsForConfirmation: 1,
+			useVAD: true,
+			stateChangeCallback: { [weak self] oldState, newState in
+				Task { @MainActor in
+					guard let self = self else { return }
+					self.isTranscribing = newState.isRecording
+					print("currentFallback: \(newState.currentFallbacks)")
+					let newUnconfirmedText = if !newState.unconfirmedSegments.isEmpty {
+						newState.unconfirmedSegments
+							.map { $0.text.trimmingCharacters(in: .whitespaces) }
+							.joined(separator: " ")
+						
+					} else {
+						""
+					}
+					
+					if newUnconfirmedText != self.lastPendingText {
+						self.lastPendingText = self.pendingText
+						self.pendingText = newUnconfirmedText
+						print("🔄 Pending text updated: '\(self.pendingText)'")
+					}
+					
+					let shouldShow = !self.pendingText.isEmpty
+					
+					if shouldShow != self.shouldShowWindow {
+						self.shouldShowWindow = shouldShow
+						print("🪟 Live transcription window should \(shouldShow ? "show" : "hide") - pendingText: '\(self.pendingText)'")
+					}
+					
+					// Keep current text for backward compatibility
+					let hasCurrentText = !newState.currentText.isEmpty && 
+									   !newState.currentText.contains("Waiting for speech")
+					
+					if hasCurrentText && newState.currentText != oldState.currentText {
+						self.currentText = newState.currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+					}
+					// Handle confirmed segments for debug window
+					if !newState.confirmedSegments.isEmpty &&
+						newState.confirmedSegments.count != oldState.confirmedSegments.count {
+						let newConfirmedText = newState.confirmedSegments
+							.map { $0.text.trimmingCharacters(in: .whitespaces) }
+							.joined(separator: " ")
+						
+						if newConfirmedText != self.confirmedText {
+							self.confirmedText = newConfirmedText
+							self.shouldShowDebugWindow = !newConfirmedText.isEmpty
+						}
+					}
+				}
+			}
+		)
+	}
+	
     private func updateProgress(_ progress: Double, _ status: String) async {
         await MainActor.run {
             self.initializationProgress = progress
@@ -313,109 +400,17 @@ import AppKit
 		guard whisperKit.modelState == .loaded || whisperKit.modelState == .prewarmed else {
 			throw WhisperKitError.notReady
 		}
+		guard await isWhisperKitReady() else {
+			throw WhisperKitError.notReady
+		}
+		AppLogger.shared.transcriber.info("WhisperKit is ready")
 	}
 	
 	func stream() async throws {
+		print("starting stream")
 		try await checkIfWhisperKitIsAvailable()
-		
-		guard let whisperKit = whisperKit else {
-			throw WhisperKitError.noModelLoaded
-		}
-		
-		// Reset state
-		confirmedText = ""
-		pendingText = ""
-		lastBufferSize = 0
-		currentChunks = [:]
-		
-		// Start audio recording
-		guard await AudioProcessor.requestRecordPermission() else {
-			throw WhisperKitError.transcriptionFailed("Microphone access denied")
-		}
-		
-		isTranscribing = true
-		
-		try whisperKit.audioProcessor.startRecordingLive { _ in
-			// Audio buffer callback - we don't need to do anything here
-			// The realtimeLoop will handle checking the buffer
-		}
-		
-		// Start the realtime transcription loop
-		realtimeLoop()
-	}
-	
-	func stopStreaming() async -> String {
-		// Stop recording first
-		whisperKit?.audioProcessor.stopRecording()
-		
-		// Stop the transcription loop
-		stopRealtimeTranscription()
-		
-		// Process any remaining audio in the buffer
-		if let whisperKit = whisperKit {
-			let remainingBuffer = whisperKit.audioProcessor.audioSamples
-			if remainingBuffer.count > lastBufferSize {
-				// Transcribe final buffer
-				do {
-					let finalTranscription = try await transcribeAudioSamples(Array(remainingBuffer))
-					await MainActor.run {
-						if let segments = finalTranscription?.segments {
-							let finalText = segments
-								.map { $0.text.trimmingCharacters(in: .whitespaces) }
-								.joined(separator: " ")
-							
-							if !finalText.isEmpty {
-								if !confirmedText.isEmpty {
-									confirmedText += " " + finalText
-								} else {
-									confirmedText = finalText
-								}
-							}
-						}
-						
-						// Add any remaining pending text
-						if !pendingText.isEmpty {
-							if !confirmedText.isEmpty {
-								confirmedText += " " + pendingText
-							} else {
-								confirmedText = pendingText
-							}
-						}
-					}
-				} catch {
-					print("Error processing final buffer: \(error)")
-				}
-			}
-		}
-		
-		// Clear live transcription state to hide windows and reset text
-		await MainActor.run {
-			clearLiveTranscriptionState()
-		}
-		
-		return confirmedText
-	}
-	
-	
-	// MARK: - Manual Streaming Methods (WhisperAX approach)
-	
-	private func realtimeLoop() {
-		transcriptionTask = Task {
-			while isTranscribing {
-				do {
-					try await transcribeCurrentBuffer(delayInterval: Float(realtimeDelayInterval))
-				} catch {
-					print("Error in realtime loop: \(error.localizedDescription)")
-					break
-				}
-			}
-		}
-	}
-	
-	private func stopRealtimeTranscription() {
-		isTranscribing = false
-		transcriptionTask?.cancel()
-		transcriptionTask = nil
+		initializeStreamer()
+		try await audioStreamer?.startStreamTranscription()
 	}
 	
 	private func transcribeCurrentBuffer(delayInterval: Float = 1.0) async throws {
@@ -691,6 +686,7 @@ import AppKit
         guard await isWhisperKitReady() else {
             throw WhisperKitError.notReady
         }
+	
         
         // Implement retry mechanism for MPS resource loading failures
         let maxRetries = 3
@@ -814,7 +810,6 @@ import AppKit
     }
     
     func switchModel(to model: String) async throws {
-        // Check if there's already a model operation in progress
         if let existingTask = modelOperationTask {
             AppLogger.shared.transcriber.log("⏳ Waiting for existing model operation to complete...")
             try await existingTask.value
