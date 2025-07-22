@@ -16,12 +16,12 @@ struct SettingsView: View {
     @AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
     @AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
     @AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
-	var whisperKit = WhisperKitTranscriber.shared
     
     // MARK: - Injected Dependencies
     @State var permissionManager: PermissionManager
     @State var updateManager: UpdateManager
     @State var appLibraryManager: AppLibraryManager
+	@State var whisperKit = WhisperKitTranscriber.shared
     @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
     @State private var eventMonitor: Any?
@@ -391,7 +391,6 @@ struct SettingsView: View {
                             .stroke(.orange.opacity(0.3), lineWidth: 1)
                     )
                 }
-                
                 Spacer()
 				HStack {
 					Text(whisperKit.isTranscribing ? "Stop" : "Stream")
@@ -399,14 +398,16 @@ struct SettingsView: View {
 					Spacer()
 					Button {
 						Task{
-							try await whisperKit.stream()
+							if whisperKit.isTranscribing {
+								whisperKit.stopLiveStream()
+							} else {
+								try await whisperKit.liveStream()
+							}
 						}
 					} label: {
-						Text("Stream")
+						Text(whisperKit.isTranscribing ? "Stop" : "Stream")
 					}
-
 				}
-				
             }
             .padding(20)
         }

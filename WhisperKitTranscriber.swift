@@ -18,16 +18,39 @@ import AppKit
      var downloadedModels: Set<String> = []
 	 var currentText: String = ""
 	 
-	 // Live transcription state
 	 var pendingText: String = ""
 	 var lastPendingText: String = ""
 	 var shouldShowWindow: Bool = false
 	 var isTranscribing: Bool = false
 	 
-	 // Debug confirmed text state
 	 var confirmedText: String = ""
 	 var shouldShowDebugWindow: Bool = false
+	 private var lastConfirmationTime: Date = Date()
+	 private var pendingConfirmationTimer: Timer?
 	 var decodingOptions: DecodingOptions?
+	 
+	 var dictationDisplayText: AttributedString {
+	 	var result = AttributedString()
+	 	
+	 	if !confirmedText.isEmpty {
+	 		var confirmed = AttributedString(confirmedText)
+	 		confirmed.foregroundColor = .primary
+	 		result.append(confirmed)
+	 		
+	 		if !pendingText.isEmpty {
+	 			result.append(AttributedString(" "))
+	 		}
+	 	}
+	 	
+	 	if !pendingText.isEmpty {
+	 		var pending = AttributedString(pendingText)
+	 		pending.foregroundColor = .secondary
+	 		result.append(pending)
+	 	}
+	 	
+	 	return result
+	 }
+	 
 	 var displayText: String {
 	 	return pendingText
 	 }
@@ -44,6 +67,37 @@ import AppKit
 	 	isTranscribing = false
 	 	confirmedText = ""
 	 	shouldShowDebugWindow = false
+	 	pendingConfirmationTimer?.invalidate()
+	 	pendingConfirmationTimer = nil
+	 	transcriptionTask?.cancel()
+	 	transcriptionTask = nil
+	 	lastBufferSize = 0
+	 }
+	 
+	 private func startConfirmationTimer() {
+	 	pendingConfirmationTimer?.invalidate()
+	 	
+	 	pendingConfirmationTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+	 		Task { @MainActor in
+	 			guard let self = self else { return }
+	 			if !self.pendingText.isEmpty {
+	 				self.confirmPendingText()
+	 			}
+	 		}
+	 	}
+	 }
+	 
+	 private func confirmPendingText() {
+	 	guard !pendingText.isEmpty else { return }
+	 	
+	 	if !confirmedText.isEmpty {
+	 		confirmedText += " " + pendingText
+	 	} else {
+	 		confirmedText = pendingText
+	 	}
+	 	
+	 	pendingText = ""
+	 	lastConfirmationTime = Date()
 	 }
     
 	private var selectedLanguage: String {
@@ -79,7 +133,7 @@ import AppKit
 	private var savedSampleLength: Int {
 		get {
 			let value = UserDefaults.standard.integer(forKey: "decodingSampleLength")
-			return value == 0 ? 224 : value // Default to 224
+			return value == 0 ? getModelSpecificSampleLength() : value
 		}
 		set {
 			UserDefaults.standard.set(newValue, forKey: "decodingSampleLength")
@@ -185,14 +239,13 @@ import AppKit
     var loadProgress: Double = 0.0
 		
     @MainActor var whisperKit: WhisperKit?
-	@MainActor var audioStreamer: AudioStreamTranscriber?
+	private var transcriptionTask: Task<Void, Never>?
+	private var lastBufferSize: Int = 0
+	private var realtimeDelayInterval: Double = 0.3
     @MainActor private var initializationTask: Task<Void, Never>?
     @MainActor private var modelOperationTask: Task<Void, Error>?
     
     // Manual streaming properties (WhisperAX approach)
-    @MainActor private var transcriptionTask: Task<Void, Never>?
-    private var lastBufferSize: Int = 0
-    private var realtimeDelayInterval: Double = 1.0
     private var currentChunks: [Int: (chunkText: [String], fallbacks: Int)] = [:]
     
     // Swift 6 compliant singleton pattern
@@ -297,91 +350,6 @@ import AppKit
         }
     }
     
-	private func initializeStreamer() {
-		let decodingOptions = DecodingOptions(
-			verbose: false,
-			task: .transcribe,
-			language: "ru-RU", // todo: make it real language
-			temperature: 0.0,
-			temperatureFallbackCount: 1,
-			sampleLength: 224,
-			usePrefillPrompt: false,
-			usePrefillCache: true,
-			skipSpecialTokens: true,
-			withoutTimestamps: false,
-			wordTimestamps: true,
-			clipTimestamps: [0]
-		)
-		guard let whisperKit = whisperKit else {
-			print("WhisperKit not initialized yet")
-			return
-		}
-		
-		guard let tokenizer = whisperKit.tokenizer else {
-			print("WhisperKit tokenizer not initialized yet")
-			return
-		}
-		
-		audioStreamer = AudioStreamTranscriber(
-			audioEncoder: whisperKit.audioEncoder,
-			featureExtractor: whisperKit.featureExtractor,
-			segmentSeeker: whisperKit.segmentSeeker,
-			textDecoder: whisperKit.textDecoder,
-			tokenizer: tokenizer,
-			audioProcessor: whisperKit.audioProcessor,
-			decodingOptions: decodingOptions,
-			requiredSegmentsForConfirmation: 1,
-			useVAD: true,
-			stateChangeCallback: { [weak self] oldState, newState in
-				Task { @MainActor in
-					guard let self = self else { return }
-					self.isTranscribing = newState.isRecording
-					print("currentFallback: \(newState.currentFallbacks)")
-					let newUnconfirmedText = if !newState.unconfirmedSegments.isEmpty {
-						newState.unconfirmedSegments
-							.map { $0.text.trimmingCharacters(in: .whitespaces) }
-							.joined(separator: " ")
-						
-					} else {
-						""
-					}
-					
-					if newUnconfirmedText != self.lastPendingText {
-						self.lastPendingText = self.pendingText
-						self.pendingText = newUnconfirmedText
-						print("🔄 Pending text updated: '\(self.pendingText)'")
-					}
-					
-					let shouldShow = !self.pendingText.isEmpty
-					
-					if shouldShow != self.shouldShowWindow {
-						self.shouldShowWindow = shouldShow
-						print("🪟 Live transcription window should \(shouldShow ? "show" : "hide") - pendingText: '\(self.pendingText)'")
-					}
-					
-					// Keep current text for backward compatibility
-					let hasCurrentText = !newState.currentText.isEmpty && 
-									   !newState.currentText.contains("Waiting for speech")
-					
-					if hasCurrentText && newState.currentText != oldState.currentText {
-						self.currentText = newState.currentText.trimmingCharacters(in: .whitespacesAndNewlines)
-					}
-					// Handle confirmed segments for debug window
-					if !newState.confirmedSegments.isEmpty &&
-						newState.confirmedSegments.count != oldState.confirmedSegments.count {
-						let newConfirmedText = newState.confirmedSegments
-							.map { $0.text.trimmingCharacters(in: .whitespaces) }
-							.joined(separator: " ")
-						
-						if newConfirmedText != self.confirmedText {
-							self.confirmedText = newConfirmedText
-							self.shouldShowDebugWindow = !newConfirmedText.isEmpty
-						}
-					}
-				}
-			}
-		)
-	}
 	
     private func updateProgress(_ progress: Double, _ status: String) async {
         await MainActor.run {
@@ -406,66 +374,106 @@ import AppKit
 		AppLogger.shared.transcriber.info("WhisperKit is ready")
 	}
 	
-	func stream() async throws {
-		print("starting stream")
+	func liveStream() async throws {
+		print("starting live stream")
 		try await checkIfWhisperKitIsAvailable()
-		initializeStreamer()
-		try await audioStreamer?.startStreamTranscription()
+		
+		guard let whisperKit = whisperKit else { 
+			throw WhisperKitError.notInitialized 
+		}
+		
+		shouldShowWindow = true
+		isTranscribing = true
+		
+		try? whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
+			Task { @MainActor in
+				guard let self = self else { return }
+				self.shouldShowWindow = true
+			}
+		}
+		
+		realtimeLoop()
+		print("🎤 Live streaming started")
 	}
 	
-	private func transcribeCurrentBuffer(delayInterval: Float = 1.0) async throws {
+	func stopLiveStream() {
+		isTranscribing = false
+		shouldShowWindow = false
+		transcriptionTask?.cancel()
+		whisperKit?.audioProcessor.stopRecording()
+		
+		pendingConfirmationTimer?.invalidate()
+		pendingConfirmationTimer = nil
+		
+		if !pendingText.isEmpty {
+			confirmPendingText()
+		}
+		
+		print("🛑 Live streaming stopped")
+	}
+	
+	private func realtimeLoop() {
+		transcriptionTask = Task {
+			while isTranscribing {
+				do {
+					try await transcribeCurrentBuffer(delayInterval: Float(realtimeDelayInterval))
+				} catch {
+					print("Transcription error: \(error.localizedDescription)")
+					break
+				}
+			}
+		}
+	}
+	
+	private func transcribeCurrentBuffer(delayInterval: Float = 0.3) async throws {
 		guard let whisperKit = whisperKit else { return }
 		
-		// Check if model is actually loaded
 		guard whisperKit.modelState == .loaded || whisperKit.modelState == .prewarmed else {
 			await MainActor.run {
-				pendingText = "Model not loaded..."
+				if pendingText.isEmpty {
+					pendingText = "Model not loaded..."
+				}
 			}
-			try await Task.sleep(nanoseconds: 500_000_000) // Wait 500ms
+			try await Task.sleep(nanoseconds: 500_000_000)
 			return
 		}
 		
-		// Retrieve the current audio buffer from the audio processor
 		let currentBuffer = whisperKit.audioProcessor.audioSamples
-		
-		// Calculate the size and duration of the next buffer segment
 		let nextBufferSize = currentBuffer.count - lastBufferSize
 		let nextBufferSeconds = Float(nextBufferSize) / Float(WhisperKit.sampleRate)
 		
-		// Only run the transcribe if the next buffer has at least `delayInterval` seconds of audio
 		guard nextBufferSeconds > delayInterval else {
 			await MainActor.run {
-				if pendingText.isEmpty {
+				if pendingText.isEmpty && confirmedText.isEmpty {
 					pendingText = "Waiting for speech..."
+					shouldShowWindow = true
 				}
 			}
-			try await Task.sleep(nanoseconds: 100_000_000) // sleep for 100ms for next buffer
+			try await Task.sleep(nanoseconds: 100_000_000)
 			return
 		}
 		
-		// Store this for next iterations
 		lastBufferSize = currentBuffer.count
 		
-		// Transcribe the current buffer
 		let transcription = try await transcribeAudioSamples(Array(currentBuffer))
 		
 		await MainActor.run {
-			guard let segments = transcription?.segments else {
+			guard let segments = transcription?.segments, !segments.isEmpty else {
 				return
 			}
 			
-			// Update confirmed segments and pending text like the original approach
-			if segments.count > 1 { // Using 2 for confirmation like WhisperAX default
-				let numberOfSegmentsToConfirm = segments.count - 1
+			let requiredSegmentsForConfirmation = 2
+			
+			if segments.count > requiredSegmentsForConfirmation {
+				let numberOfSegmentsToConfirm = segments.count - requiredSegmentsForConfirmation
 				let confirmedSegmentsArray = Array(segments.prefix(numberOfSegmentsToConfirm))
-				let remainingSegments = Array(segments.suffix(1))
+				let remainingSegments = Array(segments.suffix(requiredSegmentsForConfirmation))
 				
-				// Add new confirmed text
 				let newConfirmedText = confirmedSegmentsArray
 					.map { $0.text.trimmingCharacters(in: .whitespaces) }
 					.joined(separator: " ")
 				
-				if !newConfirmedText.isEmpty && !confirmedText.hasSuffix(newConfirmedText) {
+				if !newConfirmedText.isEmpty {
 					if !confirmedText.isEmpty {
 						confirmedText += " " + newConfirmedText
 					} else {
@@ -473,19 +481,20 @@ import AppKit
 					}
 				}
 				
-				// Update pending text with unconfirmed segments
 				pendingText = remainingSegments
 					.map { $0.text.trimmingCharacters(in: .whitespaces) }
 					.joined(separator: " ")
 			} else {
-				// All segments are unconfirmed
 				pendingText = segments
 					.map { $0.text.trimmingCharacters(in: .whitespaces) }
 					.joined(separator: " ")
 			}
 			
-			// Show window when we have pending text
-			shouldShowWindow = !pendingText.isEmpty
+			shouldShowWindow = !pendingText.isEmpty || !confirmedText.isEmpty
+			
+			if !pendingText.isEmpty {
+				startConfirmationTimer()
+			}
 		}
 	}
 	
@@ -499,14 +508,14 @@ import AppKit
 			verbose: false,
 			task: task,
 			language: languageCode,
-			temperature: 0.0,
-			temperatureFallbackCount: 3, // More fallbacks for better accuracy
-			sampleLength: 448, // Larger context window
-			usePrefillPrompt: true,
-			usePrefillCache: true,
-			skipSpecialTokens: true,
-			withoutTimestamps: false,
-			wordTimestamps: true,
+			temperature: savedTemperature,
+			temperatureFallbackCount: savedTemperatureFallbackCount,
+			sampleLength: savedSampleLength,
+			usePrefillPrompt: savedUsePrefillPrompt,
+			usePrefillCache: savedUsePrefillCache,
+			skipSpecialTokens: savedSkipSpecialTokens,
+			withoutTimestamps: savedWithoutTimestamps,
+			wordTimestamps: savedWordTimestamps,
 			clipTimestamps: [0]
 		)
 		
@@ -519,13 +528,47 @@ import AppKit
 			return nil // Continue transcription
 		}
 		
-		let transcriptionResults: [TranscriptionResult] = try await whisperKit.transcribe(
-			audioArray: samples,
-			decodeOptions: options,
-			callback: decodingCallback
-		)
-		
-		return transcriptionResults.first
+		do {
+			let transcriptionResults: [TranscriptionResult] = try await whisperKit.transcribe(
+				audioArray: samples,
+				decodeOptions: options,
+				callback: decodingCallback
+			)
+			
+			return transcriptionResults.first
+		} catch {
+			let errorString = error.localizedDescription
+			if errorString.contains("Could not store NSNumber at offset") || 
+			   errorString.contains("beyond the end of the multi array") {
+				AppLogger.shared.transcriber.log("⚠️ Array bounds error detected, retrying with smaller sampleLength")
+				
+				// Retry with a smaller sampleLength
+				let fallbackOptions = DecodingOptions(
+					verbose: false,
+					task: task,
+					language: languageCode,
+					temperature: savedTemperature,
+					temperatureFallbackCount: savedTemperatureFallbackCount,
+					sampleLength: 224, // Use safe fallback
+					usePrefillPrompt: savedUsePrefillPrompt,
+					usePrefillCache: savedUsePrefillCache,
+					skipSpecialTokens: savedSkipSpecialTokens,
+					withoutTimestamps: savedWithoutTimestamps,
+					wordTimestamps: savedWordTimestamps,
+					clipTimestamps: [0]
+				)
+				
+				let transcriptionResults: [TranscriptionResult] = try await whisperKit.transcribe(
+					audioArray: samples,
+					decodeOptions: fallbackOptions,
+					callback: decodingCallback
+				)
+				
+				return transcriptionResults.first
+			} else {
+				throw error
+			}
+		}
 	}
     
     // MARK: - Decoding Options Management
@@ -657,10 +700,33 @@ import AppKit
         AppLogger.shared.transcriber.log("🔧 Updated advanced transcription settings")
     }
     
+    private func getModelSpecificSampleLength() -> Int {
+        guard let currentModelName = currentModel else {
+            return 224 // Safe default for unknown models
+        }
+        
+        let modelName = currentModelName.lowercased()
+        
+        // Use conservative sampleLength values based on model size
+        if modelName.contains("tiny") {
+            return 224
+        } else if modelName.contains("base") {
+            return 224
+        } else if modelName.contains("small") {
+            return 224
+        } else if modelName.contains("medium") {
+            return 448
+        } else if modelName.contains("large") || modelName.contains("turbo") {
+            return 448
+        } else {
+            return 224 // Safe fallback
+        }
+    }
+    
     func resetDecodingOptionsToDefaults() {
         savedTemperature = 0.0
         savedTemperatureFallbackCount = 1
-        savedSampleLength = 224
+        savedSampleLength = getModelSpecificSampleLength()
         savedUsePrefillPrompt = true
         savedUsePrefillCache = true
         savedSkipSpecialTokens = true
@@ -1018,7 +1084,15 @@ import AppKit
             
             await updateLoadProgress(0.6, "Loading \(modelName)...")
             whisperKit = try await Task { @MainActor in
-                let config = WhisperKitConfig(model: modelName, downloadBase: baseModelCacheDirectory)
+				let config = WhisperKitConfig(
+					model: modelName,
+					downloadBase: baseModelCacheDirectory,
+					computeOptions: ModelComputeOptions(
+						melCompute: .cpuAndNeuralEngine,
+						audioEncoderCompute: .cpuAndNeuralEngine,
+						textDecoderCompute: .cpuAndNeuralEngine
+					)
+				)
                 let whisperKitInstance = try await WhisperKit(config)
                 self.setupModelStateCallback(for: whisperKitInstance)
                 return whisperKitInstance
@@ -1033,9 +1107,14 @@ import AppKit
             // Store as last used model for auto-loading next time
             lastUsedModel = modelName
             
+            // Reset sampleLength to model-specific value if user hasn't customized it
+            if UserDefaults.standard.object(forKey: "decodingSampleLength") == nil {
+                UserDefaults.standard.removeObject(forKey: "decodingSampleLength")
+            }
+            
             await updateLoadProgress(1.0, "Model ready!")
             
-            AppLogger.shared.transcriber.log("✅ Successfully loaded model: \(modelName) (saved as last used)")
+            AppLogger.shared.transcriber.log("✅ Successfully loaded model: \(modelName) with sampleLength: \(self.getModelSpecificSampleLength()) (saved as last used)")
             
         } catch {
             AppLogger.shared.transcriber.log("❌ Failed to load model \(modelName): \(error)")

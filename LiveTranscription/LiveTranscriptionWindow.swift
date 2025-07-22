@@ -27,7 +27,7 @@ class LiveTranscriptionWindow: NSWindow {
         // Initially center on screen (fallback position)
         self.center()
         
-        let hostingView = NSHostingView(rootView: LiveTranscriptionView())
+        let hostingView = NSHostingView(rootView: DictationView())
         self.contentView = hostingView
         
         // Observe changes in whisperKit to show/hide and position window
@@ -72,18 +72,12 @@ class LiveTranscriptionWindow: NSWindow {
                             }
                         }
                         
-                        // Update size if recent words changed significantly
-                        let words = self.whisperKit.currentText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-                        let filteredWords = words.filter { word in
-                            !word.lowercased().contains("waiting") && 
-                            !word.lowercased().contains("listening") &&
-                            !word.lowercased().contains("speech")
-                        }
-                        let recentWords = filteredWords.suffix(8).joined(separator: " ")
+                        // Update size if text changed significantly
+                        let fullText = self.whisperKit.confirmedText + (self.whisperKit.confirmedText.isEmpty || self.whisperKit.pendingText.isEmpty ? "" : " ") + self.whisperKit.pendingText
                         
-                        if recentWords != self.lastTextContent {
+                        if fullText != self.lastTextContent {
                             self.updateWindowSize(newSize)
-                            self.lastTextContent = recentWords
+                            self.lastTextContent = fullText
                         }
                     }
                 } else {
@@ -97,48 +91,28 @@ class LiveTranscriptionWindow: NSWindow {
     }
     
     private func calculateDynamicSize() -> NSSize {
-        let currentContent = whisperKit.currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fullText = whisperKit.confirmedText + (whisperKit.confirmedText.isEmpty || whisperKit.pendingText.isEmpty ? "" : " ") + whisperKit.pendingText
         
-        // Filter out WhisperKit's default messages
-        if currentContent.isEmpty || 
-           currentContent.contains("Waiting for speech") ||
-           currentContent.contains("Listening") ||
-           currentContent.contains("waiting for speech") ||
-           currentContent.contains("listening") {
-            // Minimal size for "Listening..." state
-            return NSSize(width: 120, height: 32)
+        if fullText.isEmpty || whisperKit.isTranscribing && whisperKit.confirmedText.isEmpty && whisperKit.pendingText.isEmpty {
+            return NSSize(width: 140, height: 44)
         }
         
-        // We only show the last 8 words, so calculate size based on that
-        let words = currentContent.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-        let filteredWords = words.filter { word in
-            !word.lowercased().contains("waiting") && 
-            !word.lowercased().contains("listening") &&
-            !word.lowercased().contains("speech")
-        }
-        let recentWords = filteredWords.suffix(8)
-        let displayText = recentWords.joined(separator: " ")
+        let estimatedTextWidth = CGFloat(fullText.count) * 7.5
+        let paddedWidth = estimatedTextWidth + 40
         
-        if displayText.isEmpty {
-            return NSSize(width: 120, height: 32)
-        }
-        
-        // Estimate width: average 7 characters per word + spaces, plus padding
-        let estimatedTextWidth = CGFloat(displayText.count) * 7
-        let paddedWidth = estimatedTextWidth + 32 // 16pt padding on each side
-        
-        // Constrain width - keep it reasonable since we only show recent words
-        let minWidth: CGFloat = 120
-        let maxWidth: CGFloat = 300 // Smaller max since we show fewer words
+        let minWidth: CGFloat = 200
+        let maxWidth: CGFloat = 600
         let finalWidth = min(maxWidth, max(minWidth, paddedWidth))
         
-        // Height for up to 2 lines (since lineLimit is 2)
-        let baseHeight: CGFloat = 32
-        let lineHeight: CGFloat = 20
+        let baseHeight: CGFloat = 44
+        let lineHeight: CGFloat = 22
         
-        // Rough estimate: if text is longer than ~40 chars, it'll wrap to 2 lines
-        let estimatedLines = displayText.count > 40 ? 2 : 1
-        let finalHeight = baseHeight + CGFloat(max(0, estimatedLines - 1)) * lineHeight
+        let charsPerLine = Int(finalWidth / 7.5)
+        let estimatedLines = max(1, (fullText.count + charsPerLine - 1) / charsPerLine)
+        let maxLines = 8
+        let actualLines = min(estimatedLines, maxLines)
+        
+        let finalHeight = baseHeight + CGFloat(max(0, actualLines - 1)) * lineHeight
         
         return NSSize(width: finalWidth, height: finalHeight)
     }
