@@ -5,6 +5,7 @@ import SwiftUI
 
 enum RecordingMode {
 	case text
+	case liveTranscription
 }
 
 @MainActor
@@ -33,6 +34,8 @@ enum RecordingMode {
 	@AppStorage("enableTranslation") var enableTranslation = false
 	@ObservationIgnored
 	@AppStorage("useStreamingTranscription") var useStreamingTranscription = true
+	@ObservationIgnored
+	@AppStorage("enableStreaming") var enableStreaming = true
 	
 	private var audioRecorder: AVAudioRecorder?
 	private var audioFileURL: URL?
@@ -238,9 +241,9 @@ enum RecordingMode {
 		}
 	}
 	
-	func toggleRecording(mode: RecordingMode = .text) {
-		// Set the recording mode before starting
-		currentRecordingMode = mode
+	func toggleRecording() {
+		// Set the recording mode based on settings
+		currentRecordingMode = enableStreaming ? .liveTranscription : .text
 		
 		if isRecording {
 			stopRecording()
@@ -253,7 +256,9 @@ enum RecordingMode {
 		// Check permissions before recording
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
 		case .authorized:
-			if useStreamingTranscription {
+			if currentRecordingMode == .liveTranscription {
+				startLiveTranscription()
+			} else if useStreamingTranscription {
 				startStreamingRecording()
 			} else {
 				performStartRecording()
@@ -263,7 +268,9 @@ enum RecordingMode {
 			AVCaptureDevice.requestAccess(for: .audio) { granted in
 				DispatchQueue.main.async {
 					if granted {
-						if self.useStreamingTranscription {
+						if self.currentRecordingMode == .liveTranscription {
+							self.startLiveTranscription()
+						} else if self.useStreamingTranscription {
 							self.startStreamingRecording()
 						} else {
 							self.performStartRecording()
@@ -315,7 +322,9 @@ enum RecordingMode {
 	}
 	
 	private func stopRecording() {
-		if useStreamingTranscription {
+		if currentRecordingMode == .liveTranscription {
+			stopLiveTranscription()
+		} else if useStreamingTranscription {
 			stopStreamingRecording()
 		} else {
 			stopFileBasedRecording()
@@ -402,6 +411,41 @@ enum RecordingMode {
 		}
 	}
 	
+	// MARK: - Live Transcription Methods
+	private func startLiveTranscription() {
+		isRecording = true
+		startRecordingTimer()
+		playFeedbackSound(start: true)
+		whisperKitTranscriber.clearLiveTranscriptionState()
+		
+		Task {
+			do {
+				try await whisperKitTranscriber.liveStream()
+				AppLogger.shared.audioManager.info("🎤 Live transcription started")
+			} catch {
+				await MainActor.run {
+					self.isRecording = false
+					self.stopRecordingTimer()
+					print("❌ Failed to start live transcription: \(error)")
+				}
+			}
+		}
+	}
+	
+	private func stopLiveTranscription() {
+		isRecording = false
+		stopRecordingTimer()
+		playFeedbackSound(start: false)
+		
+		whisperKitTranscriber.stopLiveStream()
+		AppLogger.shared.audioManager.info("🛑 Live transcription stopped")
+		
+		// Reset timer after a brief delay to allow UI to show final duration
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+			self.resetRecordingTimer()
+		}
+	}
+	
 	private func transcribeAudioBuffer(audioArray: [Float], enableTranslation: Bool) async {
 		isTranscribing = true
 		transcriptionError = nil
@@ -419,6 +463,9 @@ enum RecordingMode {
 				case .text:
 					// Traditional behavior - paste to focused app
 					pasteToFocusedApp(transcription)
+				case .liveTranscription:
+					// Live transcription mode - no automatic pasting
+					break
 				}
 			}
 		} catch {
@@ -461,6 +508,9 @@ enum RecordingMode {
 				case .text:
 					// Traditional behavior - paste to focused app
 					pasteToFocusedApp(transcription)
+				case .liveTranscription:
+					// Live transcription mode - no automatic pasting
+					break
 				}
 			}
 		} catch {
@@ -479,7 +529,8 @@ enum RecordingMode {
 			let pasteboard = NSPasteboard.general
 			pasteboard.clearContents()
 			pasteboard.setString(text, forType: .string)
-			
+		
+			print("Pasting to the focused app: \(text)")
 			// Simulate Cmd+V
 			let source = CGEventSource(stateID: .combinedSessionState)
 			let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
@@ -491,7 +542,7 @@ enum RecordingMode {
 			keyDownEvent?.post(tap: .cghidEventTap)
 			keyUpEvent?.post(tap: .cghidEventTap)
 		}
-		
+	
 		func getApplicationSupportDirectory() -> URL {
 			let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
 			let appDirectory = appSupport.appendingPathComponent("Whispera")

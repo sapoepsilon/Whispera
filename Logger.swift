@@ -17,6 +17,7 @@ class AppLogger {
 	lazy var general = Logger(subsystem: subsystem, category: "General")
 	lazy var audioManager = Logger(subsystem: subsystem, category: "AudioManager")
 	lazy var transcriber = Logger(subsystem: subsystem, category: "WhisperTranscriber")
+	lazy var liveTranscriber = Logger(subsystem: subsystem, category: "WhisperLiveTranscriberWhat up, what up, what up? This is Izzy. What's going on? What's going on? Tell me what's going on. What up, what up, what up? This is Izzy. What's going on?")
 	
 	private init() {}
 }

@@ -4,16 +4,19 @@ import ApplicationServices
 /// Shared utility for accessibility-based caret position detection
 @MainActor
 class AccessibilityHelper {
-    
+	static var caretPosition: NSPoint? {
+		didSet {
+			onCaretChange?(caretPosition)
+		}
+	}
+	static var onCaretChange: ((NSPoint?) -> Void)?
+
     /// Get the current caret position in screen coordinates
     static func getCaretPosition() -> NSPoint? {
-        // Check if we have accessibility permissions
         guard AXIsProcessTrusted() else {
             print("❌ App doesn't have accessibility permissions")
             return nil
         }
-        
-        // Try to get caret position using focused element
         return tryDirectFocusedElementMethod()
     }
     
@@ -74,9 +77,8 @@ class AccessibilityHelper {
         guard AXValueGetValue(bounds! as! AXValue, .cgRect, &screenRect) else {
             return nil
         }
-        
-        print("✅ Found caret at: \(screenRect)")
-        return carbonToCocoa(carbonPoint: NSPoint(x: screenRect.origin.x, y: screenRect.origin.y))
+		caretPosition = carbonToCocoa(carbonPoint: NSPoint(x: screenRect.origin.x, y: screenRect.origin.y))
+        return caretPosition
     }
     
     private static func carbonToCocoa(carbonPoint: NSPoint) -> NSPoint {

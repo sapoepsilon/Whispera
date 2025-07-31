@@ -16,6 +16,15 @@ struct SettingsView: View {
     @AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
     @AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
     @AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
+    @AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
+    
+    // MARK: - Live Transcription Settings
+    @AppStorage("liveTranscriptionMaxWords") private var liveTranscriptionMaxWords = 5
+    @AppStorage("liveTranscriptionCornerRadius") private var liveTranscriptionCornerRadius = 10.0
+    @AppStorage("liveTranscriptionWindowOffset") private var liveTranscriptionWindowOffset = 25.0
+    @AppStorage("liveTranscriptionShowEllipsis") private var liveTranscriptionShowEllipsis = true
+    @AppStorage("liveTranscriptionMaxWidthPercentage") private var liveTranscriptionMaxWidthPercentage = 0.6
+    @AppStorage("liveTranscriptionFollowCaret") private var liveTranscriptionFollowCaret = true
     
     // MARK: - Injected Dependencies
     @State var permissionManager: PermissionManager
@@ -198,6 +207,19 @@ struct SettingsView: View {
                     }
                 }
                 
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Haptic Feedback")
+                            .font(.headline)
+                        Text("Trackpad vibration when shortcut is triggered")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $shortcutHapticFeedback)
+                }
+                
+				
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         
@@ -290,12 +312,17 @@ struct SettingsView: View {
                 
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Streaming Mode")
+                        Text("Live Transcription Mode")
                             .font(.headline)
-                        Text("Use live streaming transcription")
+                        Text("Transcribe speech in real-time with automatic text replacement")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                    }
+					}
+					GlassBetaElement(
+						onTap: {
+							showLiveTranscriptionInfo()
+						}
+					)
                     Spacer()
                     Toggle("", isOn: $enableStreaming)
                 }
@@ -391,23 +418,6 @@ struct SettingsView: View {
                             .stroke(.orange.opacity(0.3), lineWidth: 1)
                     )
                 }
-                Spacer()
-				HStack {
-					Text(whisperKit.isTranscribing ? "Stop" : "Stream")
-						.font(.headline)
-					Spacer()
-					Button {
-						Task{
-							if whisperKit.isTranscribing {
-								whisperKit.stopLiveStream()
-							} else {
-								try await whisperKit.liveStream()
-							}
-						}
-					} label: {
-						Text(whisperKit.isTranscribing ? "Stop" : "Stream")
-					}
-				}
             }
             .padding(20)
         }
@@ -532,6 +542,177 @@ struct SettingsView: View {
         }
         .tabItem {
             Label("Storage & Downloads", systemImage: "internaldrive")
+        }
+        
+        // MARK: - Live Transcription Tab (only shows when enabled)
+        if enableStreaming {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Header
+                    HStack {
+                        Text("Live Transcription Settings")
+                            .font(.headline)
+                        Spacer()
+                        GlassBetaElement()
+                    }
+                    
+                    Text("Customize how the live transcription window appears and behaves")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    Divider()
+                    
+                    // MARK: - Preview Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Preview")
+                            .font(.headline)
+                        
+                        // Preview container
+                        HStack {
+                            Spacer()
+                            LiveTranscriptionPreview(
+                                maxWords: liveTranscriptionMaxWords,
+                                cornerRadius: liveTranscriptionCornerRadius,
+                                showEllipsis: liveTranscriptionShowEllipsis
+                            )
+                            Spacer()
+                        }
+                        .padding(.vertical, 20)
+                        .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    
+                    Divider()
+                    
+                    // MARK: - Settings Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Max words setting
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Maximum Words to Display")
+                                    .font(.headline)
+                                Spacer()
+                                Text("\(liveTranscriptionMaxWords)")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            HStack {
+                                Slider(value: Binding(
+                                    get: { Double(liveTranscriptionMaxWords) },
+                                    set: { 
+                                        liveTranscriptionMaxWords = Int($0)
+                                        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                                    }
+                                ), in: 1...50, step: 1)
+                                
+                                TextField("Custom", value: $liveTranscriptionMaxWords, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 60)
+                            }
+                            
+                            Text("Number of words to show in the transcription window (1-200+)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        // Corner radius setting
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Window Corner Radius")
+                                    .font(.headline)
+                                Spacer()
+                                Text("\(Int(liveTranscriptionCornerRadius))")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Slider(value: $liveTranscriptionCornerRadius, in: 0...20, step: 1)
+                                .onChange(of: liveTranscriptionCornerRadius) { _ in
+                                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                                }
+                            
+                            Text("Roundness of the window corners")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        // Window offset setting
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Window Position Offset")
+                                    .font(.headline)
+                                Spacer()
+                                Text("\(Int(liveTranscriptionWindowOffset)) px")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Slider(value: $liveTranscriptionWindowOffset, in: 10...50, step: 5)
+                                .onChange(of: liveTranscriptionWindowOffset) { _ in
+                                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                                }
+                            
+                            Text("Distance from the cursor position")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        // Max width percentage setting
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Maximum Window Width")
+                                    .font(.headline)
+                                Spacer()
+                                Text("\(Int(liveTranscriptionMaxWidthPercentage * 100))%")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Slider(value: $liveTranscriptionMaxWidthPercentage, in: 0.3...0.8, step: 0.05)
+                                .onChange(of: liveTranscriptionMaxWidthPercentage) { _ in
+                                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                                }
+                            
+                            Text("Maximum width as percentage of screen width")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        // Show ellipsis toggle
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Show Ellipsis")
+                                    .font(.headline)
+                                Text("Display '...' when text is truncated")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $liveTranscriptionShowEllipsis)
+                        }
+                        
+                        // Follow caret toggle
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Follow Caret Position")
+                                    .font(.headline)
+                                Text("Window follows cursor position while typing")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $liveTranscriptionFollowCaret)
+                        }
+                    }
+                    
+                    Spacer()
+                }
+                .padding(20)
+            }
+            .tabItem {
+                Label("Live Transcription", systemImage: "waveform")
+            }
         }
     }
         .frame(width: 450, height: 520)
@@ -697,11 +878,52 @@ struct SettingsView: View {
         if flags.contains(.control) { parts.append("⌃") }
         if flags.contains(.shift) { parts.append("⇧") }
         
-        if let characters = event.charactersIgnoringModifiers?.uppercased() {
-            parts.append(characters)
+        // Handle special keys
+        switch event.keyCode {
+        // Function keys
+        case 122: parts.append("F1")
+        case 120: parts.append("F2")
+        case 99: parts.append("F3")
+        case 118: parts.append("F4")
+        case 96: parts.append("F5")
+        case 97: parts.append("F6")
+        case 98: parts.append("F7")
+        case 100: parts.append("F8")
+        case 101: parts.append("F9")
+        case 109: parts.append("F10")
+        case 103: parts.append("F11")
+        case 111: parts.append("F12")
+        case 105: parts.append("F13")
+        case 107: parts.append("F14")
+        case 113: parts.append("F15")
+        
+        // Special keys
+        case 49: parts.append("Space")
+        case 36: parts.append("Return")
+        case 48: parts.append("Tab")
+        case 51: parts.append("Delete")
+        case 53: parts.append("Escape")
+        case 126: parts.append("↑")
+        case 125: parts.append("↓")
+        case 123: parts.append("←")
+        case 124: parts.append("→")
+        case 63: parts.append("🌐") // Globe/Fn key
+        
+        // Regular characters
+        default:
+            if let characters = event.charactersIgnoringModifiers?.uppercased() {
+                parts.append(characters)
+            }
         }
         
-        return flags.intersection([.command, .option, .control, .shift]).isEmpty ? "" : parts.joined()
+        // Allow function keys and Globe key without modifiers, but require modifiers for regular keys
+        let requiresModifier = event.keyCode != 63 && !(event.keyCode >= 96 && event.keyCode <= 122)
+        
+        if requiresModifier && flags.intersection([.command, .option, .control, .shift]).isEmpty {
+            return ""
+        }
+        
+        return parts.joined()
     }
     
     private func switchToModel(_ modelName: String) async {
@@ -828,6 +1050,18 @@ struct SettingsView: View {
         showingSafetySettings = true
     }
     
+	private func showLiveTranscriptionInfo() {
+		let alert = NSAlert()
+		alert.messageText = "Live Transcription Mode (Beta)"
+		alert.informativeText = """
+  ⚠️ Current Limitations:
+  • Text Preview: May not position correctly in non-native apps (Chrome, VSCode, Electron apps) in that case fallsback to last mouse click
+  This feature is in active development and improvements are coming soon.
+  """
+		alert.addButton(withTitle: "OK")
+		alert.runModal()
+	}
+	
     private func getModelStatusText() -> String {
         if whisperKit.isDownloadingModel {
             return "Downloading \(whisperKit.downloadingModelName ?? "model")..."
@@ -892,6 +1126,81 @@ struct SettingsView: View {
         } else {
             return 0
         }
+    }
+}
+
+// MARK: - Live Transcription Preview Component
+struct LiveTranscriptionPreview: View {
+    let maxWords: Int
+    let cornerRadius: CGFloat
+    let showEllipsis: Bool
+    
+    private let sampleText = "The quick brown fox jumps over the lazy dog and runs through the forest"
+    
+    private var displayWords: [(text: String, isLast: Bool)] {
+        let words = sampleText.split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return [] }
+        
+        let wordsToShow = words.suffix(maxWords)
+        return wordsToShow.enumerated().map { index, word in
+            (text: word, isLast: index == wordsToShow.count - 1)
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                // Show ellipsis if configured and there are more words
+                if showEllipsis && sampleText.split(separator: " ").count > maxWords {
+                    Text("...")
+                        .font(.system(.body, design: .rounded))
+                        .foregroundColor(Color.secondary.opacity(0.6))
+                        .padding(.trailing, 2)
+                }
+                
+                ForEach(Array(displayWords.enumerated()), id: \.offset) { _, wordInfo in
+                    Text(wordInfo.text)
+                        .font(.system(wordInfo.isLast ? .title3 : .body, design: .rounded))
+                        .foregroundColor(wordInfo.isLast ? Color.blue : Color.primary.opacity(0.8))
+                        .fontWeight(wordInfo.isLast ? .semibold : .regular)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.blue.opacity(0.05),
+                                    Color.blue.opacity(0.02)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.blue.opacity(0.3),
+                            Color.blue.opacity(0.1)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
     }
 }
 

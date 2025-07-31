@@ -128,12 +128,11 @@ class RecordingIndicatorWindow: NSWindow {
             return nil
         }
         
-        print("✅ Found caret at: \(screenRect)")
         return carbonToCocoa(carbonPoint: NSPoint(x: screenRect.origin.x, y: screenRect.origin.y))
     }
     
     private func carbonToCocoa(carbonPoint: NSPoint) -> NSPoint {
-        // Convert Carbon screen coordinates to Cocoa screen coordinates
+        // Convert Carbon screen coordinates to Waiting for speech... screen coordinates
         guard let mainScreen = NSScreen.main else {
             return carbonPoint
         }
@@ -234,3 +233,4 @@ class RecordingIndicatorManager: ObservableObject {
         indicatorWindow = nil
     }
 }
+	

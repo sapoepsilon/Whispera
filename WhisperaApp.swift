@@ -47,7 +47,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var updateObserver: NSObjectProtocol?
     private var onboardingWindow: NSWindow?
     private var liveTranscriptionWindow: LiveTranscriptionWindow?
-    private var debugConfirmedWindow: DebugConfirmedWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check for existing instances first
@@ -73,25 +72,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             observeWindowState()
             observeUpdateState()
             
-            // Initialize live transcription window
             liveTranscriptionWindow = LiveTranscriptionWindow()
-			
-            
-            // Initialize debug confirmed window
-            debugConfirmedWindow = DebugConfirmedWindow()
-            
-            // Initialize live transcription window
             liveTranscriptionWindow = LiveTranscriptionWindow()
-            
-            // Initialize debug confirmed window
-            debugConfirmedWindow = DebugConfirmedWindow()
-            
-            // Show onboarding if first launch
             if !hasCompletedOnboarding {
                 showOnboarding()
             }
-            
-            // Check for updates on launch if enabled
+          
             if updateManager?.autoCheckForUpdates == true {
                 Task {
                     do {
