@@ -66,8 +66,7 @@ enum CorrectionCommand {
 			return fullText
 		}
 		
-		// Check if fullText starts with what we've already tracked
-		if fullText.hasPrefix(trackedText) {
+			if fullText.hasPrefix(trackedText) {
 			let newContent = String(fullText.dropFirst(trackedText.count))
 			if newContent.hasPrefix(" ") {
 				return String(newContent.dropFirst())
@@ -75,7 +74,7 @@ enum CorrectionCommand {
 			return newContent
 		}
 		
-		// Handle cases where there might be minor differences
+		// WhisperKit sometimes returns slightly different text for the same audio
 		if fullText.count > trackedText.count {
 			let trackedCount = trackedText.count
 			let commonPrefixLength = min(trackedCount, fullText.count / 2)
@@ -111,7 +110,7 @@ enum CorrectionCommand {
 	private func trackWords(from text: String) {
 		guard isTrackingEnabled else { return }
 		
-		// Ignore [BLANK_AUDIO] marker // TODO: create a dictionary for words. If you are reading this do not implement it, I will do it myself
+		// Ignore marker // TODO: create a dictionary for words. If you are reading this do not implement it, I will do it myself
 //		if text.contains("[BLANK_AUDIO]") {
 //			print("📝 Ignoring [BLANK_AUDIO] marker")
 //			return
@@ -137,7 +136,6 @@ enum CorrectionCommand {
 		print("📝 Total length now: \(totalLength), Total words: \(trackedWords.count)")
 	}
 	
-	// Legacy function for manual tracking (used by correction functions)
 	func trackPastedText(_ text: String) {
 		trackWords(from: text)
 	}
@@ -145,18 +143,15 @@ enum CorrectionCommand {
     func updateAfterCorrection(removedWordCount: Int, newText: String) {
         guard isTrackingEnabled && removedWordCount <= trackedWords.count else { return }
         
-        // Remove the corrected words from tracking
         let removedWords = Array(trackedWords.suffix(removedWordCount))
         trackedWords.removeLast(removedWordCount)
         
-        // Calculate removed length
         let removedLength = removedWords.reduce(0) { total, word in
             total + word.text.count + (word != removedWords.last ? 1 : 0)
         }
         
         totalLength -= removedLength
         
-        // Track the new corrected text
         trackWords(from: newText)
         
         print("📝 Updated tracking after correction: removed \(removedWordCount) words, added '\(newText)'")
@@ -197,18 +192,15 @@ enum CorrectionCommand {
             }
         }
         
-        // "correct that to X"
         if lowercased.hasPrefix("correct that to ") {
             let correction = String(lowercased.dropFirst("correct that to ".count))
             return .undoAndCorrect(with: correction)
         }
         
-        // "select all dictated text"
         if lowercased.contains("select all dictated") {
             return .selectAllDictated
         }
         
-        // "replace [word] with [word]"
         if let match = lowercased.range(of: #"replace (.+) with (.+)"#, options: .regularExpression) {
             let matchString = String(lowercased[match])
             let components = matchString.components(separatedBy: " with ")
@@ -261,11 +253,10 @@ enum CorrectionCommand {
     private func undoAndCorrect(with newText: String) async {
         print("📝 Undoing last paste and correcting with '\(newText)'")
         
-        // Simulate Cmd+Z
 		await simulateKeyPressWithModifier(
 			keyCode: 0x06,
 			modifier: .maskCommand
-		) // Z key
+		)
         try? await Task.sleep(nanoseconds: 200_000_000)
         await pasteText(newText)
 	
@@ -279,7 +270,6 @@ enum CorrectionCommand {
     }
     
     private func replaceSpecificWord(target: String, with newText: String) async {
-        // Find the target word in tracked words
         guard let wordIndex = trackedWords.lastIndex(where: { $0.text.lowercased() == target.lowercased() }) else {
             print("❌ Could not find word '\(target)' in tracked words")
             return
@@ -290,21 +280,16 @@ enum CorrectionCommand {
         
         print("📝 Replacing '\(target)' with '\(newText)' (\(wordsAfterTarget) words after target)")
         
-        // Calculate how many characters to go back to reach the target word
         let charactersToTarget = trackedWords.suffix(wordsAfterTarget + 1).reduce(0) { total, word in
-            total + word.text.count + 1 // +1 for space
-        } - 1 // Remove last space
+            total + word.text.count + 1
+        } - 1
         
-        // Select back to the target word
         await selectTextRange(charactersBack: charactersToTarget)
         
-        // Select just the target word
         await extendSelectionForward(characters: targetWord.text.count)
         
-        // Replace with new text
         await pasteText(newText)
         
-        // Update tracking
         trackedWords[wordIndex] = TrackedWord(
             text: newText,
             relativePosition: targetWord.relativePosition,
@@ -313,23 +298,21 @@ enum CorrectionCommand {
     }
     
     private func selectTextRange(charactersBack: Int) async {
-        // Hold Shift and press Left Arrow multiple times
         for _ in 0..<charactersBack {
 			await simulateKeyPressWithModifier(
 				keyCode: 0x7B,
 				modifier: [.maskShift]
-			) // Left arrow
-            try? await Task.sleep(nanoseconds: 10_000_000) // 10ms between key presses
+			)
+            try? await Task.sleep(nanoseconds: 10_000_000)
         }
     }
     
     private func extendSelectionForward(characters: Int) async {
-        // Hold Shift and press Right Arrow multiple times
         for _ in 0..<characters {
 			await simulateKeyPressWithModifier(
 				keyCode: 0x7C,
 				modifier: [.maskShift]
-			) // Right arrow
+			)
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
     }
@@ -343,11 +326,10 @@ enum CorrectionCommand {
 		await simulateKeyPressWithModifier(
 			keyCode: 0x09,
 			modifier: .maskCommand
-		)        // Simulate Cmd+V
+		)
 		
     }
 
-    // Debug helpers
     func printTrackingState() {
         print("📊 Dictation Tracking State:")
         print("   Enabled: \(isTrackingEnabled)")
