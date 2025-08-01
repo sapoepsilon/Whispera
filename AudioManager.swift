@@ -69,8 +69,8 @@ enum RecordingMode {
 		recordingDuration = 0.0
 		
 		recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-			guard let self = self, let startTime = self.recordingStartTime else { return }
 			Task { @MainActor in
+				guard let self = self, let startTime = self.recordingStartTime else { return }
 				self.recordingDuration = Date().timeIntervalSince(startTime)
 			}
 		}

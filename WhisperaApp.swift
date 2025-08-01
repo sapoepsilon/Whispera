@@ -73,7 +73,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             observeUpdateState()
             
             liveTranscriptionWindow = LiveTranscriptionWindow()
-            liveTranscriptionWindow = LiveTranscriptionWindow()
             if !hasCompletedOnboarding {
                 showOnboarding()
             }
@@ -364,9 +363,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 button.animator().alphaValue = 1.0
             } completionHandler: {
-                // Continue animation if still transcribing
-                if self.audioManager.isTranscribing {
-                    self.addTranscriptionAnimation(to: button)
+                Task { @MainActor in
+                    if self.audioManager.isTranscribing {
+                        self.addTranscriptionAnimation(to: button)
+                    }
                 }
             }
         }
@@ -387,9 +387,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 button.animator().alphaValue = 1.0
             } completionHandler: {
-                // Continue animation if still recording
-                if self.audioManager.isRecording {
-                    self.addRecordingAnimation(to: button)
+                Task { @MainActor in
+                    if self.audioManager.isRecording {
+                        self.addRecordingAnimation(to: button)
+                    }
                 }
             }
         }
