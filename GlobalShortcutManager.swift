@@ -159,26 +159,26 @@ class GlobalShortcutManager: ObservableObject {
         case "9": return 25
 
         // Function keys
-       case "f1", "f1": return 122
-        case "f2", "f2": return 120
-        case "f3", "f3": return 99
-        case "f4", "f4": return 118
-        case "f5", "f5": return 96
-        case "f6", "f6": return 97
-        case "f7", "f7": return 98
-        case "f8", "f8": return 100
-        case "f9", "f9": return 101
-        case "f10", "f10": return 109
-        case "f11", "f11": return 103
-        case "f12", "f12": return 111
-        case "f13", "f13": return 105
-        case "f14", "f14": return 107
-        case "f15", "f15": return 113
-        case "f16", "f16": return 106
-        case "f17", "f17": return 64
-        case "f18", "f18": return 79
-        case "f19", "f19": return 80
-        case "f20", "f20": return 90
+		case "f1": return 122
+        case "f2": return 120
+        case "f3": return 99
+        case "f4": return 118
+        case "f5": return 96
+        case "f6": return 97
+        case "f7": return 98
+        case "f8": return 100
+        case "f9": return 101
+        case "f10": return 109
+        case "f11": return 103
+        case "f12": return 111
+        case "f13": return 105
+        case "f14": return 107
+        case "f15": return 113
+        case "f16": return 106
+        case "f17": return 64
+        case "f18": return 79
+        case "f19": return 80
+        case "f20": return 90
 
         // Special keys
         case "space", " ": return 49

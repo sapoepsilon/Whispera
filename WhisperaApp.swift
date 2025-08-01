@@ -243,7 +243,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             forName: NSWindow.willCloseNotification,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
+        ) { notification in
             if let window = notification.object as? NSWindow {
                 let title = window.title.lowercased()
                 if title.contains("settings") || title.contains("preferences") {
@@ -509,7 +509,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // Activate the first existing instance
         if let existingInstance = existingInstances.first {
-            existingInstance.activate(options: .activateIgnoringOtherApps)
+			existingInstance.activate(options: .activateAllWindows)
             
             // Send a notification to the existing instance to show its interface
             let notification = Notification(name: NSNotification.Name("ActivateApp"))

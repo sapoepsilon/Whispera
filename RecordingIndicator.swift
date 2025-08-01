@@ -132,7 +132,7 @@ class RecordingIndicatorWindow: NSWindow {
     }
     
     private func carbonToCocoa(carbonPoint: NSPoint) -> NSPoint {
-        // Convert Carbon screen coordinates to Waiting for speech... screen coordinates
+        // Convert Carbon screen coordinates to Cocoa screen coordinates
         guard let mainScreen = NSScreen.main else {
             return carbonPoint
         }
