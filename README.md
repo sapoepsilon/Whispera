@@ -18,7 +18,9 @@ https://github.com/user-attachments/assets/1da72bbb-a1cf-46ee-a997-893f1939e626
 - [x] Multi-language support beyond English 
   - **PR**: https://github.com/sapoepsilon/Whispera/pull/2
   - **Release**: https://github.com/sapoepsilon/Whispera/releases/tag/v1.0.3
-- [ ] Real-time translation capabilities
+- [x] Real-time translation capabilities
+  - **PR**: https://github.com/sapoepsilon/Whispera/pull/17
+  - **Release**: https://github.com/sapoepsilon/Whispera/releases/tag/v1.0.18
 - [ ] Additional customization options
 
 ## Usage
