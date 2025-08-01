@@ -5,6 +5,7 @@ import SwiftUI
 import OSLog
 import AppKit
 import Combine
+import CoreML
 
 @MainActor
 @Observable open class WhisperKitTranscriber: Sendable {
@@ -325,7 +326,15 @@ import Combine
 			await updateProgress(0.8, "Loading existing model...")
 			do {
 				whisperKit = try await Task { @MainActor in
-					let whisperKitInstance = try await WhisperKit(downloadBase: baseModelCacheDirectory)
+					let config = WhisperKitConfig(
+						downloadBase: baseModelCacheDirectory,
+						computeOptions: ModelComputeOptions(
+							melCompute: getMLComputeUnits(),
+							audioEncoderCompute: getMLComputeUnits(),
+							textDecoderCompute: getMLComputeUnits()
+						)
+					)
+					let whisperKitInstance = try await WhisperKit(config)
 					self.setupModelStateCallback(for: whisperKitInstance)
 					return whisperKitInstance
 				}.value
@@ -1141,9 +1150,9 @@ import Combine
 					model: modelName,
 					downloadBase: baseModelCacheDirectory,
 					computeOptions: ModelComputeOptions(
-						melCompute: .cpuAndNeuralEngine,
-						audioEncoderCompute: .cpuAndNeuralEngine,
-						textDecoderCompute: .cpuAndNeuralEngine
+						melCompute: getMLComputeUnits(),
+						audioEncoderCompute: getMLComputeUnits(),
+						textDecoderCompute: getMLComputeUnits()
 					)
 				)
 				let whisperKitInstance = try await WhisperKit(config)
@@ -1383,6 +1392,17 @@ import Combine
 		} else {
 			let recommended = getRecommendedModels()
 			try await loadModel(recommended.default)
+		}
+	}
+	
+	private func getMLComputeUnits() -> MLComputeUnits {
+		let value = UserDefaults.standard.integer(forKey: "modelComputeUnits")
+		switch value {
+		case 0: return .cpuOnly
+		case 1: return .cpuAndGPU
+		case 2: return .cpuAndNeuralEngine
+		case 3: return .all
+		default: return .cpuAndNeuralEngine
 		}
 	}
 }

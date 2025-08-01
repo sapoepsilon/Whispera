@@ -51,6 +51,7 @@ struct SettingsView: View {
     // Extended logging settings
     @AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
     @AppStorage("enableDebugLogging") private var enableDebugLogging = false
+    @AppStorage("modelComputeUnits") private var modelComputeUnits = 2
 	
     var body: some View {
         TabView {
@@ -352,7 +353,44 @@ struct SettingsView: View {
                         .frame(minWidth: 120)
                     }
                 }
-                
+               
+					Divider()
+					
+					VStack(alignment: .leading, spacing: 12) {
+						VStack(alignment: .leading, spacing: 8) {
+							Text("Model Compute Units")
+								.font(.headline)
+							Text("Hardware acceleration for all model components")
+								.font(.caption)
+								.foregroundColor(.secondary)
+						}
+						
+						Picker("Compute Units", selection: $modelComputeUnits) {
+							Text("CPU Only").tag(0)
+							Text("CPU + GPU").tag(1)
+							Text("CPU + Neural Engine").tag(2)
+							Text("All").tag(3)
+						}
+						.pickerStyle(.segmented)
+						
+						HStack {
+							Spacer()
+							Button("Apply Changes") {
+								Task {
+									await refreshModelWithNewComputeOptions()
+								}
+							}
+							.buttonStyle(.bordered)
+							.disabled(whisperKit.isModelLoading || whisperKit.isDownloadingModel)
+						}
+						
+						Text("CPU + Neural Engine is recommended for best performance on Apple Silicon Macs.")
+							.font(.caption)
+							.foregroundColor(.secondary)
+							.padding(.leading, 4)
+					}
+					
+					
                 Divider()
     
                 HStack {
@@ -503,7 +541,6 @@ struct SettingsView: View {
                 
                 Divider()
                 
-                // Downloads Location
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Update Downloads")
@@ -1243,6 +1280,19 @@ struct SettingsView: View {
             let (_, formatted) = await appLibraryManager.getLogsSize()
             await MainActor.run {
                 logsSize = formatted.isEmpty ? "No logs" : formatted
+            }
+        }
+    }
+    
+    private func refreshModelWithNewComputeOptions() async {
+        guard let currentModel = whisperKit.currentModel else { return }
+        
+        do {
+            try await whisperKit.reloadCurrentModelIfNeeded()
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to refresh model with new compute options: \(error.localizedDescription)"
+                showingError = true
             }
         }
     }
