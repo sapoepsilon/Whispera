@@ -629,7 +629,7 @@ struct SettingsView: View {
                             }
                             
                             Slider(value: $liveTranscriptionCornerRadius, in: 0...20, step: 1)
-                                .onChange(liveTranscriptionCornerRadius) { _ in
+                                .onChange(of: liveTranscriptionCornerRadius) { _ in
                                     NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
                                 }
                             
