@@ -128,7 +128,6 @@ class RecordingIndicatorWindow: NSWindow {
             return nil
         }
         
-        print("✅ Found caret at: \(screenRect)")
         return carbonToCocoa(carbonPoint: NSPoint(x: screenRect.origin.x, y: screenRect.origin.y))
     }
     
@@ -234,3 +233,4 @@ class RecordingIndicatorManager: ObservableObject {
         indicatorWindow = nil
     }
 }
+	

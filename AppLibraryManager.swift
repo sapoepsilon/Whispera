@@ -62,6 +62,11 @@ class AppLibraryManager {
         return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
     }
     
+    /// Logs directory
+    var logsDirectory: URL? {
+        return appSupportDirectory?.appendingPathComponent("Logs")
+    }
+    
     init() {
         Task {
             await refreshStorageInfo()
@@ -259,6 +264,28 @@ class AppLibraryManager {
         }
     }
     
+    func openLogsInFinder() {
+        guard let logsDir = logsDirectory else {
+            showFinderError("Unable to locate logs directory")
+            return
+        }
+        
+        // Create logs directory if it doesn't exist
+        if !FileManager.default.fileExists(atPath: logsDir.path) {
+            do {
+                try FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
+            } catch {
+                showFinderError("Failed to create logs directory: \(error.localizedDescription)")
+                return
+            }
+        }
+        
+        let success = NSWorkspace.shared.open(logsDir)
+        if !success {
+            showFinderError("Failed to open logs in Finder")
+        }
+    }
+    
     func revealModelInFinder(_ modelInfo: ModelInfo) {
         NSWorkspace.shared.selectFile(modelInfo.path.path, inFileViewerRootedAtPath: "")
     }
@@ -293,6 +320,18 @@ class AppLibraryManager {
     
     func formatBytes(_ bytes: Int64) -> String {
         return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+    
+    // MARK: - Log Management
+    
+    func getLogsSize() async -> (size: Int64, formatted: String) {
+        let size = LogManager.shared.calculateLogsSize()
+        let formatted = formatBytes(size)
+        return (size, formatted)
+    }
+    
+    func clearLogs() async throws {
+        try LogManager.shared.clearAllLogs()
     }
     
     var hasModels: Bool {

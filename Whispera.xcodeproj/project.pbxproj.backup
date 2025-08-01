@@ -13,16 +13,16 @@
 		1A1A1A1A1A1A1A1A1A1A1A1D /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A2D /* AudioManager.swift */; };
 		1A1A1A1A1A1A1A1A1A1A1A1F /* GlobalShortcutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A2F /* GlobalShortcutManager.swift */; };
 		1A1A1A1A1A1A1A1A1A1A1A21 /* WhisperKitTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */; };
-		1A1A1A1A1A1A1A1A1A1A1A22 /* DictationWordTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A32 /* DictationWordTracker.swift */; };
 		4FF3C022671FE9ADF92F13DA /* AppLibraryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71209D193782548443855D7B /* AppLibraryManager.swift */; };
 		CFA1EB0C6BAB117DD9AD45C7 /* AppLibraryManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D9AAE907AA0588A6404646 /* AppLibraryManagerTests.swift */; };
-		D604F4C12E356D0C006D71D1 /* GlassBeta.swift in Sources */ = {isa = PBXBuildFile; fileRef = D604F4C02E356D07006D71D1 /* GlassBeta.swift */; };
 		D6077E982DF10E77009E7404 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D6077E972DF10E77009E7404 /* Assets.xcassets */; };
-		D620E44D2E3C79C1006AF5E0 /* LogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D620E44C2E3C79C1006AF5E0 /* LogManager.swift */; };
+		D63A30E22E2EBF1300BA20B7 /* DebugConfirmedWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30DE2E2EBF1300BA20B7 /* DebugConfirmedWindow.swift */; };
 		D63A30E32E2EBF1300BA20B7 /* LiveTranscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30DF2E2EBF1300BA20B7 /* LiveTranscriptionView.swift */; };
+		D63A30E42E2EBF1300BA20B7 /* DebugConfirmedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30DD2E2EBF1300BA20B7 /* DebugConfirmedView.swift */; };
 		D63A30E52E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30E02E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift */; };
 		D63A30E72E2EBF1E00BA20B7 /* AccessibilityHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30E62E2EBF1E00BA20B7 /* AccessibilityHelper.swift */; };
 		D63A31112E2EE20C00BA20B7 /* DictationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A31102E2EE20C00BA20B7 /* DictationView.swift */; };
+		D6460C9F2DF10709006433DA /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */; };
 		D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D648B7CA2DF9FF8B006079ED /* Constants.swift */; };
 		D64B1B292DF11A7B00D2CEAB /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */; };
 		D66E6D5A2E18495A00F55A5B /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D592E18495900F55A5B /* Logger.swift */; };
@@ -74,20 +74,19 @@
 		2A2A2A2A2A2A2A2A2A2A2A2D /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
 		2A2A2A2A2A2A2A2A2A2A2A2F /* GlobalShortcutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalShortcutManager.swift; sourceTree = "<group>"; };
 		2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitTranscriber.swift; sourceTree = "<group>"; };
-		2A2A2A2A2A2A2A2A2A2A2A32 /* DictationWordTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationWordTracker.swift; sourceTree = "<group>"; };
 		39D9AAE907AA0588A6404646 /* AppLibraryManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLibraryManagerTests.swift; sourceTree = "<group>"; };
 		3A3A3A3A3A3A3A3A3A3A3A3A /* Whispera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Whispera.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		71209D193782548443855D7B /* AppLibraryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLibraryManager.swift; sourceTree = "<group>"; };
-		D604F4C02E356D07006D71D1 /* GlassBeta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassBeta.swift; sourceTree = "<group>"; };
 		D6077E972DF10E77009E7404 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		D620E44C2E3C79C1006AF5E0 /* LogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogManager.swift; sourceTree = "<group>"; };
 		D63850BC2E17907D000FD465 /* ModelSynchronizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSynchronizationTests.swift; sourceTree = "<group>"; };
 		D63850BD2E17907D000FD465 /* WhisperKitTranscriberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitTranscriberTests.swift; sourceTree = "<group>"; };
 		D63850C02E17907D000FD465 /* SettingsViewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewUITests.swift; sourceTree = "<group>"; };
 		D63850CB2E179188000FD465 /* WhisperaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D63850DE2E1791AF000FD465 /* WhisperaUnitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperaUnitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D63851172E184572000FD465 /* Whispera.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Whispera.xctestplan; sourceTree = "<group>"; };
+		D63A30DD2E2EBF1300BA20B7 /* DebugConfirmedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConfirmedView.swift; sourceTree = "<group>"; };
+		D63A30DE2E2EBF1300BA20B7 /* DebugConfirmedWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConfirmedWindow.swift; sourceTree = "<group>"; };
 		D63A30DF2E2EBF1300BA20B7 /* LiveTranscriptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriptionView.swift; sourceTree = "<group>"; };
 		D63A30E02E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriptionWindow.swift; sourceTree = "<group>"; };
 		D63A30E62E2EBF1E00BA20B7 /* AccessibilityHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityHelper.swift; sourceTree = "<group>"; };
@@ -152,8 +151,7 @@
 		6A6A6A6A6A6A6A6A6A6A6A6A = {
 			isa = PBXGroup;
 			children = (
-				D620E44E2E3C79C6006AF5E0 /* Logger */,
-				D604F4C02E356D07006D71D1 /* GlassBeta.swift */,
+				D66E6D592E18495900F55A5B /* Logger.swift */,
 				D63851172E184572000FD465 /* Whispera.xctestplan */,
 				D648B7CA2DF9FF8B006079ED /* Constants.swift */,
 				D6077E972DF10E77009E7404 /* Assets.xcassets */,
@@ -176,7 +174,6 @@
 				D63850BE2E17907D000FD465 /* WhisperaTests */,
 				D63850C12E17907D000FD465 /* WhisperaUITests */,
 				2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */,
-				2A2A2A2A2A2A2A2A2A2A2A32 /* DictationWordTracker.swift */,
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */,
 				D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */,
 				D66E6D5B2E1859DE00F55A5B /* Onboarding */,
@@ -191,15 +188,6 @@
 				D63850DE2E1791AF000FD465 /* WhisperaUnitTests.xctest */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		D620E44E2E3C79C6006AF5E0 /* Logger */ = {
-			isa = PBXGroup;
-			children = (
-				D620E44C2E3C79C1006AF5E0 /* LogManager.swift */,
-				D66E6D592E18495900F55A5B /* Logger.swift */,
-			);
-			path = Logger;
 			sourceTree = "<group>";
 		};
 		D63850BE2E17907D000FD465 /* WhisperaTests */ = {
@@ -227,6 +215,8 @@
 			isa = PBXGroup;
 			children = (
 				D63A31102E2EE20C00BA20B7 /* DictationView.swift */,
+				D63A30DD2E2EBF1300BA20B7 /* DebugConfirmedView.swift */,
+				D63A30DE2E2EBF1300BA20B7 /* DebugConfirmedWindow.swift */,
 				D63A30DF2E2EBF1300BA20B7 /* LiveTranscriptionView.swift */,
 				D63A30E02E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift */,
 			);
@@ -326,7 +316,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1630;
-				LastUpgradeCheck = 1630;
+				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					9A9A9A9A9A9A9A9A9A9A9A9A = {
 						CreatedOnToolsVersion = 15.0;
@@ -385,6 +375,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D6077E982DF10E77009E7404 /* Assets.xcassets in Resources */,
+				D6460C9F2DF10709006433DA /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -395,16 +386,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D620E44D2E3C79C1006AF5E0 /* LogManager.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1A /* WhisperaApp.swift in Sources */,
 				D66E6D5A2E18495A00F55A5B /* Logger.swift in Sources */,
 				D66E6D6B2E185B8E00F55A5B /* ShortcutOptionsView.swift in Sources */,
 				D66E6D6F2E185BD100F55A5B /* TestStepView.swift in Sources */,
+				D63A30E22E2EBF1300BA20B7 /* DebugConfirmedWindow.swift in Sources */,
 				D63A30E32E2EBF1300BA20B7 /* LiveTranscriptionView.swift in Sources */,
+				D63A30E42E2EBF1300BA20B7 /* DebugConfirmedView.swift in Sources */,
 				D63A30E52E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift in Sources */,
 				D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */,
 				D66E6D5D2E1859FF00F55A5B /* WelcomeStepView.swift in Sources */,
-				D604F4C12E356D0C006D71D1 /* GlassBeta.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1B /* MenuBarView.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1C /* SettingsView.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1D /* AudioManager.swift in Sources */,
@@ -424,7 +415,6 @@
 				D66E6D672E185B2400F55A5B /* ShortcutsStepView.swift in Sources */,
 				D66E6D612E185ACC00F55A5B /* FeatureRowView.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A21 /* WhisperKitTranscriber.swift in Sources */,
-				1A1A1A1A1A1A1A1A1A1A1A22 /* DictationWordTracker.swift in Sources */,
 				D63A30E72E2EBF1E00BA20B7 /* AccessibilityHelper.swift in Sources */,
 				D698B9022E18EC4A008FE0CF /* UpdateManager.swift in Sources */,
 				D698B9032E18EC4A008FE0CF /* AppVersion.swift in Sources */,
@@ -474,7 +464,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 16;
-				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = NK28QT38A3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Whispera;
@@ -503,7 +493,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 16;
-				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = NK28QT38A3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Whispera;
@@ -532,7 +522,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 16;
-				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = NK28QT38A3;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -556,7 +546,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 16;
-				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = NK28QT38A3;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -580,7 +570,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 16;
-				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = NK28QT38A3;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -605,7 +595,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 16;
-				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = NK28QT38A3;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -651,9 +641,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = NK28QT38A3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -711,9 +699,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = NK28QT38A3;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;

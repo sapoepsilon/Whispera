@@ -17,6 +17,7 @@ struct OnboardingView: View {
     @AppStorage("selectedModel") private var storedModel = ""
     @AppStorage("launchAtStartup") private var storedLaunchAtLogin = false
     @AppStorage("enableTranslation") private var enableTranslation = false
+    @AppStorage("enableStreaming") private var enableStreaming = true
     @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
     
     private let steps = ["Welcome", "Permissions", "Model", "Shortcut", "Settings", "Test", "Complete"]

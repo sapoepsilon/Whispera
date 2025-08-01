@@ -46,11 +46,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var modelStateObserver: NSObjectProtocol?
     private var updateObserver: NSObjectProtocol?
     private var onboardingWindow: NSWindow?
+    private var liveTranscriptionWindow: LiveTranscriptionWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Check for existing instances first
         if shouldTerminateDuplicateInstances() {
-            print("🚫 Another instance is already running. Activating existing instance and terminating this one.")
+			AppLogger.shared.general.logger.info("🚫 Another instance is already running. Activating existing instance and terminating this one.")
             activateExistingInstance()
             NSApp.terminate(nil)
             return
@@ -71,23 +71,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             observeWindowState()
             observeUpdateState()
             
-            // Show onboarding if first launch
+            liveTranscriptionWindow = LiveTranscriptionWindow()
             if !hasCompletedOnboarding {
                 showOnboarding()
             }
-            
-            // Check for updates on launch if enabled
+          
             if updateManager?.autoCheckForUpdates == true {
                 Task {
                     do {
                         let hasUpdate = try await updateManager?.checkForUpdates() ?? false
                         if hasUpdate {
-                            print("🆕 Update available: \(updateManager?.latestVersion ?? "unknown")")
+							AppLogger.shared.general.logger.info("🆕 Update available: \(self.updateManager?.latestVersion ?? "unknown")")
                         } else {
-                            print("✅ App is up to date")
+                            AppLogger.shared.general.logger.info("✅ App is up to date")
                         }
                     } catch {
-                        print("⚠️ Failed to check for updates: \(error)")
+                        AppLogger.shared.general.logger.info("⚠️ Failed to check for updates: \(error)")
                     }
                 }
             }
@@ -138,7 +137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UserDefaults.standard.set(true, forKey: "soundFeedback")
         }
         
-        print("🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")")
+        AppLogger.shared.general.logger.info("🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")")
     }
     
     func setupMenuBar() {
@@ -243,7 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             forName: NSWindow.willCloseNotification,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
+        ) { notification in
             if let window = notification.object as? NSWindow {
                 let title = window.title.lowercased()
                 if title.contains("settings") || title.contains("preferences") {
@@ -363,9 +362,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 button.animator().alphaValue = 1.0
             } completionHandler: {
-                // Continue animation if still transcribing
-                if self.audioManager.isTranscribing {
-                    self.addTranscriptionAnimation(to: button)
+                Task { @MainActor in
+                    if self.audioManager.isTranscribing {
+                        self.addTranscriptionAnimation(to: button)
+                    }
                 }
             }
         }
@@ -386,9 +386,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 button.animator().alphaValue = 1.0
             } completionHandler: {
-                // Continue animation if still recording
-                if self.audioManager.isRecording {
-                    self.addRecordingAnimation(to: button)
+                Task { @MainActor in
+                    if self.audioManager.isRecording {
+                        self.addRecordingAnimation(to: button)
+                    }
                 }
             }
         }
@@ -398,22 +399,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let storedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "openai_whisper-small.en"
         
         guard audioManager.whisperKitTranscriber.isInitialized else {
-            print("⚠️ WhisperKit not initialized, cannot switch model")
+            AppLogger.shared.general.logger.info("⚠️ WhisperKit not initialized, cannot switch model")
             return
         }
         
         guard storedModel != audioManager.whisperKitTranscriber.currentModel else {
-            print("📝 Model already matches stored preference: \(storedModel)")
+            AppLogger.shared.general.logger.info("📝 Model already matches stored preference: \(storedModel)")
             return
         }
         
-        print("🔄 Applying stored model after onboarding: \(storedModel)")
+        AppLogger.shared.general.logger.info("🔄 Applying stored model after onboarding: \(storedModel)")
         Task {
             do {
                 try await audioManager.whisperKitTranscriber.switchModel(to: storedModel)
-                print("✅ Successfully switched to stored model: \(storedModel)")
+                AppLogger.shared.general.logger.info("✅ Successfully switched to stored model: \(storedModel)")
             } catch {
-                print("❌ Failed to switch to stored model: \(error)")
+                AppLogger.shared.general.logger.info("❌ Failed to switch to stored model: \(error)")
             }
         }
     }
@@ -447,7 +448,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 do {
                     try await updateManager?.downloadUpdate()
                 } catch {
-                    print("❌ Failed to download update: \(error)")
+                    AppLogger.shared.general.logger.info("❌ Failed to download update: \(error)")
                 }
             }
         case .alertThirdButtonReturn:
@@ -507,7 +508,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // Activate the first existing instance
         if let existingInstance = existingInstances.first {
-            existingInstance.activate(options: .activateIgnoringOtherApps)
+			existingInstance.activate(options: .activateAllWindows)
             
             // Send a notification to the existing instance to show its interface
             let notification = Notification(name: NSNotification.Name("ActivateApp"))
