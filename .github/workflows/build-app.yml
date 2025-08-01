@@ -13,7 +13,7 @@ env:
 
 jobs:
   build-app:
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout repository
@@ -41,7 +41,7 @@ jobs:
       - name: Build app (unsigned for CI validation)
         run: |
           echo "🔨 Building Whispera app..."
-          
+
           # Build using scheme (includes test targets but they won't be run)
           # Using destination platform to avoid C compilation issues
           xcodebuild build \
@@ -51,7 +51,7 @@ jobs:
                      -destination "platform=macOS,arch=arm64" \
                      CODE_SIGN_IDENTITY="-" \
                      CODE_SIGNING_REQUIRED=NO
-          
+
           # Check if the main app binary was created
           if [ -d "/Users/runner/Library/Developer/Xcode/DerivedData/${APP_NAME}-"*/Build/Products/Debug/"${APP_NAME}.app" ]; then
             echo "✅ Main app built successfully"
