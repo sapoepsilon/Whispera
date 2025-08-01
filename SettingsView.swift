@@ -44,6 +44,7 @@ struct SettingsView: View {
     @State private var showingClearAllConfirmation = false
     @State private var confirmationStep = 0
     @State private var removingModelId: String?
+    @State private var liveTranscriptionInfoWindow: NSWindow?
 	
     var body: some View {
         TabView {
@@ -1051,15 +1052,30 @@ struct SettingsView: View {
     }
     
 	private func showLiveTranscriptionInfo() {
-		let alert = NSAlert()
-		alert.messageText = "Live Transcription Mode (Beta)"
-		alert.informativeText = """
-  ⚠️ Current Limitations:
-  • Text Preview: May not position correctly in non-native apps (Chrome, VSCode, Electron apps) in that case fallsback to last mouse click
-  This feature is in active development and improvements are coming soon.
-  """
-		alert.addButton(withTitle: "OK")
-		alert.runModal()
+		// Close existing window if open
+		liveTranscriptionInfoWindow?.close()
+		
+		let contentView = LiveTranscriptionInfoView(onClose: {
+			self.liveTranscriptionInfoWindow?.close()
+			self.liveTranscriptionInfoWindow = nil
+		})
+		let hostingView = NSHostingView(rootView: contentView)
+		
+		let window = NSWindow(
+			contentRect: NSRect(x: 0, y: 0, width: 500, height: 600),
+			styleMask: [.titled, .closable, .miniaturizable],
+			backing: .buffered,
+			defer: false
+		)
+		
+		window.title = "Live Transcription Information"
+		window.contentView = hostingView
+		window.center()
+		window.makeKeyAndOrderFront(nil)
+		window.isReleasedWhenClosed = false
+		
+		// Store reference
+		liveTranscriptionInfoWindow = window
 	}
 	
     private func getModelStatusText() -> String {
@@ -1201,6 +1217,162 @@ struct LiveTranscriptionPreview: View {
         )
         .shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
         .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
+    }
+}
+
+// MARK: - Live Transcription Info View
+struct LiveTranscriptionInfoView: View {
+    let onClose: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "waveform")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                        Text("Live Transcription Mode")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        GlassBetaElement()
+                    }
+                    Text("Real-time speech to text")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button {
+                    onClose()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+            
+            Divider()
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Current Limitations
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Current Limitations")
+                                .font(.headline)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Text Preview Positioning")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    Text("May not position correctly in non-native apps (Chrome, VSCode, Electron apps). Falls back to last mouse click position.")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "cursor.rays")
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    
+                    // Keyboard Shortcut Conflicts
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "keyboard.badge.ellipsis")
+                                .foregroundColor(.purple)
+                            Text("Keyboard Shortcut Conflicts")
+                                .font(.headline)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Your global shortcut may conflict with app-specific shortcuts:")
+                                .font(.subheadline)
+                            
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label("⌃A navigates to specific locations in Xcode", systemImage: "chevron.left.slash.chevron.right")
+                                    .font(.caption)
+                                Label("⌘Space opens Spotlight search", systemImage: "magnifyingglass")
+                                    .font(.caption)
+                                Label("⌥⌘D opens Dock preferences", systemImage: "dock.rectangle")
+                                    .font(.caption)
+                            }
+                            .padding(.leading, 8)
+                            
+                            Text("Tip: Choose less common combinations like ⌃⌥W or ⌘⇧R")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 4)
+                        }
+                        .padding(12)
+                        .background(Color.purple.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    
+                    // Double-tap shortcuts note
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "hand.tap.fill")
+                                .foregroundColor(.blue)
+                            Text("Alternative: Double-tap Shortcuts")
+                                .font(.headline)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("In a future update, you'll be able to use double-tap shortcuts (like double ⌘ or double Globe 🌐) to avoid conflicts with other apps.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            HStack(spacing: 4) {
+                                Text("Vote for this feature with 👍 if you'd like it implemented:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                Button {
+                                    if let url = URL(string: "https://github.com/sapoepsilon/Whispera/issues/16") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                } label: {
+                                    Text("Issue #16")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                        .underline()
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    
+                    // Development status
+                    HStack(spacing: 6) {
+                        Image(systemName: "hammer.fill")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("This feature is in active development and improvements are coming soon.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(20)
+            }
+        }
+        .frame(width: 500, height: 600)
+        .background(Color(NSColor.windowBackgroundColor))
     }
 }
 
