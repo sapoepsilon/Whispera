@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import WhisperKit
+import MarkdownUI
 
 struct SettingsView: View {
     @AppStorage("globalShortcut") private var globalShortcut = "⌘⌥D"
@@ -45,6 +46,7 @@ struct SettingsView: View {
     @State private var confirmationStep = 0
     @State private var removingModelId: String?
     @State private var liveTranscriptionInfoWindow: NSWindow?
+    @State private var releaseNotesWindow: NSWindow?
     @State private var logsSize: String = "Calculating..."
     @State private var showingClearLogsConfirmation = false
     
@@ -146,9 +148,7 @@ struct SettingsView: View {
                                     .frame(maxWidth: .infinity)
                             } else {
                                 Button("View Release Notes") {
-                                    if let url = URL(string: "https://github.com/\(AppVersion.Constants.githubRepo)/releases/tag/v\(latestVersion)") {
-                                        NSWorkspace.shared.open(url)
-                                    }
+                                    showReleaseNotes()
                                 }
                                 .buttonStyle(.bordered)
                             }
@@ -1209,6 +1209,40 @@ struct SettingsView: View {
 		liveTranscriptionInfoWindow = window
 	}
 	
+	private func showReleaseNotes() {
+		guard let latestVersion = updateManager.latestVersion,
+			  let releaseNotes = updateManager.releaseNotes else { return }
+		
+		// Close existing window if open
+		releaseNotesWindow?.close()
+		
+		let contentView = ReleaseNotesView(
+			version: latestVersion,
+			releaseNotes: releaseNotes,
+			onClose: {
+				self.releaseNotesWindow?.close()
+				self.releaseNotesWindow = nil
+			}
+		)
+		let hostingView = NSHostingView(rootView: contentView)
+		
+		let window = NSWindow(
+			contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
+			styleMask: [.titled, .closable, .miniaturizable, .resizable],
+			backing: .buffered,
+			defer: false
+		)
+		
+		window.title = "Release Notes - Whispera \(latestVersion)"
+		window.contentView = hostingView
+		window.center()
+		window.makeKeyAndOrderFront(nil)
+		window.isReleasedWhenClosed = false
+		
+		// Store reference
+		releaseNotesWindow = window
+	}
+	
     private func getModelStatusText() -> String {
         if whisperKit.isDownloadingModel {
             return "Downloading \(whisperKit.downloadingModelName ?? "model")..."
@@ -1285,7 +1319,7 @@ struct SettingsView: View {
     }
     
     private func refreshModelWithNewComputeOptions() async {
-        guard let currentModel = whisperKit.currentModel else { return }
+        guard whisperKit.currentModel != nil else { return }
         
         do {
             try await whisperKit.reloadCurrentModelIfNeeded()
@@ -1525,6 +1559,55 @@ struct LiveTranscriptionInfoView: View {
             }
         }
         .frame(width: 500, height: 600)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+}
+
+struct ReleaseNotesView: View {
+    let version: String
+    let releaseNotes: String
+    let onClose: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                        Text("Whispera \(version)")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                    }
+                    Text("Release Notes")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button {
+                    onClose()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+            
+            Divider()
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Markdown(releaseNotes)
+                        .font(.system(size: 14))
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(width: 600, height: 700)
         .background(Color(NSColor.windowBackgroundColor))
     }
 }
