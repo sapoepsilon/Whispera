@@ -49,9 +49,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var liveTranscriptionWindow: LiveTranscriptionWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Check for existing instances first
         if shouldTerminateDuplicateInstances() {
-            print("🚫 Another instance is already running. Activating existing instance and terminating this one.")
+			AppLogger.shared.general.logger.info("🚫 Another instance is already running. Activating existing instance and terminating this one.")
             activateExistingInstance()
             NSApp.terminate(nil)
             return
@@ -82,12 +81,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     do {
                         let hasUpdate = try await updateManager?.checkForUpdates() ?? false
                         if hasUpdate {
-                            print("🆕 Update available: \(updateManager?.latestVersion ?? "unknown")")
+							AppLogger.shared.general.logger.info("🆕 Update available: \(self.updateManager?.latestVersion ?? "unknown")")
                         } else {
-                            print("✅ App is up to date")
+                            AppLogger.shared.general.logger.info("✅ App is up to date")
                         }
                     } catch {
-                        print("⚠️ Failed to check for updates: \(error)")
+                        AppLogger.shared.general.logger.info("⚠️ Failed to check for updates: \(error)")
                     }
                 }
             }
@@ -138,7 +137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UserDefaults.standard.set(true, forKey: "soundFeedback")
         }
         
-        print("🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")")
+        AppLogger.shared.general.logger.info("🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")")
     }
     
     func setupMenuBar() {
@@ -400,22 +399,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let storedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "openai_whisper-small.en"
         
         guard audioManager.whisperKitTranscriber.isInitialized else {
-            print("⚠️ WhisperKit not initialized, cannot switch model")
+            AppLogger.shared.general.logger.info("⚠️ WhisperKit not initialized, cannot switch model")
             return
         }
         
         guard storedModel != audioManager.whisperKitTranscriber.currentModel else {
-            print("📝 Model already matches stored preference: \(storedModel)")
+            AppLogger.shared.general.logger.info("📝 Model already matches stored preference: \(storedModel)")
             return
         }
         
-        print("🔄 Applying stored model after onboarding: \(storedModel)")
+        AppLogger.shared.general.logger.info("🔄 Applying stored model after onboarding: \(storedModel)")
         Task {
             do {
                 try await audioManager.whisperKitTranscriber.switchModel(to: storedModel)
-                print("✅ Successfully switched to stored model: \(storedModel)")
+                AppLogger.shared.general.logger.info("✅ Successfully switched to stored model: \(storedModel)")
             } catch {
-                print("❌ Failed to switch to stored model: \(error)")
+                AppLogger.shared.general.logger.info("❌ Failed to switch to stored model: \(error)")
             }
         }
     }
@@ -449,7 +448,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 do {
                     try await updateManager?.downloadUpdate()
                 } catch {
-                    print("❌ Failed to download update: \(error)")
+                    AppLogger.shared.general.logger.info("❌ Failed to download update: \(error)")
                 }
             }
         case .alertThirdButtonReturn:

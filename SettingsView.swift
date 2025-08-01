@@ -45,6 +45,12 @@ struct SettingsView: View {
     @State private var confirmationStep = 0
     @State private var removingModelId: String?
     @State private var liveTranscriptionInfoWindow: NSWindow?
+    @State private var logsSize: String = "Calculating..."
+    @State private var showingClearLogsConfirmation = false
+    
+    // Extended logging settings
+    @AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
+    @AppStorage("enableDebugLogging") private var enableDebugLogging = false
 	
     var body: some View {
         TabView {
@@ -537,6 +543,77 @@ struct SettingsView: View {
                         .stroke(.green.opacity(0.3), lineWidth: 1)
                 )
                 
+                Divider()
+                
+                // Application Logs
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Application Logs")
+                            .font(.headline)
+                        Spacer()
+                        Toggle("", isOn: $enableExtendedLogging)
+                            .labelsHidden()
+                    }
+                    
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundColor(.purple)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Debug Logs")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Size: \(logsSize)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        
+                        Button("Show in Finder") {
+                            appLibraryManager.openLogsInFinder()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        
+                        Button("Clear Logs") {
+                            showingClearLogsConfirmation = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .foregroundColor(.red)
+                    }
+                    
+                    if enableExtendedLogging {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Divider()
+                            
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Debug Mode")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    Text("Include detailed debug messages in logs")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Toggle("", isOn: $enableDebugLogging)
+                            }
+                            .padding(.top, 8)
+                            
+                            Text("By default, only info, error, and fault messages are logged. Enable debug mode to capture detailed debug information.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 4)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(.purple.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(.purple.opacity(0.3), lineWidth: 1)
+                )
+                
                 Spacer()
             }
             .padding(20)
@@ -721,6 +798,7 @@ struct SettingsView: View {
         .onAppear {
             loadAvailableModels()
             checkLaunchAtStartupStatus()
+            updateLogsSize()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("WhisperKitModelStateChanged"))) { _ in
             // Force UI update when model state changes
@@ -777,6 +855,22 @@ struct SettingsView: View {
             } else {
                 Text("Are you absolutely certain? This action cannot be undone.\n\nAll \(appLibraryManager.modelsCount) models will be permanently deleted.")
             }
+        }
+        .alert("Clear Application Logs", isPresented: $showingClearLogsConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clear Logs", role: .destructive) {
+                Task {
+                    do {
+                        try await appLibraryManager.clearLogs()
+                        updateLogsSize()
+                    } catch {
+                        errorMessage = "Failed to clear logs: \(error.localizedDescription)"
+                        showingError = true
+                    }
+                }
+            }
+        } message: {
+            Text("This will permanently delete all application logs. This action cannot be undone.")
         }
     }
 
@@ -1141,6 +1235,15 @@ struct SettingsView: View {
             return Int(info.resident_size) / 1024 / 1024 // Convert to MB
         } else {
             return 0
+        }
+    }
+    
+    private func updateLogsSize() {
+        Task {
+            let (_, formatted) = await appLibraryManager.getLogsSize()
+            await MainActor.run {
+                logsSize = formatted.isEmpty ? "No logs" : formatted
+            }
         }
     }
 }

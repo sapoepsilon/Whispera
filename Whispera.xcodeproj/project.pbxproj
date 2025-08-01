@@ -18,6 +18,7 @@
 		CFA1EB0C6BAB117DD9AD45C7 /* AppLibraryManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D9AAE907AA0588A6404646 /* AppLibraryManagerTests.swift */; };
 		D604F4C12E356D0C006D71D1 /* GlassBeta.swift in Sources */ = {isa = PBXBuildFile; fileRef = D604F4C02E356D07006D71D1 /* GlassBeta.swift */; };
 		D6077E982DF10E77009E7404 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D6077E972DF10E77009E7404 /* Assets.xcassets */; };
+		D620E44D2E3C79C1006AF5E0 /* LogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D620E44C2E3C79C1006AF5E0 /* LogManager.swift */; };
 		D63A30E32E2EBF1300BA20B7 /* LiveTranscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30DF2E2EBF1300BA20B7 /* LiveTranscriptionView.swift */; };
 		D63A30E52E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30E02E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift */; };
 		D63A30E72E2EBF1E00BA20B7 /* AccessibilityHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30E62E2EBF1E00BA20B7 /* AccessibilityHelper.swift */; };
@@ -80,6 +81,7 @@
 		71209D193782548443855D7B /* AppLibraryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLibraryManager.swift; sourceTree = "<group>"; };
 		D604F4C02E356D07006D71D1 /* GlassBeta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassBeta.swift; sourceTree = "<group>"; };
 		D6077E972DF10E77009E7404 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D620E44C2E3C79C1006AF5E0 /* LogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogManager.swift; sourceTree = "<group>"; };
 		D63850BC2E17907D000FD465 /* ModelSynchronizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSynchronizationTests.swift; sourceTree = "<group>"; };
 		D63850BD2E17907D000FD465 /* WhisperKitTranscriberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitTranscriberTests.swift; sourceTree = "<group>"; };
 		D63850C02E17907D000FD465 /* SettingsViewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewUITests.swift; sourceTree = "<group>"; };
@@ -150,8 +152,8 @@
 		6A6A6A6A6A6A6A6A6A6A6A6A = {
 			isa = PBXGroup;
 			children = (
+				D620E44E2E3C79C6006AF5E0 /* Logger */,
 				D604F4C02E356D07006D71D1 /* GlassBeta.swift */,
-				D66E6D592E18495900F55A5B /* Logger.swift */,
 				D63851172E184572000FD465 /* Whispera.xctestplan */,
 				D648B7CA2DF9FF8B006079ED /* Constants.swift */,
 				D6077E972DF10E77009E7404 /* Assets.xcassets */,
@@ -189,6 +191,15 @@
 				D63850DE2E1791AF000FD465 /* WhisperaUnitTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		D620E44E2E3C79C6006AF5E0 /* Logger */ = {
+			isa = PBXGroup;
+			children = (
+				D620E44C2E3C79C1006AF5E0 /* LogManager.swift */,
+				D66E6D592E18495900F55A5B /* Logger.swift */,
+			);
+			path = Logger;
 			sourceTree = "<group>";
 		};
 		D63850BE2E17907D000FD465 /* WhisperaTests */ = {
@@ -384,6 +395,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D620E44D2E3C79C1006AF5E0 /* LogManager.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1A /* WhisperaApp.swift in Sources */,
 				D66E6D5A2E18495A00F55A5B /* Logger.swift in Sources */,
 				D66E6D6B2E185B8E00F55A5B /* ShortcutOptionsView.swift in Sources */,

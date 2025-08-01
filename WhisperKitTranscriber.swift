@@ -450,7 +450,9 @@ import Combine
 				do {
 					try await transcribeCurrentBuffer(delayInterval: realtimeDelayInterval)
 				} catch {
-					print("Transcription error: \(error.localizedDescription)")
+					AppLogger.shared.liveTranscriber.error(
+						"Transcription error: \(error.localizedDescription)"
+					)
 					break
 				}
 			}
@@ -636,11 +638,10 @@ import Combine
 	}
 	
 	func createDecodingOptions(enableTranslation: Bool) -> DecodingOptions {
-		let task: DecodingTask = enableTranslation ? .transcribe : .translate // For some reason this gets reversed
+		let task: DecodingTask = enableTranslation ? .translate : .transcribe
 		let languageCode = Constants.languageCode(for: selectedLanguage)
 		
 		AppLogger.shared.transcriber.log("Creating decoding options - mode: \(task.description) language: \(languageCode)")
-		
 		return DecodingOptions(
 			verbose: false,
 			task: task,
@@ -1132,7 +1133,7 @@ import Combine
 			await updateLoadProgress(0.2, "Preparing to load \(modelName)...")
 			
 			let recommendedModels = WhisperKit.recommendedModels()
-			print("👂🏼 Recommended models: \(recommendedModels)")
+			AppLogger.shared.transcriber.debug("👂🏼 Recommended models: \(recommendedModels)")
 			
 			await updateLoadProgress(0.6, "Loading \(modelName)...")
 			whisperKit = try await Task { @MainActor in
@@ -1395,19 +1396,23 @@ enum WhisperKitError: LocalizedError {
 	case transcriptionFailed(String)
 	
 	var errorDescription: String? {
+		let description: String
 		switch self {
 			case .notInitialized:
-				return "WhisperKit not initialized. Please wait for startup to complete."
+				description = "WhisperKit not initialized. Please wait for startup to complete."
 			case .notReady:
-				return "WhisperKit not ready for transcription. Please wait a moment and try again."
+				description = "WhisperKit not ready for transcription. Please wait a moment and try again."
 			case .noModelLoaded:
-				return "No Whisper model loaded. Please download a model first."
+				description = "No Whisper model loaded. Please download a model first."
 			case .modelNotFound(let model):
-				return "Model '\(model)' not found in available models."
+				description = "Model '\(model)' not found in available models."
 			case .audioConversionFailed:
-				return "Failed to convert audio to required format."
+				description = "Failed to convert audio to required format."
 			case .transcriptionFailed(let error):
-				return "Transcription failed: \(error)"
+				description = "Transcription failed: \(error)"
 		}
+		
+		AppLogger.shared.transcriber.error("WhisperKitError: \(description)")
+		return description
 	}
 }
