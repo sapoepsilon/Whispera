@@ -135,20 +135,10 @@ struct MenuBarView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(SecondaryButtonStyle())
-                        .simultaneousGesture(TapGesture().onEnded {
-                            // Set app policy to regular to ensure proper window focus
+                        .onAppear {
+                            // Ensure app can show settings window
                             NSApp.setActivationPolicy(.regular)
-                            NSApp.activate(ignoringOtherApps: true)
-                            
-                            // Bring the settings window to front after a brief delay
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                if let settingsWindow = NSApp.windows.first(where: { $0.title.contains("Settings") || $0.title.contains("Preferences") }) {
-                                    settingsWindow.makeKeyAndOrderFront(nil)
-                                    settingsWindow.orderFrontRegardless()
-                                    NSApp.activate(ignoringOtherApps: true)
-                                }
-                            }
-                        })
+                        }
                     } else {
                         Button {
                             // Set app policy to regular to ensure proper window focus

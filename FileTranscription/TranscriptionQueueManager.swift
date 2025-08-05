@@ -395,24 +395,29 @@ class TranscriptionQueueManager {
         let transcriptionLocation = UserDefaults.standard.string(forKey: "transcriptionFileLocation") ?? "Desktop"
         let customPath = UserDefaults.standard.string(forKey: "customTranscriptionPath") ?? ""
         
+        logger.debug("📁 Transcription location setting: \(transcriptionLocation)")
+        logger.debug("📁 Custom path setting: \(customPath)")
+        
         let baseURL: URL
         switch transcriptionLocation {
         case "Documents":
             baseURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            logger.info("📁 Using Documents directory: \(baseURL.path)")
         case "Downloads":
             baseURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+            logger.info("📁 Using Downloads directory: \(baseURL.path)")
         case "Custom":
             if !customPath.isEmpty && FileManager.default.fileExists(atPath: customPath) {
                 baseURL = URL(fileURLWithPath: customPath)
+                logger.info("📁 Using custom directory: \(baseURL.path)")
             } else {
                 // Fallback to Desktop if custom path is invalid
                 baseURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
-				logger.debug(
-						"⚠️ Custom transcription path is invalid, falling back to Desktop"
-					)
+                logger.debug("⚠️ Custom transcription path '\(customPath)' is invalid or empty, falling back to Desktop")
             }
         default: // "Desktop"
             baseURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
+            logger.info("📁 Using Desktop directory: \(baseURL.path)")
         }
         
         let fileURL = baseURL.appendingPathComponent(transcriptionFilename)
