@@ -9,8 +9,10 @@
 ## Development Process:
 	-	Get the required plans; if you are not sure, ask the user.
 	-	Implement the plan as specified by the user through the plan mode.
-	-	Once implemented, try to build the Xcode project. If the project builds successfully, proceed to the next step.
+	-	Once implemented, try to build the Xcode project. If the project builds 
+successfully, proceed to the next step.
 	-	Run tests to make sure you didn’t break anything along the way.
 	-	If something breaks, determine whether the issue is with the implementation or the tests. Ask for the user’s permission if you need to refactor the tests.
 	-	Ask the user if the implementation is correct.
 	-	Create new tests for the new implementation.
+	-       I have a logger, please use that one instead of print, or OS.logger

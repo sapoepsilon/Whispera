@@ -29,7 +29,7 @@ class LogManager {
         return appSupport.appendingPathComponent("Whispera/Logs")
     }
     
-    private var currentLogFile: URL? {
+    var currentLogFile: URL? {
         guard let logsDir = logsDirectory else { return nil }
         let fileName = "whispera-\(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none).replacingOccurrences(of: "/", with: "-")).log"
         return logsDir.appendingPathComponent(fileName)
@@ -38,6 +38,7 @@ class LogManager {
     private init() {
         setupLogsDirectory()
         rotateLogsIfNeeded()
+        setupCrashHandlers()
     }
     
     private func setupLogsDirectory() {
@@ -171,6 +172,87 @@ class LogManager {
         let files = try fileManager.contentsOfDirectory(at: logsDir, includingPropertiesForKeys: nil)
         for file in files where file.pathExtension == "log" {
             try fileManager.removeItem(at: file)
+        }
+    }
+    
+    private func setupCrashHandlers() {
+        // Set up exception handler for uncaught exceptions (Objective-C style)
+        NSSetUncaughtExceptionHandler { exception in
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let crashInfo = """
+            === EXCEPTION CRASH REPORT ===
+            Timestamp: \(timestamp)
+            Exception Name: \(exception.name.rawValue)
+            Reason: \(exception.reason ?? "Unknown")
+            
+            Call Stack:
+            \(exception.callStackSymbols.joined(separator: "\n"))
+            
+            User Info:
+            \(exception.userInfo ?? [:])
+            ===================
+            """
+            
+            LogManager.writeCrashLog(crashInfo)
+        }
+        
+        // Set up signal handlers for lower-level crashes
+        let crashHandler: @convention(c) (Int32) -> Void = { signal in
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let signalName: String
+            switch signal {
+            case SIGABRT: signalName = "SIGABRT (Abort)"
+            case SIGSEGV: signalName = "SIGSEGV (Segmentation fault)"
+            case SIGBUS: signalName = "SIGBUS (Bus error)"
+            case SIGILL: signalName = "SIGILL (Illegal instruction)"
+            case SIGFPE: signalName = "SIGFPE (Floating point exception)"
+            case SIGTRAP: signalName = "SIGTRAP (Trace trap)"
+            default: signalName = "Signal \(signal)"
+            }
+            
+            let crashInfo = """
+            === SIGNAL CRASH REPORT ===
+            Timestamp: \(timestamp)
+            Signal: \(signalName)
+            
+            Note: Stack trace not available for signal crashes.
+            Check system crash reports at:
+            ~/Library/Logs/DiagnosticReports/
+            /Library/Logs/DiagnosticReports/
+            ===================
+            """
+            
+            LogManager.writeCrashLog(crashInfo)
+        }
+        
+        signal(SIGABRT, crashHandler)
+        signal(SIGSEGV, crashHandler)
+        signal(SIGBUS, crashHandler)
+        signal(SIGILL, crashHandler)
+        signal(SIGFPE, crashHandler)
+        signal(SIGTRAP, crashHandler)
+    }
+    
+    // Static method to write crash logs safely from signal handlers
+    private static func writeCrashLog(_ crashInfo: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let logEntry = "[\(timestamp)] [ERROR] [CrashHandler] 💥 CRASH: \(crashInfo)\n"
+        
+        if let logFile = LogManager.shared.currentLogFile,
+           let data = logEntry.data(using: .utf8) {
+            do {
+                if !FileManager.default.fileExists(atPath: logFile.path) {
+                    FileManager.default.createFile(atPath: logFile.path, contents: nil)
+                }
+                let handle = try FileHandle(forWritingTo: logFile)
+                handle.seekToEndOfFile()
+                handle.write(data)
+                handle.closeFile()
+            } catch {
+                // Last resort - write to stderr
+                fputs(logEntry, stderr)
+                fflush(stderr)
+            }
         }
     }
     

@@ -27,6 +27,18 @@ struct SettingsView: View {
     @AppStorage("liveTranscriptionMaxWidthPercentage") private var liveTranscriptionMaxWidthPercentage = 0.6
     @AppStorage("liveTranscriptionFollowCaret") private var liveTranscriptionFollowCaret = true
     
+    // MARK: - File Transcription Settings
+    @AppStorage("fileSelectionShortcut") private var fileSelectionShortcut = "⌃F"
+    @AppStorage("autoDeleteDownloadedFiles") private var autoDeleteDownloadedFiles = true
+    @AppStorage("transcriptionOutput") private var transcriptionOutput = "both"
+    @AppStorage("transcriptionFileLocation") private var transcriptionFileLocation = "Desktop"
+    @AppStorage("customTranscriptionPath") private var customTranscriptionPath = ""
+    @AppStorage("youtubeQuality") private var youtubeQuality = "medium"
+    @AppStorage("showTimestamps") private var showTimestamps = true
+    @AppStorage("timestampFormat") private var timestampFormat = "MM:SS"
+    @AppStorage("defaultTranscriptionMode") private var defaultTranscriptionMode = "plain"
+    @AppStorage("maxFileSizeMB") private var maxFileSizeMB = 100
+    
     // MARK: - Injected Dependencies
     @State var permissionManager: PermissionManager
     @State var updateManager: UpdateManager
@@ -34,7 +46,9 @@ struct SettingsView: View {
 	@State var whisperKit = WhisperKitTranscriber.shared
     @State private var availableModels: [String] = []
     @State private var isRecordingShortcut = false
+    @State private var isRecordingFileShortcut = false
     @State private var eventMonitor: Any?
+    @State private var fileShortcutEventMonitor: Any?
     @State private var errorMessage: String?
     @State private var showingError = false
     @State private var showingLLMSettings = false
@@ -829,6 +843,200 @@ struct SettingsView: View {
                 Label("Live Transcription", systemImage: "waveform")
             }
         }
+        
+        // MARK: - File Transcription Tab
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // MARK: - File Selection Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("File Selection")
+                        .font(.headline)
+                    
+                    HStack {
+                        Text("Shortcut:")
+                        Spacer()
+                        Text(fileSelectionShortcut)
+                            .font(.system(.body, design: .monospaced))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+                        Button(isRecordingFileShortcut ? "Press keys..." : "Change") {
+                            if isRecordingFileShortcut {
+                                stopRecordingFileShortcut()
+                            } else {
+                                startRecordingFileShortcut()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .foregroundColor(isRecordingFileShortcut ? .white : .primary)
+                        .background(isRecordingFileShortcut ? .blue : Color.clear)
+                    }
+                    
+                    Text("Use this shortcut to open a file selection dialog for transcription.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Divider()
+                
+                // MARK: - Transcription Options Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Transcription Options")
+                        .font(.headline)
+                    
+                    HStack {
+                        Text("Default mode:")
+                        Spacer()
+                        Picker("Default mode", selection: $defaultTranscriptionMode) {
+                            Text("Plain Text").tag("plain")
+                            Text("With Timestamps").tag("timestamps")
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 140)
+                    }
+                    
+                    HStack {
+                        Text("Show timestamps:")
+                        Spacer()
+                        Toggle("", isOn: $showTimestamps)
+                    }
+                    
+                    if showTimestamps {
+                        HStack {
+                            Text("Timestamp format:")
+                            Spacer()
+                            Picker("Format", selection: $timestampFormat) {
+                                Text("MM:SS").tag("MM:SS")
+                                Text("HH:MM:SS").tag("HH:MM:SS")
+                                Text("Seconds").tag("Seconds")
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 100)
+                        }
+                    }
+                }
+                
+                Divider()
+                
+                // MARK: - Network & YouTube Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Network & YouTube")
+                        .font(.headline)
+                    
+                    HStack {
+                        Text("Auto-delete downloaded files:")
+                        Spacer()
+                        Toggle("", isOn: $autoDeleteDownloadedFiles)
+                    }
+                    
+                    HStack {
+                        Text("Save transcription to:")
+                        Spacer()
+                        Picker("Output", selection: $transcriptionOutput) {
+                            Text("Clipboard only").tag("clipboard")
+                            Text("File only").tag("file")
+                            Text("Both").tag("both")
+                        }
+                        .pickerStyle(MenuPickerStyle())
+                        .frame(maxWidth: 150)
+                    }
+                    
+                    if transcriptionOutput == "file" || transcriptionOutput == "both" {
+                        HStack {
+                            Text("File location:")
+                            Spacer()
+                            Picker("Location", selection: $transcriptionFileLocation) {
+                                Text("Desktop").tag("Desktop")
+                                Text("Documents").tag("Documents")
+                                Text("Downloads").tag("Downloads")
+                                Text("Custom...").tag("Custom")
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 120)
+                            
+                            if transcriptionFileLocation == "Custom" {
+                                Button("Choose...") {
+                                    chooseCustomTranscriptionLocation()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        
+                        if transcriptionFileLocation == "Custom" {
+                            HStack {
+                                Text("Current:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(getCustomTranscriptionPath())
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer()
+                            }
+                        }
+                    }
+                    
+                    HStack {
+                        Text("YouTube audio quality:")
+                        Spacer()
+                        Picker("Quality", selection: $youtubeQuality) {
+                            Text("Low (128kbps)").tag("low")
+                            Text("Medium (256kbps)").tag("medium")
+                            Text("High (320kbps)").tag("high")
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 150)
+                    }
+                    
+                    HStack {
+                        Text("Max file size (MB):")
+                        Spacer()
+                        TextField("Size", value: $maxFileSizeMB, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+                }
+                
+                Divider()
+                
+                // MARK: - Supported Formats Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Supported Formats")
+                        .font(.headline)
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Audio formats:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Text("MP3, M4A, WAV, AAC, FLAC, AIFF, AU, CAF")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Video formats:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Text("MP4, MOV, AVI, MKV, WMV, FLV, WebM, M4V")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Network:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Text("HTTP/HTTPS URLs, YouTube URLs")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+            }
+            .padding(20)
+        }
+        .tabItem {
+            Label("File Transcription", systemImage: "doc.on.doc")
+        }
     }
         .frame(width: 450, height: 520)
         .background(.regularMaterial)
@@ -843,6 +1051,7 @@ struct SettingsView: View {
         }
         .onDisappear {
             stopRecording()
+            stopRecordingFileShortcut()
         }
         .onChange(of: selectedModel) { newModel in
             // Only auto-switch if auto-download is enabled
@@ -998,6 +1207,30 @@ struct SettingsView: View {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
+        }
+    }
+    
+    private func startRecordingFileShortcut() {
+        isRecordingFileShortcut = true
+        
+        fileShortcutEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            if self.isRecordingFileShortcut {
+                let shortcut = self.formatKeyEvent(event)
+                if !shortcut.isEmpty {
+                    self.fileSelectionShortcut = shortcut
+                    self.stopRecordingFileShortcut()
+                }
+                return nil
+            }
+            return event
+        }
+    }
+    
+    private func stopRecordingFileShortcut() {
+        isRecordingFileShortcut = false
+        if let monitor = fileShortcutEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            fileShortcutEventMonitor = nil
         }
     }
     
@@ -1329,6 +1562,28 @@ struct SettingsView: View {
                 showingError = true
             }
         }
+    }
+    
+    private func chooseCustomTranscriptionLocation() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose Transcription Folder"
+        panel.message = "Select where transcription files should be saved"
+        
+        if panel.runModal() == .OK {
+            if let url = panel.url {
+                customTranscriptionPath = url.path
+            }
+        }
+    }
+    
+    private func getCustomTranscriptionPath() -> String {
+        if customTranscriptionPath.isEmpty {
+            return "No folder selected"
+        }
+        return customTranscriptionPath
     }
 }
 

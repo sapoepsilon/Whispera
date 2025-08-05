@@ -585,7 +585,7 @@ import CoreML
 		}
 		
 		do {
-			let transcriptionResults: [TranscriptionResult] = try await whisperKit.transcribe(
+			let transcriptionResults = try await whisperKit.transcribe(
 				audioArray: samples,
 				decodeOptions: options,
 				callback: decodingCallback,
@@ -614,7 +614,7 @@ import CoreML
 					clipTimestamps: [0]
 				)
 				
-				let transcriptionResults: [TranscriptionResult] = try await whisperKit.transcribe(
+				let transcriptionResults = try await whisperKit.transcribe(
 					audioArray: samples,
 					decodeOptions: fallbackOptions,
 					callback: decodingCallback
@@ -935,6 +935,108 @@ import CoreML
 			enableTranslation: enableTranslation,
 			logPrefix: "audio array"
 		)
+	}
+	
+	// MARK: - File Transcription Methods
+	
+	func transcribeFile(at url: URL, enableTranslation: Bool = false) async throws -> String {
+		AppLogger.shared.transcriber.log("📁 Starting file transcription for: \(url.lastPathComponent)")
+		
+		return try await performTranscription(
+			input: .audioPath(url.path),
+			enableTranslation: enableTranslation,
+			logPrefix: "file"
+		)
+	}
+	
+	func transcribeFileWithTimestamps(at url: URL, enableTranslation: Bool = false) async throws -> [TranscriptionSegment] {
+		AppLogger.shared.transcriber.log("📁⏱️ Starting timestamped file transcription for: \(url.lastPathComponent)")
+		
+		guard isInitialized else {
+			throw WhisperKitError.notInitialized
+		}
+		
+		guard let whisperKitInstance = whisperKit else {
+			throw WhisperKitError.notInitialized
+		}
+		
+		let decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
+		
+		let result = try await Task {
+			if whisperKitInstance.modelState == .loading {
+				AppLogger.shared.transcriber.log("Model isn't loaded yet. \(whisperKitInstance.modelState)")
+			}
+			
+			return try await whisperKitInstance.transcribe(audioPath: url.path, decodeOptions: decodingOptions)
+		}.value
+		
+		if !result.isEmpty {
+			// WhisperKit returns [TranscriptionResult], we need to extract segments from each result
+			let allSegments = result.flatMap { transcriptionResult in
+				transcriptionResult.segments.compactMap { whisperSegment -> TranscriptionSegment? in
+					let text = whisperSegment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+					guard !text.isEmpty else {
+						return nil
+					}
+					
+					return TranscriptionSegment(
+						text: text,
+						startTime: Double(whisperSegment.start),
+						endTime: Double(whisperSegment.end)
+					)
+				}
+			}
+			
+			AppLogger.shared.transcriber.log("✅ WhisperKit file transcription completed with \(allSegments.count) segments")
+			return allSegments
+		} else {
+			AppLogger.shared.transcriber.log("⚠️ No transcription segments returned")
+			return []
+		}
+	}
+	
+	func transcribeFileSegment(at url: URL, startTime: Double, endTime: Double, enableTranslation: Bool = false) async throws -> String {
+		AppLogger.shared.transcriber.log("📁✂️ Starting segment transcription for: \(url.lastPathComponent) [\(startTime)s - \(endTime)s]")
+		
+		guard startTime < endTime else {
+			throw NSError(domain: "WhisperKitTranscriber", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid time range"])
+		}
+		
+		guard isInitialized else {
+			throw WhisperKitError.notInitialized
+		}
+		
+		guard let whisperKitInstance = whisperKit else {
+			throw WhisperKitError.notInitialized
+		}
+		
+		var decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
+		
+		// Set time range for segment transcription
+		decodingOptions.clipTimestamps = [Float(startTime), Float(endTime)]
+		
+		let result = try await Task {
+			if whisperKitInstance.modelState == .loading {
+				AppLogger.shared.transcriber.log("Model isn't loaded yet. \(whisperKitInstance.modelState)")
+			}
+			
+			return try await whisperKitInstance.transcribe(audioPath: url.path, decodeOptions: decodingOptions)
+		}.value
+		
+		if !result.isEmpty {
+			let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+			
+			if !transcription.isEmpty {
+				AppLogger.shared.transcriber.log("✅ WhisperKit segment transcription completed: \(transcription)")
+				return transcription
+			} else {
+				AppLogger.shared.transcriber.log("⚠️ Segment transcription returned empty text")
+				return "No speech detected in segment"
+			}
+		} else {
+			AppLogger.shared.transcriber.log("⚠️ No transcription segments returned for segment")
+			return "No speech detected in segment"
+		}
 	}
 	
 	func switchModel(to model: String) async throws {
