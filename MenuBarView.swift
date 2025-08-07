@@ -531,13 +531,12 @@ struct StatusCardView: View {
                     if queueManager.isExpanded {
                         // Expanded view showing all files
                         VStack(spacing: 8) {
-                            ForEach(queueManager.items.indices, id: \.self) { index in
-                                QueueListItem(item: queueManager.items[index], queueManager: queueManager)
+                            ForEach(queueManager.items, id: \.id) { item in
+                                QueueListItem(item: item, queueManager: queueManager)
                                     .transition(.asymmetric(
                                         insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9)),
                                         removal: .move(edge: .leading).combined(with: .opacity).combined(with: .scale(scale: 0.9))
                                     ))
-                                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(Double(index) * 0.05), value: queueManager.items.count)
                             }
                         }
                         .padding(8)
