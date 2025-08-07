@@ -8,6 +8,7 @@ A native macOS tool that replaces the built-in dictation with OpenAI's Whisper f
   [![GitHub release (latest by date)](https://img.shields.io/github/v/release/sapoepsilon/Whispera?style=for-the-badge&logo=github&color=0969da&labelColor=1f2328)](https://github.com/sapoepsilon/Whispera/releases/latest)
   
 </div>
+
 ## Demos
 
 <table>
@@ -61,6 +62,16 @@ Simply use your configured global shortcut to start transcribing with Whisper in
 - macOS 13.0 or later
 - Apple Silicon
 - We are working on support for Intel Mac
+
+## Credits
+
+Built with:
+- [WhisperKit](https://github.com/argmaxinc/WhisperKit) - On-device Whisper transcription for Apple Silicon
+- [YouTubeKit](https://github.com/alexeichhorn/YouTubeKit) - YouTube content extraction
+- [swift-markdown-ui](https://github.com/gonzalezreal/swift-markdown-ui)
+
+
+Thanks to these projects for making privacy-focused, local transcription a reality.
 
 ## License
 
