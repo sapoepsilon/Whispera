@@ -1,5 +1,5 @@
 {
-  "originHash" : "0124a5d1ad611d678bb28c3e693465ac05f3222a2807aa1cfda242b0f4ad06a7",
+  "originHash" : "302ee021fb81d0acc7eaa52295d7dd447ef719618c292a89f50d9bb00943877f",
   "pins" : [
     {
       "identity" : "jinja",
@@ -71,6 +71,15 @@
       "state" : {
         "branch" : "main",
         "revision" : "0a064c3ba8b424887ce691c2f6c85ddffde0ce89"
+      }
+    },
+    {
+      "identity" : "youtubekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/alexeichhorn/YouTubeKit",
+      "state" : {
+        "revision" : "fae7914e970a116405d89ae9cbbcfb2915824100",
+        "version" : "0.2.8"
       }
     }
   ],

@@ -19,6 +19,18 @@
 		D604F4C12E356D0C006D71D1 /* GlassBeta.swift in Sources */ = {isa = PBXBuildFile; fileRef = D604F4C02E356D07006D71D1 /* GlassBeta.swift */; };
 		D6077E982DF10E77009E7404 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D6077E972DF10E77009E7404 /* Assets.xcassets */; };
 		D620E44D2E3C79C1006AF5E0 /* LogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D620E44C2E3C79C1006AF5E0 /* LogManager.swift */; };
+		D63900CF2E3D77B4005B5623 /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = D63900CE2E3D77B4005B5623 /* YouTubeKit */; };
+		D63900D12E3D77E1005B5623 /* FileDropHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900D02E3D77E1005B5623 /* FileDropHandler.swift */; };
+		D63900D62E3D77EF005B5623 /* FileTranscriptionProtocols.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900D32E3D77EF005B5623 /* FileTranscriptionProtocols.swift */; };
+		D63900D72E3D77EF005B5623 /* YouTubeTranscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900D52E3D77EF005B5623 /* YouTubeTranscriptionManager.swift */; };
+		D63900D82E3D77EF005B5623 /* NetworkFileDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900D42E3D77EF005B5623 /* NetworkFileDownloader.swift */; };
+		D63900D92E3D77EF005B5623 /* FileTranscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900D22E3D77EF005B5623 /* FileTranscriptionManager.swift */; };
+		D63900DF2E3D8103005B5623 /* FileTranscriptionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900DC2E3D8103005B5623 /* FileTranscriptionViewModel.swift */; };
+		D63900E02E3D8103005B5623 /* YouTubeURLInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900DE2E3D8103005B5623 /* YouTubeURLInputView.swift */; };
+		D63900E22E3D8103005B5623 /* FileTranscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900DB2E3D8103005B5623 /* FileTranscriptionView.swift */; };
+		D63900E32E3D8103005B5623 /* YouTubeTranscriptionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900DD2E3D8103005B5623 /* YouTubeTranscriptionViewModel.swift */; };
+		D63900E52E3F13F7005B5623 /* TranscriptionQueueManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900E42E3F13F7005B5623 /* TranscriptionQueueManager.swift */; };
+		D63900E72E3F1550005B5623 /* TranscriptionQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900E62E3F1550005B5623 /* TranscriptionQueueView.swift */; };
 		D63A30E32E2EBF1300BA20B7 /* LiveTranscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30DF2E2EBF1300BA20B7 /* LiveTranscriptionView.swift */; };
 		D63A30E52E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30E02E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift */; };
 		D63A30E72E2EBF1E00BA20B7 /* AccessibilityHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30E62E2EBF1E00BA20B7 /* AccessibilityHelper.swift */; };
@@ -88,6 +100,17 @@
 		D63850CB2E179188000FD465 /* WhisperaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D63850DE2E1791AF000FD465 /* WhisperaUnitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperaUnitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D63851172E184572000FD465 /* Whispera.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Whispera.xctestplan; sourceTree = "<group>"; };
+		D63900D02E3D77E1005B5623 /* FileDropHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDropHandler.swift; sourceTree = "<group>"; };
+		D63900D22E3D77EF005B5623 /* FileTranscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTranscriptionManager.swift; sourceTree = "<group>"; };
+		D63900D32E3D77EF005B5623 /* FileTranscriptionProtocols.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTranscriptionProtocols.swift; sourceTree = "<group>"; };
+		D63900D42E3D77EF005B5623 /* NetworkFileDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkFileDownloader.swift; sourceTree = "<group>"; };
+		D63900D52E3D77EF005B5623 /* YouTubeTranscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeTranscriptionManager.swift; sourceTree = "<group>"; };
+		D63900DB2E3D8103005B5623 /* FileTranscriptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTranscriptionView.swift; sourceTree = "<group>"; };
+		D63900DC2E3D8103005B5623 /* FileTranscriptionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTranscriptionViewModel.swift; sourceTree = "<group>"; };
+		D63900DD2E3D8103005B5623 /* YouTubeTranscriptionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeTranscriptionViewModel.swift; sourceTree = "<group>"; };
+		D63900DE2E3D8103005B5623 /* YouTubeURLInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeURLInputView.swift; sourceTree = "<group>"; };
+		D63900E42E3F13F7005B5623 /* TranscriptionQueueManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionQueueManager.swift; sourceTree = "<group>"; };
+		D63900E62E3F1550005B5623 /* TranscriptionQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionQueueView.swift; sourceTree = "<group>"; };
 		D63A30DF2E2EBF1300BA20B7 /* LiveTranscriptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriptionView.swift; sourceTree = "<group>"; };
 		D63A30E02E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriptionWindow.swift; sourceTree = "<group>"; };
 		D63A30E62E2EBF1E00BA20B7 /* AccessibilityHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityHelper.swift; sourceTree = "<group>"; };
@@ -129,6 +152,7 @@
 			files = (
 				D69B300D2DFA0E020024A2DA /* MarkdownUI in Frameworks */,
 				D6B81FB42DEFF5CC00D32F2A /* WhisperKit in Frameworks */,
+				D63900CF2E3D77B4005B5623 /* YouTubeKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,6 +176,7 @@
 		6A6A6A6A6A6A6A6A6A6A6A6A = {
 			isa = PBXGroup;
 			children = (
+				D6282B1F2E41879900E78C68 /* FileTranscription */,
 				D620E44E2E3C79C6006AF5E0 /* Logger */,
 				D604F4C02E356D07006D71D1 /* GlassBeta.swift */,
 				D63851172E184572000FD465 /* Whispera.xctestplan */,
@@ -200,6 +225,24 @@
 				D66E6D592E18495900F55A5B /* Logger.swift */,
 			);
 			path = Logger;
+			sourceTree = "<group>";
+		};
+		D6282B1F2E41879900E78C68 /* FileTranscription */ = {
+			isa = PBXGroup;
+			children = (
+				D63900E42E3F13F7005B5623 /* TranscriptionQueueManager.swift */,
+				D63900E62E3F1550005B5623 /* TranscriptionQueueView.swift */,
+				D63900DB2E3D8103005B5623 /* FileTranscriptionView.swift */,
+				D63900DC2E3D8103005B5623 /* FileTranscriptionViewModel.swift */,
+				D63900DD2E3D8103005B5623 /* YouTubeTranscriptionViewModel.swift */,
+				D63900DE2E3D8103005B5623 /* YouTubeURLInputView.swift */,
+				D63900D02E3D77E1005B5623 /* FileDropHandler.swift */,
+				D63900D22E3D77EF005B5623 /* FileTranscriptionManager.swift */,
+				D63900D32E3D77EF005B5623 /* FileTranscriptionProtocols.swift */,
+				D63900D42E3D77EF005B5623 /* NetworkFileDownloader.swift */,
+				D63900D52E3D77EF005B5623 /* YouTubeTranscriptionManager.swift */,
+			);
+			path = FileTranscription;
 			sourceTree = "<group>";
 		};
 		D63850BE2E17907D000FD465 /* WhisperaTests */ = {
@@ -353,6 +396,7 @@
 			packageReferences = (
 				D6B81FB22DEFF5CC00D32F2A /* XCRemoteSwiftPackageReference "WhisperKit" */,
 				D69B300B2DFA0E020024A2DA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */,
 			);
 			productRefGroup = 8A8A8A8A8A8A8A8A8A8A8A8A /* Products */;
 			projectDirPath = "";
@@ -401,6 +445,7 @@
 				D66E6D6B2E185B8E00F55A5B /* ShortcutOptionsView.swift in Sources */,
 				D66E6D6F2E185BD100F55A5B /* TestStepView.swift in Sources */,
 				D63A30E32E2EBF1300BA20B7 /* LiveTranscriptionView.swift in Sources */,
+				D63900E52E3F13F7005B5623 /* TranscriptionQueueManager.swift in Sources */,
 				D63A30E52E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift in Sources */,
 				D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */,
 				D66E6D5D2E1859FF00F55A5B /* WelcomeStepView.swift in Sources */,
@@ -410,12 +455,21 @@
 				1A1A1A1A1A1A1A1A1A1A1A1D /* AudioManager.swift in Sources */,
 				D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */,
 				D698B91D2E18F3DD008FE0CF /* PermissionManager.swift in Sources */,
+				D63900D62E3D77EF005B5623 /* FileTranscriptionProtocols.swift in Sources */,
+				D63900D72E3D77EF005B5623 /* YouTubeTranscriptionManager.swift in Sources */,
+				D63900D82E3D77EF005B5623 /* NetworkFileDownloader.swift in Sources */,
+				D63900DF2E3D8103005B5623 /* FileTranscriptionViewModel.swift in Sources */,
+				D63900E02E3D8103005B5623 /* YouTubeURLInputView.swift in Sources */,
+				D63900E22E3D8103005B5623 /* FileTranscriptionView.swift in Sources */,
+				D63900E32E3D8103005B5623 /* YouTubeTranscriptionViewModel.swift in Sources */,
+				D63900D92E3D77EF005B5623 /* FileTranscriptionManager.swift in Sources */,
 				4FF3C022671FE9ADF92F13DA /* AppLibraryManager.swift in Sources */,
 				D66E6D632E185AE400F55A5B /* PermissionRowView.swift in Sources */,
 				D63A31112E2EE20C00BA20B7 /* DictationView.swift in Sources */,
 				D66E6D692E185B7500F55A5B /* SettingsStepView.swift in Sources */,
 				D64B1B292DF11A7B00D2CEAB /* OnboardingView.swift in Sources */,
 				D66E6D6D2E185BBC00F55A5B /* SettingsRowView.swift in Sources */,
+				D63900E72E3F1550005B5623 /* TranscriptionQueueView.swift in Sources */,
 				D66E6D652E185B0400F55A5B /* OnboardingProgressView.swift in Sources */,
 				D66E6D732E185C0200F55A5B /* ModelSelectionView.swift in Sources */,
 				D6C81FC92E0001AB00D32F2A /* ContextProvider.swift in Sources */,
@@ -427,6 +481,7 @@
 				1A1A1A1A1A1A1A1A1A1A1A22 /* DictationWordTracker.swift in Sources */,
 				D63A30E72E2EBF1E00BA20B7 /* AccessibilityHelper.swift in Sources */,
 				D698B9022E18EC4A008FE0CF /* UpdateManager.swift in Sources */,
+				D63900D12E3D77E1005B5623 /* FileDropHandler.swift in Sources */,
 				D698B9032E18EC4A008FE0CF /* AppVersion.swift in Sources */,
 				D66E6D712E185BE900F55A5B /* CompleteStepView.swift in Sources */,
 			);
@@ -775,6 +830,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/alexeichhorn/YouTubeKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.2.8;
+			};
+		};
 		D69B300B2DFA0E020024A2DA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
@@ -794,6 +857,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D63900CE2E3D77B4005B5623 /* YouTubeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */;
+			productName = YouTubeKit;
+		};
 		D69B300C2DFA0E020024A2DA /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D69B300B2DFA0E020024A2DA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;

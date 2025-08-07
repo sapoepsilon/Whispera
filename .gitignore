@@ -111,6 +111,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+*.stack.js
 
 # Distribution and release scripts with credentials
 scripts/release-distribute.sh

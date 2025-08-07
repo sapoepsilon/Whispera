@@ -49,17 +49,14 @@ class AppLogger {
 	lazy var audioManager = ExtendedLogger(logger: Logger(subsystem: subsystem, category: "AudioManager"), category: "AudioManager")
 	lazy var transcriber = ExtendedLogger(logger: Logger(subsystem: subsystem, category: "WhisperTranscriber"), category: "WhisperTranscriber")
 	lazy var liveTranscriber = ExtendedLogger(logger: Logger(subsystem: subsystem, category: "WhisperLiveTranscriber"), category: "WhisperLiveTranscriber")
+	lazy  var fileTranscriber = ExtendedLogger(logger: Logger(subsystem: subsystem, category: "WhisperFileTranscriber"), category: "WhisperFileTranscriber")
+	lazy var youtubeTranscriber = ExtendedLogger(logger: Logger(subsystem: subsystem, category: "WhisperYouTubeTranscriber"), category: "WhisperYouTubeTranscriber")
 	
 	private init() {
-		// Initialize default logging settings if not already set
 		let defaults = UserDefaults.standard
-		
-		// Master toggle - default ON
 		if defaults.object(forKey: "enableExtendedLogging") == nil {
 			defaults.set(true, forKey: "enableExtendedLogging")
 		}
-		
-		// Debug mode - default OFF (only log info/error/fault by default)
 		if defaults.object(forKey: "enableDebugLogging") == nil {
 			defaults.set(false, forKey: "enableDebugLogging")
 		}

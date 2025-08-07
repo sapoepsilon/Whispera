@@ -36,6 +36,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var popover = NSPopover()
     var audioManager: AudioManager!
     var shortcutManager: GlobalShortcutManager!
+    var fileTranscriptionManager: FileTranscriptionManager!
+    var networkDownloader: NetworkFileDownloader!
+    var queueManager: TranscriptionQueueManager!
     var updateManager: UpdateManager?
     var permissionManager: PermissionManager?
     var appLibraryManager: AppLibraryManager?
@@ -50,7 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         if shouldTerminateDuplicateInstances() {
-			AppLogger.shared.general.logger.info("🚫 Another instance is already running. Activating existing instance and terminating this one.")
+			AppLogger.shared.general.info("🚫 Another instance is already running. Activating existing instance and terminating this one.")
             activateExistingInstance()
             NSApp.terminate(nil)
             return
@@ -61,12 +64,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Task { @MainActor in
             audioManager = AudioManager()
             shortcutManager = GlobalShortcutManager()
+            fileTranscriptionManager = FileTranscriptionManager()
+            networkDownloader = NetworkFileDownloader()
+            queueManager = TranscriptionQueueManager(
+                fileTranscriptionManager: fileTranscriptionManager,
+                networkDownloader: networkDownloader
+            )
             updateManager = UpdateManager()
             permissionManager = PermissionManager()
             appLibraryManager = AppLibraryManager()
             setupMenuBar()
             NSApp.setActivationPolicy(.accessory)
             shortcutManager.setAudioManager(audioManager)
+            shortcutManager.setFileTranscriptionManager(fileTranscriptionManager)
+            shortcutManager.setNetworkDownloader(networkDownloader)
+            shortcutManager.setQueueManager(queueManager)
             observeRecordingState()
             observeWindowState()
             observeUpdateState()
@@ -81,12 +93,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     do {
                         let hasUpdate = try await updateManager?.checkForUpdates() ?? false
                         if hasUpdate {
-							AppLogger.shared.general.logger.info("🆕 Update available: \(self.updateManager?.latestVersion ?? "unknown")")
+							AppLogger.shared.general.info("🆕 Update available: \(self.updateManager?.latestVersion ?? "unknown")")
                         } else {
-                            AppLogger.shared.general.logger.info("✅ App is up to date")
+                            AppLogger.shared.general.info("✅ App is up to date")
                         }
                     } catch {
-                        AppLogger.shared.general.logger.info("⚠️ Failed to check for updates: \(error)")
+                        AppLogger.shared.general.info("⚠️ Failed to check for updates: \(error)")
                     }
                 }
             }
@@ -137,8 +149,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UserDefaults.standard.set(true, forKey: "soundFeedback")
         }
         
-        AppLogger.shared.general.logger.info("🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")")
+        AppLogger.shared.general.info("🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")")
     }
+    
     
     func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -152,7 +165,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.contentViewController = NSHostingController(rootView: MenuBarView(
             audioManager: audioManager,
             permissionManager: permissionManager ?? PermissionManager(),
-            updateManager: updateManager ?? UpdateManager()
+            updateManager: updateManager ?? UpdateManager(),
+            fileTranscriptionManager: fileTranscriptionManager,
+            networkDownloader: networkDownloader,
+            queueManager: queueManager
         ))
         popover.behavior = .transient
     }
@@ -234,6 +250,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.updateStatusIcon()
             }
         }
+        
+        // Observe file transcription notifications
+        NotificationCenter.default.addObserver(
+            forName: .fileTranscriptionSuccess,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateStatusIcon()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: .fileTranscriptionError,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateStatusIcon()
+            }
+        }
+        
+        // Observe queue processing state changes
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("QueueProcessingStateChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateStatusIcon()
+            }
+        }
     }
     
     private func observeWindowState() {
@@ -282,7 +330,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // Add continuous rotation animation to indicate download
                 addDownloadAnimation(to: button)
                 
-            } else if audioManager.isTranscribing {
+            } else if networkDownloader?.isDownloading == true {
+                // Network downloading state - arrow down with rotation
+                button.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: "Whispera - Downloading")
+                button.image?.isTemplate = true
+                button.alphaValue = 1.0
+                
+                // Add download animation
+                addDownloadAnimation(to: button)
+                
+            } else if audioManager.isTranscribing || fileTranscriptionManager?.isTranscribing == true || queueManager?.isProcessing == true {
                 // Transcribing state - waveform icon with subtle pulse
                 button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Whispera - Transcribing")
                 button.image?.isTemplate = true
@@ -308,20 +365,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
 	private func addDownloadAnimation(to button: NSStatusBarButton) {
-		button.wantsLayer = true
-		
-		guard let layer = button.layer else { return }
-		
-		// Continuous alpha animation (fade in/out)
-		let alphaAnimation = CABasicAnimation(keyPath: "opacity")
-		alphaAnimation.fromValue = 1.0
-		alphaAnimation.toValue = 0.3  // Fade to 30% opacity
-		alphaAnimation.duration = 0.8
-		alphaAnimation.repeatCount = .infinity
-		alphaAnimation.autoreverses = true  // This makes it fade back in
-		alphaAnimation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-		
-		layer.add(alphaAnimation, forKey: "downloadAlpha")
+		// Use NSAnimationContext instead of Core Animation for status bar buttons
+		button.alphaValue = 1.0
+		NSAnimationContext.runAnimationGroup { context in
+			context.duration = 0.8
+			context.allowsImplicitAnimation = true
+			context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+			button.animator().alphaValue = 0.3
+		} completionHandler: {
+			NSAnimationContext.runAnimationGroup { context in
+				context.duration = 0.8
+				context.allowsImplicitAnimation = true
+				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+				button.animator().alphaValue = 1.0
+			} completionHandler: {
+				// Continue animation if still downloading
+				Task { @MainActor in
+					if self.audioManager.whisperKitTranscriber.isDownloadingModel || self.networkDownloader?.isDownloading == true {
+						self.addDownloadAnimation(to: button)
+					}
+				}
+			}
+		}
 	}
     
     private func addPermissionWarningAnimation(to button: NSStatusBarButton) {
@@ -399,22 +464,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let storedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "openai_whisper-small.en"
         
         guard audioManager.whisperKitTranscriber.isInitialized else {
-            AppLogger.shared.general.logger.info("⚠️ WhisperKit not initialized, cannot switch model")
+            AppLogger.shared.general.info("⚠️ WhisperKit not initialized, cannot switch model")
             return
         }
         
         guard storedModel != audioManager.whisperKitTranscriber.currentModel else {
-            AppLogger.shared.general.logger.info("📝 Model already matches stored preference: \(storedModel)")
+            AppLogger.shared.general.info("📝 Model already matches stored preference: \(storedModel)")
             return
         }
         
-        AppLogger.shared.general.logger.info("🔄 Applying stored model after onboarding: \(storedModel)")
+        AppLogger.shared.general.info("🔄 Applying stored model after onboarding: \(storedModel)")
         Task {
             do {
                 try await audioManager.whisperKitTranscriber.switchModel(to: storedModel)
-                AppLogger.shared.general.logger.info("✅ Successfully switched to stored model: \(storedModel)")
+                AppLogger.shared.general.info("✅ Successfully switched to stored model: \(storedModel)")
             } catch {
-                AppLogger.shared.general.logger.info("❌ Failed to switch to stored model: \(error)")
+                AppLogger.shared.general.info("❌ Failed to switch to stored model: \(error)")
             }
         }
     }
@@ -448,7 +513,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 do {
                     try await updateManager?.downloadUpdate()
                 } catch {
-                    AppLogger.shared.general.logger.info("❌ Failed to download update: \(error)")
+                    AppLogger.shared.general.info("❌ Failed to download update: \(error)")
                 }
             }
         case .alertThirdButtonReturn:
@@ -462,10 +527,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     private func activateApp() {
-        // Activate this instance when requested by another instance
         NSApp.activate(ignoringOtherApps: true)
-        
-        // Show the popover
         if let button = statusItem?.button {
             if !popover.isShown {
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -474,9 +536,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     // MARK: - Single Instance Management
-    
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // When app is activated (dock click, reopen), show the popover
         if let button = statusItem?.button {
             if !popover.isShown {
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -491,13 +551,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     func checkForExistingInstances() -> [NSRunningApplication] {
-        // Get all running instances of this app
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
             return []
         }
-        
         let runningApps = NSWorkspace.shared.runningApplications
-        
         return runningApps.filter { app in
             app.bundleIdentifier == bundleIdentifier && app != NSRunningApplication.current
         }
@@ -505,12 +562,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     private func activateExistingInstance() {
         let existingInstances = checkForExistingInstances()
-        
-        // Activate the first existing instance
         if let existingInstance = existingInstances.first {
 			existingInstance.activate(options: .activateAllWindows)
-            
-            // Send a notification to the existing instance to show its interface
             let notification = Notification(name: NSNotification.Name("ActivateApp"))
             DistributedNotificationCenter.default().post(notification)
         }
