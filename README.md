@@ -1,6 +1,6 @@
 # Whispera
 
-A native macOS tool that replaces the built-in dictation with OpenAI's Whisper for superior transcription accuracy.
+A native macOS app that replaces the built-in dictation with OpenAI's Whisper for superior transcription accuracy. Transcribe speech, local files, YouTube videos, and network streams - all processed locally on your Neural Engine.
 <div align="center">
   
   ### [⬇️ Download Latest Release](https://github.com/sapoepsilon/Whispera/releases/latest)
