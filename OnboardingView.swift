@@ -19,6 +19,11 @@ struct OnboardingView: View {
     @AppStorage("enableTranslation") private var enableTranslation = false
     @AppStorage("enableStreaming") private var enableStreaming = true
     @AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
+    @AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
+
+    private var materialStyle: MaterialStyle {
+        MaterialStyle(rawValue: materialStyleRaw)
+    }
     
     private let steps = ["Welcome", "Permissions", "Model", "Shortcut", "Settings", "Test", "Complete"]
     
@@ -64,7 +69,7 @@ struct OnboardingView: View {
             .padding(.horizontal, 40)
             .padding(.bottom, 30)
         }
-        .background(.regularMaterial)
+        .background(materialStyle.material)
         .frame(width: 600, height: 750)
         .onAppear {
             checkPermissions()

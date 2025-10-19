@@ -2,11 +2,16 @@ import SwiftUI
 
 struct DictationView: View {
     @State private var whisperKit = WhisperKitTranscriber.shared
-    
+    private let audioManager: AudioManager
+
     // Live transcription customization settings
     @AppStorage("liveTranscriptionMaxWords") private var maxWordsToShow = 5
     @AppStorage("liveTranscriptionCornerRadius") private var cornerRadius = 10.0
     @AppStorage("liveTranscriptionShowEllipsis") private var showEllipsis = true
+
+    init(audioManager: AudioManager) {
+        self.audioManager = audioManager
+    }
     
     private var displayWords: [(text: String, isLast: Bool)] {
         let words = whisperKit.stableDisplayText
@@ -47,20 +52,7 @@ struct DictationView: View {
                 .padding(.vertical, 10)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             } else if whisperKit.isTranscribing {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Color.blue.opacity(0.8))
-                        .frame(width: 5, height: 5)
-                        .scaleEffect(whisperKit.isTranscribing ? 1.3 : 1.0)
-                        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), 
-                                 value: whisperKit.isTranscribing)
-                    
-                    Text("Listening...")
-                        .font(.system(.caption, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+				ListeningView(audioManager: audioManager)
             }
         }
         .background(
@@ -100,7 +92,7 @@ struct DictationView: View {
 }
 
 #Preview {
-    DictationView()
+    DictationView(audioManager: AudioManager())
         .frame(width: 300)
         .padding()
 }

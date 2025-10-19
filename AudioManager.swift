@@ -23,11 +23,14 @@ enum RecordingMode {
 	}
 	var transcriptionError: String?
 	var currentRecordingMode: RecordingMode = .text
-	
+
 	// Recording duration tracking
 	var recordingDuration: TimeInterval = 0.0
 	private var recordingStartTime: Date?
 	private var recordingTimer: Timer?
+
+	// Audio level tracking for visualizations
+	var audioLevels: [Float] = Array(repeating: 0.0, count: 7)
 	
 	
 	@ObservationIgnored
@@ -179,14 +182,43 @@ enum RecordingMode {
 	private func extractFloatData(from buffer: AVAudioPCMBuffer) {
 		guard let channelData = buffer.floatChannelData?[0] else { return }
 		let frameCount = Int(buffer.frameLength)
-		
+
 		let audioData = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
-		
+
 		audioBuffer.append(contentsOf: audioData)
-		
+
 		if audioBuffer.count > maxBufferSize {
 			let excessCount = audioBuffer.count - maxBufferSize
 			audioBuffer.removeFirst(excessCount)
+		}
+
+		updateAudioLevels(from: audioData)
+	}
+
+	private func updateAudioLevels(from audioData: [Float]) {
+		let bandCount = audioLevels.count
+		let samplesPerBand = max(1, audioData.count / bandCount)
+
+		Task { @MainActor in
+			var newLevels: [Float] = []
+
+			for i in 0..<bandCount {
+				let startIndex = i * samplesPerBand
+				let endIndex = min(startIndex + samplesPerBand, audioData.count)
+
+				guard startIndex < audioData.count else {
+					newLevels.append(0.0)
+					continue
+				}
+
+				let bandSamples = Array(audioData[startIndex..<endIndex])
+				let rms = sqrt(bandSamples.map { $0 * $0 }.reduce(0, +) / Float(bandSamples.count))
+				let normalizedLevel = min(1.0, rms * 5.0)
+
+				newLevels.append(normalizedLevel)
+			}
+
+			self.audioLevels = newLevels
 		}
 	}
 	

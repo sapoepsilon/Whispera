@@ -19,7 +19,7 @@ import CoreML
 	var currentModel: String?
 	var downloadedModels: Set<String> = []
 	var onConfirmedTextChange: ((String) -> Void)?
-	var shouldShowWindow: Bool = false
+	var shouldShowLiveTranscriptionWindow: Bool = false
 	var isTranscribing: Bool = false
 	var decodingOptions: DecodingOptions?
 	var currentText: String = ""
@@ -45,7 +45,7 @@ import CoreML
 		pendingText = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
-		shouldShowWindow = false
+		shouldShowLiveTranscriptionWindow = false
 		isTranscribing = false
 		confirmedText = ""
 		shouldShowDebugWindow = false
@@ -385,15 +385,12 @@ import CoreML
 			throw error
 		}
 	}
-	
-	
 	private func updateProgress(_ progress: Double, _ status: String) async {
 		await MainActor.run {
 			self.initializationProgress = progress
 			self.initializationStatus = status
 		}
 	}
-	
 	func checkIfWhisperKitIsAvailable() throws {
 		guard isInitialized else {
 			throw WhisperKitError.notInitialized
@@ -409,7 +406,6 @@ import CoreML
 		}
 		AppLogger.shared.transcriber.info("WhisperKit is ready")
 	}
-	
 	func liveStream() async throws {
 		AppLogger.shared.transcriber.info("Starting live stream...")
 		guard isInitialized else {
@@ -427,7 +423,7 @@ import CoreML
 		dictationWordTracker = DictationWordTracker() // TODO: Make sure this is a correct way of doing it
 		dictationWordTracker?.startNewSession()
 		
-		shouldShowWindow = true
+		shouldShowLiveTranscriptionWindow = true
 		isTranscribing = true
 		isLiveTranscriptionMode = true
 		lastConfirmedSegmentCount = 0
@@ -435,15 +431,14 @@ import CoreML
 		try? whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
 			Task { @MainActor in
 				guard let self = self else { return }
-				self.shouldShowWindow = true
+				self.shouldShowLiveTranscriptionWindow = true
 			}
 		}
 		realtimeLoop()
 	}
-	
 	func stopLiveStream() {
 		isTranscribing = false
-		shouldShowWindow = false
+		shouldShowLiveTranscriptionWindow = false
 		whisperKit?.audioProcessor.stopRecording()
 		
 		confirmPendingText()
@@ -452,7 +447,6 @@ import CoreML
 		transcriptionTask?.cancel()
 		AppLogger.shared.transcriber.info("🛑 Live streaming stopped")
 	}
-	
 	private func realtimeLoop() {
 		transcriptionTask = Task {
 			while isTranscribing {
@@ -468,8 +462,6 @@ import CoreML
 		}
 	}
 	
-		
-	
  // TODO: Allow a user to choose between pending text, and the confirmed text. Do not impelment it the og author will do it
 	private func transcribeCurrentBuffer(delayInterval: Float = 0.3) async throws {
 		guard let whisperKit = whisperKit else { return }
@@ -482,7 +474,7 @@ import CoreML
 			await MainActor.run {
 				if pendingText.isEmpty && confirmedText.isEmpty {
 					pendingText = "Waiting for speech..."
-					shouldShowWindow = true
+					shouldShowLiveTranscriptionWindow = true
 				}
 			}
 			try await Task.sleep(nanoseconds: 100_000_000)
@@ -565,7 +557,7 @@ import CoreML
 				}
 			}
 			
-			shouldShowWindow = !stableDisplayText.isEmpty || !confirmedText.isEmpty
+			shouldShowLiveTranscriptionWindow = !stableDisplayText.isEmpty || !confirmedText.isEmpty
 		}
 	}
 	
@@ -822,7 +814,6 @@ import CoreML
 		guard isWhisperKitReady() else {
 			throw WhisperKitError.notReady
 		}
-		
 		let maxRetries = 3
 		var lastError: Error?
 		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
@@ -833,7 +824,7 @@ import CoreML
 					guard let whisperKitInstance = self.whisperKit else {
 						throw WhisperKitError.notInitialized
 					}
-					if whisperKitInstance.modelState == .loading {
+					if whisperKitInstance.modelState != .loaded {
 						AppLogger.shared.transcriber.log("Model isn't loaded yet. \(whisperKitInstance.modelState)")
 					}
 					
@@ -884,7 +875,6 @@ import CoreML
 				}
 			}
 		}
-		
 		if let error = lastError {
 			let errorString = error.localizedDescription
 			if errorString.contains("Failed to open resource file") ||

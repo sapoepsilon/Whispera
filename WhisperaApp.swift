@@ -7,12 +7,14 @@ struct WhisperaApp: App {
     
     var body: some Scene {
         Settings {
-			SettingsView(
-                permissionManager: appDelegate.permissionManager ?? PermissionManager(),
-                updateManager: appDelegate.updateManager ?? UpdateManager(),
-                appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager()
-            )
+			SettingsWithMaterial(
+				permissionManager: appDelegate.permissionManager ?? PermissionManager(),
+				updateManager: appDelegate.updateManager ?? UpdateManager(),
+				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager()
+			)
         }
+		.windowStyle(.hiddenTitleBar)
+		.windowResizability(.automatic)
 		.windowResizability(.automatic)
         .windowToolbarStyle(.unified(showsTitle: true))
 		.defaultPosition(.center)
@@ -27,6 +29,38 @@ struct WhisperaApp: App {
                     )
                 }
             }
+        }
+
+
+    }
+}
+
+struct SettingsWithMaterial: View {
+    var permissionManager: PermissionManager
+    var updateManager: UpdateManager
+    var appLibraryManager: AppLibraryManager
+    @AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
+
+    private var materialStyle: MaterialStyle {
+        MaterialStyle(rawValue: materialStyleRaw)
+    }
+
+    var body: some View {
+        if #available(macOS 15.0, *) {
+            SettingsView(
+                permissionManager: permissionManager,
+                updateManager: updateManager,
+                appLibraryManager: appLibraryManager
+            )
+            .frame(minWidth: 450, minHeight: 520)
+            .containerBackground(materialStyle.material, for: .window)
+        } else {
+            SettingsView(
+                permissionManager: permissionManager,
+                updateManager: updateManager,
+                appLibraryManager: appLibraryManager
+            )
+            .frame(minWidth: 450, minHeight: 520)
         }
     }
 }
@@ -50,6 +84,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var updateObserver: NSObjectProtocol?
     private var onboardingWindow: NSWindow?
     private var liveTranscriptionWindow: LiveTranscriptionWindow?
+	private var listeningWindow: ListeningWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         if shouldTerminateDuplicateInstances() {
@@ -82,8 +117,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             observeRecordingState()
             observeWindowState()
             observeUpdateState()
-            
-            liveTranscriptionWindow = LiveTranscriptionWindow()
+
+            liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
+			listeningWindow = ListeningWindow(audioManager: audioManager)
             if !hasCompletedOnboarding {
                 showOnboarding()
             }
@@ -148,14 +184,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if UserDefaults.standard.object(forKey: "soundFeedback") == nil {
             UserDefaults.standard.set(true, forKey: "soundFeedback")
         }
-        
+
+        if UserDefaults.standard.object(forKey: "materialStyle") == nil {
+            UserDefaults.standard.set(MaterialStyle.default.rawValue, forKey: "materialStyle")
+        }
+
         AppLogger.shared.general.info("🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")")
     }
     
     
     func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
+
         if let button = statusItem?.button {
             button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
             button.action = #selector(togglePopover)
@@ -170,7 +210,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             networkDownloader: networkDownloader,
             queueManager: queueManager
         ))
-        popover.behavior = .transient
+		popover.behavior = .semitransient
+
+        if let hostingView = popover.contentViewController?.view {
+            hostingView.wantsLayer = true
+            hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        }
+
+        if #available(macOS 14.0, *) {
+            popover.hasFullSizeContent = true
+        }
     }
     
     @objc func togglePopover() {
@@ -178,7 +227,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if popover.isShown {
                 popover.performClose(nil)
             } else {
-                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+				popover
+					.show(
+						relativeTo: button.frame,
+						of: button,
+						preferredEdge: .maxY
+					)
             }
         }
     }
@@ -193,12 +247,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         onboardingWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        
+
         onboardingWindow?.title = "Welcome to Whispera"
+        onboardingWindow?.titlebarAppearsTransparent = true
+        onboardingWindow?.isOpaque = false
+        onboardingWindow?.backgroundColor = .clear
         onboardingWindow?.contentViewController = hostingController
         onboardingWindow?.center()
         onboardingWindow?.makeKeyAndOrderFront(nil)
@@ -579,7 +636,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         return true
     }
-    
+
     deinit {
         if let observer = recordingObserver {
             NotificationCenter.default.removeObserver(observer)

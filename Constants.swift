@@ -1,4 +1,36 @@
 import Foundation
+import SwiftUI
+
+enum MaterialStyle: String, CaseIterable, Identifiable {
+    case ultraThin = "Ultra Thin"
+    case thin = "Thin"
+    case regular = "Regular"
+    case thick = "Thick"
+    case ultraThick = "Ultra Thick"
+
+    var id: String { rawValue }
+
+    var material: Material {
+        switch self {
+        case .ultraThin: return .ultraThinMaterial
+        case .thin: return .thinMaterial
+        case .regular: return .regularMaterial
+        case .thick: return .thickMaterial
+        case .ultraThick: return .ultraThickMaterial
+        }
+    }
+
+    static var `default`: MaterialStyle { .thin }
+}
+
+//enum GlassStyle: String, CaseIterable, Identifiable {
+//	
+//	var glass: Glass {
+//		switch self {
+//			case .
+//		}
+//	}
+//}
 
 struct Constants {
     public static let languages: [String: String] = [
@@ -132,5 +164,18 @@ struct Constants {
     // Helper to get language name from code
     public static func languageName(for languageCode: String) -> String {
         return languages.first { $0.value == languageCode }?.key.capitalized ?? defaultLanguageName.capitalized
+    }
+}
+
+extension MaterialStyle {
+    init(rawValue: String) {
+        switch rawValue {
+        case "Ultra Thin": self = .ultraThin
+        case "Thin": self = .thin
+        case "Regular": self = .regular
+        case "Thick": self = .thick
+        case "Ultra Thick": self = .ultraThick
+        default: self = .thin
+        }
     }
 }
