@@ -176,55 +176,39 @@ class LogManager {
     }
     
     private func setupCrashHandlers() {
-        // Set up exception handler for uncaught exceptions (Objective-C style)
         NSSetUncaughtExceptionHandler { exception in
-            let timestamp = ISO8601DateFormatter().string(from: Date())
             let crashInfo = """
             === EXCEPTION CRASH REPORT ===
-            Timestamp: \(timestamp)
             Exception Name: \(exception.name.rawValue)
             Reason: \(exception.reason ?? "Unknown")
-            
+
             Call Stack:
             \(exception.callStackSymbols.joined(separator: "\n"))
-            
+
             User Info:
             \(exception.userInfo ?? [:])
             ===================
             """
-            
+
             LogManager.writeCrashLog(crashInfo)
         }
         
-        // Set up signal handlers for lower-level crashes
         let crashHandler: @convention(c) (Int32) -> Void = { signal in
-            let timestamp = ISO8601DateFormatter().string(from: Date())
-            let signalName: String
+            var message: [CChar]
             switch signal {
-            case SIGABRT: signalName = "SIGABRT (Abort)"
-            case SIGSEGV: signalName = "SIGSEGV (Segmentation fault)"
-            case SIGBUS: signalName = "SIGBUS (Bus error)"
-            case SIGILL: signalName = "SIGILL (Illegal instruction)"
-            case SIGFPE: signalName = "SIGFPE (Floating point exception)"
-            case SIGTRAP: signalName = "SIGTRAP (Trace trap)"
-            default: signalName = "Signal \(signal)"
+            case SIGABRT: message = Array("CRASH: SIGABRT\n".utf8CString)
+            case SIGSEGV: message = Array("CRASH: SIGSEGV\n".utf8CString)
+            case SIGBUS: message = Array("CRASH: SIGBUS\n".utf8CString)
+            case SIGILL: message = Array("CRASH: SIGILL\n".utf8CString)
+            case SIGFPE: message = Array("CRASH: SIGFPE\n".utf8CString)
+            case SIGTRAP: message = Array("CRASH: SIGTRAP\n".utf8CString)
+            default: message = Array("CRASH: UNKNOWN\n".utf8CString)
             }
-            
-            let crashInfo = """
-            === SIGNAL CRASH REPORT ===
-            Timestamp: \(timestamp)
-            Signal: \(signalName)
-            
-            Note: Stack trace not available for signal crashes.
-            Check system crash reports at:
-            ~/Library/Logs/DiagnosticReports/
-            /Library/Logs/DiagnosticReports/
-            ===================
-            """
-            
-            LogManager.writeCrashLog(crashInfo)
+
+            write(STDERR_FILENO, message, message.count - 1)
+            _exit(1)
         }
-        
+
         signal(SIGABRT, crashHandler)
         signal(SIGSEGV, crashHandler)
         signal(SIGBUS, crashHandler)
@@ -233,11 +217,12 @@ class LogManager {
         signal(SIGTRAP, crashHandler)
     }
     
-    // Static method to write crash logs safely from signal handlers
     private static func writeCrashLog(_ crashInfo: String) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let logEntry = "[\(timestamp)] [ERROR] [CrashHandler] 💥 CRASH: \(crashInfo)\n"
-        
+        let logEntry = "[ERROR] [CrashHandler] 💥 CRASH: \(crashInfo)\n"
+
+        fputs(logEntry, stderr)
+        fflush(stderr)
+
         if let logFile = LogManager.shared.currentLogFile,
            let data = logEntry.data(using: .utf8) {
             do {
@@ -249,9 +234,6 @@ class LogManager {
                 handle.write(data)
                 handle.closeFile()
             } catch {
-                // Last resort - write to stderr
-                fputs(logEntry, stderr)
-                fflush(stderr)
             }
         }
     }

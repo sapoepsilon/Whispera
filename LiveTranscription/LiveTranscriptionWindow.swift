@@ -4,16 +4,18 @@ import AppKit
 @MainActor
 class LiveTranscriptionWindow: NSWindow {
     private let whisperKit = WhisperKitTranscriber.shared
+    private let audioManager: AudioManager
     private var observationTimer: Timer?
     private var lastCaretPosition: NSPoint?
     private var lastTextContent: String = ""
-    
+
     // Live transcription settings
     @AppStorage("liveTranscriptionWindowOffset") private var windowOffset = 25.0
     @AppStorage("liveTranscriptionMaxWidthPercentage") private var maxWidthPercentage = 0.6
     @AppStorage("liveTranscriptionFollowCaret") private var followCaret = true
-    
-    init() {
+
+    init(audioManager: AudioManager) {
+        self.audioManager = audioManager
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 32), //TODO: make it customizeable
             styleMask: [.borderless],
@@ -30,10 +32,10 @@ class LiveTranscriptionWindow: NSWindow {
         self.isMovableByWindowBackground = true
         
         self.center()
-        
-        let hostingView = NSHostingView(rootView: DictationView())
+
+        let hostingView = NSHostingView(rootView: DictationView(audioManager: audioManager))
         self.contentView = hostingView
-        
+
         setupObservation()
         setupCaretTracking()
     }
@@ -50,7 +52,7 @@ class LiveTranscriptionWindow: NSWindow {
             Task { @MainActor in
                 guard let self = self else { return }
                 
-                let shouldShow = self.whisperKit.shouldShowWindow && 
+                let shouldShow = self.whisperKit.shouldShowLiveTranscriptionWindow && 
                                self.whisperKit.isTranscribing
                 
                 if shouldShow {

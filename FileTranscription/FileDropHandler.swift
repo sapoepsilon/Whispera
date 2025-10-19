@@ -140,7 +140,7 @@ class FileDropHandler: DragDropHandler {
         draggedItemsPreview = "file(s)"
         logger.info("🎯 Drag entered drop zone")
     }
-    
+
     func dragExited() {
         isDragging = false
         draggedItemsCount = 0
@@ -215,7 +215,6 @@ class FileDropHandler: DragDropHandler {
                     logger.info("📝 Found text content via NSString: \(text)")
                     foundText = true
                     
-                    // Process the text for URLs
                     let extractedURLs = extractURLsFromText(text)
                     urls.append(contentsOf: extractedURLs)
                     
