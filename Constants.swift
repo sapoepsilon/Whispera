@@ -165,6 +165,71 @@ struct Constants {
     public static func languageName(for languageCode: String) -> String {
         return languages.first { $0.value == languageCode }?.key.capitalized ?? defaultLanguageName.capitalized
     }
+
+    private static let keyboardIdentifierToLanguageCode: [String: String] = [
+        "com.apple.keylayout.US": "en",
+        "com.apple.keylayout.ABC": "en",
+        "com.apple.keylayout.USInternational-PC": "en",
+        "com.apple.keylayout.British": "en",
+        "com.apple.keylayout.Australian": "en",
+        "com.apple.keylayout.Canadian": "en",
+        "com.apple.keylayout.Russian": "ru",
+        "com.apple.keylayout.RussianWin": "ru",
+        "com.apple.keylayout.Russian-Phonetic": "ru",
+        "com.apple.keylayout.Spanish": "es",
+        "com.apple.keylayout.Spanish-ISO": "es",
+        "com.apple.keylayout.German": "de",
+        "com.apple.keylayout.French": "fr",
+        "com.apple.keylayout.French-PC": "fr",
+        "com.apple.keylayout.Italian": "it",
+        "com.apple.keylayout.Portuguese": "pt",
+        "com.apple.keylayout.PortugueseBrazilian": "pt",
+        "com.apple.keylayout.Dutch": "nl",
+        "com.apple.keylayout.Swedish": "sv",
+        "com.apple.keylayout.Norwegian": "no",
+        "com.apple.keylayout.Danish": "da",
+        "com.apple.keylayout.Finnish": "fi",
+        "com.apple.keylayout.Polish": "pl",
+        "com.apple.keylayout.PolishPro": "pl",
+        "com.apple.keylayout.Czech": "cs",
+        "com.apple.keylayout.Hungarian": "hu",
+        "com.apple.keylayout.Romanian": "ro",
+        "com.apple.keylayout.Turkish": "tr",
+        "com.apple.keylayout.Greek": "el",
+        "com.apple.keylayout.Hebrew": "he",
+        "com.apple.keylayout.Arabic": "ar",
+        "com.apple.keylayout.Korean": "ko",
+        "com.apple.keylayout.Japanese": "ja",
+        "com.apple.keylayout.Chinese-Simplified": "zh",
+        "com.apple.keylayout.PinyinKeyboard": "zh",
+        "com.apple.keylayout.Chinese-Traditional": "zh",
+        "com.apple.keylayout.Ukrainian": "uk",
+        "com.apple.keylayout.Croatian": "hr",
+        "com.apple.keylayout.Serbian": "sr",
+        "com.apple.keylayout.Bulgarian": "bg",
+        "com.apple.keylayout.Catalan": "ca",
+        "com.apple.keylayout.Icelandic": "is",
+        "com.apple.inputmethod.Korean.2SetKorean": "ko",
+        "com.apple.inputmethod.SCIM.ITABC": "zh",
+        "com.apple.inputmethod.TCIM.Cangjie": "zh",
+        "com.apple.inputmethod.TYIM.Hiragana": "ja",
+        "com.apple.inputmethod.TYIM.Katakana": "ja",
+        "com.apple.inputmethod.Vietnamese.VietnameseIM": "vi"
+    ]
+
+    public static func languageCodeFromKeyboardIdentifier(_ identifier: String) -> String? {
+        if let directMatch = keyboardIdentifierToLanguageCode[identifier] {
+            return directMatch
+        }
+
+        for (key, value) in keyboardIdentifierToLanguageCode {
+            if identifier.contains(key) || key.contains(identifier) {
+                return value
+            }
+        }
+
+        return nil
+    }
 }
 
 extension MaterialStyle {

@@ -39,6 +39,10 @@ enum RecordingMode {
 	@AppStorage("useStreamingTranscription") var useStreamingTranscription = true
 	@ObservationIgnored
 	@AppStorage("enableStreaming") var enableStreaming = true
+	@ObservationIgnored
+	@AppStorage("autoDetectLanguageFromKeyboard") var autoDetectLanguageFromKeyboard = false
+	@ObservationIgnored
+	@AppStorage("selectedLanguage") var selectedLanguage = Constants.defaultLanguageName
 	
 	private var audioRecorder: AVAudioRecorder?
 	private var audioFileURL: URL?
@@ -284,8 +288,21 @@ enum RecordingMode {
 		}
 	}
 	
+	private func detectAndSetKeyboardLanguage() {
+		let detectedLanguage = KeyboardInputSourceManager.shared.getLanguageForRecording(
+			autoDetectEnabled: autoDetectLanguageFromKeyboard,
+			manualLanguage: selectedLanguage
+		)
+
+		if detectedLanguage != selectedLanguage {
+			AppLogger.shared.audioManager.info("🔄 Updating language from \(selectedLanguage) to \(detectedLanguage)")
+			selectedLanguage = detectedLanguage
+		}
+	}
+
 	private func startRecording() {
-		// Check permissions before recording
+		detectAndSetKeyboardLanguage()
+
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
 		case .authorized:
 			if currentRecordingMode == .liveTranscription {

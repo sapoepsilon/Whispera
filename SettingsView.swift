@@ -133,6 +133,7 @@ struct SettingsView: View {
 	@AppStorage("enableTranslation") private var enableTranslation = false
 	@AppStorage("enableStreaming") private var enableStreaming = false
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
+	@AppStorage("autoDetectLanguageFromKeyboard") private var autoDetectLanguageFromKeyboard = false
 	@AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
 	@AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
@@ -187,7 +188,7 @@ struct SettingsView: View {
 	@State private var releaseNotesWindow: NSWindow?
 	@State private var logsSize: String = "Calculating..."
 	@State private var showingClearLogsConfirmation = false
-	
+
 	// Extended logging settings
 	@AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
 	@AppStorage("enableDebugLogging") private var enableDebugLogging = false
@@ -430,14 +431,28 @@ struct SettingsView: View {
 							}
 						}
 
-						SettingRow("Source Language", description: "Language of the audio to transcribe") {
-							Picker("Language", selection: $selectedLanguage) {
-								ForEach(Constants.sortedLanguageNames, id: \.self) { language in
-									Text(language.capitalized).tag(language)
+						SettingRow("Auto-detect from Keyboard", description: "Automatically use keyboard input language when recording starts") {
+							Toggle("", isOn: $autoDetectLanguageFromKeyboard)
+						}
+
+						if !autoDetectLanguageFromKeyboard {
+							SettingRow("Source Language", description: "Language of the audio to transcribe") {
+								Picker("Language", selection: $selectedLanguage) {
+									ForEach(Constants.sortedLanguageNames, id: \.self) { language in
+										Text(language.capitalized).tag(language)
+									}
+								}
+								.labelsHidden()
+								.frame(width: 180)
+							}
+						} else {
+							InfoBox(style: .info) {
+								VStack(alignment: .leading, spacing: 4) {
+									Text("Language will be detected automatically when you start recording")
+										.font(.caption)
+										.foregroundColor(.secondary)
 								}
 							}
-							.labelsHidden()
-							.frame(width: 180)
 						}
 					}
 					Divider()
