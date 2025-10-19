@@ -133,7 +133,7 @@ struct SettingsView: View {
 	@AppStorage("enableTranslation") private var enableTranslation = false
 	@AppStorage("enableStreaming") private var enableStreaming = false
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
-	@AppStorage("autoDetectLanguageFromKeyboard") private var autoDetectLanguageFromKeyboard = false
+	@AppStorage("autoDetectLanguageFromKeyboard") private var autoDetectLanguageFromKeyboard = true
 	@AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
 	@AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
