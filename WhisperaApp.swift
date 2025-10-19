@@ -85,6 +85,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var onboardingWindow: NSWindow?
     private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
+	private var popoverFrame: NSRect?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         if shouldTerminateDuplicateInstances() {
@@ -222,21 +223,70 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     
-    @objc func togglePopover() {
-        if let button = statusItem?.button {
-            if popover.isShown {
-                popover.performClose(nil)
-            } else {
-				popover
-					.show(
-						relativeTo: button.frame,
-						of: button,
-						preferredEdge: .maxY
-					)
-            }
-        }
-    }
-    
+	@objc func togglePopover() {
+		guard let button = statusItem?.button else { return }
+
+		if popover.isShown {
+			popover.performClose(nil)
+			popoverFrame = nil
+			return
+		}
+
+		guard let screen = button.window?.screen,
+			  let buttonWindow = button.window,
+			  let hostingView = popover.contentViewController?.view else {
+			popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+			return
+		}
+
+		let screenFrame = screen.visibleFrame
+		let buttonFrame = buttonWindow.frame
+		let popoverSize = hostingView.fittingSize
+		let margin: CGFloat = 8
+
+		let spaceRight = screenFrame.maxX - buttonFrame.maxX
+		let spaceLeft = buttonFrame.minX - screenFrame.minX
+
+		let wouldOverflowRight = spaceRight < popoverSize.width
+		let wouldOverflowLeft = spaceLeft < popoverSize.width
+
+		if wouldOverflowRight || wouldOverflowLeft {
+			popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+
+			DispatchQueue.main.async {
+				guard let popoverWindow = self.popover.contentViewController?.view.window else { return }
+				var popoverFrame = popoverWindow.frame
+
+				if wouldOverflowRight {
+					popoverFrame.origin.x = screenFrame.maxX - popoverSize.width - margin
+				} else if wouldOverflowLeft {
+					popoverFrame.origin.x = screenFrame.minX + margin
+				}
+
+				popoverWindow.setFrame(popoverFrame, display: true, animate: false)
+				self.popoverFrame = popoverFrame
+			}
+		} else {
+			popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+			DispatchQueue.main.async {
+				if let popoverWindow = self.popover.contentViewController?.view.window {
+					self.popoverFrame = popoverWindow.frame
+				}
+			}
+		}
+	}
+
+	private func restorePopoverPositionIfNeeded() {
+		guard popover.isShown,
+			  let savedFrame = popoverFrame,
+			  let popoverWindow = popover.contentViewController?.view.window else {
+			return
+		}
+
+		if popoverWindow.frame != savedFrame {
+			popoverWindow.setFrame(savedFrame, display: false, animate: false)
+		}
+	}
     private func showOnboarding() {
         let onboardingView = OnboardingView(
             audioManager: audioManager,
@@ -364,10 +414,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func updateStatusIcon() {
         if let button = statusItem?.button {
             let whisperKit = audioManager.whisperKitTranscriber
-            
+
             // Clean up any previous subviews and stop any animations
             button.subviews.removeAll()
             button.layer?.removeAllAnimations()
+
+            let wasPopoverShown = popover.isShown
             
             if permissionManager?.needsPermissions == true {
                 // Permission warning state - orange exclamation mark with pulse
@@ -417,6 +469,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
                 button.image?.isTemplate = true
                 button.alphaValue = 1.0
+            }
+
+            if wasPopoverShown {
+                DispatchQueue.main.async {
+                    self.restorePopoverPositionIfNeeded()
+                }
             }
         }
     }

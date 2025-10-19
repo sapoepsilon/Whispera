@@ -1192,9 +1192,9 @@ struct SettingsView: View {
 						whisperKit.selectedModel = currentModel
 					} else if selectedModel.isEmpty || !allModels.contains(selectedModel) {
 						// Set default selection if none set or invalid
-						if let baseModel = allModels.first(where: { $0.contains("base.en") }) {
-							selectedModel = baseModel
-							whisperKit.selectedModel = baseModel
+						if let smallModel = allModels.first(where: { $0.contains("small") && !$0.contains(".en") }) {
+							selectedModel = smallModel
+							whisperKit.selectedModel = smallModel
 						} else if let firstModel = allModels.first {
 							selectedModel = firstModel
 							whisperKit.selectedModel = firstModel

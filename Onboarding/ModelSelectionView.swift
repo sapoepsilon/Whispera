@@ -174,13 +174,13 @@ struct ModelSelectionStepView: View {
 					
 					// Set default selection if none set or invalid
 					if selectedModel.isEmpty || !fetchedModels.contains(selectedModel) {
-						// Find the first base model (preferred) or fallback to first available
-						if let baseModel = fetchedModels.first(where: { $0.contains("base.en") }) {
-							selectedModel = baseModel
+						// Find the first small multilingual model (preferred) or fallback to first available
+						if let smallModel = fetchedModels.first(where: { $0.contains("small") && !$0.contains(".en") }) {
+							selectedModel = smallModel
 						} else if let firstModel = fetchedModels.first {
 							selectedModel = firstModel
 						} else {
-							selectedModel = "openai_whisper-base.en"
+							selectedModel = "openai_whisper-small"
 						}
 					}
 				}
@@ -197,12 +197,12 @@ struct ModelSelectionStepView: View {
 						"openai_whisper-small.en"
 					]
 					if selectedModel.isEmpty {
-						if let baseModel = self.availableModels.first(where: { $0.contains("base.en") }) {
-							selectedModel = baseModel
+						if let smallModel = self.availableModels.first(where: { $0.contains("small") && !$0.contains(".en") }) {
+							selectedModel = smallModel
 						} else if let firstModel = self.availableModels.first {
 							selectedModel = firstModel
 						} else {
-							selectedModel = "openai_whisper-base.en"
+							selectedModel = "openai_whisper-small"
 						}
 					}
 				}
