@@ -57,6 +57,7 @@ Simply use your configured global shortcut to start transcribing with Whisper in
 
 - The app does not work with Intel mac(see [Issue 15](https://github.com/sapoepsilon/whispera/issues/15)
 - Auto install does not work, after an app has been downloaded, please manually drag and drop the app to you `/Application` folder
+- There is a weird issue with app quiting unexpectedly if you get that please report it here: [Issue 23](https://github.com/sapoepsilon/whispera/issues/23)
 ## Requirements
 
 - macOS 13.0 or later
