@@ -55,10 +55,13 @@ enum RecordingMode {
 	private let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 	private let recordingIndicator = RecordingIndicatorManager()
+	private var audioRouteObserver: NSObjectProtocol?
+	private var isHandlingRouteChange = false
 	
 	override init() {
 		super.init()
 		whisperKitTranscriber.startInitialization()
+		setupAudioRouteChangeObserver()
 	}
 	
 	func setupAudio() {
@@ -67,6 +70,68 @@ enum RecordingMode {
 			setupAudioEngine()
 		} else {
 			cleanupAudioEngine()
+		}
+	}
+
+	private func setupAudioRouteChangeObserver() {
+		audioRouteObserver = NotificationCenter.default.addObserver(
+			forName: NSNotification.Name.AVAudioEngineConfigurationChange,
+			object: audioEngine,
+			queue: .main
+		) { [weak self] notification in
+			guard let self = self, !self.isHandlingRouteChange else { return }
+
+			AppLogger.shared.audioManager.info("🔄 Audio engine configuration changed - route or device changed")
+			Task { @MainActor in
+				await self.handleAudioDeviceChange()
+			}
+		}
+	}
+
+	func handleSystemWillSleep() {
+		AppLogger.shared.audioManager.info("💤 System will sleep - preparing audio engine")
+
+		if isRecording {
+			AppLogger.shared.audioManager.info("⚠️ Recording in progress during sleep - stopping recording")
+			stopRecording()
+		}
+
+		safelyCleanupAudioEngine()
+	}
+
+	func handleSystemDidWake() {
+		AppLogger.shared.audioManager.info("☀️ System did wake - reinitializing audio engine")
+
+		if useStreamingTranscription {
+			setupAudioEngine()
+		}
+	}
+
+	private func handleAudioDeviceChange() async {
+		isHandlingRouteChange = true
+		defer { isHandlingRouteChange = false }
+
+		AppLogger.shared.audioManager.info("🔄 Handling audio device change")
+
+		let wasRecording = isRecording
+
+		if wasRecording {
+			AppLogger.shared.audioManager.info("⚠️ Recording in progress during device change - stopping")
+			stopRecording()
+		}
+
+		safelyCleanupAudioEngine()
+
+		try? await Task.sleep(nanoseconds: 500_000_000)
+
+		if useStreamingTranscription {
+			AppLogger.shared.audioManager.info("🔄 Rebuilding audio engine after device change")
+			setupAudioEngine()
+		}
+
+		if wasRecording {
+			AppLogger.shared.audioManager.info("▶️ Restarting recording after device change")
+			startRecording()
 		}
 	}
 	
@@ -105,42 +170,92 @@ enum RecordingMode {
 		guard audioEngine != nil else { return }
 		stopAudioEngine()
 	}
+
+	private func isAudioEngineValid() -> Bool {
+		guard let engine = audioEngine else {
+			AppLogger.shared.audioManager.debug("❓ Audio engine is nil")
+			return false
+		}
+
+		guard let node = inputNode else {
+			AppLogger.shared.audioManager.debug("❓ Input node is nil")
+			return false
+		}
+
+		let engineValid = engine.attachedNodes.contains(node)
+		if !engineValid {
+			AppLogger.shared.audioManager.info("⚠️ Input node is not attached to engine")
+		}
+
+		return engineValid
+	}
+
+	private func safelyCleanupAudioEngine() {
+		AppLogger.shared.audioManager.info("🧹 Safely cleaning up audio engine")
+
+		if let node = inputNode {
+			do {
+				AppLogger.shared.audioManager.debug("🔇 Removing tap from input node")
+				node.removeTap(onBus: 0)
+				AppLogger.shared.audioManager.debug("✅ Tap removed successfully")
+			}
+		}
+
+		if let engine = audioEngine {
+			if engine.isRunning {
+				AppLogger.shared.audioManager.debug("⏹️ Stopping audio engine")
+				engine.stop()
+				AppLogger.shared.audioManager.debug("✅ Audio engine stopped")
+			}
+		}
+
+		audioEngine = nil
+		inputNode = nil
+		AppLogger.shared.audioManager.info("✅ Audio engine cleanup complete")
+	}
 	
 	private func setupAudioEngine() {
+		AppLogger.shared.audioManager.info("🎛️ Setting up audio engine")
+
 		if audioEngine == nil {
 			audioEngine = AVAudioEngine()
+			AppLogger.shared.audioManager.debug("✅ Created new AVAudioEngine instance")
 		}
-		
+
 		guard let audioEngine = audioEngine else {
 			AppLogger.shared.audioManager.error("❌ Failed to create audio engine")
 			return
 		}
-		
-		// Only setup if not already running
-		if !audioEngine.isRunning {
-			inputNode = audioEngine.inputNode
-			guard let inputNode = inputNode else {
-				print("❌ Failed to get input node")
-				return
-			}
-			
-			let inputFormat = inputNode.outputFormat(forBus: 0)
-			AppLogger.shared.audioManager.log("🎤 Input format: \(inputFormat)")
-			AppLogger.shared.audioManager.log("🎤 Installing initial microphone tap for streaming setup")
-			inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
-				self?.processAudioBuffer(buffer, originalFormat: inputFormat)
-			}
-			print("✅ Initial microphone tap installed - mic indicator should be ON")
-			
-			do {
-				try audioEngine.start()
-				print("✅ Audio engine started successfully for streaming")
-			} catch {
-				print("❌ Failed to start audio engine: \(error)")
-				print("⚠️ Falling back to file-based recording")
-				// Automatically switch to file-based mode if streaming fails
-				useStreamingTranscription = false
-			}
+
+		if audioEngine.isRunning {
+			AppLogger.shared.audioManager.info("⚠️ Audio engine already running, skipping setup")
+			return
+		}
+
+		inputNode = audioEngine.inputNode
+		guard let inputNode = inputNode else {
+			AppLogger.shared.audioManager.error("❌ Failed to get input node")
+			return
+		}
+
+		let inputFormat = inputNode.outputFormat(forBus: 0)
+		AppLogger.shared.audioManager.log("🎤 Input format: \(inputFormat)")
+		AppLogger.shared.audioManager.log("🎤 Installing initial microphone tap for streaming setup")
+
+		inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
+			self?.processAudioBuffer(buffer, originalFormat: inputFormat)
+		}
+		AppLogger.shared.audioManager.info("✅ Initial microphone tap installed")
+
+		do {
+			try audioEngine.start()
+			AppLogger.shared.audioManager.info("✅ Audio engine started successfully")
+
+			setupAudioRouteChangeObserver()
+		} catch {
+			AppLogger.shared.audioManager.error("❌ Failed to start audio engine: \(error)")
+			AppLogger.shared.audioManager.info("⚠️ Falling back to file-based recording")
+			useStreamingTranscription = false
 		}
 	}
 	
@@ -227,15 +342,22 @@ enum RecordingMode {
 	}
 	
 	private func stopAudioEngine() {
-		if let inputNode = inputNode {
-			print("🔇 Removing microphone tap during engine cleanup")
-			inputNode.removeTap(onBus: 0)
-			print("✅ Microphone tap removed during cleanup")
+		AppLogger.shared.audioManager.info("🛑 Stopping audio engine")
+
+		if let node = inputNode {
+			AppLogger.shared.audioManager.debug("🔇 Removing microphone tap during engine cleanup")
+			node.removeTap(onBus: 0)
+			AppLogger.shared.audioManager.debug("✅ Microphone tap removed during cleanup")
 		}
-		audioEngine?.stop()
+
+		if let engine = audioEngine, engine.isRunning {
+			engine.stop()
+			AppLogger.shared.audioManager.debug("⏹️ Audio engine stopped")
+		}
+
 		audioEngine = nil
 		inputNode = nil
-		print("🛑 Audio engine stopped and cleaned up")
+		AppLogger.shared.audioManager.info("✅ Audio engine stopped and cleaned up")
 	}
 	
 	private func checkAndRequestMicrophonePermission() {
@@ -406,28 +528,38 @@ enum RecordingMode {
 	// MARK: - Streaming Recording Methods
 	
 	private func startStreamingRecording() {
+		AppLogger.shared.audioManager.info("🎙️ Starting streaming recording")
 		audioBuffer.removeAll()
-		
+
 		if audioEngine?.isRunning != true {
+			AppLogger.shared.audioManager.debug("Audio engine not running, setting up")
 			setupAudioEngine()
 		} else {
-			// Engine is running, just reinstall the tap for microphone access
-			guard let inputNode = inputNode else { 
-				print("❌ No input node available for tap installation")
-				return 
+			if !isAudioEngineValid() {
+				AppLogger.shared.audioManager.info("⚠️ Audio engine invalid, rebuilding")
+				safelyCleanupAudioEngine()
+				setupAudioEngine()
 			}
+
+			guard let inputNode = inputNode else {
+				AppLogger.shared.audioManager.error("❌ No input node available for tap installation")
+				return
+			}
+
 			let inputFormat = inputNode.outputFormat(forBus: 0)
 			AppLogger.shared.audioManager.debug("🎤 Installing microphone tap for streaming recording")
+			AppLogger.shared.audioManager.debug("Input format: \(inputFormat)")
+
 			inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
 				self?.processAudioBuffer(buffer, originalFormat: inputFormat)
 			}
-			AppLogger.shared.audioManager.info("✅ Microphone tap installed - mic indicator should be ON")
+			AppLogger.shared.audioManager.info("✅ Microphone tap installed")
 		}
-		
+
 		isRecording = true
 		startRecordingTimer()
 		playFeedbackSound(start: true)
-		print("🎤 Streaming recording started")
+		AppLogger.shared.audioManager.info("🎤 Streaming recording started successfully")
 	}
 	
 	private func stopStreamingRecording() {
@@ -447,11 +579,16 @@ enum RecordingMode {
 		}
 		
 		if let inputNode = inputNode {
+			AppLogger.shared.audioManager.debug("🔇 Removing tap after streaming recording")
 			inputNode.removeTap(onBus: 0)
-			print("🔇 Tap removed")
+			AppLogger.shared.audioManager.debug("✅ Tap removed")
 		}
-		audioEngine?.stop()
-		audioEngine?.reset()
+
+		if let engine = audioEngine, engine.isRunning {
+			engine.stop()
+			AppLogger.shared.audioManager.debug("⏹️ Audio engine stopped after streaming recording")
+		}
+
 		AppLogger.shared.audioManager.log("🛑 Streaming recording stopped, microphone released")
 		
 		// Reset timer after a brief delay to allow UI to show final duration
