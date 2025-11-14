@@ -82,6 +82,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var downloadObserver: NSObjectProtocol?
     private var modelStateObserver: NSObjectProtocol?
     private var updateObserver: NSObjectProtocol?
+    private var sleepObserver: NSObjectProtocol?
+    private var wakeObserver: NSObjectProtocol?
     private var onboardingWindow: NSWindow?
     private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
@@ -118,6 +120,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             observeRecordingState()
             observeWindowState()
             observeUpdateState()
+            observeSleepWakeNotifications()
 
             liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
@@ -611,6 +614,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
     }
+
+    private func observeSleepWakeNotifications() {
+        sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            AppLogger.shared.general.info("💤 System will sleep - cleaning up audio resources")
+            Task { @MainActor in
+                self?.audioManager?.handleSystemWillSleep()
+            }
+        }
+
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            AppLogger.shared.general.info("☀️ System did wake - reinitializing audio resources")
+            Task { @MainActor in
+                self?.audioManager?.handleSystemDidWake()
+            }
+        }
+    }
     
     private func showUpdateAvailableNotification(version: String) {
         let alert = NSAlert()
@@ -707,6 +734,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if let observer = updateObserver {
             NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = sleepObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        if let observer = wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
     }
 }
