@@ -233,19 +233,10 @@ enum RecordingMode {
 		}
 
 		inputNode = audioEngine.inputNode
-		guard let inputNode = inputNode else {
+		guard inputNode != nil else {
 			AppLogger.shared.audioManager.error("❌ Failed to get input node")
 			return
 		}
-
-		let inputFormat = inputNode.outputFormat(forBus: 0)
-		AppLogger.shared.audioManager.log("🎤 Input format: \(inputFormat)")
-		AppLogger.shared.audioManager.log("🎤 Installing initial microphone tap for streaming setup")
-
-		inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
-			self?.processAudioBuffer(buffer, originalFormat: inputFormat)
-		}
-		AppLogger.shared.audioManager.info("✅ Initial microphone tap installed")
 
 		do {
 			try audioEngine.start()
@@ -534,27 +525,25 @@ enum RecordingMode {
 		if audioEngine?.isRunning != true {
 			AppLogger.shared.audioManager.debug("Audio engine not running, setting up")
 			setupAudioEngine()
-		} else {
-			if !isAudioEngineValid() {
-				AppLogger.shared.audioManager.info("⚠️ Audio engine invalid, rebuilding")
-				safelyCleanupAudioEngine()
-				setupAudioEngine()
-			}
-
-			guard let inputNode = inputNode else {
-				AppLogger.shared.audioManager.error("❌ No input node available for tap installation")
-				return
-			}
-
-			let inputFormat = inputNode.outputFormat(forBus: 0)
-			AppLogger.shared.audioManager.debug("🎤 Installing microphone tap for streaming recording")
-			AppLogger.shared.audioManager.debug("Input format: \(inputFormat)")
-
-			inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
-				self?.processAudioBuffer(buffer, originalFormat: inputFormat)
-			}
-			AppLogger.shared.audioManager.info("✅ Microphone tap installed")
+		} else if !isAudioEngineValid() {
+			AppLogger.shared.audioManager.info("⚠️ Audio engine invalid, rebuilding")
+			safelyCleanupAudioEngine()
+			setupAudioEngine()
 		}
+
+		guard let inputNode = inputNode else {
+			AppLogger.shared.audioManager.error("❌ No input node available for tap installation")
+			return
+		}
+
+		let inputFormat = inputNode.outputFormat(forBus: 0)
+		AppLogger.shared.audioManager.debug("🎤 Installing microphone tap for streaming recording")
+		AppLogger.shared.audioManager.debug("Input format: \(inputFormat)")
+
+		inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
+			self?.processAudioBuffer(buffer, originalFormat: inputFormat)
+		}
+		AppLogger.shared.audioManager.info("✅ Microphone tap installed")
 
 		isRecording = true
 		startRecordingTimer()
@@ -566,10 +555,18 @@ enum RecordingMode {
 		isRecording = false
 		stopRecordingTimer()
 		playFeedbackSound(start: false)
-		
+
 		let capturedAudio = audioBuffer
 		audioBuffer.removeAll()
-		
+
+		if let inputNode = inputNode {
+			AppLogger.shared.audioManager.debug("🔇 Removing tap after streaming recording")
+			inputNode.removeTap(onBus: 0)
+			AppLogger.shared.audioManager.debug("✅ Tap removed")
+		}
+
+		AppLogger.shared.audioManager.log("🛑 Streaming recording stopped, microphone released")
+
 		if !capturedAudio.isEmpty {
 			Task {
 				await transcribeAudioBuffer(audioArray: capturedAudio, enableTranslation: self.enableTranslation)
@@ -577,21 +574,7 @@ enum RecordingMode {
 		} else {
 			print("⚠️ No audio captured during streaming recording")
 		}
-		
-		if let inputNode = inputNode {
-			AppLogger.shared.audioManager.debug("🔇 Removing tap after streaming recording")
-			inputNode.removeTap(onBus: 0)
-			AppLogger.shared.audioManager.debug("✅ Tap removed")
-		}
 
-		if let engine = audioEngine, engine.isRunning {
-			engine.stop()
-			AppLogger.shared.audioManager.debug("⏹️ Audio engine stopped after streaming recording")
-		}
-
-		AppLogger.shared.audioManager.log("🛑 Streaming recording stopped, microphone released")
-		
-		// Reset timer after a brief delay to allow UI to show final duration
 		DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
 			self.resetRecordingTimer()
 		}
