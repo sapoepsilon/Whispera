@@ -66,11 +66,6 @@ enum RecordingMode {
 	
 	func setupAudio() {
 		checkAndRequestMicrophonePermission()
-		if useStreamingTranscription {
-			setupAudioEngine()
-		} else {
-			cleanupAudioEngine()
-		}
 	}
 
 	private func setupAudioRouteChangeObserver() {
@@ -100,11 +95,7 @@ enum RecordingMode {
 	}
 
 	func handleSystemDidWake() {
-		AppLogger.shared.audioManager.info("☀️ System did wake - reinitializing audio engine")
-
-		if useStreamingTranscription {
-			setupAudioEngine()
-		}
+		AppLogger.shared.audioManager.info("☀️ System did wake - audio engine will be initialized on next recording")
 	}
 
 	private func handleAudioDeviceChange() async {
@@ -122,14 +113,8 @@ enum RecordingMode {
 
 		safelyCleanupAudioEngine()
 
-		try? await Task.sleep(nanoseconds: 500_000_000)
-
-		if useStreamingTranscription {
-			AppLogger.shared.audioManager.info("🔄 Rebuilding audio engine after device change")
-			setupAudioEngine()
-		}
-
 		if wasRecording {
+			try? await Task.sleep(nanoseconds: 500_000_000)
 			AppLogger.shared.audioManager.info("▶️ Restarting recording after device change")
 			startRecording()
 		}
@@ -164,30 +149,6 @@ enum RecordingMode {
 		let seconds = Int(recordingDuration) % 60
 		let milliseconds = Int((recordingDuration.truncatingRemainder(dividingBy: 1)) * 10)
 		return String(format: "%02d:%02d.%01d", minutes, seconds, milliseconds)
-	}
-	
-	private func cleanupAudioEngine() {
-		guard audioEngine != nil else { return }
-		stopAudioEngine()
-	}
-
-	private func isAudioEngineValid() -> Bool {
-		guard let engine = audioEngine else {
-			AppLogger.shared.audioManager.debug("❓ Audio engine is nil")
-			return false
-		}
-
-		guard let node = inputNode else {
-			AppLogger.shared.audioManager.debug("❓ Input node is nil")
-			return false
-		}
-
-		let engineValid = engine.attachedNodes.contains(node)
-		if !engineValid {
-			AppLogger.shared.audioManager.info("⚠️ Input node is not attached to engine")
-		}
-
-		return engineValid
 	}
 
 	private func safelyCleanupAudioEngine() {
@@ -331,26 +292,7 @@ enum RecordingMode {
 			self.audioLevels = newLevels
 		}
 	}
-	
-	private func stopAudioEngine() {
-		AppLogger.shared.audioManager.info("🛑 Stopping audio engine")
 
-		if let node = inputNode {
-			AppLogger.shared.audioManager.debug("🔇 Removing microphone tap during engine cleanup")
-			node.removeTap(onBus: 0)
-			AppLogger.shared.audioManager.debug("✅ Microphone tap removed during cleanup")
-		}
-
-		if let engine = audioEngine, engine.isRunning {
-			engine.stop()
-			AppLogger.shared.audioManager.debug("⏹️ Audio engine stopped")
-		}
-
-		audioEngine = nil
-		inputNode = nil
-		AppLogger.shared.audioManager.info("✅ Audio engine stopped and cleaned up")
-	}
-	
 	private func checkAndRequestMicrophonePermission() {
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
 		case .notDetermined:
@@ -522,13 +464,12 @@ enum RecordingMode {
 		AppLogger.shared.audioManager.info("🎙️ Starting streaming recording")
 		audioBuffer.removeAll()
 
-		if audioEngine?.isRunning != true {
-			AppLogger.shared.audioManager.debug("Audio engine not running, setting up")
-			setupAudioEngine()
-		} else if !isAudioEngineValid() {
-			AppLogger.shared.audioManager.info("⚠️ Audio engine invalid, rebuilding")
-			safelyCleanupAudioEngine()
-			setupAudioEngine()
+		safelyCleanupAudioEngine()
+		setupAudioEngine()
+
+		guard let engine = audioEngine, engine.isRunning else {
+			AppLogger.shared.audioManager.error("❌ Audio engine not running after setup")
+			return
 		}
 
 		guard let inputNode = inputNode else {
@@ -537,6 +478,12 @@ enum RecordingMode {
 		}
 
 		let inputFormat = inputNode.outputFormat(forBus: 0)
+
+		guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+			AppLogger.shared.audioManager.error("❌ Invalid input format: sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount)")
+			return
+		}
+
 		AppLogger.shared.audioManager.debug("🎤 Installing microphone tap for streaming recording")
 		AppLogger.shared.audioManager.debug("Input format: \(inputFormat)")
 
@@ -559,11 +506,7 @@ enum RecordingMode {
 		let capturedAudio = audioBuffer
 		audioBuffer.removeAll()
 
-		if let inputNode = inputNode {
-			AppLogger.shared.audioManager.debug("🔇 Removing tap after streaming recording")
-			inputNode.removeTap(onBus: 0)
-			AppLogger.shared.audioManager.debug("✅ Tap removed")
-		}
+		safelyCleanupAudioEngine()
 
 		AppLogger.shared.audioManager.log("🛑 Streaming recording stopped, microphone released")
 
