@@ -5,8 +5,8 @@
 //  Created by Varkhuman Mac on 10/18/25.
 //
 
-import SwiftUI
 import AppKit
+import SwiftUI
 
 @MainActor
 class ListeningWindow: NSWindow {
@@ -47,7 +47,9 @@ class ListeningWindow: NSWindow {
 			Task { @MainActor in
 				guard let self = self else { return }
 
-				let shouldShow = (self.audioManager.isRecording || self.audioManager.isTranscribing) && !self.enableStreaming
+				let shouldShow =
+					(self.audioManager.isRecording || self.audioManager.isTranscribing)
+					&& !self.enableStreaming
 
 				if shouldShow && !self.isVisible {
 					self.positionAtBottomCenter()

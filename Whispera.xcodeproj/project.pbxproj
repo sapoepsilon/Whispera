@@ -65,6 +65,9 @@
 		D6D486252EA482B200C1D5FA /* AudioMeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6D486242EA482B200C1D5FA /* AudioMeterView.swift */; };
 		D6D4862F2EA49C0500C1D5FA /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6D4862E2EA49C0500C1D5FA /* WhisperKit */; };
 		D6D486322EA49C1F00C1D5FA /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6D486312EA49C1F00C1D5FA /* WhisperKit */; };
+		D6F9D7842ED6C31C00959822 /* AudioEngineController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F9D7812ED6C31C00959822 /* AudioEngineController.swift */; };
+		D6F9D7852ED6C31C00959822 /* AudioLevelMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F9D7822ED6C31C00959822 /* AudioLevelMonitor.swift */; };
+		D6F9D7862ED6C31C00959822 /* RecordingTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */; };
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -148,6 +151,9 @@
 		D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
 		D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextProvider.swift; sourceTree = "<group>"; };
 		D6D486242EA482B200C1D5FA /* AudioMeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMeterView.swift; sourceTree = "<group>"; };
+		D6F9D7812ED6C31C00959822 /* AudioEngineController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngineController.swift; sourceTree = "<group>"; };
+		D6F9D7822ED6C31C00959822 /* AudioLevelMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioLevelMonitor.swift; sourceTree = "<group>"; };
+		D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingTimer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -188,7 +194,9 @@
 		6A6A6A6A6A6A6A6A6A6A6A6A = {
 			isa = PBXGroup;
 			children = (
-				D60F53F42EA468710063C008 /* ListeningView */,
+				D6F9D7872ED6C4B500959822 /* AudioManager */,
+				D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */,
+				D60F53F42EA468710063C008 /* What's up? */,
 				D6282B1F2E41879900E78C68 /* FileTranscription */,
 				D620E44E2E3C79C6006AF5E0 /* Logger */,
 				D604F4C02E356D07006D71D1 /* GlassBeta.swift */,
@@ -202,7 +210,6 @@
 				D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2B /* MenuBarView.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2C /* SettingsView.swift */,
-				2A2A2A2A2A2A2A2A2A2A2A2D /* AudioManager.swift */,
 				B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */,
 				D698B91C2E18F3DD008FE0CF /* PermissionManager.swift */,
 				D63A30E12E2EBF1300BA20B7 /* LiveTranscription */,
@@ -232,14 +239,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		D60F53F42EA468710063C008 /* ListeningView */ = {
+		D60F53F42EA468710063C008 /* What's up? */ = {
 			isa = PBXGroup;
 			children = (
 				D6D486242EA482B200C1D5FA /* AudioMeterView.swift */,
 				D60F53F52EA4688E0063C008 /* ListeningWindow.swift */,
 				D60F53F22EA451200063C008 /* ListeningView.swift */,
 			);
-			path = ListeningView;
+			path = "What's up?";
 			sourceTree = "<group>";
 		};
 		D620E44E2E3C79C6006AF5E0 /* Logger */ = {
@@ -319,6 +326,16 @@
 			path = Onboarding;
 			sourceTree = "<group>";
 		};
+		D6F9D7872ED6C4B500959822 /* AudioManager */ = {
+			isa = PBXGroup;
+			children = (
+				2A2A2A2A2A2A2A2A2A2A2A2D /* AudioManager.swift */,
+				D6F9D7812ED6C31C00959822 /* AudioEngineController.swift */,
+				D6F9D7822ED6C31C00959822 /* AudioLevelMonitor.swift */,
+			);
+			path = AudioManager;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -326,6 +343,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = BABABABABABABABABABABABA /* Build configuration list for PBXNativeTarget "Whispera" */;
 			buildPhases = (
+				D6F9D79B2EDEA40A00959822 /* swift-format */,
 				CACACACACACACACACACACACA /* Sources */,
 				5A5A5A5A5A5A5A5A5A5A5A5A /* Frameworks */,
 				DADADADADADADADADADADADA /* Resources */,
@@ -458,6 +476,28 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		D6F9D79B2EDEA40A00959822 /* swift-format */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "swift-format";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "  export PATH=\"/usr/bin:$PATH\"\n  find \"$SRCROOT\" -name \"*.swift\" \\\n      -not -path \"*/build/*\" \\\n      -not -path \"*/.build/*\" \\\n      -not -path \"*/DerivedData/*\" \\\n      -print0 | xargs -0 swift-format lint --parallel\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		CACACACACACACACACACACACA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -484,6 +524,9 @@
 				D63900D72E3D77EF005B5623 /* YouTubeTranscriptionManager.swift in Sources */,
 				D63900D82E3D77EF005B5623 /* NetworkFileDownloader.swift in Sources */,
 				D63900DF2E3D8103005B5623 /* FileTranscriptionViewModel.swift in Sources */,
+				D6F9D7842ED6C31C00959822 /* AudioEngineController.swift in Sources */,
+				D6F9D7852ED6C31C00959822 /* AudioLevelMonitor.swift in Sources */,
+				D6F9D7862ED6C31C00959822 /* RecordingTimer.swift in Sources */,
 				D60F53F32EA4512E0063C008 /* ListeningView.swift in Sources */,
 				D63900E02E3D8103005B5623 /* YouTubeURLInputView.swift in Sources */,
 				D63900E22E3D8103005B5623 /* FileTranscriptionView.swift in Sources */,
@@ -617,7 +660,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 16;
 				DEAD_CODE_STRIPPING = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;

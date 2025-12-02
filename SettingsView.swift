@@ -1,7 +1,7 @@
-import SwiftUI
 import AVFoundation
-import WhisperKit
 import MarkdownUI
+import SwiftUI
+import WhisperKit
 
 // MARK: - Supporting Types
 enum SupportedFormat: CaseIterable {
@@ -139,19 +139,20 @@ struct SettingsView: View {
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
-	
+
 	private var materialStyle: MaterialStyle {
 		MaterialStyle(rawValue: materialStyleRaw)
 	}
-	
+
 	// MARK: - Live Transcription Settings
 	@AppStorage("liveTranscriptionMaxWords") private var liveTranscriptionMaxWords = 5
 	@AppStorage("liveTranscriptionCornerRadius") private var liveTranscriptionCornerRadius = 10.0
 	@AppStorage("liveTranscriptionWindowOffset") private var liveTranscriptionWindowOffset = 25.0
 	@AppStorage("liveTranscriptionShowEllipsis") private var liveTranscriptionShowEllipsis = true
-	@AppStorage("liveTranscriptionMaxWidthPercentage") private var liveTranscriptionMaxWidthPercentage = 0.6
+	@AppStorage("liveTranscriptionMaxWidthPercentage") private
+		var liveTranscriptionMaxWidthPercentage = 0.6
 	@AppStorage("liveTranscriptionFollowCaret") private var liveTranscriptionFollowCaret = true
-	
+
 	// MARK: - File Transcription Settings
 	@AppStorage("fileSelectionShortcut") private var fileSelectionShortcut = "⌃F"
 	@AppStorage("autoDeleteDownloadedFiles") private var autoDeleteDownloadedFiles = true
@@ -163,7 +164,7 @@ struct SettingsView: View {
 	@AppStorage("timestampFormat") private var timestampFormat = "MM:SS"
 	@AppStorage("defaultTranscriptionMode") private var defaultTranscriptionMode = "plain"
 	@AppStorage("maxFileSizeMB") private var maxFileSizeMB = 100
-	
+
 	// MARK: - Injected Dependencies
 	@State var permissionManager: PermissionManager
 	@State var updateManager: UpdateManager
@@ -193,7 +194,7 @@ struct SettingsView: View {
 	@AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
 	@AppStorage("enableDebugLogging") private var enableDebugLogging = false
 	@AppStorage("modelComputeUnits") private var modelComputeUnits = 2
-	
+
 	var body: some View {
 		TabView {
 			// MARK: - General Tab
@@ -217,12 +218,14 @@ struct SettingsView: View {
 								Button("Check for Updates") {
 									Task {
 										do {
-											let hasUpdate = try await updateManager.checkForUpdates()
+											let hasUpdate =
+												try await updateManager.checkForUpdates()
 											if !hasUpdate {
 												showNoUpdateAlert()
 											}
 										} catch {
-											errorMessage = "Failed to check for updates: \(error.localizedDescription)"
+											errorMessage =
+												"Failed to check for updates: \(error.localizedDescription)"
 											showingError = true
 										}
 									}
@@ -234,13 +237,16 @@ struct SettingsView: View {
 
 						// MARK: - Update Notification Banner
 						if let latestVersion = updateManager.latestVersion,
-						   AppVersion(latestVersion) > AppVersion.current {
+							AppVersion(latestVersion) > AppVersion.current
+						{
 							InfoBox(style: .info) {
 								VStack(alignment: .leading, spacing: 8) {
 									Text("Whispera \(latestVersion) is available")
 										.font(.headline)
 
-									if let releaseNotes = updateManager.releaseNotes, !releaseNotes.isEmpty {
+									if let releaseNotes = updateManager.releaseNotes,
+										!releaseNotes.isEmpty
+									{
 										Text(releaseNotes)
 											.font(.caption)
 											.foregroundColor(.secondary)
@@ -252,9 +258,11 @@ struct SettingsView: View {
 											Button("Install Now") {
 												Task {
 													do {
-														try await updateManager.installDownloadedUpdate()
+														try await updateManager
+															.installDownloadedUpdate()
 													} catch {
-														errorMessage = "Failed to install update: \(error.localizedDescription)"
+														errorMessage =
+															"Failed to install update: \(error.localizedDescription)"
 														showingError = true
 													}
 												}
@@ -264,9 +272,11 @@ struct SettingsView: View {
 											Button("Download Update") {
 												Task {
 													do {
-														try await updateManager.downloadUpdate()
+														try await updateManager
+															.downloadUpdate()
 													} catch {
-														errorMessage = "Failed to download update: \(error.localizedDescription)"
+														errorMessage =
+															"Failed to download update: \(error.localizedDescription)"
 														showingError = true
 													}
 												}
@@ -289,7 +299,7 @@ struct SettingsView: View {
 							}
 						}
 					}
-					
+
 					Divider()
 
 					SettingsSection("Shortcuts & Feedback") {
@@ -341,7 +351,10 @@ struct SettingsView: View {
 							}
 						}
 
-						SettingRow("Haptic Feedback", description: "Trackpad vibration when shortcut is triggered") {
+						SettingRow(
+							"Haptic Feedback",
+							description: "Trackpad vibration when shortcut is triggered"
+						) {
 							Toggle("", isOn: $shortcutHapticFeedback)
 						}
 					}
@@ -363,21 +376,26 @@ struct SettingsView: View {
 									HStack {
 										ProgressView(value: whisperKit.downloadProgress)
 											.frame(height: 4)
-										Text("\(whisperKit.downloadProgress * 100, specifier: "%.1f")%")
-											.font(.caption)
-											.foregroundColor(.secondary)
+										Text(
+											"\(whisperKit.downloadProgress * 100, specifier: "%.1f")%"
+										)
+										.font(.caption)
+										.foregroundColor(.secondary)
 									}
 								}
 							}
 						} else {
 							SettingRow("Model") {
-								Picker("Whisper model", selection: Binding(
-									get: { whisperKit.selectedModel ?? selectedModel },
-									set: { newValue in
-										selectedModel = newValue
-										whisperKit.selectedModel = newValue
-									}
-								)) {
+								Picker(
+									"Whisper model",
+									selection: Binding(
+										get: { whisperKit.selectedModel ?? selectedModel },
+										set: { newValue in
+											selectedModel = newValue
+											whisperKit.selectedModel = newValue
+										}
+									)
+								) {
 									ForEach(whisperKit.availableModels, id: \.self) { model in
 										Text(WhisperKitTranscriber.getModelDisplayName(for: model))
 											.tag(model)
@@ -403,9 +421,11 @@ struct SettingsView: View {
 								.foregroundColor(.secondary)
 						}
 
-						Text("Choose your Whisper model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions.")
-							.font(.caption)
-							.foregroundColor(.secondary)
+						Text(
+							"Choose your Whisper model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions."
+						)
+						.font(.caption)
+						.foregroundColor(.secondary)
 
 						SettingRow("Auto Download") {
 							Toggle("", isOn: $autoDownloadModel)
@@ -414,15 +434,25 @@ struct SettingsView: View {
 					Divider()
 
 					SettingsSection("Transcription") {
-						SettingRow("Streaming Transcription", description: "Process audio in real-time (max 30 minutes) instead of saving to file") {
+						SettingRow(
+							"Streaming Transcription",
+							description:
+								"Process audio in real-time (max 30 minutes) instead of saving to file"
+						) {
 							Toggle("", isOn: $useStreamingTranscription)
 						}
 
-						SettingRow("Translation Mode", description: "Translate speech to English instead of transcribing") {
+						SettingRow(
+							"Translation Mode",
+							description: "Translate speech to English instead of transcribing"
+						) {
 							Toggle("", isOn: $enableTranslation)
 						}
 
-						SettingRow("Live Transcription Mode", description: "Transcribe speech in real-time with automatic text replacement") {
+						SettingRow(
+							"Live Transcription Mode",
+							description: "Transcribe speech in real-time with automatic text replacement"
+						) {
 							HStack(spacing: 8) {
 								GlassBetaElement(onTap: {
 									showLiveTranscriptionInfo()
@@ -431,12 +461,17 @@ struct SettingsView: View {
 							}
 						}
 
-						SettingRow("Auto-detect from Keyboard", description: "Automatically use keyboard input language when recording starts") {
+						SettingRow(
+							"Auto-detect from Keyboard",
+							description: "Automatically use keyboard input language when recording starts"
+						) {
 							Toggle("", isOn: $autoDetectLanguageFromKeyboard)
 						}
 
 						if !autoDetectLanguageFromKeyboard {
-							SettingRow("Source Language", description: "Language of the audio to transcribe") {
+							SettingRow(
+								"Source Language", description: "Language of the audio to transcribe"
+							) {
 								Picker("Language", selection: $selectedLanguage) {
 									ForEach(Constants.sortedLanguageNames, id: \.self) { language in
 										Text(language.capitalized).tag(language)
@@ -448,9 +483,11 @@ struct SettingsView: View {
 						} else {
 							InfoBox(style: .info) {
 								VStack(alignment: .leading, spacing: 4) {
-									Text("Language will be detected automatically when you start recording")
-										.font(.caption)
-										.foregroundColor(.secondary)
+									Text(
+										"Language will be detected automatically when you start recording"
+									)
+									.font(.caption)
+									.foregroundColor(.secondary)
 								}
 							}
 						}
@@ -485,9 +522,11 @@ struct SettingsView: View {
 								Spacer()
 							}
 
-							Text("CPU + Neural Engine is recommended for best performance on Apple Silicon Macs.")
-								.font(.caption)
-								.foregroundColor(.secondary)
+							Text(
+								"CPU + Neural Engine is recommended for best performance on Apple Silicon Macs."
+							)
+							.font(.caption)
+							.foregroundColor(.secondary)
 						}
 					}
 
@@ -498,11 +537,17 @@ struct SettingsView: View {
 							Toggle("", isOn: $launchAtStartup)
 						}
 
-						SettingRow("Window Transparency", description: "Adjust transparency level for all windows") {
-							Picker("", selection: Binding(
-								get: { materialStyle },
-								set: { newValue in materialStyleRaw = newValue.rawValue }
-							)) {
+						SettingRow(
+							"Window Transparency",
+							description: "Adjust transparency level for all windows"
+						) {
+							Picker(
+								"",
+								selection: Binding(
+									get: { materialStyle },
+									set: { newValue in materialStyleRaw = newValue.rawValue }
+								)
+							) {
 								ForEach(MaterialStyle.allCases) { style in
 									Text(style.rawValue).tag(style)
 								}
@@ -533,8 +578,10 @@ struct SettingsView: View {
 
 									if !permissionManager.microphonePermissionGranted {
 										HStack {
-											Text("• Microphone access required for voice recording")
-												.font(.caption)
+											Text(
+												"• Microphone access required for voice recording"
+											)
+											.font(.caption)
 											Spacer()
 											Button("Open Settings") {
 												permissionManager.openMicrophoneSettings()
@@ -546,8 +593,10 @@ struct SettingsView: View {
 
 									if !permissionManager.accessibilityPermissionGranted {
 										HStack {
-											Text("• Accessibility access required for global shortcuts")
-												.font(.caption)
+											Text(
+												"• Accessibility access required for global shortcuts"
+											)
+											.font(.caption)
 											Spacer()
 											Button("Open Settings") {
 												permissionManager.openAccessibilitySettings()
@@ -571,7 +620,7 @@ struct SettingsView: View {
 			.tabItem {
 				Label("General", systemImage: "gear")
 			}
-			
+
 			// MARK: - Storage & Downloads Tab
 			ScrollView {
 				VStack(spacing: 24) {
@@ -643,9 +692,11 @@ struct SettingsView: View {
 									.font(.subheadline)
 									.fontWeight(.medium)
 								if let location = updateManager.downloadLocation {
-									Text("Latest: \(URL(fileURLWithPath: location).lastPathComponent)")
-										.font(.caption)
-										.foregroundColor(.secondary)
+									Text(
+										"Latest: \(URL(fileURLWithPath: location).lastPathComponent)"
+									)
+									.font(.caption)
+									.foregroundColor(.secondary)
 								} else {
 									Text("No updates downloaded")
 										.font(.caption)
@@ -702,25 +753,29 @@ struct SettingsView: View {
 							VStack(alignment: .leading, spacing: 8) {
 								Divider()
 
-								SettingRow("Debug Mode", description: "Include detailed debug messages in logs") {
+								SettingRow(
+									"Debug Mode",
+									description: "Include detailed debug messages in logs"
+								) {
 									Toggle("", isOn: $enableDebugLogging)
 								}
 
-								Text("By default, only info, error, and fault messages are logged. Enable debug mode to capture detailed debug information.")
-									.font(.caption)
-									.foregroundColor(.secondary)
+								Text(
+									"By default, only info, error, and fault messages are logged. Enable debug mode to capture detailed debug information."
+								)
+								.font(.caption)
+								.foregroundColor(.secondary)
 							}
 						}
 					}
-					
-					
+
 				}
 				.padding(20)
 			}
 			.tabItem {
 				Label("Storage & Downloads", systemImage: "internaldrive")
 			}
-			
+
 			// MARK: - Live Transcription Tab (only shows when enabled)
 			if enableStreaming {
 				ScrollView {
@@ -778,15 +833,19 @@ struct SettingsView: View {
 											get: { Double(liveTranscriptionMaxWords) },
 											set: {
 												liveTranscriptionMaxWords = Int($0)
-												NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+												NSHapticFeedbackManager.defaultPerformer
+													.perform(
+														.generic, performanceTime: .now)
 											}
 										),
 										in: 1...50,
 										step: 1
 									)
-									TextField("Custom", value: $liveTranscriptionMaxWords, format: .number)
-										.textFieldStyle(.roundedBorder)
-										.frame(width: 60)
+									TextField(
+										"Custom", value: $liveTranscriptionMaxWords, format: .number
+									)
+									.textFieldStyle(.roundedBorder)
+									.frame(width: 60)
 								}
 
 								Text("Number of words to show in the transcription window (1-200+)")
@@ -808,7 +867,8 @@ struct SettingsView: View {
 
 								Slider(value: $liveTranscriptionCornerRadius, in: 0...20, step: 1)
 									.onChange(of: liveTranscriptionCornerRadius) {
-										NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+										NSHapticFeedbackManager.defaultPerformer.perform(
+											.generic, performanceTime: .now)
 									}
 
 								Text("Roundness of the window corners")
@@ -830,7 +890,8 @@ struct SettingsView: View {
 
 								Slider(value: $liveTranscriptionWindowOffset, in: 10...50, step: 5)
 									.onChange(of: liveTranscriptionWindowOffset) {
-										NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+										NSHapticFeedbackManager.defaultPerformer.perform(
+											.generic, performanceTime: .now)
 									}
 
 								Text("Distance from the cursor position")
@@ -850,10 +911,14 @@ struct SettingsView: View {
 										.foregroundColor(.secondary)
 								}
 
-								Slider(value: $liveTranscriptionMaxWidthPercentage, in: 0.3...0.8, step: 0.05)
-									.onChange(of: liveTranscriptionMaxWidthPercentage) {
-										NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-									}
+								Slider(
+									value: $liveTranscriptionMaxWidthPercentage, in: 0.3...0.8,
+									step: 0.05
+								)
+								.onChange(of: liveTranscriptionMaxWidthPercentage) {
+									NSHapticFeedbackManager.defaultPerformer.perform(
+										.generic, performanceTime: .now)
+								}
 
 								Text("Maximum width as percentage of screen width")
 									.font(.caption)
@@ -864,16 +929,20 @@ struct SettingsView: View {
 						Divider()
 
 						SettingsSection("Behavior") {
-							SettingRow("Show Ellipsis", description: "Display '...' when text is truncated") {
+							SettingRow(
+								"Show Ellipsis", description: "Display '...' when text is truncated"
+							) {
 								Toggle("", isOn: $liveTranscriptionShowEllipsis)
 							}
 
-							SettingRow("Follow Caret Position", description: "Window follows cursor position while typing") {
+							SettingRow(
+								"Follow Caret Position",
+								description: "Window follows cursor position while typing"
+							) {
 								Toggle("", isOn: $liveTranscriptionFollowCaret)
 							}
 						}
-						
-						
+
 					}
 					.padding(20)
 				}
@@ -881,13 +950,17 @@ struct SettingsView: View {
 					Label("Live Transcription", systemImage: "waveform")
 				}
 			}
-			
+
 			// MARK: - File Transcription Tab
 			ScrollView {
 				VStack(spacing: 24) {
 					// MARK: - File Selection Section
 					SettingsSection("File Selection") {
-						SettingRow("Shortcut", description: "Use this shortcut to open a file selection dialog for transcription.") {
+						SettingRow(
+							"Shortcut",
+							description:
+								"Use this shortcut to open a file selection dialog for transcription."
+						) {
 							HStack(spacing: 8) {
 								Text(fileSelectionShortcut)
 									.font(.system(.body, design: .monospaced))
@@ -1034,8 +1107,7 @@ struct SettingsView: View {
 							}
 						}
 					}
-					
-					
+
 				}
 				.padding(20)
 			}
@@ -1082,7 +1154,7 @@ struct SettingsView: View {
 			Text(errorMessage ?? "An unknown error occurred")
 		}
 		.alert("Storage Details", isPresented: $showingStorageDetails) {
-			Button("OK") { }
+			Button("OK") {}
 		} message: {
 			Text(
 				appLibraryManager
@@ -1126,7 +1198,7 @@ struct SettingsView: View {
 			"Clear Application Logs",
 			isPresented: $showingClearLogsConfirmation
 		) {
-			Button("Cancel", role: .cancel) { }
+			Button("Cancel", role: .cancel) {}
 			Button("Clear Logs", role: .destructive) {
 				Task {
 					do {
@@ -1144,8 +1216,7 @@ struct SettingsView: View {
 			)
 		}
 	}
-	
-	
+
 	private func showNoUpdateAlert() {
 		let alert = NSAlert()
 		alert.messageText = "No Updates Available"
@@ -1153,46 +1224,49 @@ struct SettingsView: View {
 		alert.addButton(withTitle: "OK")
 		alert.runModal()
 	}
-	
+
 	private func loadAvailableModels() {
 		guard whisperKit.isInitialized else { return }
-		
+
 		Task {
 			do {
 				let recommendedModels = whisperKit.getRecommendedModels()
 				try await whisperKit.refreshAvailableModels()
 				let remoteModels = whisperKit.availableModels
 				let downloaded = try await whisperKit.getDownloadedModels()
-				
+
 				// Use Set to automatically handle duplicates
 				var allModelsSet = Set<String>()
 				allModelsSet.insert(recommendedModels.default)
 				allModelsSet.formUnion(recommendedModels.supported)
 				allModelsSet.formUnion(remoteModels)
-				
+
 				var allModels = Array(allModelsSet)
-				
+
 				allModels.sort { (lhs, rhs) in
 					let lhsDownloaded = downloaded.contains(lhs)
 					let rhsDownloaded = downloaded.contains(rhs)
-					
+
 					if lhsDownloaded != rhsDownloaded {
 						return lhsDownloaded && !rhsDownloaded
 					}
-					
-					return WhisperKitTranscriber.getModelPriority(for: lhs) < WhisperKitTranscriber.getModelPriority(for: rhs)
+
+					return WhisperKitTranscriber.getModelPriority(for: lhs)
+						< WhisperKitTranscriber.getModelPriority(for: rhs)
 				}
-				
+
 				await MainActor.run {
 					self.availableModels = allModels
-					
+
 					// Sync selectedModel with current loaded model if one exists
 					if let currentModel = whisperKit.currentModel, allModels.contains(currentModel) {
 						selectedModel = currentModel
 						whisperKit.selectedModel = currentModel
 					} else if selectedModel.isEmpty || !allModels.contains(selectedModel) {
 						// Set default selection if none set or invalid
-						if let smallModel = allModels.first(where: { $0.contains("small") && !$0.contains(".en") }) {
+						if let smallModel = allModels.first(where: {
+							$0.contains("small") && !$0.contains(".en")
+						}) {
 							selectedModel = smallModel
 							whisperKit.selectedModel = smallModel
 						} else if let firstModel = allModels.first {
@@ -1210,10 +1284,10 @@ struct SettingsView: View {
 			}
 		}
 	}
-	
+
 	private func startRecording() {
 		isRecordingShortcut = true
-		
+
 		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
 			if self.isRecordingShortcut {
 				let shortcut = self.formatKeyEvent(event)
@@ -1226,7 +1300,7 @@ struct SettingsView: View {
 			return event
 		}
 	}
-	
+
 	private func stopRecording() {
 		isRecordingShortcut = false
 		if let monitor = eventMonitor {
@@ -1234,10 +1308,10 @@ struct SettingsView: View {
 			eventMonitor = nil
 		}
 	}
-	
+
 	private func startRecordingFileShortcut() {
 		isRecordingFileShortcut = true
-		
+
 		fileShortcutEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
 			if self.isRecordingFileShortcut {
 				let shortcut = self.formatKeyEvent(event)
@@ -1250,7 +1324,7 @@ struct SettingsView: View {
 			return event
 		}
 	}
-	
+
 	private func stopRecordingFileShortcut() {
 		isRecordingFileShortcut = false
 		if let monitor = fileShortcutEventMonitor {
@@ -1258,64 +1332,64 @@ struct SettingsView: View {
 			fileShortcutEventMonitor = nil
 		}
 	}
-	
+
 	private func formatKeyEvent(_ event: NSEvent) -> String {
 		var parts: [String] = []
 		let flags = event.modifierFlags
-		
+
 		if flags.contains(.command) { parts.append("⌘") }
 		if flags.contains(.option) { parts.append("⌥") }
 		if flags.contains(.control) { parts.append("⌃") }
 		if flags.contains(.shift) { parts.append("⇧") }
-		
+
 		// Handle special keys
 		switch event.keyCode {
-				// Function keys
-			case 122: parts.append("F1")
-			case 120: parts.append("F2")
-			case 99: parts.append("F3")
-			case 118: parts.append("F4")
-			case 96: parts.append("F5")
-			case 97: parts.append("F6")
-			case 98: parts.append("F7")
-			case 100: parts.append("F8")
-			case 101: parts.append("F9")
-			case 109: parts.append("F10")
-			case 103: parts.append("F11")
-			case 111: parts.append("F12")
-			case 105: parts.append("F13")
-			case 107: parts.append("F14")
-			case 113: parts.append("F15")
-				
-				// Special keys
-			case 49: parts.append("Space")
-			case 36: parts.append("Return")
-			case 48: parts.append("Tab")
-			case 51: parts.append("Delete")
-			case 53: parts.append("Escape")
-			case 126: parts.append("↑")
-			case 125: parts.append("↓")
-			case 123: parts.append("←")
-			case 124: parts.append("→")
-			case 63: parts.append("🌐") // Globe/Fn key
-				
-				// Regular characters
-			default:
-				if let characters = event.charactersIgnoringModifiers?.uppercased() {
-					parts.append(characters)
-				}
+		// Function keys
+		case 122: parts.append("F1")
+		case 120: parts.append("F2")
+		case 99: parts.append("F3")
+		case 118: parts.append("F4")
+		case 96: parts.append("F5")
+		case 97: parts.append("F6")
+		case 98: parts.append("F7")
+		case 100: parts.append("F8")
+		case 101: parts.append("F9")
+		case 109: parts.append("F10")
+		case 103: parts.append("F11")
+		case 111: parts.append("F12")
+		case 105: parts.append("F13")
+		case 107: parts.append("F14")
+		case 113: parts.append("F15")
+
+		// Special keys
+		case 49: parts.append("Space")
+		case 36: parts.append("Return")
+		case 48: parts.append("Tab")
+		case 51: parts.append("Delete")
+		case 53: parts.append("Escape")
+		case 126: parts.append("↑")
+		case 125: parts.append("↓")
+		case 123: parts.append("←")
+		case 124: parts.append("→")
+		case 63: parts.append("🌐")  // Globe/Fn key
+
+		// Regular characters
+		default:
+			if let characters = event.charactersIgnoringModifiers?.uppercased() {
+				parts.append(characters)
+			}
 		}
-		
+
 		// Allow function keys and Globe key without modifiers, but require modifiers for regular keys
 		let requiresModifier = event.keyCode != 63 && !(event.keyCode >= 96 && event.keyCode <= 122)
-		
+
 		if requiresModifier && flags.intersection([.command, .option, .control, .shift]).isEmpty {
 			return ""
 		}
-		
+
 		return parts.joined()
 	}
-	
+
 	private func switchToModel(_ modelName: String) async {
 		do {
 			try await whisperKit.switchModel(to: modelName)
@@ -1328,7 +1402,7 @@ struct SettingsView: View {
 			}
 		}
 	}
-	
+
 	private func getAvailableSounds() -> [String] {
 		return [
 			"None",
@@ -1345,48 +1419,48 @@ struct SettingsView: View {
 			"Purr",
 			"Sosumi",
 			"Submarine",
-			"Tink"
+			"Tink",
 		]
 	}
-	
+
 	private func setLaunchAtStartup(_ enabled: Bool) {
 		guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
 			print("❌ Could not get bundle identifier")
 			return
 		}
-		
+
 		let launchAgentURL = FileManager.default.homeDirectoryForCurrentUser
 			.appendingPathComponent("Library/LaunchAgents")
 			.appendingPathComponent("\(bundleIdentifier).plist")
-		
+
 		if enabled {
 			// Create launch agent plist
 			let plistContent = """
-			<?xml version="1.0" encoding="UTF-8"?>
-			<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-			<plist version="1.0">
-			<dict>
-				<key>Label</key>
-				<string>\(bundleIdentifier)</string>
-				<key>ProgramArguments</key>
-				<array>
-					<string>\(Bundle.main.executablePath ?? "")</string>
-				</array>
-				<key>RunAtLoad</key>
-				<true/>
-				<key>KeepAlive</key>
-				<false/>
-			</dict>
-			</plist>
-			"""
-			
+				<?xml version="1.0" encoding="UTF-8"?>
+				<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+				<plist version="1.0">
+				<dict>
+					<key>Label</key>
+					<string>\(bundleIdentifier)</string>
+					<key>ProgramArguments</key>
+					<array>
+						<string>\(Bundle.main.executablePath ?? "")</string>
+					</array>
+					<key>RunAtLoad</key>
+					<true/>
+					<key>KeepAlive</key>
+					<false/>
+				</dict>
+				</plist>
+				"""
+
 			do {
 				// Create LaunchAgents directory if it doesn't exist
 				try FileManager.default.createDirectory(
 					at: launchAgentURL.deletingLastPathComponent(),
 					withIntermediateDirectories: true
 				)
-				
+
 				// Write the plist file
 				try plistContent.write(to: launchAgentURL, atomically: true, encoding: .utf8)
 				print("✅ Launch at startup enabled")
@@ -1403,77 +1477,78 @@ struct SettingsView: View {
 			}
 		}
 	}
-	
+
 	private func previewSound(_ soundName: String) {
 		guard soundName != "None" else { return }
 		NSSound(named: soundName)?.play()
 	}
-	
+
 	private func checkLaunchAtStartupStatus() {
 		guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
-		
+
 		let launchAgentURL = FileManager.default.homeDirectoryForCurrentUser
 			.appendingPathComponent("Library/LaunchAgents")
 			.appendingPathComponent("\(bundleIdentifier).plist")
-		
+
 		launchAtStartup = FileManager.default.fileExists(atPath: launchAgentURL.path)
 	}
-	
+
 	private func showOnboardingAgain() {
 		// Reset the onboarding completion flag
 		UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-		
+
 		// Post notification to show onboarding
 		NotificationCenter.default.post(name: NSNotification.Name("ShowOnboarding"), object: nil)
-		
+
 	}
-	
+
 	private func showLLMSettings() {
 		showingLLMSettings = true
 	}
-	
+
 	private func showToolsSettings() {
 		showingToolsSettings = true
 	}
-	
+
 	private func showSafetySettings() {
 		showingSafetySettings = true
 	}
-	
+
 	private func showLiveTranscriptionInfo() {
 		// Close existing window if open
 		liveTranscriptionInfoWindow?.close()
-		
+
 		let contentView = LiveTranscriptionInfoView(onClose: {
 			self.liveTranscriptionInfoWindow?.close()
 			self.liveTranscriptionInfoWindow = nil
 		})
 		let hostingView = NSHostingView(rootView: contentView)
-		
+
 		let window = NSWindow(
 			contentRect: NSRect(x: 0, y: 0, width: 500, height: 600),
 			styleMask: [.titled, .closable, .miniaturizable],
 			backing: .buffered,
 			defer: false
 		)
-		
+
 		window.title = "Live Transcription Information"
 		window.contentView = hostingView
 		window.center()
 		window.makeKeyAndOrderFront(nil)
 		window.isReleasedWhenClosed = false
-		
+
 		// Store reference
 		liveTranscriptionInfoWindow = window
 	}
-	
+
 	private func showReleaseNotes() {
 		guard let latestVersion = updateManager.latestVersion,
-			  let releaseNotes = updateManager.releaseNotes else { return }
-		
+			let releaseNotes = updateManager.releaseNotes
+		else { return }
+
 		// Close existing window if open
 		releaseNotesWindow?.close()
-		
+
 		let contentView = ReleaseNotesView(
 			version: latestVersion,
 			releaseNotes: releaseNotes,
@@ -1483,24 +1558,24 @@ struct SettingsView: View {
 			}
 		)
 		let hostingView = NSHostingView(rootView: contentView)
-		
+
 		let window = NSWindow(
 			contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
 			styleMask: [.titled, .closable, .miniaturizable, .resizable],
 			backing: .buffered,
 			defer: false
 		)
-		
+
 		window.title = "Release Notes - Whispera \(latestVersion)"
 		window.contentView = hostingView
 		window.center()
 		window.makeKeyAndOrderFront(nil)
 		window.isReleasedWhenClosed = false
-		
+
 		// Store reference
 		releaseNotesWindow = window
 	}
-	
+
 	private func getModelStatusText() -> String {
 		if whisperKit.isDownloadingModel {
 			return "Downloading \(whisperKit.downloadingModelName ?? "model")..."
@@ -1509,7 +1584,7 @@ struct SettingsView: View {
 		}
 		return ""
 	}
-	
+
 	private func getCurrentModelStatusText() -> String {
 		return whisperKit.modelState
 		//        if whisperKit.isDownloadingModel {
@@ -1533,7 +1608,7 @@ struct SettingsView: View {
 		//            return "Initializing..."
 		//        }
 	}
-	
+
 	private func getModelStatusColor() -> Color {
 		if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
 			return .orange
@@ -1547,26 +1622,26 @@ struct SettingsView: View {
 			return .secondary
 		}
 	}
-	
+
 	private func getMemoryUsage() -> Int {
 		// Simple memory usage calculation
 		let task = mach_task_self_
 		var info = mach_task_basic_info()
-		var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
-		
+		var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+
 		let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
 			$0.withMemoryRebound(to: integer_t.self, capacity: 1) {
 				task_info(task, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
 			}
 		}
-		
+
 		if kerr == KERN_SUCCESS {
-			return Int(info.resident_size) / 1024 / 1024 // Convert to MB
+			return Int(info.resident_size) / 1024 / 1024  // Convert to MB
 		} else {
 			return 0
 		}
 	}
-	
+
 	private func updateLogsSize() {
 		Task {
 			let (_, formatted) = await appLibraryManager.getLogsSize()
@@ -1575,20 +1650,21 @@ struct SettingsView: View {
 			}
 		}
 	}
-	
+
 	private func refreshModelWithNewComputeOptions() async {
 		guard whisperKit.currentModel != nil else { return }
-		
+
 		do {
 			try await whisperKit.reloadCurrentModelIfNeeded()
 		} catch {
 			await MainActor.run {
-				errorMessage = "Failed to refresh model with new compute options: \(error.localizedDescription)"
+				errorMessage =
+					"Failed to refresh model with new compute options: \(error.localizedDescription)"
 				showingError = true
 			}
 		}
 	}
-	
+
 	private func chooseCustomTranscriptionLocation() {
 		let panel = NSOpenPanel()
 		panel.canChooseFiles = false
@@ -1596,14 +1672,14 @@ struct SettingsView: View {
 		panel.allowsMultipleSelection = false
 		panel.prompt = "Choose Transcription Folder"
 		panel.message = "Select where transcription files should be saved"
-		
+
 		if panel.runModal() == .OK {
 			if let url = panel.url {
 				customTranscriptionPath = url.path
 			}
 		}
 	}
-	
+
 	private func getCustomTranscriptionPath() -> String {
 		if customTranscriptionPath.isEmpty {
 			return "No folder selected"
@@ -1617,19 +1693,19 @@ struct LiveTranscriptionPreview: View {
 	let maxWords: Int
 	let cornerRadius: CGFloat
 	let showEllipsis: Bool
-	
+
 	private let sampleText = "The quick brown fox jumps over the lazy dog and runs through the forest"
-	
+
 	private var displayWords: [(text: String, isLast: Bool)] {
 		let words = sampleText.split(separator: " ").map(String.init)
 		guard !words.isEmpty else { return [] }
-		
+
 		let wordsToShow = words.suffix(maxWords)
 		return wordsToShow.enumerated().map { index, word in
 			(text: word, isLast: index == wordsToShow.count - 1)
 		}
 	}
-	
+
 	var body: some View {
 		VStack(spacing: 0) {
 			HStack(spacing: 4) {
@@ -1640,7 +1716,7 @@ struct LiveTranscriptionPreview: View {
 						.foregroundColor(Color.secondary.opacity(0.6))
 						.padding(.trailing, 2)
 				}
-				
+
 				ForEach(Array(displayWords.enumerated()), id: \.offset) { _, wordInfo in
 					Text(wordInfo.text)
 						.font(.system(wordInfo.isLast ? .title3 : .body, design: .rounded))
@@ -1660,7 +1736,7 @@ struct LiveTranscriptionPreview: View {
 							LinearGradient(
 								colors: [
 									Color.blue.opacity(0.05),
-									Color.blue.opacity(0.02)
+									Color.blue.opacity(0.02),
 								],
 								startPoint: .topLeading,
 								endPoint: .bottomTrailing
@@ -1674,7 +1750,7 @@ struct LiveTranscriptionPreview: View {
 					LinearGradient(
 						colors: [
 							Color.blue.opacity(0.3),
-							Color.blue.opacity(0.1)
+							Color.blue.opacity(0.1),
 						],
 						startPoint: .topLeading,
 						endPoint: .bottomTrailing
@@ -1690,7 +1766,7 @@ struct LiveTranscriptionPreview: View {
 // MARK: - Live Transcription Info View
 struct LiveTranscriptionInfoView: View {
 	let onClose: () -> Void
-	
+
 	var body: some View {
 		VStack(spacing: 0) {
 			// Header
@@ -1709,7 +1785,7 @@ struct LiveTranscriptionInfoView: View {
 						.font(.subheadline)
 						.foregroundColor(.secondary)
 				}
-				
+
 				Button {
 					onClose()
 				} label: {
@@ -1720,9 +1796,9 @@ struct LiveTranscriptionInfoView: View {
 				.buttonStyle(.plain)
 			}
 			.padding(20)
-			
+
 			Divider()
-			
+
 			ScrollView {
 				VStack(alignment: .leading, spacing: 20) {
 					// Current Limitations
@@ -1733,16 +1809,18 @@ struct LiveTranscriptionInfoView: View {
 							Text("Current Limitations")
 								.font(.headline)
 						}
-						
+
 						VStack(alignment: .leading, spacing: 8) {
 							Label {
 								VStack(alignment: .leading, spacing: 2) {
 									Text("Text Preview Positioning")
 										.font(.subheadline)
 										.fontWeight(.medium)
-									Text("May not position correctly in non-native apps (Chrome, VSCode, Electron apps). Falls back to last mouse click position.")
-										.font(.caption)
-										.foregroundColor(.secondary)
+									Text(
+										"May not position correctly in non-native apps (Chrome, VSCode, Electron apps). Falls back to last mouse click position."
+									)
+									.font(.caption)
+									.foregroundColor(.secondary)
 								}
 							} icon: {
 								Image(systemName: "cursor.rays")
@@ -1753,7 +1831,7 @@ struct LiveTranscriptionInfoView: View {
 						.background(Color.orange.opacity(0.1))
 						.cornerRadius(8)
 					}
-					
+
 					// Keyboard Shortcut Conflicts
 					VStack(alignment: .leading, spacing: 12) {
 						HStack(spacing: 8) {
@@ -1762,21 +1840,24 @@ struct LiveTranscriptionInfoView: View {
 							Text("Keyboard Shortcut Conflicts")
 								.font(.headline)
 						}
-						
+
 						VStack(alignment: .leading, spacing: 8) {
 							Text("Your global shortcut may conflict with app-specific shortcuts:")
 								.font(.subheadline)
-							
+
 							VStack(alignment: .leading, spacing: 6) {
-								Label("⌃A navigates to specific locations in Xcode", systemImage: "chevron.left.slash.chevron.right")
-									.font(.caption)
+								Label(
+									"⌃A navigates to specific locations in Xcode",
+									systemImage: "chevron.left.slash.chevron.right"
+								)
+								.font(.caption)
 								Label("⌘Space opens Spotlight search", systemImage: "magnifyingglass")
 									.font(.caption)
 								Label("⌥⌘D opens Dock preferences", systemImage: "dock.rectangle")
 									.font(.caption)
 							}
 							.padding(.leading, 8)
-							
+
 							Text("Tip: Choose less common combinations like ⌃⌥W or ⌘⇧R")
 								.font(.caption)
 								.foregroundColor(.secondary)
@@ -1786,7 +1867,7 @@ struct LiveTranscriptionInfoView: View {
 						.background(Color.purple.opacity(0.1))
 						.cornerRadius(8)
 					}
-					
+
 					// Double-tap shortcuts note
 					VStack(alignment: .leading, spacing: 12) {
 						HStack(spacing: 8) {
@@ -1795,19 +1876,23 @@ struct LiveTranscriptionInfoView: View {
 							Text("Alternative: Double-tap Shortcuts")
 								.font(.headline)
 						}
-						
+
 						VStack(alignment: .leading, spacing: 8) {
-							Text("In a future update, you'll be able to use double-tap shortcuts (like double ⌘ or double Globe 🌐) to avoid conflicts with other apps.")
-								.font(.subheadline)
-								.foregroundColor(.secondary)
-							
+							Text(
+								"In a future update, you'll be able to use double-tap shortcuts (like double ⌘ or double Globe 🌐) to avoid conflicts with other apps."
+							)
+							.font(.subheadline)
+							.foregroundColor(.secondary)
+
 							HStack(spacing: 4) {
 								Text("Vote for this feature with 👍 if you'd like it implemented:")
 									.font(.caption)
 									.foregroundColor(.secondary)
-								
+
 								Button {
-									if let url = URL(string: "https://github.com/sapoepsilon/Whispera/issues/16") {
+									if let url = URL(
+										string: "https://github.com/sapoepsilon/Whispera/issues/16")
+									{
 										NSWorkspace.shared.open(url)
 									}
 								} label: {
@@ -1823,7 +1908,7 @@ struct LiveTranscriptionInfoView: View {
 						.background(Color.blue.opacity(0.1))
 						.cornerRadius(8)
 					}
-					
+
 					// Development status
 					HStack(spacing: 6) {
 						Image(systemName: "hammer.fill")
@@ -1847,7 +1932,7 @@ struct ReleaseNotesView: View {
 	let version: String
 	let releaseNotes: String
 	let onClose: () -> Void
-	
+
 	var body: some View {
 		VStack(spacing: 0) {
 			HStack {
@@ -1864,7 +1949,7 @@ struct ReleaseNotesView: View {
 						.font(.subheadline)
 						.foregroundColor(.secondary)
 				}
-				
+
 				Button {
 					onClose()
 				} label: {
@@ -1875,9 +1960,9 @@ struct ReleaseNotesView: View {
 				.buttonStyle(.plain)
 			}
 			.padding(20)
-			
+
 			Divider()
-			
+
 			ScrollView {
 				VStack(alignment: .leading, spacing: 16) {
 					Markdown(releaseNotes)
@@ -1891,4 +1976,3 @@ struct ReleaseNotesView: View {
 		.background(Color(NSColor.windowBackgroundColor))
 	}
 }
-

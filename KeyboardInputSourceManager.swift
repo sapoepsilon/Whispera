@@ -1,5 +1,5 @@
-import Foundation
 import Carbon
+import Foundation
 
 class KeyboardInputSourceManager {
 	static let shared = KeyboardInputSourceManager()

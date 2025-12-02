@@ -22,7 +22,7 @@ struct AudioMeterView: View {
 						LinearGradient(
 							colors: [
 								Color.blue.opacity(0.9),
-								Color.blue.opacity(0.6)
+								Color.blue.opacity(0.6),
 							],
 							startPoint: .bottom,
 							endPoint: .top

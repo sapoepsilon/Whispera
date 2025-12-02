@@ -11,19 +11,19 @@ struct SettingRowView: View {
 	let title: String
 	let description: String
 	@Binding var isOn: Bool
-	
+
 	var body: some View {
 		HStack(spacing: 16) {
 			ZStack {
 				Circle()
 					.fill(.blue.opacity(0.2))
 					.frame(width: 40, height: 40)
-				
+
 				Image(systemName: icon)
 					.font(.system(size: 18))
 					.foregroundColor(.blue)
 			}
-			
+
 			VStack(alignment: .leading, spacing: 4) {
 				Text(title)
 					.font(.system(.subheadline, design: .rounded, weight: .medium))
@@ -31,9 +31,9 @@ struct SettingRowView: View {
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}
-			
+
 			Spacer()
-			
+
 			Toggle("", isOn: $isOn)
 				.labelsHidden()
 		}
