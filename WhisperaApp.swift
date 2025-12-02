@@ -93,6 +93,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var listeningWindow: ListeningWindow?
 	private var popoverFrame: NSRect?
 	private var menuBarIconObserver: NSObjectProtocol?
+	private var settingsSceneRepresentation: AnyObject?
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		if shouldTerminateDuplicateInstances() {
@@ -738,7 +739,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
 
-		if #available(macOS 13.0, *) {
+		if #available(macOS 26.0, *) {
+			Task { @MainActor in
+				if self.settingsSceneRepresentation == nil {
+					let scene = NSHostingSceneRepresentation {
+						Settings {
+							SettingsWithMaterial(
+								permissionManager: self.permissionManager ?? PermissionManager(),
+								updateManager: self.updateManager ?? UpdateManager(),
+								appLibraryManager: self.appLibraryManager ?? AppLibraryManager(),
+								audioManager: self.audioManager ?? AudioManager()
+							)
+						}
+					}
+					NSApplication.shared.addSceneRepresentation(scene)
+					self.settingsSceneRepresentation = scene
+				}
+				if let scene = self.settingsSceneRepresentation as? NSHostingSceneRepresentation<Settings<SettingsWithMaterial>> {
+					scene.environment.openSettings()
+				}
+			}
+		} else if #available(macOS 14.0, *) {
+			NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+		} else if #available(macOS 13.0, *) {
 			NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
 		} else {
 			NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
