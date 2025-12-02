@@ -28,6 +28,7 @@ final class AudioManager: NSObject {
 	var lastTranscription: String?
 	var transcriptionError: String?
 	var currentRecordingMode: RecordingMode = .text
+	var isMicrophoneInitializing = false
 
 	// MARK: - Composed Components
 
@@ -60,6 +61,8 @@ final class AudioManager: NSObject {
 	private var audioBuffer: [Float] = []
 	@ObservationIgnored
 	private let maxBufferSize = 16000 * 1800
+	@ObservationIgnored
+	private var meteringTimer: Timer?
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -172,10 +175,12 @@ extension AudioManager {
 
 		do {
 			audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
+			audioRecorder?.isMeteringEnabled = true
 			audioRecorder?.record()
 			isRecording = true
 			timer.start()
 			playFeedbackSound(start: true)
+			startMeteringTimer()
 			AppLogger.shared.audioManager.debug("🎤 File-based recording started")
 		} catch {
 			AppLogger.shared.audioManager.error("❌ Failed to start recording: \(error)")
@@ -183,6 +188,7 @@ extension AudioManager {
 		}
 	}
 	fileprivate func stopFileBasedRecording() {
+		stopMeteringTimer()
 		audioRecorder?.stop()
 		audioRecorder = nil
 		isRecording = false
@@ -197,6 +203,25 @@ extension AudioManager {
 
 		scheduleTimerReset()
 	}
+
+	private func startMeteringTimer() {
+		meteringTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+			Task { @MainActor in
+				guard let self = self, let recorder = self.audioRecorder else { return }
+				recorder.updateMeters()
+				let power = recorder.averagePower(forChannel: 0)
+				let linear = pow(10, power / 20)
+				let samples = (0..<700).map { _ in linear + Float.random(in: -0.02...0.02) }
+				self.levelMonitor.update(from: samples)
+			}
+		}
+	}
+
+	private func stopMeteringTimer() {
+		meteringTimer?.invalidate()
+		meteringTimer = nil
+		levelMonitor.reset()
+	}
 }
 
 // MARK: - Streaming Recording
@@ -204,21 +229,26 @@ extension AudioManager {
 	fileprivate func startStreamingRecording() {
 		AppLogger.shared.audioManager.info("🎙️ Starting streaming recording")
 		audioBuffer.removeAll()
+		isMicrophoneInitializing = true
 
-		do {
-			let _ = try engineController.setup()
-			try engineController.installTap { [weak self] buffer, format in
-				self?.processAudioBuffer(buffer, originalFormat: format)
+		Task {
+			do {
+				let _ = try await engineController.setup()
+				try engineController.installTap { [weak self] buffer, format in
+					self?.processAudioBuffer(buffer, originalFormat: format)
+				}
+
+				isMicrophoneInitializing = false
+				isRecording = true
+				timer.start()
+				playFeedbackSound(start: true)
+
+			} catch {
+				isMicrophoneInitializing = false
+				AppLogger.shared.audioManager.error("❌ Failed to start streaming: \(error)")
+				useStreamingTranscription = false
+				startFileBasedRecording()
 			}
-
-			isRecording = true
-			timer.start()
-			playFeedbackSound(start: true)
-
-		} catch {
-			AppLogger.shared.audioManager.error("❌ Failed to start streaming: \(error)")
-			useStreamingTranscription = false
-			startFileBasedRecording()
 		}
 	}
 
