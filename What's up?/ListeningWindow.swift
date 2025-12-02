@@ -13,6 +13,7 @@ class ListeningWindow: NSWindow {
 	private let audioManager: AudioManager
 	private var observationTimer: Timer?
 	@AppStorage("enableStreaming") private var enableStreaming = false
+	@AppStorage("showListeningWindow") private var showListeningWindow = true
 
 	init(audioManager: AudioManager) {
 		self.audioManager = audioManager
@@ -47,7 +48,7 @@ class ListeningWindow: NSWindow {
 			Task { @MainActor in
 				guard let self = self else { return }
 
-				let shouldShow = self.audioManager.currentState != .idle && !self.enableStreaming
+				let shouldShow = self.showListeningWindow && self.audioManager.currentState != .idle && !self.enableStreaming
 
 				if shouldShow && !self.isVisible {
 					self.positionAtBottomCenter()
