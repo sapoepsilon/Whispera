@@ -11,6 +11,9 @@ final class AudioLevelMonitor {
 
 	private let bandCount: Int
 	private let silenceThreshold: Float = 0.001
+	private var recentPeaks: [Float] = []
+	private let peakHistorySize = 60
+	private var adaptiveGain: Float = 5.0
 
 	init(bandCount: Int = 7) {
 		self.bandCount = bandCount
@@ -54,7 +57,7 @@ final class AudioLevelMonitor {
 
 			let band = Array(samples[start..<end])
 			let rms = sqrt(band.map { $0 * $0 }.reduce(0, +) / Float(band.count))
-			let normalizedLevel = min(1.0, rms * 5.0)
+			let normalizedLevel = min(1.0, rms * adaptiveGain)
 
 			newLevels.append(normalizedLevel)
 			maxLevel = max(maxLevel, rms)
@@ -71,6 +74,25 @@ final class AudioLevelMonitor {
 		} else {
 			consecutiveSilentFrames = 0
 			isSilent = false
+			updateAdaptiveGain(currentPeak: maxLevel)
+		}
+	}
+
+	private func updateAdaptiveGain(currentPeak: Float) {
+		recentPeaks.append(currentPeak)
+		if recentPeaks.count > peakHistorySize {
+			recentPeaks.removeFirst()
+		}
+
+		guard recentPeaks.count >= 10 else { return }
+
+		let sortedPeaks = recentPeaks.sorted()
+		let percentile90 = sortedPeaks[Int(Float(sortedPeaks.count) * 0.9)]
+
+		if percentile90 > 0.001 {
+			let targetGain = 0.7 / percentile90
+			let clampedGain = max(2.0, min(20.0, targetGain))
+			adaptiveGain = adaptiveGain * 0.95 + clampedGain * 0.05
 		}
 	}
 
@@ -80,6 +102,8 @@ final class AudioLevelMonitor {
 		averageLevel = 0
 		isSilent = true
 		consecutiveSilentFrames = 0
+		recentPeaks.removeAll()
+		adaptiveGain = 5.0
 	}
 
 	private func markSilent() {

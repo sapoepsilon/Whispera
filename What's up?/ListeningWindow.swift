@@ -48,7 +48,7 @@ class ListeningWindow: NSWindow {
 				guard let self = self else { return }
 
 				let shouldShow =
-					(self.audioManager.isRecording || self.audioManager.isTranscribing)
+					(self.audioManager.isRecording || self.audioManager.isTranscribing || self.audioManager.isMicrophoneInitializing)
 					&& !self.enableStreaming
 
 				if shouldShow && !self.isVisible {

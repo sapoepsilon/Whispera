@@ -57,6 +57,7 @@ struct DictationView: View {
 				ListeningView(audioManager: audioManager)
 			}
 		}
+		.fixedSize()
 		.background(
 			RoundedRectangle(cornerRadius: cornerRadius)
 				.fill(.ultraThinMaterial)

@@ -46,7 +46,7 @@ final class AudioEngineController {
 
 	// MARK: - Setup
 
-	func setup() throws -> AVAudioInputNode {
+	func setup() async throws -> AVAudioInputNode {
 		cleanup()
 
 		let newEngine = AVAudioEngine()
@@ -58,7 +58,9 @@ final class AudioEngineController {
 			throw AudioEngineError.invalidFormat
 		}
 		showDeviceName()
-		try newEngine.start()
+		try await Task.detached(priority: .userInitiated) {
+			try newEngine.start()
+		}.value
 		isRunning = true
 		setupRouteObserver()
 
