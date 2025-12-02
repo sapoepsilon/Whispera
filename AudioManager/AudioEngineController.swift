@@ -26,6 +26,7 @@ enum AudioEngineError: Error, LocalizedError {
 @Observable
 final class AudioEngineController {
 	private(set) var isRunning = false
+	private(set) var currentInputDeviceName: String = "Unknown"
 
 	@ObservationIgnored
 	private var engine: AVAudioEngine?
@@ -57,7 +58,7 @@ final class AudioEngineController {
 		guard format.sampleRate > 0, format.channelCount > 0 else {
 			throw AudioEngineError.invalidFormat
 		}
-		showDeviceName()
+		updateCurrentInputDeviceName()
 		try await Task.detached(priority: .userInitiated) {
 			try newEngine.start()
 		}.value
@@ -67,8 +68,7 @@ final class AudioEngineController {
 		return input
 	}
 
-	// TODO: Improve this function
-	func showDeviceName() {
+	func updateCurrentInputDeviceName() {
 		var deviceId = AudioDeviceID(0)
 		var deviceSize = UInt32(MemoryLayout.size(ofValue: deviceId))
 		var address = AudioObjectPropertyAddress(
@@ -86,7 +86,6 @@ final class AudioEngineController {
 		)
 
 		if err == 0 {
-			// change the query property and use previously fetched details
 			address.mSelector = kAudioDevicePropertyDeviceNameCFString
 			var deviceName = "" as CFString
 			deviceSize = UInt32(MemoryLayout.size(ofValue: deviceName))
@@ -99,15 +98,13 @@ final class AudioEngineController {
 				&deviceName
 			)
 			if err == 0 {
-				AppLogger.shared
-					.audioManager.debug(
-						"### current default mic:: \(deviceName) "
-					)
+				currentInputDeviceName = deviceName as String
+				AppLogger.shared.audioManager.debug("🎤 Current input device: \(currentInputDeviceName)")
 			} else {
-				// TODO:: unable to fetch device name
+				currentInputDeviceName = "Unknown"
 			}
 		} else {
-			// TODO:: unable to fetch the default input device
+			currentInputDeviceName = "Unknown"
 		}
 	}
 

@@ -10,7 +10,8 @@ struct WhisperaApp: App {
 			SettingsWithMaterial(
 				permissionManager: appDelegate.permissionManager ?? PermissionManager(),
 				updateManager: appDelegate.updateManager ?? UpdateManager(),
-				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager()
+				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager(),
+				audioManager: appDelegate.audioManager ?? AudioManager()
 			)
 		}
 		.windowStyle(.hiddenTitleBar)
@@ -38,6 +39,7 @@ struct SettingsWithMaterial: View {
 	var permissionManager: PermissionManager
 	var updateManager: UpdateManager
 	var appLibraryManager: AppLibraryManager
+	var audioManager: AudioManager
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
 
 	private var materialStyle: MaterialStyle {
@@ -49,7 +51,8 @@ struct SettingsWithMaterial: View {
 			SettingsView(
 				permissionManager: permissionManager,
 				updateManager: updateManager,
-				appLibraryManager: appLibraryManager
+				appLibraryManager: appLibraryManager,
+				audioManager: audioManager
 			)
 			.frame(minWidth: 450, minHeight: 520)
 			.containerBackground(materialStyle.material, for: .window)
@@ -57,7 +60,8 @@ struct SettingsWithMaterial: View {
 			SettingsView(
 				permissionManager: permissionManager,
 				updateManager: updateManager,
-				appLibraryManager: appLibraryManager
+				appLibraryManager: appLibraryManager,
+				audioManager: audioManager
 			)
 			.frame(minWidth: 450, minHeight: 520)
 		}

@@ -100,6 +100,10 @@ final class AudioManager: NSObject {
 		timer.duration
 	}
 
+	var currentInputDeviceName: String {
+		engineController.currentInputDeviceName
+	}
+
 	func formattedRecordingDuration() -> String {
 		timer.formatted
 	}
