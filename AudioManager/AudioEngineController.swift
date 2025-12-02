@@ -148,7 +148,7 @@ final class AudioEngineController {
 			handler(buffer, buffer.format)
 		}
 
-		AppLogger.shared.audioManager.debug("✅ Microphone tap installed")
+		AppLogger.shared.audioManager.debug("Microphone tap installed")
 	}
 
 	// MARK: - Device Management

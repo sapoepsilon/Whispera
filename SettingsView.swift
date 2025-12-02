@@ -579,7 +579,7 @@ struct SettingsView: View {
 					SettingsSection("Audio Input") {
 						SettingRow(
 							"Input Device",
-							description: "Current system default microphone"
+							description: "Last used default microphone"
 						) {
 							Text(audioManager.currentInputDeviceName)
 								.font(.subheadline)
