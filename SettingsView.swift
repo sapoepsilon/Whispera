@@ -169,6 +169,7 @@ struct SettingsView: View {
 	@State var permissionManager: PermissionManager
 	@State var updateManager: UpdateManager
 	@State var appLibraryManager: AppLibraryManager
+	@Bindable var audioManager: AudioManager
 	@State var whisperKit = WhisperKitTranscriber.shared
 	@State private var availableModels: [String] = []
 	@State private var isRecordingShortcut = false
@@ -570,6 +571,21 @@ struct SettingsView: View {
 								showOnboardingAgain()
 							}
 							.buttonStyle(.bordered)
+						}
+					}
+
+					Divider()
+
+					SettingsSection("Audio Input") {
+						SettingRow(
+							"Input Device",
+							description: "Last used default microphone"
+						) {
+							Text(audioManager.currentInputDeviceName)
+								.font(.subheadline)
+								.foregroundColor(.secondary)
+								.lineLimit(1)
+								.truncationMode(.tail)
 						}
 					}
 

@@ -558,6 +558,27 @@ struct StatusCardView: View {
 				}
 			}
 
+			// Audio Input section
+			HStack {
+				HStack(spacing: 6) {
+					Image(systemName: "mic")
+						.font(.caption)
+						.foregroundColor(.secondary)
+
+					Text("Input Device")
+						.font(.caption)
+						.foregroundColor(.secondary)
+				}
+
+				Spacer()
+
+				Text(audioManager.currentInputDeviceName)
+					.font(.caption)
+					.foregroundColor(.secondary)
+					.lineLimit(1)
+					.truncationMode(.tail)
+			}
+
 			// Transcription Queue section - only show if queue has items
 			if !queueManager.items.isEmpty {
 				VStack(spacing: 8) {
