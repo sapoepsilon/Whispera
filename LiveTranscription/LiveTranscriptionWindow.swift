@@ -12,6 +12,7 @@ class LiveTranscriptionWindow: NSWindow {
 	@AppStorage("liveTranscriptionWindowOffset") private var windowOffset = 25.0
 	@AppStorage("liveTranscriptionMaxWidthPercentage") private var maxWidthPercentage = 0.6
 	@AppStorage("liveTranscriptionFollowCaret") private var followCaret = true
+	@AppStorage("showLiveTranscriptionWindow") private var showLiveTranscriptionWindow = true
 
 	init(audioManager: AudioManager) {
 		self.audioManager = audioManager
@@ -52,7 +53,9 @@ class LiveTranscriptionWindow: NSWindow {
 				guard let self = self else { return }
 
 				let shouldShow =
-					self.whisperKit.shouldShowLiveTranscriptionWindow && self.whisperKit.isTranscribing
+					self.showLiveTranscriptionWindow
+					&& self.whisperKit.shouldShowLiveTranscriptionWindow
+					&& self.whisperKit.isTranscribing
 
 				if shouldShow {
 					let newSize = self.calculateDynamicSize()

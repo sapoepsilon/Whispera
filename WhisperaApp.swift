@@ -77,6 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	var appLibraryManager: AppLibraryManager?
 	@AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
 	@AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
+	@AppStorage("showMenuBarIcon") var showMenuBarIcon = true
 	private var recordingObserver: NSObjectProtocol?
 	private var downloadObserver: NSObjectProtocol?
 	private var modelStateObserver: NSObjectProtocol?
@@ -87,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
 	private var popoverFrame: NSRect?
+	private var menuBarIconObserver: NSObjectProtocol?
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		if shouldTerminateDuplicateInstances() {
@@ -125,6 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
+			observeMenuBarIconSetting()
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
@@ -650,6 +653,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		}
 	}
 
+	private func observeMenuBarIconSetting() {
+		updateMenuBarVisibility()
+
+		menuBarIconObserver = NotificationCenter.default.addObserver(
+			forName: UserDefaults.didChangeNotification,
+			object: nil,
+			queue: .main
+		) { [weak self] _ in
+			Task { @MainActor in
+				self?.updateMenuBarVisibility()
+			}
+		}
+	}
+
+	private func updateMenuBarVisibility() {
+		if showMenuBarIcon {
+			if statusItem == nil {
+				setupMenuBar()
+			}
+		} else {
+			if let item = statusItem {
+				NSStatusBar.system.removeStatusItem(item)
+				statusItem = nil
+			}
+		}
+	}
+
 	private func showUpdateAvailableNotification(version: String) {
 		let alert = NSAlert()
 		alert.messageText = "Update Available"
@@ -690,12 +720,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 	// MARK: - Single Instance Management
 	func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-		if let button = statusItem?.button {
+		if showMenuBarIcon, let button = statusItem?.button {
 			if !popover.isShown {
 				popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 			}
+		} else {
+			openSettingsWindow()
 		}
 		return true
+	}
+
+	private func openSettingsWindow() {
+		NSApp.setActivationPolicy(.regular)
+		NSApp.activate(ignoringOtherApps: true)
+
+		if #available(macOS 13.0, *) {
+			NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+		} else {
+			NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+		}
 	}
 
 	private func shouldTerminateDuplicateInstances() -> Bool {
@@ -751,6 +794,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		}
 		if let observer = wakeObserver {
 			NSWorkspace.shared.notificationCenter.removeObserver(observer)
+		}
+		if let observer = menuBarIconObserver {
+			NotificationCenter.default.removeObserver(observer)
 		}
 	}
 }

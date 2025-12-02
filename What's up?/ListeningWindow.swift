@@ -13,6 +13,7 @@ class ListeningWindow: NSWindow {
 	private let audioManager: AudioManager
 	private var observationTimer: Timer?
 	@AppStorage("enableStreaming") private var enableStreaming = false
+	@AppStorage("showListeningWindow") private var showListeningWindow = true
 
 	init(audioManager: AudioManager) {
 		self.audioManager = audioManager
@@ -48,7 +49,8 @@ class ListeningWindow: NSWindow {
 				guard let self = self else { return }
 
 				let shouldShow =
-					(self.audioManager.isRecording || self.audioManager.isTranscribing || self.audioManager.isMicrophoneInitializing)
+					self.showListeningWindow
+					&& (self.audioManager.isRecording || self.audioManager.isTranscribing || self.audioManager.isMicrophoneInitializing)
 					&& !self.enableStreaming
 
 				if shouldShow && !self.isVisible {
