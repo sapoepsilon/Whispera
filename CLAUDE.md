@@ -102,11 +102,14 @@ xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:Whisp
 3. If MPS crashes occur, fix the underlying issue rather than simulating
 
 ### Code Quality
-1. Use `AppLogger.shared.<category>` for logging, not `print()` or `os.log`
-2. Only add comments when syntax needs explanation (why, not what)
-3. Never skip hooks (`--no-verify`, `--no-gpg-sign`) in git commands
-4. Use commitlint format for git commits
-5. Never mention Anthropic or Claude Code in commits/PRs
+1. **Swift 6** language version is used throughout the project
+2. Use **Context7 MCP** to look up latest library documentation when needed
+3. Use **swift-format** for code formatting
+4. **Comments policy**: Only add comments that explain WHY the code does something, never comments that describe WHAT the code does
+5. Use `AppLogger.shared.<category>` for logging, not `print()` or `os.log`
+6. Never skip hooks (`--no-verify`, `--no-gpg-sign`) in git commands
+7. Use commitlint format for git commits
+8. Never mention Anthropic or Claude Code in commits/PRs
 
 ### Settings Storage
 - Model settings: `selectedModel`, `lastUsedModel` in UserDefaults
