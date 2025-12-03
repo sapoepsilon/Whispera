@@ -195,6 +195,11 @@ struct SettingsView: View {
 	@AppStorage("enableDebugLogging") private var enableDebugLogging = false
 	@AppStorage("modelComputeUnits") private var modelComputeUnits = 2
 
+	// Visibility settings
+	@AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
+	@AppStorage("showLiveTranscriptionWindow") private var showLiveTranscriptionWindow = true
+	@AppStorage("showListeningWindow") private var showListeningWindow = true
+
 	var body: some View {
 		TabView {
 			// MARK: - General Tab
@@ -565,6 +570,38 @@ struct SettingsView: View {
 								showOnboardingAgain()
 							}
 							.buttonStyle(.bordered)
+						}
+					}
+
+					Divider()
+
+					SettingsSection("Visibility") {
+						SettingRow(
+							"Menu Bar Icon",
+							description: "Show Whispera icon in the menu bar"
+						) {
+							Toggle("", isOn: $showMenuBarIcon)
+						}
+
+						if !showMenuBarIcon {
+							InfoBox(style: .info) {
+								Text("Click the Whispera icon in Dock or use Spotlight to open settings")
+									.font(.caption)
+							}
+						}
+
+						SettingRow(
+							"Live Transcription Window",
+							description: "Show floating window during live transcription"
+						) {
+							Toggle("", isOn: $showLiveTranscriptionWindow)
+						}
+
+						SettingRow(
+							"Recording Indicator",
+							description: "Show audio level bars while recording"
+						) {
+							Toggle("", isOn: $showListeningWindow)
 						}
 
 						if permissionManager.needsPermissions {
