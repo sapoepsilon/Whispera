@@ -16,52 +16,74 @@ struct ListeningView: View {
 		self.audioManager = audioManager
 	}
 
+	@ViewBuilder
+	private var contentView: some View {
+		switch audioManager.currentState {
+		case .idle:
+			EmptyView()
+		case .initializing:
+			HStack(spacing: 6) {
+				ProgressView()
+					.scaleEffect(0.7)
+				Text("Initializing...")
+					.font(.system(.caption, design: .rounded))
+					.foregroundColor(.secondary)
+			}
+		case .transcribing:
+			Text("Transcribing...")
+				.font(.system(.caption, design: .rounded))
+				.foregroundColor(.secondary)
+		case .recording:
+			HStack(spacing: 8) {
+				AudioMeterView(levels: audioManager.audioLevels)
+				Button(action: {
+					audioManager.toggleRecording()
+				}) {
+					Image(systemName: "stop.circle.fill")
+						.font(.system(size: 16))
+						.foregroundColor(.secondary)
+				}
+				.buttonStyle(.plain)
+				.help("Stop recording")
+			}
+		}
+	}
+
 	var body: some View {
 		if #available(macOS 26.0, *) {
-			HStack(spacing: 6) {
-				if audioManager.isTranscribing {
-					Text("Transcribing...")
-						.font(.system(.caption, design: .rounded))
-						.foregroundColor(.secondary)
-				} else {
-					AudioMeterView(levels: audioManager.audioLevels)
-				}
-			}
-			.padding(.horizontal, 14)
-			.padding(.vertical, 10)
-			.frame(width: 100, height: 30)
-			.glassEffect()
+			contentView
+				.padding(.horizontal, 14)
+				.padding(.vertical, 10)
+				.frame(height: 30)
+				.fixedSize(horizontal: true, vertical: false)
+				.glassEffect()
 		} else {
-			HStack(spacing: 6) {
-				if audioManager.isTranscribing {
-					Text("Transcribing...")
-						.font(.system(.caption, design: .rounded))
-						.foregroundColor(.secondary)
-				} else {
-					AudioMeterView(levels: audioManager.audioLevels)
-				}
-			}
-			.padding(.horizontal, 14)
-			.padding(.vertical, 10)
-			.frame(width: 100, height: 50)
-			.overlay(
-				RoundedRectangle(cornerRadius: cornerRadius)
-					.strokeBorder(
-						LinearGradient(
-							colors: [
-								Color.blue.opacity(0.3),
-								Color.blue.opacity(0.1),
-							],
-							startPoint: .topLeading,
-							endPoint: .bottomTrailing
-						),
-						lineWidth: 1
-					)
-			)
-			.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
-			.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
+			contentView
+				.padding(.horizontal, 14)
+				.padding(.vertical, 10)
+				.frame(height: 50)
+				.fixedSize(horizontal: true, vertical: false)
+				.background(
+					RoundedRectangle(cornerRadius: cornerRadius)
+						.fill(.ultraThinMaterial)
+				)
+				.overlay(
+					RoundedRectangle(cornerRadius: cornerRadius)
+						.strokeBorder(
+							LinearGradient(
+								colors: [
+									Color.blue.opacity(0.3),
+									Color.blue.opacity(0.1),
+								],
+								startPoint: .topLeading,
+								endPoint: .bottomTrailing
+							),
+							lineWidth: 1
+						)
+				)
+				.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
+				.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
 		}
-
 	}
 }
 
