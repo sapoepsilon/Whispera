@@ -3,7 +3,7 @@ import SwiftUI
 
 struct OnboardingView: View {
 	@Bindable var audioManager: AudioManager
-	@ObservedObject var shortcutManager: GlobalShortcutManager
+	var shortcutManager: GlobalShortcutManager
 
 	@State private var currentStep = 0
 	@State private var selectedModel = ""

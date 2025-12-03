@@ -10,7 +10,7 @@ import SwiftUI
 struct PermissionsStepView: View {
 	@Binding var hasPermissions: Bool
 	@Bindable var audioManager: AudioManager
-	@ObservedObject var globalShortcutManager: GlobalShortcutManager
+	var globalShortcutManager: GlobalShortcutManager
 	@State private var hasMicrophonePermission = false
 	@State private var permissionCheckTimer: Timer?
 	@State private var accessibilityCheckTimer: Timer?

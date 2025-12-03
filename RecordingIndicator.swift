@@ -230,8 +230,9 @@ struct RecordingIndicatorView: View {
 	}
 }
 
+@Observable
 @MainActor
-class RecordingIndicatorManager: ObservableObject {
+final class RecordingIndicatorManager {
 	private var indicatorWindow: RecordingIndicatorWindow?
 
 	func showIndicator() {

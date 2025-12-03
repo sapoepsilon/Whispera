@@ -1,43 +1,31 @@
+import Combine
 import Foundation
 import Sparkle
 import SwiftUI
 
-final class CheckForUpdatesViewModel: ObservableObject {
-    @Published var canCheckForUpdates = false
-
-    init(updater: SPUUpdater) {
-        updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: &$canCheckForUpdates)
-    }
-}
-
 struct CheckForUpdatesView: View {
-    @ObservedObject private var checkForUpdatesViewModel: CheckForUpdatesViewModel
-    private let updater: SPUUpdater
-
-    init(updater: SPUUpdater) {
-        self.updater = updater
-        self.checkForUpdatesViewModel = CheckForUpdatesViewModel(updater: updater)
-    }
+    var softwareUpdater: SoftwareUpdater
 
     var body: some View {
-        Button("Check for Updates…", action: updater.checkForUpdates)
-            .disabled(!checkForUpdatesViewModel.canCheckForUpdates)
+        Button("Check for Updates…", action: softwareUpdater.checkForUpdates)
+            .disabled(!softwareUpdater.canCheckForUpdates)
     }
 }
 
+@Observable
 @MainActor
-final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
+final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
     private var updaterController: SPUStandardUpdaterController!
+    private var cancellables = Set<AnyCancellable>()
 
-    @Published var canCheckForUpdates = false
-    @Published var lastUpdateCheckDate: Date?
-    @Published var automaticallyChecksForUpdates: Bool = true {
+    var canCheckForUpdates = false
+    var lastUpdateCheckDate: Date?
+    var automaticallyChecksForUpdates: Bool = true {
         didSet {
             updater.automaticallyChecksForUpdates = automaticallyChecksForUpdates
         }
     }
-    @Published var automaticallyDownloadsUpdates: Bool = false {
+    var automaticallyDownloadsUpdates: Bool = false {
         didSet {
             updater.automaticallyDownloadsUpdates = automaticallyDownloadsUpdates
         }
@@ -56,10 +44,18 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         )
 
         updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: &$canCheckForUpdates)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] value in
+                self?.canCheckForUpdates = value
+            }
+            .store(in: &cancellables)
 
         updater.publisher(for: \.lastUpdateCheckDate)
-            .assign(to: &$lastUpdateCheckDate)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] value in
+                self?.lastUpdateCheckDate = value
+            }
+            .store(in: &cancellables)
 
         automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
         automaticallyDownloadsUpdates = updater.automaticallyDownloadsUpdates

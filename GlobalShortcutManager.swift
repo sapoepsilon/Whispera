@@ -3,7 +3,8 @@ import Cocoa
 import Foundation
 import SwiftUI
 
-class GlobalShortcutManager: ObservableObject {
+@Observable
+final class GlobalShortcutManager {
 	private var globalMonitor: Any?
 	private var localMonitor: Any?
 	private var fileSelectionGlobalMonitor: Any?
