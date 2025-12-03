@@ -47,9 +47,7 @@ class ListeningWindow: NSWindow {
 			Task { @MainActor in
 				guard let self = self else { return }
 
-				let shouldShow =
-					(self.audioManager.isRecording || self.audioManager.isTranscribing || self.audioManager.isMicrophoneInitializing)
-					&& !self.enableStreaming
+				let shouldShow = self.audioManager.currentState != .idle && !self.enableStreaming
 
 				if shouldShow && !self.isVisible {
 					self.positionAtBottomCenter()
