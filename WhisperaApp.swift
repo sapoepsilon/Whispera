@@ -34,7 +34,7 @@ struct WhisperaApp: App {
 				}
 			}
 			CommandGroup(after: .appInfo) {
-				CheckForUpdatesView(updater: softwareUpdater.updater)
+				CheckForUpdatesView(softwareUpdater: softwareUpdater)
 			}
 		}
 
