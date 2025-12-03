@@ -11,12 +11,12 @@ struct GlassBetaElement: View {
 	private let onTap: (() -> Void)?
 	private let cornerRadius: CGFloat
 	private let elementSize: CGSize
-	
+
 	// MARK: - Animation State
 	@State private var shimmerOffset: CGFloat = -100
 	@State private var pulseScale: CGFloat = 1.0
 	@State private var isPressed: Bool = false
-	
+
 	// MARK: - Constants
 	private struct Constants {
 		static let shimmerWidth: CGFloat = 15
@@ -25,7 +25,7 @@ struct GlassBetaElement: View {
 		static let pulseRange: CGFloat = 1.03
 		static let pulseDuration: Double = 3.0
 	}
-	
+
 	// MARK: - Initializer
 	init(
 		onTap: (() -> Void)? = nil,
@@ -36,7 +36,7 @@ struct GlassBetaElement: View {
 		self.cornerRadius = cornerRadius
 		self.elementSize = size
 	}
-	
+
 	var body: some View {
 		ZStack {
 			glassBackground
@@ -52,8 +52,8 @@ struct GlassBetaElement: View {
 }
 
 // MARK: - View Components
-private extension GlassBetaElement {
-	var glassBackground: some View {
+extension GlassBetaElement {
+	fileprivate var glassBackground: some View {
 		RoundedRectangle(cornerRadius: cornerRadius)
 			.fill(.ultraThinMaterial)
 			.frame(width: elementSize.width, height: elementSize.height)
@@ -61,15 +61,15 @@ private extension GlassBetaElement {
 			.overlay(borderGradient)
 			.shadow(color: Color.blue.opacity(0.15), radius: 8, x: 0, y: 4)
 	}
-	
-	var backgroundGradient: some View {
+
+	fileprivate var backgroundGradient: some View {
 		RoundedRectangle(cornerRadius: cornerRadius)
 			.fill(
 				LinearGradient(
 					colors: [
 						Color.blue.opacity(0.25),
 						Color.purple.opacity(0.15),
-						Color.pink.opacity(0.08)
+						Color.pink.opacity(0.08),
 					],
 					startPoint: .topLeading,
 					endPoint: .bottomTrailing
@@ -77,14 +77,14 @@ private extension GlassBetaElement {
 			)
 			.blur(radius: 0.8)
 	}
-	
-	var borderGradient: some View {
+
+	fileprivate var borderGradient: some View {
 		RoundedRectangle(cornerRadius: cornerRadius)
 			.stroke(
 				LinearGradient(
 					colors: [
 						Color.white.opacity(0.5),
-						Color.white.opacity(0.08)
+						Color.white.opacity(0.08),
 					],
 					startPoint: .topLeading,
 					endPoint: .bottomTrailing
@@ -92,15 +92,15 @@ private extension GlassBetaElement {
 				lineWidth: 0.8
 			)
 	}
-	
-	var shimmerOverlay: some View {
+
+	fileprivate var shimmerOverlay: some View {
 		RoundedRectangle(cornerRadius: cornerRadius)
 			.fill(
 				LinearGradient(
 					colors: [
 						Color.clear,
 						Color.white.opacity(Constants.shimmerOpacity),
-						Color.clear
+						Color.clear,
 					],
 					startPoint: .leading,
 					endPoint: .trailing
@@ -113,8 +113,8 @@ private extension GlassBetaElement {
 					.frame(width: elementSize.width, height: elementSize.height)
 			)
 	}
-	
-	var betaText: some View {
+
+	fileprivate var betaText: some View {
 		Text("BETA")
 			.font(.system(size: 9, weight: .bold, design: .default))
 			.foregroundColor(.orange)
@@ -123,13 +123,13 @@ private extension GlassBetaElement {
 }
 
 // MARK: - Animation Methods
-private extension GlassBetaElement {
-	func startAnimations() {
+extension GlassBetaElement {
+	fileprivate func startAnimations() {
 		startShimmerAnimation()
 		startPulseAnimation()
 	}
-	
-	func startShimmerAnimation() {
+
+	fileprivate func startShimmerAnimation() {
 		withAnimation(
 			Animation.linear(duration: Constants.shimmerDuration)
 				.repeatForever(autoreverses: false)
@@ -137,8 +137,8 @@ private extension GlassBetaElement {
 			shimmerOffset = elementSize.width + Constants.shimmerWidth
 		}
 	}
-	
-	func startPulseAnimation() {
+
+	fileprivate func startPulseAnimation() {
 		withAnimation(
 			Animation.easeInOut(duration: Constants.pulseDuration)
 				.repeatForever(autoreverses: true)
@@ -146,18 +146,18 @@ private extension GlassBetaElement {
 			pulseScale = Constants.pulseRange
 		}
 	}
-	
-	func handleTap() {
+
+	fileprivate func handleTap() {
 		withAnimation(.easeInOut(duration: 0.1)) {
 			isPressed = true
 		}
-		
+
 		DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
 			withAnimation(.easeInOut(duration: 0.1)) {
 				isPressed = false
 			}
 		}
-		
+
 		onTap?()
 	}
 }

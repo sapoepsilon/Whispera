@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "lineLength": 120,
+  "indentation": {
+    "tabs": 1
+  },
+  "tabWidth": 6,
+  "maximumBlankLines": 1,
+  "respectsExistingLineBreaks": true,
+  "lineBreakBeforeControlFlowKeywords": false,
+  "lineBreakBeforeEachArgument": false,
+  "indentConditionalCompilationBlocks": true,
+  "indentSwitchCaseLabels": false,
+  "rules": {
+    "OnlyOneTrailingClosureArgument": false,
+    "NoBlockComments": false,
+    "AlwaysUseLowerCamelCase": true,
+    "OrderedImports": true,
+    "UseTripleSlashForDocumentationComments": true,
+    "DoNotUseSemicolons": true,
+    "NoParensAroundConditions": true,
+    "UseSingleLinePropertyGetter": true,
+    "UseShorthandTypeNames": true
+  }
+}

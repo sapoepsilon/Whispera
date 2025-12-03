@@ -10,7 +10,7 @@ import SwiftUI
 struct OnboardingProgressView: View {
 	let currentStep: Int
 	let totalSteps: Int
-	
+
 	var body: some View {
 		VStack(spacing: 8) {
 			HStack(spacing: 8) {
@@ -21,11 +21,10 @@ struct OnboardingProgressView: View {
 						.animation(.easeInOut(duration: 0.3), value: currentStep)
 				}
 			}
-			
+
 			Text("Step \(currentStep + 1) of \(totalSteps)")
 				.font(.caption)
 				.foregroundColor(.secondary)
 		}
 	}
 }
-

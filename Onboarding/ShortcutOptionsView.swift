@@ -11,28 +11,28 @@ struct ShortcutOptionsView: View {
 	@Binding var showingOptions: Bool
 	@State private var isRecordingShortcut = false
 	@State private var eventMonitor: Any?
-	
+
 	private let shortcutOptions = [
 		"⌥⌘R", "⌃⌘R", "⇧⌘R",
 		"⌥⌘T", "⌃⌘T", "⇧⌘T",
-		"⌥⌘V", "⌃⌘V", "⇧⌘V"
+		"⌥⌘V", "⌃⌘V", "⇧⌘V",
 	]
-	
+
 	var body: some View {
 		VStack(spacing: 16) {
 			Text("Choose a shortcut:")
 				.font(.subheadline)
 				.foregroundColor(.secondary)
-			
+
 			// Custom shortcut recording section
 			VStack(spacing: 12) {
 				HStack {
 					Text("Record Custom:")
 						.font(.subheadline)
 						.foregroundColor(.primary)
-					
+
 					Spacer()
-					
+
 					Group {
 						if isRecordingShortcut {
 							Button(action: {
@@ -57,7 +57,7 @@ struct ShortcutOptionsView: View {
 						}
 					}
 				}
-				
+
 				if isRecordingShortcut {
 					Text("Press Command, Option, Control or Shift + another key")
 						.font(.caption)
@@ -67,11 +67,11 @@ struct ShortcutOptionsView: View {
 			}
 			.padding()
 			.background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-			
+
 			Text("Or choose a preset:")
 				.font(.caption)
 				.foregroundColor(.secondary)
-			
+
 			LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 8) {
 				ForEach(shortcutOptions, id: \.self) { shortcut in
 					Group {
@@ -93,7 +93,7 @@ struct ShortcutOptionsView: View {
 					}
 				}
 			}
-			
+
 			Button("Cancel") {
 				showingOptions = false
 			}
@@ -106,10 +106,10 @@ struct ShortcutOptionsView: View {
 			stopRecording()
 		}
 	}
-	
+
 	private func startRecording() {
 		isRecordingShortcut = true
-		
+
 		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
 			if self.isRecordingShortcut {
 				let shortcut = self.formatKeyEvent(event)
@@ -123,7 +123,7 @@ struct ShortcutOptionsView: View {
 			return event
 		}
 	}
-	
+
 	private func stopRecording() {
 		isRecordingShortcut = false
 		if let monitor = eventMonitor {
@@ -131,20 +131,20 @@ struct ShortcutOptionsView: View {
 			eventMonitor = nil
 		}
 	}
-	
+
 	private func formatKeyEvent(_ event: NSEvent) -> String {
 		var parts: [String] = []
 		let flags = event.modifierFlags
-		
+
 		if flags.contains(.command) { parts.append("⌘") }
 		if flags.contains(.option) { parts.append("⌥") }
 		if flags.contains(.control) { parts.append("⌃") }
 		if flags.contains(.shift) { parts.append("⇧") }
-		
+
 		if let characters = event.charactersIgnoringModifiers?.uppercased() {
 			parts.append(characters)
 		}
-		
+
 		return flags.intersection([.command, .option, .control, .shift]).isEmpty ? "" : parts.joined()
 	}
 }
