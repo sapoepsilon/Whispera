@@ -1,16 +1,20 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @main
 struct WhisperaApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+	private let softwareUpdater = SoftwareUpdater()
 
 	var body: some Scene {
 		Settings {
 			SettingsWithMaterial(
 				permissionManager: appDelegate.permissionManager ?? PermissionManager(),
 				updateManager: appDelegate.updateManager ?? UpdateManager(),
-				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager()
+				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager(),
+				audioManager: appDelegate.audioManager ?? AudioManager(),
+				softwareUpdater: softwareUpdater
 			)
 		}
 		.windowStyle(.hiddenTitleBar)
@@ -29,6 +33,9 @@ struct WhisperaApp: App {
 					)
 				}
 			}
+			CommandGroup(after: .appInfo) {
+				CheckForUpdatesView(updater: softwareUpdater.updater)
+			}
 		}
 
 	}
@@ -38,6 +45,8 @@ struct SettingsWithMaterial: View {
 	var permissionManager: PermissionManager
 	var updateManager: UpdateManager
 	var appLibraryManager: AppLibraryManager
+	var audioManager: AudioManager
+	var softwareUpdater: SoftwareUpdater
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
 
 	private var materialStyle: MaterialStyle {
@@ -49,7 +58,9 @@ struct SettingsWithMaterial: View {
 			SettingsView(
 				permissionManager: permissionManager,
 				updateManager: updateManager,
-				appLibraryManager: appLibraryManager
+				appLibraryManager: appLibraryManager,
+				audioManager: audioManager,
+				softwareUpdater: softwareUpdater
 			)
 			.frame(minWidth: 450, minHeight: 520)
 			.containerBackground(materialStyle.material, for: .window)
@@ -57,7 +68,9 @@ struct SettingsWithMaterial: View {
 			SettingsView(
 				permissionManager: permissionManager,
 				updateManager: updateManager,
-				appLibraryManager: appLibraryManager
+				appLibraryManager: appLibraryManager,
+				audioManager: audioManager,
+				softwareUpdater: softwareUpdater
 			)
 			.frame(minWidth: 450, minHeight: 520)
 		}
@@ -75,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	var updateManager: UpdateManager?
 	var permissionManager: PermissionManager?
 	var appLibraryManager: AppLibraryManager?
+	var softwareUpdater: SoftwareUpdater?
 	@AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
 	@AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
 	private var recordingObserver: NSObjectProtocol?
@@ -696,6 +710,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			}
 		}
 		return true
+	}
+
+	private func openSettingsWindow() {
+		NSApp.setActivationPolicy(.regular)
+		NSApp.activate(ignoringOtherApps: true)
+
+		if #available(macOS 26.0, *) {
+			Task { @MainActor in
+				if self.settingsSceneRepresentation == nil {
+					let scene = NSHostingSceneRepresentation {
+						Settings {
+							SettingsWithMaterial(
+								permissionManager: self.permissionManager ?? PermissionManager(),
+								updateManager: self.updateManager ?? UpdateManager(),
+								appLibraryManager: self.appLibraryManager ?? AppLibraryManager(),
+								audioManager: self.audioManager ?? AudioManager(),
+								softwareUpdater: self.softwareUpdater ?? SoftwareUpdater()
+							)
+						}
+					}
+					NSApplication.shared.addSceneRepresentation(scene)
+					self.settingsSceneRepresentation = scene
+				}
+				if let scene = self.settingsSceneRepresentation as? NSHostingSceneRepresentation<Settings<SettingsWithMaterial>> {
+					scene.environment.openSettings()
+				}
+			}
+		} else if #available(macOS 14.0, *) {
+			NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+		} else if #available(macOS 13.0, *) {
+			NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+		} else {
+			NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+		}
 	}
 
 	private func shouldTerminateDuplicateInstances() -> Bool {
