@@ -170,6 +170,7 @@ struct SettingsView: View {
 	@State var updateManager: UpdateManager
 	@State var appLibraryManager: AppLibraryManager
 	@Bindable var audioManager: AudioManager
+	@ObservedObject var softwareUpdater: SoftwareUpdater
 	@State var whisperKit = WhisperKitTranscriber.shared
 	@State private var availableModels: [String] = []
 	@State private var isRecordingShortcut = false
@@ -212,97 +213,37 @@ struct SettingsView: View {
 							VStack(alignment: .leading, spacing: 2) {
 								Text("Whispera")
 									.font(.headline)
-								Text(AppVersion.current.versionString)
-									.font(.caption)
-									.foregroundColor(.secondary)
+								HStack(spacing: 4) {
+									Text(AppVersion.current.versionString)
+										.font(.caption)
+										.foregroundColor(.secondary)
+									if let lastCheck = softwareUpdater.lastUpdateCheckDate {
+										Text("• Last checked: \(lastCheck, style: .relative) ago")
+											.font(.caption2)
+											.foregroundColor(.secondary)
+									}
+								}
 							}
 							Spacer()
-							if updateManager.isCheckingForUpdates {
-								ProgressView()
-									.scaleEffect(0.8)
-							} else {
-								Button("Check for Updates") {
-									Task {
-										do {
-											let hasUpdate =
-												try await updateManager.checkForUpdates()
-											if !hasUpdate {
-												showNoUpdateAlert()
-											}
-										} catch {
-											errorMessage =
-												"Failed to check for updates: \(error.localizedDescription)"
-											showingError = true
-										}
-									}
-								}
-								.buttonStyle(.bordered)
-								.disabled(updateManager.isCheckingForUpdates)
+							Button("Check for Updates") {
+								softwareUpdater.checkForUpdates()
 							}
+							.buttonStyle(.bordered)
+							.disabled(!softwareUpdater.canCheckForUpdates)
 						}
 
-						// MARK: - Update Notification Banner
-						if let latestVersion = updateManager.latestVersion,
-							AppVersion(latestVersion) > AppVersion.current
-						{
-							InfoBox(style: .info) {
-								VStack(alignment: .leading, spacing: 8) {
-									Text("Whispera \(latestVersion) is available")
-										.font(.headline)
+						SettingRow(
+							"Automatic Updates",
+							description: "Automatically check for updates"
+						) {
+							Toggle("", isOn: $softwareUpdater.automaticallyChecksForUpdates)
+						}
 
-									if let releaseNotes = updateManager.releaseNotes,
-										!releaseNotes.isEmpty
-									{
-										Text(releaseNotes)
-											.font(.caption)
-											.foregroundColor(.secondary)
-											.lineLimit(3)
-									}
-
-									HStack {
-										if updateManager.isUpdateDownloaded {
-											Button("Install Now") {
-												Task {
-													do {
-														try await updateManager
-															.installDownloadedUpdate()
-													} catch {
-														errorMessage =
-															"Failed to install update: \(error.localizedDescription)"
-														showingError = true
-													}
-												}
-											}
-											.buttonStyle(.borderedProminent)
-										} else {
-											Button("Download Update") {
-												Task {
-													do {
-														try await updateManager
-															.downloadUpdate()
-													} catch {
-														errorMessage =
-															"Failed to download update: \(error.localizedDescription)"
-														showingError = true
-													}
-												}
-											}
-											.buttonStyle(.borderedProminent)
-											.disabled(updateManager.isDownloadingUpdate)
-										}
-
-										if updateManager.isDownloadingUpdate {
-											ProgressView(value: updateManager.downloadProgress)
-												.frame(maxWidth: .infinity)
-										} else {
-											Button("View Release Notes") {
-												showReleaseNotes()
-											}
-											.buttonStyle(.bordered)
-										}
-									}
-								}
-							}
+						SettingRow(
+							"Auto-download Updates",
+							description: "Download updates in the background"
+						) {
+							Toggle("", isOn: $softwareUpdater.automaticallyDownloadsUpdates)
 						}
 					}
 
