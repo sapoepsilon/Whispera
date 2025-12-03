@@ -7,12 +7,6 @@
 
 import SwiftUI
 
-private enum ListeningState {
-	case initializing
-	case recording
-	case transcribing
-}
-
 struct ListeningView: View {
 	@State private var whisperKit = WhisperKitTranscriber.shared
 	@AppStorage("listeningViewCornerRadius") private var cornerRadius = 10.0
@@ -22,19 +16,11 @@ struct ListeningView: View {
 		self.audioManager = audioManager
 	}
 
-	private var currentState: ListeningState {
-		if audioManager.isMicrophoneInitializing {
-			return .initializing
-		} else if audioManager.isTranscribing {
-			return .transcribing
-		} else {
-			return .recording
-		}
-	}
-
 	@ViewBuilder
 	private var contentView: some View {
-		switch currentState {
+		switch audioManager.currentState {
+		case .idle:
+			EmptyView()
 		case .initializing:
 			HStack(spacing: 6) {
 				ProgressView()

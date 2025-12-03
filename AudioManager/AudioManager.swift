@@ -8,6 +8,13 @@ enum RecordingMode {
 	case liveTranscription
 }
 
+enum AudioState {
+	case idle
+	case initializing
+	case recording
+	case transcribing
+}
+
 @MainActor
 @Observable
 final class AudioManager: NSObject {
@@ -29,6 +36,18 @@ final class AudioManager: NSObject {
 	var transcriptionError: String?
 	var currentRecordingMode: RecordingMode = .text
 	var isMicrophoneInitializing = false
+
+	var currentState: AudioState {
+		if isMicrophoneInitializing {
+			return .initializing
+		} else if isTranscribing {
+			return .transcribing
+		} else if isRecording {
+			return .recording
+		} else {
+			return .idle
+		}
+	}
 
 	// MARK: - Composed Components
 
