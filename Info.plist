@@ -26,5 +26,9 @@
 	<string>Whispera needs accessibility access to monitor global keyboard shortcuts.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Whispera needs access to your microphone to transcribe audio.</string>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/sapoepsilon/Whispera/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>GbHOfW9t2r/mOlDit7usEnhy2upMdDdzNhFvHiKD7qU=</string>
 </dict>
 </plist>

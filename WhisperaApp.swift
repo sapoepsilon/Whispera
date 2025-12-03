@@ -1,9 +1,11 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @main
 struct WhisperaApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+	private let softwareUpdater = SoftwareUpdater()
 
 	var body: some Scene {
 		Settings {
@@ -11,7 +13,8 @@ struct WhisperaApp: App {
 				permissionManager: appDelegate.permissionManager ?? PermissionManager(),
 				updateManager: appDelegate.updateManager ?? UpdateManager(),
 				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager(),
-				audioManager: appDelegate.audioManager ?? AudioManager()
+				audioManager: appDelegate.audioManager ?? AudioManager(),
+				softwareUpdater: softwareUpdater
 			)
 		}
 		.windowStyle(.hiddenTitleBar)
@@ -30,6 +33,9 @@ struct WhisperaApp: App {
 					)
 				}
 			}
+			CommandGroup(after: .appInfo) {
+				CheckForUpdatesView(updater: softwareUpdater.updater)
+			}
 		}
 
 	}
@@ -40,6 +46,7 @@ struct SettingsWithMaterial: View {
 	var updateManager: UpdateManager
 	var appLibraryManager: AppLibraryManager
 	var audioManager: AudioManager
+	var softwareUpdater: SoftwareUpdater
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
 
 	private var materialStyle: MaterialStyle {
@@ -52,7 +59,8 @@ struct SettingsWithMaterial: View {
 				permissionManager: permissionManager,
 				updateManager: updateManager,
 				appLibraryManager: appLibraryManager,
-				audioManager: audioManager
+				audioManager: audioManager,
+				softwareUpdater: softwareUpdater
 			)
 			.frame(minWidth: 450, minHeight: 520)
 			.containerBackground(materialStyle.material, for: .window)
@@ -61,7 +69,8 @@ struct SettingsWithMaterial: View {
 				permissionManager: permissionManager,
 				updateManager: updateManager,
 				appLibraryManager: appLibraryManager,
-				audioManager: audioManager
+				audioManager: audioManager,
+				softwareUpdater: softwareUpdater
 			)
 			.frame(minWidth: 450, minHeight: 520)
 		}
@@ -79,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	var updateManager: UpdateManager?
 	var permissionManager: PermissionManager?
 	var appLibraryManager: AppLibraryManager?
+	var softwareUpdater: SoftwareUpdater?
 	@AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
 	@AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
 	@AppStorage("showMenuBarIcon") var showMenuBarIcon = true
@@ -748,7 +758,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 								permissionManager: self.permissionManager ?? PermissionManager(),
 								updateManager: self.updateManager ?? UpdateManager(),
 								appLibraryManager: self.appLibraryManager ?? AppLibraryManager(),
-								audioManager: self.audioManager ?? AudioManager()
+								audioManager: self.audioManager ?? AudioManager(),
+								softwareUpdater: self.softwareUpdater ?? SoftwareUpdater()
 							)
 						}
 					}
