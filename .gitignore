@@ -126,3 +126,4 @@ dist/
 
 # Claude
 .mcp.json
+plans/

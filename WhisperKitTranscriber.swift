@@ -336,11 +336,8 @@ import WhisperKit
 				whisperKit = try await Task { @MainActor in
 					let config = WhisperKitConfig(
 						downloadBase: baseModelCacheDirectory,
-						computeOptions: ModelComputeOptions(
-							melCompute: getMLComputeUnits(),
-							audioEncoderCompute: getMLComputeUnits(),
-							textDecoderCompute: getMLComputeUnits()
-						)
+						computeOptions: getOptimizedComputeOptions(),
+						prewarm: true
 					)
 					let whisperKitInstance = try await WhisperKit(config)
 					self.setupModelStateCallback(for: whisperKitInstance)
@@ -1349,11 +1346,8 @@ import WhisperKit
 				let config = WhisperKitConfig(
 					model: modelName,
 					downloadBase: baseModelCacheDirectory,
-					computeOptions: ModelComputeOptions(
-						melCompute: getMLComputeUnits(),
-						audioEncoderCompute: getMLComputeUnits(),
-						textDecoderCompute: getMLComputeUnits()
-					)
+					computeOptions: getOptimizedComputeOptions(),
+					prewarm: true
 				)
 				let whisperKitInstance = try await WhisperKit(config)
 				self.setupModelStateCallback(for: whisperKitInstance)
@@ -1602,14 +1596,32 @@ import WhisperKit
 		}
 	}
 
-	private func getMLComputeUnits() -> MLComputeUnits {
-		let value = UserDefaults.standard.integer(forKey: "modelComputeUnits")
-		switch value {
-		case 0: return .cpuOnly
-		case 1: return .cpuAndGPU
-		case 2: return .cpuAndNeuralEngine
-		case 3: return .all
-		default: return .cpuAndNeuralEngine
+	private func getOptimizedComputeOptions() -> ModelComputeOptions {
+		return ModelComputeOptions(
+			melCompute: .cpuAndGPU,
+			audioEncoderCompute: .cpuAndGPU,
+			textDecoderCompute: .cpuAndNeuralEngine,
+			prefillCompute: .cpuAndGPU
+		)
+	}
+
+	func getComputeOptionsStatus() -> [String: String] {
+		let options = getOptimizedComputeOptions()
+		return [
+			"melCompute": mlComputeUnitsName(options.melCompute),
+			"audioEncoderCompute": mlComputeUnitsName(options.audioEncoderCompute),
+			"textDecoderCompute": mlComputeUnitsName(options.textDecoderCompute),
+			"prefillCompute": mlComputeUnitsName(options.prefillCompute),
+		]
+	}
+
+	private func mlComputeUnitsName(_ units: MLComputeUnits) -> String {
+		switch units {
+		case .cpuOnly: return "cpuOnly"
+		case .cpuAndGPU: return "cpuAndGPU"
+		case .cpuAndNeuralEngine: return "cpuAndNeuralEngine"
+		case .all: return "all"
+		@unknown default: return "unknown"
 		}
 	}
 }

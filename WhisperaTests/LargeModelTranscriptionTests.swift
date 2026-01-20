@@ -82,6 +82,58 @@ final class LargeModelTranscriptionTests: XCTestCase {
 		)
 	}
 
+	// MARK: - Optimized Compute Options Tests
+
+	func testMelComputeUsesCPUAndGPU() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		let status = transcriber.getComputeOptionsStatus()
+
+		XCTAssertEqual(
+			status["melCompute"], "cpuAndGPU",
+			"melCompute should use CPU and GPU for feature extraction"
+		)
+	}
+
+	func testAudioEncoderComputeUsesCPUAndGPU() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		let status = transcriber.getComputeOptionsStatus()
+
+		XCTAssertEqual(
+			status["audioEncoderCompute"], "cpuAndGPU",
+			"audioEncoderCompute should use CPU and GPU"
+		)
+	}
+
+	func testTextDecoderComputeUsesCPUAndNeuralEngine() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		let status = transcriber.getComputeOptionsStatus()
+
+		XCTAssertEqual(
+			status["textDecoderCompute"], "cpuAndNeuralEngine",
+			"textDecoderCompute should use CPU and Neural Engine for optimal performance"
+		)
+	}
+
+	func testPrefillComputeUsesCPUAndGPU() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		let status = transcriber.getComputeOptionsStatus()
+
+		XCTAssertEqual(
+			status["prefillCompute"], "cpuAndGPU",
+			"prefillCompute should use CPU and GPU"
+		)
+	}
+
+	func testAllComputeOptionsAreConfigured() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		let status = transcriber.getComputeOptionsStatus()
+
+		XCTAssertNotNil(status["melCompute"], "melCompute should be configured")
+		XCTAssertNotNil(status["audioEncoderCompute"], "audioEncoderCompute should be configured")
+		XCTAssertNotNil(status["textDecoderCompute"], "textDecoderCompute should be configured")
+		XCTAssertNotNil(status["prefillCompute"], "prefillCompute should be configured")
+	}
+
 	// MARK: - Model Loading Integration Tests
 
 	/// This test actually loads a model and transcribes audio.
