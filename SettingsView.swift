@@ -1114,6 +1114,11 @@ struct SettingsView: View {
 			.tabItem {
 				Label("File Transcription", systemImage: "doc.on.doc")
 			}
+
+			BenchmarkView()
+				.tabItem {
+					Label("Benchmark", systemImage: "speedometer")
+				}
 		}
 		.frame(maxWidth: 600)
 		.onAppear {

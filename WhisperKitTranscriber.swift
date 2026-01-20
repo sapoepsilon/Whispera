@@ -792,26 +792,9 @@ import WhisperKit
 	}
 
 	private func getModelSpecificSampleLength() -> Int {
-		guard let currentModelName = currentModel else {
-			return 224  // Safe default for unknown models
-		}
-
-		let modelName = currentModelName.lowercased()
-
-		// Use conservative sampleLength values based on model size
-		if modelName.contains("tiny") {
-			return 224
-		} else if modelName.contains("base") {
-			return 224
-		} else if modelName.contains("small") {
-			return 224
-		} else if modelName.contains("medium") {
-			return 448
-		} else if modelName.contains("large") || modelName.contains("turbo") {
-			return 448
-		} else {
-			return 224  // Safe fallback
-		}
+		// Always use 224 as the safe default to prevent KV cache overflow crashes
+		// Larger values can cause NSInvalidArgumentException in CoreML
+		return 224
 	}
 
 	func resetDecodingOptionsToDefaults() {
@@ -891,10 +874,60 @@ import WhisperKit
 				lastError = error
 				let errorString = error.localizedDescription
 
-				if errorString.contains("Failed to open resource file")
+				if errorString.contains("Could not store NSNumber at offset")
+					|| errorString.contains("beyond the end of the multi array")
+				{
+					AppLogger.shared.transcriber.log(
+						"⚠️ Array bounds error detected, retrying with smaller sampleLength")
+
+					let fallbackOptions = DecodingOptions(
+						verbose: false,
+						task: decodingOptions?.task ?? .transcribe,
+						language: decodingOptions?.language,
+						temperature: savedTemperature,
+						temperatureFallbackCount: savedTemperatureFallbackCount,
+						sampleLength: 224,
+						usePrefillPrompt: savedUsePrefillPrompt,
+						usePrefillCache: savedUsePrefillCache,
+						skipSpecialTokens: savedSkipSpecialTokens,
+						withoutTimestamps: savedWithoutTimestamps,
+						wordTimestamps: savedWordTimestamps,
+						clipTimestamps: [0]
+					)
+
+					do {
+						let fallbackResult = try await Task { @MainActor in
+							guard let whisperKitInstance = self.whisperKit else {
+								throw WhisperKitError.notInitialized
+							}
+							switch input {
+							case .audioPath(let path):
+								return try await whisperKitInstance.transcribe(
+									audioPath: path, decodeOptions: fallbackOptions)
+							case .audioArray(let array):
+								return try await whisperKitInstance.transcribe(
+									audioArray: array, decodeOptions: fallbackOptions)
+							}
+						}.value
+
+						if !fallbackResult.isEmpty {
+							let transcription = fallbackResult.compactMap { $0.text }.joined(separator: " ")
+								.trimmingCharacters(in: .whitespacesAndNewlines)
+							if !transcription.isEmpty {
+								AppLogger.shared.transcriber.log(
+									"✅ WhisperKit \(logPrefix) transcription completed with fallback: \(transcription)")
+								return transcription
+							}
+						}
+						return "No speech detected"
+					} catch {
+						AppLogger.shared.transcriber.log(
+							"❌ Fallback transcription also failed: \(error)")
+						throw WhisperKitError.transcriptionFailed(error.localizedDescription)
+					}
+				} else if errorString.contains("Failed to open resource file")
 					|| errorString.contains("MPSGraphComputePackage") || errorString.contains("Metal")
 				{
-
 					AppLogger.shared.transcriber.log(
 						"⚠️ Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
 
@@ -921,6 +954,10 @@ import WhisperKit
 			{
 				throw WhisperKitError.transcriptionFailed(
 					"Metal Performance Shaders failed to load resources after \(maxRetries) attempts. Please restart the app."
+				)
+			} else if errorString.contains("Could not store NSNumber at offset") {
+				throw WhisperKitError.transcriptionFailed(
+					"Model cache size error. Try using a smaller model or restart the app."
 				)
 			} else {
 				throw WhisperKitError.transcriptionFailed(error.localizedDescription)
