@@ -72,6 +72,7 @@
 		D6BENCH012F0000000000001 /* BenchmarkResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6BENCH022F0000000000001 /* BenchmarkResult.swift */; };
 		D6BENCH012F0000000000002 /* BenchmarkRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6BENCH022F0000000000002 /* BenchmarkRunner.swift */; };
 		D6BENCH012F0000000000003 /* BenchmarkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6BENCH022F0000000000003 /* BenchmarkView.swift */; };
+		D6LMTEST12F0000000000001 /* LargeModelTranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6LMTEST22F0000000000001 /* LargeModelTranscriptionTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -160,6 +161,7 @@
 		D6BENCH022F0000000000001 /* BenchmarkResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkResult.swift; sourceTree = "<group>"; };
 		D6BENCH022F0000000000002 /* BenchmarkRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkRunner.swift; sourceTree = "<group>"; };
 		D6BENCH022F0000000000003 /* BenchmarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkView.swift; sourceTree = "<group>"; };
+		D6LMTEST22F0000000000001 /* LargeModelTranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LargeModelTranscriptionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -302,6 +304,7 @@
 				D698B9062E18EC70008FE0CF /* VersionTests.swift */,
 				D63850BC2E17907D000FD465 /* ModelSynchronizationTests.swift */,
 				D63850BD2E17907D000FD465 /* WhisperKitTranscriberTests.swift */,
+				D6LMTEST22F0000000000001 /* LargeModelTranscriptionTests.swift */,
 			);
 			path = WhisperaTests;
 			sourceTree = "<group>";
@@ -593,6 +596,7 @@
 				CFA1EB0C6BAB117DD9AD45C7 /* AppLibraryManagerTests.swift in Sources */,
 				D698B9082E18EC70008FE0CF /* VersionTests.swift in Sources */,
 				D698B9092E18EC70008FE0CF /* SingleInstanceTests.swift in Sources */,
+				D6LMTEST12F0000000000001 /* LargeModelTranscriptionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
