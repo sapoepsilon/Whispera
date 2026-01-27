@@ -108,16 +108,16 @@ final class UpdateManagerTests: XCTestCase {
 	}
 
 	func testInstallUpdate() async throws {
-		// Test update installation
+		// Test update installation with an invalid DMG
 		let testDMGPath = "/tmp/test-whispera.dmg"
 
-		// Create mock DMG file
+		// Create mock DMG file (empty file - will fail to mount)
 		FileManager.default.createFile(atPath: testDMGPath, contents: nil)
 		defer { try? FileManager.default.removeItem(atPath: testDMGPath) }
 
-		// Test installation process (in test mode, just verify it attempts)
+		// Installation should fail because empty file can't be mounted as DMG
 		let installed = await updateManager.installUpdate(from: testDMGPath)
-		XCTAssertTrue(installed, "Installation should succeed in test mode")
+		XCTAssertFalse(installed, "Installation should fail with invalid DMG file")
 	}
 
 	// MARK: - New Enhanced Download Tests
@@ -266,9 +266,9 @@ final class UpdateManagerTests: XCTestCase {
 	// MARK: - Observable Properties Tests
 
 	func testObservableProperties() {
-		// Test that new observable properties work correctly
-		XCTAssertNotNil(updateManager.downloadingVersion)
-		XCTAssertNotNil(updateManager.downloadLocation)
+		// Test that optional properties are initially nil
+		XCTAssertNil(updateManager.downloadingVersion)
+		XCTAssertNil(updateManager.downloadLocation)
 
 		// Test property changes
 		updateManager.downloadingVersion = "test-version"
@@ -281,16 +281,13 @@ final class UpdateManagerTests: XCTestCase {
 	// MARK: - Install Button Logic Tests
 
 	func testIsUpdateDownloaded() {
+		// Use unique test version to avoid conflicts with real downloads
+		let testVersion = "88.88.88-test-download"
+
 		// Test when no version is set
 		updateManager.latestVersion = nil
 		XCTAssertFalse(updateManager.isUpdateDownloaded)
 
-		// Test when version is set but file doesn't exist
-		updateManager.latestVersion = "1.0.1"
-		XCTAssertFalse(updateManager.isUpdateDownloaded)
-
-		// Test when file exists
-		updateManager.latestVersion = "1.0.1"
 		guard
 			let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
 				.first
@@ -299,17 +296,39 @@ final class UpdateManagerTests: XCTestCase {
 			return
 		}
 
-		let localURL = downloadsDir.appendingPathComponent("Whispera-1.0.1.dmg")
+		let localURL = downloadsDir.appendingPathComponent("Whispera-\(testVersion).dmg")
+
+		// Clean up any existing file first
+		try? FileManager.default.removeItem(at: localURL)
+
+		// Test when version is set but file doesn't exist
+		updateManager.latestVersion = testVersion
+		XCTAssertFalse(updateManager.isUpdateDownloaded, "Should not be downloaded before file exists")
 
 		// Create mock file
 		FileManager.default.createFile(atPath: localURL.path, contents: Data())
 		defer { try? FileManager.default.removeItem(at: localURL) }
 
-		XCTAssertTrue(updateManager.isUpdateDownloaded)
+		XCTAssertTrue(updateManager.isUpdateDownloaded, "Should be downloaded after file exists")
 	}
 
 	func testInstallDownloadedUpdate() async {
-		updateManager.latestVersion = "1.0.1"
+		// Use unique test version to avoid conflicts
+		let testVersion = "77.77.77-test-install"
+		updateManager.latestVersion = testVersion
+
+		guard
+			let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
+				.first
+		else {
+			XCTFail("Downloads directory not available")
+			return
+		}
+
+		let localURL = downloadsDir.appendingPathComponent("Whispera-\(testVersion).dmg")
+
+		// Ensure file doesn't exist
+		try? FileManager.default.removeItem(at: localURL)
 
 		// Test when file doesn't exist
 		do {
@@ -319,17 +338,12 @@ final class UpdateManagerTests: XCTestCase {
 			XCTAssertTrue(error is UpdateError)
 			XCTAssertEqual(error as? UpdateError, UpdateError.downloadFailed)
 		}
-
-		// Note: Testing actual installation would require complex mocking
-		// The method exists and has proper error handling
 	}
 
 	func testInstallButtonLogic() {
-		// Test install vs download button states
-		updateManager.latestVersion = "1.0.1"
-
-		// Initially no file exists, should show download
-		XCTAssertFalse(updateManager.isUpdateDownloaded)
+		// Test install vs download button states using a unique version to avoid conflicts
+		let testVersion = "99.99.99-test"
+		updateManager.latestVersion = testVersion
 
 		guard
 			let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
@@ -339,13 +353,20 @@ final class UpdateManagerTests: XCTestCase {
 			return
 		}
 
-		let localURL = downloadsDir.appendingPathComponent("Whispera-1.0.1.dmg")
+		let localURL = downloadsDir.appendingPathComponent("Whispera-\(testVersion).dmg")
+
+		// Clean up any existing file first
+		try? FileManager.default.removeItem(at: localURL)
+
+		// Initially no file exists, should show download
+		XCTAssertFalse(updateManager.isUpdateDownloaded, "Should not be downloaded before file creation")
 
 		// Create file, should show install
-		FileManager.default.createFile(atPath: localURL.path, contents: Data())
+		let created = FileManager.default.createFile(atPath: localURL.path, contents: Data())
+		XCTAssertTrue(created, "File should be created successfully")
 		defer { try? FileManager.default.removeItem(at: localURL) }
 
-		XCTAssertTrue(updateManager.isUpdateDownloaded)
+		XCTAssertTrue(updateManager.isUpdateDownloaded, "Should be downloaded after file creation")
 	}
 
 	// MARK: - Integration Tests
