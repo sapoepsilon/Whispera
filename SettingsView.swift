@@ -193,7 +193,6 @@ struct SettingsView: View {
 	// Extended logging settings
 	@AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
 	@AppStorage("enableDebugLogging") private var enableDebugLogging = false
-	@AppStorage("modelComputeUnits") private var modelComputeUnits = 2
 
 	var body: some View {
 		TabView {
@@ -496,34 +495,10 @@ struct SettingsView: View {
 
 					SettingsSection("Performance") {
 						VStack(alignment: .leading, spacing: 8) {
-							Text("Model Compute Units")
+							Text("Optimized Compute Configuration")
 								.font(.subheadline)
-							Text("Hardware acceleration for all model components")
-								.font(.caption)
-								.foregroundColor(.secondary)
-
-							Picker("Compute Units", selection: $modelComputeUnits) {
-								Text("CPU Only").tag(0)
-								Text("CPU + GPU").tag(1)
-								Text("CPU + Neural Engine").tag(2)
-								Text("All").tag(3)
-							}
-							.labelsHidden()
-							.pickerStyle(.segmented)
-
-							HStack {
-								Button("Apply Changes") {
-									Task {
-										await refreshModelWithNewComputeOptions()
-									}
-								}
-								.buttonStyle(.bordered)
-								.disabled(whisperKit.isModelLoading || whisperKit.isDownloadingModel)
-								Spacer()
-							}
-
 							Text(
-								"CPU + Neural Engine is recommended for best performance on Apple Silicon Macs."
+								"Audio processing uses CPU + GPU, text decoding uses CPU + Neural Engine for optimal performance on Apple Silicon."
 							)
 							.font(.caption)
 							.foregroundColor(.secondary)
@@ -1114,6 +1089,11 @@ struct SettingsView: View {
 			.tabItem {
 				Label("File Transcription", systemImage: "doc.on.doc")
 			}
+
+			BenchmarkView()
+				.tabItem {
+					Label("Benchmark", systemImage: "speedometer")
+				}
 		}
 		.frame(maxWidth: 600)
 		.onAppear {
@@ -1647,20 +1627,6 @@ struct SettingsView: View {
 			let (_, formatted) = await appLibraryManager.getLogsSize()
 			await MainActor.run {
 				logsSize = formatted.isEmpty ? "No logs" : formatted
-			}
-		}
-	}
-
-	private func refreshModelWithNewComputeOptions() async {
-		guard whisperKit.currentModel != nil else { return }
-
-		do {
-			try await whisperKit.reloadCurrentModelIfNeeded()
-		} catch {
-			await MainActor.run {
-				errorMessage =
-					"Failed to refresh model with new compute options: \(error.localizedDescription)"
-				showingError = true
 			}
 		}
 	}

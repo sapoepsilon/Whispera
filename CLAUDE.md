@@ -155,3 +155,7 @@ Models are downloaded to `~/Library/Application Support/Whispera/models/argmaxin
 - Mock only external dependencies (network, file system)
 - Use `@MainActor` for SwiftUI-related test operations
 - Test files located in `WhisperaTests/`, `WhisperaUITests/`
+
+## Plans Directory
+
+The `plans/` directory contains implementation plans and TDD checklists for features in development. This directory is gitignored and not committed to the repository. Plans are for local development reference only.
