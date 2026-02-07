@@ -86,7 +86,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var onboardingWindow: NSWindow?
 	private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
-	private var popoverFrame: NSRect?
+	private var iconAnimationTask: Task<Void, Never>?
+	private let statusIconConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium, scale: .medium)
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		if shouldTerminateDuplicateInstances() {
@@ -201,10 +202,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	}
 
 	func setupMenuBar() {
-		statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+		statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
 		if let button = statusItem?.button {
-			button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
+			let image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
+			image?.isTemplate = true
+			button.image = image?.withSymbolConfiguration(statusIconConfig)
 			button.action = #selector(togglePopover)
 			button.target = self
 		}
@@ -235,66 +238,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 		if popover.isShown {
 			popover.performClose(nil)
-			popoverFrame = nil
 			return
 		}
 
-		guard let screen = button.window?.screen,
-			let buttonWindow = button.window,
-			let hostingView = popover.contentViewController?.view
-		else {
-			popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-			return
-		}
-
-		let screenFrame = screen.visibleFrame
-		let buttonFrame = buttonWindow.frame
-		let popoverSize = hostingView.fittingSize
-		let margin: CGFloat = 8
-
-		let spaceRight = screenFrame.maxX - buttonFrame.maxX
-		let spaceLeft = buttonFrame.minX - screenFrame.minX
-
-		let wouldOverflowRight = spaceRight < popoverSize.width
-		let wouldOverflowLeft = spaceLeft < popoverSize.width
-
-		if wouldOverflowRight || wouldOverflowLeft {
-			popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-
-			DispatchQueue.main.async {
-				guard let popoverWindow = self.popover.contentViewController?.view.window else { return }
-				var popoverFrame = popoverWindow.frame
-
-				if wouldOverflowRight {
-					popoverFrame.origin.x = screenFrame.maxX - popoverSize.width - margin
-				} else if wouldOverflowLeft {
-					popoverFrame.origin.x = screenFrame.minX + margin
-				}
-
-				popoverWindow.setFrame(popoverFrame, display: true, animate: false)
-				self.popoverFrame = popoverFrame
-			}
-		} else {
-			popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-			DispatchQueue.main.async {
-				if let popoverWindow = self.popover.contentViewController?.view.window {
-					self.popoverFrame = popoverWindow.frame
-				}
-			}
-		}
-	}
-
-	private func restorePopoverPositionIfNeeded() {
-		guard popover.isShown,
-			let savedFrame = popoverFrame,
-			let popoverWindow = popover.contentViewController?.view.window
-		else {
-			return
-		}
-
-		if popoverWindow.frame != savedFrame {
-			popoverWindow.setFrame(savedFrame, display: false, animate: false)
-		}
+		popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 	}
 	private func showOnboarding() {
 		let onboardingView = OnboardingView(
@@ -421,173 +368,65 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 	@MainActor
 	private func updateStatusIcon() {
-		if let button = statusItem?.button {
-			let whisperKit = audioManager.whisperKitTranscriber
+		guard let button = statusItem?.button else { return }
+		let whisperKit = audioManager.whisperKitTranscriber
 
-			// Clean up any previous subviews and stop any animations
-			button.subviews.removeAll()
-			button.layer?.removeAllAnimations()
+		iconAnimationTask?.cancel()
+		iconAnimationTask = nil
+		button.alphaValue = 1.0
 
-			let wasPopoverShown = popover.isShown
+		if permissionManager?.needsPermissions == true {
+			setStatusImage("exclamationmark.triangle.fill", description: "Permissions Required", on: button)
+			startAlphaPulse(on: button, fadeTo: 0.5, duration: 0.6)
 
-			if permissionManager?.needsPermissions == true {
-				// Permission warning state - orange exclamation mark with pulse
-				button.image = NSImage(
-					systemSymbolName: "exclamationmark.triangle.fill",
-					accessibilityDescription: "Whispera - Permissions Required")
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
+		} else if whisperKit.isDownloadingModel || networkDownloader?.isDownloading == true {
+			setStatusImage("arrow.down.circle", description: "Downloading", on: button)
+			startAlphaPulse(on: button, fadeTo: 0.3, duration: 0.8)
 
-				// Add warning pulse animation
-				addPermissionWarningAnimation(to: button)
+		} else if audioManager.isTranscribing || fileTranscriptionManager?.isTranscribing == true
+			|| queueManager?.isProcessing == true
+		{
+			setStatusImage("waveform", description: "Transcribing", on: button)
+			startAlphaPulse(on: button, fadeTo: 0.7, duration: 1.5)
 
-			} else if whisperKit.isDownloadingModel {
-				// Downloading state - rotating download icon to indicate progress
-				button.image = NSImage(
-					systemSymbolName: "arrow.down.circle", accessibilityDescription: "Whispera - Downloading")
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
+		} else if audioManager.isRecording {
+			setStatusImage("mic.circle.fill", description: "Recording", on: button)
+			startAlphaPulse(on: button, fadeTo: 0.4, duration: 0.8)
 
-				// Add continuous rotation animation to indicate download
-				addDownloadAnimation(to: button)
-
-			} else if networkDownloader?.isDownloading == true {
-				// Network downloading state - arrow down with rotation
-				button.image = NSImage(
-					systemSymbolName: "arrow.down.circle", accessibilityDescription: "Whispera - Downloading")
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
-
-				// Add download animation
-				addDownloadAnimation(to: button)
-
-			} else if audioManager.isTranscribing || fileTranscriptionManager?.isTranscribing == true
-				|| queueManager?.isProcessing == true
-			{
-				// Transcribing state - waveform icon with subtle pulse
-				button.image = NSImage(
-					systemSymbolName: "waveform", accessibilityDescription: "Whispera - Transcribing")
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
-
-				// Add gentle pulsing for transcription
-				addTranscriptionAnimation(to: button)
-
-			} else if audioManager.isRecording {
-				// Recording state - filled microphone icon with stronger pulse
-				button.image = NSImage(
-					systemSymbolName: "mic.circle.fill", accessibilityDescription: "Whispera - Recording")
-				button.image?.isTemplate = true
-
-				// Add a stronger pulsing animation to show active recording
-				addRecordingAnimation(to: button)
-			} else {
-				// Ready state - default microphone icon, no animation
-				button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
-			}
-
-			if wasPopoverShown {
-				DispatchQueue.main.async {
-					self.restorePopoverPositionIfNeeded()
-				}
-			}
+		} else {
+			setStatusImage("microphone", description: "Ready", on: button)
 		}
 	}
 
-	private func addDownloadAnimation(to button: NSStatusBarButton) {
-		// Use NSAnimationContext instead of Core Animation for status bar buttons
-		button.alphaValue = 1.0
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 0.8
-			context.allowsImplicitAnimation = true
-			context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-			button.animator().alphaValue = 0.3
-		} completionHandler: {
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0.8
-				context.allowsImplicitAnimation = true
-				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-				button.animator().alphaValue = 1.0
-			} completionHandler: {
-				// Continue animation if still downloading
-				Task { @MainActor in
-					if self.audioManager.whisperKitTranscriber.isDownloadingModel
-						|| self.networkDownloader?.isDownloading == true
-					{
-						self.addDownloadAnimation(to: button)
+	private func setStatusImage(_ symbolName: String, description: String, on button: NSStatusBarButton) {
+		let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Whispera - \(description)")
+		image?.isTemplate = true
+		button.image = image?.withSymbolConfiguration(statusIconConfig)
+	}
+
+	private func startAlphaPulse(on button: NSStatusBarButton, fadeTo: CGFloat, duration: CGFloat) {
+		iconAnimationTask = Task { @MainActor [weak self] in
+			guard self != nil else { return }
+			while !Task.isCancelled {
+				await withCheckedContinuation { continuation in
+					NSAnimationContext.runAnimationGroup { context in
+						context.duration = duration
+						context.allowsImplicitAnimation = true
+						context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+						button.animator().alphaValue = fadeTo
+					} completionHandler: {
+						continuation.resume()
 					}
 				}
-			}
-		}
-	}
-
-	private func addPermissionWarningAnimation(to button: NSStatusBarButton) {
-		// Warning pulse for permissions - faster and more urgent than other animations
-		button.alphaValue = 1.0
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 0.6
-			context.allowsImplicitAnimation = true
-			context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-			button.animator().alphaValue = 0.5
-		} completionHandler: {
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0.6
-				context.allowsImplicitAnimation = true
-				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-				button.animator().alphaValue = 1.0
-			} completionHandler: {
-				// Continue animation if still needs permissions
-				if self.permissionManager?.needsPermissions == true {
-					self.addPermissionWarningAnimation(to: button)
-				}
-			}
-		}
-	}
-
-	private func addTranscriptionAnimation(to button: NSStatusBarButton) {
-		// Gentle pulsing for transcription
-		button.alphaValue = 1.0
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 1.5
-			context.allowsImplicitAnimation = true
-			context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-			button.animator().alphaValue = 0.7
-		} completionHandler: {
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 1.5
-				context.allowsImplicitAnimation = true
-				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-				button.animator().alphaValue = 1.0
-			} completionHandler: {
-				Task { @MainActor in
-					if self.audioManager.isTranscribing {
-						self.addTranscriptionAnimation(to: button)
-					}
-				}
-			}
-		}
-	}
-
-	private func addRecordingAnimation(to button: NSStatusBarButton) {
-		// Stronger pulsing for recording
-		button.alphaValue = 1.0
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 0.8
-			context.allowsImplicitAnimation = true
-			context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-			button.animator().alphaValue = 0.4
-		} completionHandler: {
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0.8
-				context.allowsImplicitAnimation = true
-				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-				button.animator().alphaValue = 1.0
-			} completionHandler: {
-				Task { @MainActor in
-					if self.audioManager.isRecording {
-						self.addRecordingAnimation(to: button)
+				if Task.isCancelled { break }
+				await withCheckedContinuation { continuation in
+					NSAnimationContext.runAnimationGroup { context in
+						context.duration = duration
+						context.allowsImplicitAnimation = true
+						context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+						button.animator().alphaValue = 1.0
+					} completionHandler: {
+						continuation.resume()
 					}
 				}
 			}
