@@ -351,6 +351,7 @@ extension AudioManager {
 		timer.start()
 		playFeedbackSound(start: true)
 		whisperKitTranscriber.clearLiveTranscriptionState()
+		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
 
 		Task {
 			do {

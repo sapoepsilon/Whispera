@@ -52,7 +52,8 @@ class LiveTranscriptionWindow: NSWindow {
 				guard let self = self else { return }
 
 				let shouldShow =
-					self.whisperKit.shouldShowLiveTranscriptionWindow && self.whisperKit.isTranscribing
+					self.whisperKit.shouldShowLiveTranscriptionWindow
+					&& (self.whisperKit.isTranscribing || self.whisperKit.isWaitingForModel)
 
 				if shouldShow {
 					let newSize = self.calculateDynamicSize()
@@ -79,7 +80,10 @@ class LiveTranscriptionWindow: NSWindow {
 							self.lastCaretPosition = currentCaretPosition
 						}
 
-						let pendingText = self.whisperKit.stableDisplayText
+						let pendingText =
+							self.whisperKit.isWaitingForModel
+							? self.whisperKit.waitingForModelStatusText
+							: self.whisperKit.stableDisplayText
 
 						if pendingText != self.lastTextContent {
 							self.updateWindowSize(newSize)
@@ -97,7 +101,10 @@ class LiveTranscriptionWindow: NSWindow {
 	}
 
 	private func calculateDynamicSize() -> NSSize {
-		let pendingText = whisperKit.stableDisplayText
+		let pendingText =
+			whisperKit.isWaitingForModel
+			? whisperKit.waitingForModelStatusText
+			: whisperKit.stableDisplayText
 
 		if pendingText.isEmpty {
 			return NSSize(width: 120, height: 36)

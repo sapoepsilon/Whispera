@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DictationView: View {
-	@State private var whisperKit = WhisperKitTranscriber.shared
+	@Bindable private var whisperKit = WhisperKitTranscriber.shared
 	private let audioManager: AudioManager
 
 	// Live transcription customization settings
@@ -31,7 +31,19 @@ struct DictationView: View {
 
 	var body: some View {
 		VStack(spacing: 0) {
-			if !whisperKit.stableDisplayText.isEmpty {
+			if whisperKit.isWaitingForModel {
+				HStack(spacing: 8) {
+					ProgressView()
+						.scaleEffect(0.7)
+					Text(whisperKit.waitingForModelStatusText)
+						.font(.system(.caption, design: .rounded))
+						.foregroundColor(.secondary)
+						.lineLimit(1)
+				}
+				.padding(.horizontal, 14)
+				.padding(.vertical, 10)
+				.transition(.opacity.combined(with: .scale(scale: 0.95)))
+			} else if !whisperKit.stableDisplayText.isEmpty {
 				HStack(spacing: 4) {
 					if showEllipsis
 						&& whisperKit.stableDisplayText.split(separator: " ").count > maxWordsToShow
