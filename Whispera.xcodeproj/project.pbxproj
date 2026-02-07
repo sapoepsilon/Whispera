@@ -351,6 +351,7 @@
 				D6F9D79B2EDEA40A00959822 /* swift-format */,
 				CACACACACACACACACACACACA /* Sources */,
 				5A5A5A5A5A5A5A5A5A5A5A5A /* Frameworks */,
+				D6F9D7A02EDF0B1A00959822 /* Embed Sparkle XPC Services */,
 				DADADADADADADADADADADADA /* Resources */,
 			);
 			buildRules = (
@@ -483,6 +484,24 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		D6F9D7A02EDF0B1A00959822 /* Embed Sparkle XPC Services */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed Sparkle XPC Services";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\nDEST=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/XPCServices\"\n\nSRC1=\"${BUILT_PRODUCTS_DIR}/PackageFrameworks/Sparkle.framework/XPCServices\"\nSRC2=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Sparkle.framework/XPCServices\"\n\nSRC=\"\"\nif [ -d \"$SRC1\" ]; then\n  SRC=\"$SRC1\"\nelif [ -d \"$SRC2\" ]; then\n  SRC=\"$SRC2\"\nfi\n\nif [ -n \"$SRC\" ]; then\n  mkdir -p \"$DEST\"\n  rsync -a --delete \"$SRC/\" \"$DEST/\"\nfi\n";
+		};
 		D6F9D79B2EDEA40A00959822 /* swift-format */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

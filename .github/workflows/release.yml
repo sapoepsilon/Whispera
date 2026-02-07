@@ -143,27 +143,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Commit and push appcast.xml
+      - name: Publish appcast.xml to main
         if: success()
         run: |
-          if [ -f appcast.xml ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git fetch origin main
-            git checkout main
-            git pull origin main
-            cp appcast.xml .
-            git add appcast.xml
-            if git diff --staged --quiet; then
-              echo "No changes to appcast.xml"
-            else
-              git commit -m "chore: update appcast.xml for v${{ steps.version.outputs.version }}"
-              git push origin main
-              echo "✅ Appcast committed and pushed"
-            fi
-          else
-            echo "⚠️ appcast.xml not found, skipping commit"
+          set -e
+
+          if [ ! -f appcast.xml ]; then
+            echo "⚠️ appcast.xml not found, skipping publish"
+            exit 0
           fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main
+
+          git worktree remove --force main-worktree 2>/dev/null || true
+          rm -rf main-worktree
+          git worktree add main-worktree origin/main
+
+          cp appcast.xml main-worktree/appcast.xml
+
+          cd main-worktree
+          git checkout -B main
+
+          git add appcast.xml
+          if git diff --staged --quiet; then
+            echo "No changes to appcast.xml"
+            exit 0
+          fi
+
+          git commit -m "chore(release): update appcast for v${{ steps.version.outputs.version }}"
+          git push origin HEAD:main
+
+          echo "✅ Appcast committed and pushed"
 
       - name: Cleanup keychain
         if: always()
@@ -182,4 +195,3 @@ jobs:
             build/
             *.log
           retention-days: 7
-

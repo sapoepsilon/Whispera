@@ -198,10 +198,13 @@ if [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
         fi
     done
 
-    if [ -n "$SIGN_UPDATE" ]; then
-        # Sign the versioned DMG
-        SIGNATURE=$("$SIGN_UPDATE" "${DIST_PATH}/${DMG_VERSIONED}" -f "$SPARKLE_KEY_FILE" 2>&1)
-        echo "✅ Sparkle signature generated"
+		if [ -n "$SIGN_UPDATE" ]; then
+			# Sign the versioned DMG
+			SIGNATURE=$("$SIGN_UPDATE" "${DIST_PATH}/${DMG_VERSIONED}" -f "$SPARKLE_KEY_FILE" | tr -d '\r\n')
+			if [ -z "$SIGNATURE" ]; then
+				echo "⚠️ Sparkle sign_update produced empty output"
+			fi
+			echo "✅ Sparkle signature generated"
 
         # Get file size
         FILE_SIZE=$(stat -f%z "${DIST_PATH}/${DMG_VERSIONED}")
