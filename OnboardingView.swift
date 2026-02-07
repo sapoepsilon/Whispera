@@ -6,17 +6,16 @@ struct OnboardingView: View {
 	@ObservedObject var shortcutManager: GlobalShortcutManager
 
 	@State private var currentStep = 0
+	@State private var direction: Int = 1
 	@State private var selectedModel = ""
 	@State private var customShortcut = ""
 	@State private var hasPermissions = false
 	@State private var launchAtLogin = false
-	@State private var showingShortcutCapture = false
 
 	@AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
 	@AppStorage("selectedModel") private var storedModel = ""
 	@AppStorage("launchAtStartup") private var storedLaunchAtLogin = false
-	@AppStorage("enableTranslation") private var enableTranslation = false
 	@AppStorage("enableStreaming") private var enableStreaming = true
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
@@ -25,35 +24,33 @@ struct OnboardingView: View {
 		MaterialStyle(rawValue: materialStyleRaw)
 	}
 
-	private let steps = [
-		"Welcome", "Permissions", "Model", "Shortcut", "Settings", "Test", "Complete",
-	]
+	private let steps = ["Welcome", "Permissions", "Setup", "Try It", "Complete"]
 
 	var body: some View {
 		VStack(spacing: 0) {
-			VStack(spacing: 8) {
-				Text("Welcome to Whispera")
-					.font(.system(.title, design: .rounded, weight: .semibold))
-					.foregroundColor(.primary)
-				OnboardingProgressView(currentStep: currentStep, totalSteps: steps.count)
-			}
+			OnboardingProgressView(
+				currentStep: currentStep,
+				totalSteps: steps.count,
+				stepNames: steps
+			)
 			.padding(.horizontal, 40)
 			.padding(.top, 30)
-			.padding(.bottom, 20)
+			.padding(.bottom, 16)
 
-			ScrollView {
-				VStack(spacing: 30) {
-					stepContent
-				}
-				.padding(.horizontal, 40)
-				.padding(.vertical, 30)
+			ZStack {
+				stepContent
+					.id(currentStep)
+					.transition(SlideTransition(direction: direction))
 			}
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+			.clipped()
+			.animation(.spring(duration: 0.5, bounce: 0.18), value: currentStep)
 
-			// Navigation buttons
 			HStack(spacing: 16) {
 				if currentStep > 0 {
 					Button("Back") {
-						withAnimation(.easeInOut(duration: 0.3)) {
+						direction = -1
+						withAnimation {
 							currentStep -= 1
 						}
 					}
@@ -70,14 +67,21 @@ struct OnboardingView: View {
 			}
 			.padding(.horizontal, 40)
 			.padding(.bottom, 30)
+			.padding(.top, 8)
 		}
 		.background(materialStyle.material)
+		.overlay(
+			LinearGradient(
+				colors: [Color.blue.opacity(0.02), Color.clear],
+				startPoint: .top,
+				endPoint: .center
+			)
+			.allowsHitTesting(false)
+		)
 		.frame(width: 600, height: 750)
 		.onAppear {
 			checkPermissions()
-			// Initialize customShortcut with stored value
 			customShortcut = globalShortcut
-			// Initialize launchAtLogin with stored value
 			launchAtLogin = storedLaunchAtLogin
 		}
 	}
@@ -89,21 +93,26 @@ struct OnboardingView: View {
 			WelcomeStepView()
 		case 1:
 			PermissionsStepView(
-				hasPermissions: $hasPermissions, audioManager: audioManager,
-				globalShortcutManager: shortcutManager)
+				hasPermissions: $hasPermissions,
+				audioManager: audioManager,
+				globalShortcutManager: shortcutManager
+			)
 		case 2:
-			ModelSelectionStepView(selectedModel: $selectedModel, audioManager: audioManager)
+			SetupStepView(
+				selectedModel: $selectedModel,
+				customShortcut: $customShortcut,
+				launchAtLogin: $launchAtLogin,
+				audioManager: audioManager
+			)
 		case 3:
-			ShortcutStepView(
-				customShortcut: $customShortcut, showingShortcutCapture: $showingShortcutCapture)
-		case 4:
-			SettingsStepView(launchAtLogin: $launchAtLogin)
-		case 5:
 			TestStepView(
-				audioManager: audioManager, enableTranslation: $enableTranslation,
-				selectedLanguage: $selectedLanguage)
-		case 6:
+				audioManager: audioManager,
+				selectedLanguage: $selectedLanguage
+			)
+			.padding(.horizontal, 40)
+		case 4:
 			CompleteStepView()
+				.padding(.horizontal, 40)
 		default:
 			EmptyView()
 		}
@@ -112,13 +121,12 @@ struct OnboardingView: View {
 	private var nextButtonText: String {
 		switch currentStep {
 		case 0: return "Get Started"
-		case 1: return (hasPermissions) ? "Continue" : "Grant Permissions"
+		case 1: return hasPermissions ? "Continue" : "Grant Permissions"
 		case 2:
-			return audioManager.whisperKitTranscriber.isDownloadingModel ? "Downloading..." : "Continue"
-		case 3: return "Set Shortcut"
-		case 4: return "Continue"
-		case 5: return audioManager.lastTranscription != nil ? "Continue" : "Skip Test"
-		case 6: return "Finish Setup"
+			return audioManager.whisperKitTranscriber.isDownloadingModel
+				? "Downloading..." : "Continue"
+		case 3: return audioManager.lastTranscription != nil ? "Continue" : "Skip Test"
+		case 4: return "Finish Setup"
 		default: return "Next"
 		}
 	}
@@ -139,24 +147,20 @@ struct OnboardingView: View {
 				return
 			}
 		case 2:
-			// Model selection step - model should already be downloaded
 			storedModel = selectedModel
-		case 3:
 			globalShortcut = customShortcut
 			shortcutManager.currentShortcut = customShortcut
-		case 4:
 			storedLaunchAtLogin = launchAtLogin
-		case 5:
-			if audioManager.lastTranscription == nil && nextButtonText != "Skip Test" {
-				return
-			}
-		case 6:
+		case 3:
+			break
+		case 4:
 			completeOnboarding()
 			return
 		default:
 			break
 		}
 
+		direction = 1
 		withAnimation {
 			currentStep += 1
 		}
@@ -167,18 +171,13 @@ struct OnboardingView: View {
 	}
 
 	private func requestPermissions() {
-		// Request accessibility permissions
 		let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true]
 		AXIsProcessTrustedWithOptions(options)
 
-		// Request microphone permissions if needed
 		if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
-			AVCaptureDevice.requestAccess(for: .audio) { _ in
-				// Permission response handled by the view update
-			}
+			AVCaptureDevice.requestAccess(for: .audio) { _ in }
 		}
 
-		// Check again after a short delay
 		DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
 			checkPermissions()
 		}
@@ -187,11 +186,7 @@ struct OnboardingView: View {
 	private func completeOnboarding() {
 		hasCompletedOnboarding = true
 		storedModel = selectedModel
-
-		NotificationCenter.default.post(name: NSNotification.Name("OnboardingCompleted"), object: nil)
-	}
-
-	private func checkMicrophonePermissionStatus() -> Bool {
-		return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+		NotificationCenter.default.post(
+			name: NSNotification.Name("OnboardingCompleted"), object: nil)
 	}
 }

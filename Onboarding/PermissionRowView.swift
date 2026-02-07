@@ -1,9 +1,3 @@
-//
-//  PermissionsRowView.swift
-//  Whispera
-//
-//  Created by Varkhuman Mac on 7/4/25.
-//
 import SwiftUI
 
 struct PermissionRowView: View {
@@ -11,6 +5,8 @@ struct PermissionRowView: View {
 	let title: String
 	let description: String
 	let isGranted: Bool
+
+	@State private var checkScale: CGFloat = 1.0
 
 	var body: some View {
 		HStack(spacing: 16) {
@@ -36,8 +32,17 @@ struct PermissionRowView: View {
 
 			Image(systemName: isGranted ? "checkmark.circle.fill" : "circle")
 				.foregroundColor(isGranted ? .green : .gray)
+				.scaleEffect(checkScale)
 		}
 		.padding()
-		.background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
+		.background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+		.onChange(of: isGranted) { wasGranted, nowGranted in
+			if !wasGranted && nowGranted {
+				checkScale = 0.3
+				withAnimation(.spring(duration: 0.4, bounce: 0.5)) {
+					checkScale = 1.0
+				}
+			}
+		}
 	}
 }
