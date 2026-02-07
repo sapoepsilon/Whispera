@@ -69,15 +69,10 @@ final class WhisperKitTranscriberTests: XCTestCase {
 		let emptyAudioArray: [Float] = []
 
 		// When & Then
-		do {
-			let result = try await transcriber.transcribeAudioArray(
-				emptyAudioArray, enableTranslation: false)
-			XCTAssertEqual(
-				result, "No audio data provided", "Should return appropriate message for empty audio array")
-		} catch WhisperKitError.notInitialized {
-			// This is expected if WhisperKit is not initialized in test environment
-			XCTAssertTrue(true, "Expected error when WhisperKit not initialized")
-		}
+		let result = try await transcriber.transcribeAudioArray(
+			emptyAudioArray, enableTranslation: false)
+		XCTAssertEqual(
+			result, "No audio data provided", "Should return appropriate message for empty audio array")
 	}
 
 	func testTranscribeAudioArrayWithValidData() async throws {
@@ -101,8 +96,7 @@ final class WhisperKitTranscriberTests: XCTestCase {
 			// For now, we just ensure the method doesn't crash
 			XCTAssertNotNil(result, "Should return a transcription result")
 		} catch WhisperKitError.notInitialized {
-			// This is expected if WhisperKit is not initialized in test environment
-			XCTAssertTrue(true, "Expected error when WhisperKit not initialized")
+			XCTFail("Should not throw notInitialized; it should wait or throw noModelLoaded/notReady")
 		} catch WhisperKitError.noModelLoaded {
 			// This is expected if no model is loaded in test environment
 			XCTAssertTrue(true, "Expected error when no model loaded")
@@ -122,7 +116,7 @@ final class WhisperKitTranscriberTests: XCTestCase {
 			let result = try await transcriber.transcribeAudioArray(audioArray, enableTranslation: true)
 			XCTAssertNotNil(result, "Should return a transcription result with translation enabled")
 		} catch WhisperKitError.notInitialized {
-			XCTAssertTrue(true, "Expected error when WhisperKit not initialized")
+			XCTFail("Should not throw notInitialized; it should wait or throw noModelLoaded/notReady")
 		} catch WhisperKitError.noModelLoaded {
 			XCTAssertTrue(true, "Expected error when no model loaded")
 		} catch WhisperKitError.notReady {
@@ -140,7 +134,7 @@ final class WhisperKitTranscriberTests: XCTestCase {
 		do {
 			let _ = try await transcriber.transcribeAudioArray(validAudioArray, enableTranslation: false)
 		} catch WhisperKitError.notInitialized {
-			XCTAssertTrue(true, "Should throw notInitialized error when WhisperKit not set up")
+			XCTFail("Should not throw notInitialized; it should wait or throw noModelLoaded/notReady")
 		} catch WhisperKitError.noModelLoaded {
 			XCTAssertTrue(true, "Should throw noModelLoaded error when no model available")
 		} catch WhisperKitError.notReady {
