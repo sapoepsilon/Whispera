@@ -150,6 +150,40 @@ import WhisperKit
 		}
 	}
 
+	func waitForReadyForTranscription(timeoutSeconds: TimeInterval = 30) async throws {
+		try Task.checkCancellation()
+		await ensureInitializedIfNeeded()
+		try Task.checkCancellation()
+
+		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
+		downloadedModels = refreshedDownloaded
+
+		if whisperKit == nil {
+			guard !refreshedDownloaded.isEmpty else {
+				throw WhisperKitError.noModelLoaded
+			}
+
+			if let modelToLoad = chooseDownloadedModelToLoad(downloaded: refreshedDownloaded) {
+				try await loadModel(modelToLoad)
+			}
+		}
+
+		let start = Date()
+		while true {
+			try Task.checkCancellation()
+
+			if isCurrentModelLoaded() {
+				return
+			}
+
+			if Date().timeIntervalSince(start) > timeoutSeconds {
+				throw WhisperKitError.notReady
+			}
+
+			try await Task.sleep(nanoseconds: 200_000_000)
+		}
+	}
+
 	private func shouldUpdatePendingText(newText: String) -> Bool {
 		// If the text is empty or previous text was non-empty, always update (to handle clearing)
 		if newText.isEmpty || lastDisplayedPendingText.isEmpty {
@@ -929,17 +963,8 @@ import WhisperKit
 	private func performTranscription(
 		input: TranscriptionInput, enableTranslation: Bool, logPrefix: String
 	) async throws -> String {
-		guard isInitialized else {
-			throw WhisperKitError.notInitialized
-		}
-
-		guard whisperKit != nil else {
-			throw WhisperKitError.noModelLoaded
-		}
-
-		guard isWhisperKitReady() else {
-			throw WhisperKitError.notReady
-		}
+		try await waitForReadyForTranscription()
+		guard isWhisperKitReady() else { throw WhisperKitError.notReady }
 		let maxRetries = 3
 		var lastError: Error?
 		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
@@ -1135,14 +1160,8 @@ import WhisperKit
 	{
 		AppLogger.shared.transcriber.log(
 			"📁⏱️ Starting timestamped file transcription for: \(url.lastPathComponent)")
-
-		guard isInitialized else {
-			throw WhisperKitError.notInitialized
-		}
-
-		guard let whisperKitInstance = whisperKit else {
-			throw WhisperKitError.notInitialized
-		}
+		try await waitForReadyForTranscription()
+		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
 		let decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
 
@@ -1194,13 +1213,8 @@ import WhisperKit
 				userInfo: [NSLocalizedDescriptionKey: "Invalid time range"])
 		}
 
-		guard isInitialized else {
-			throw WhisperKitError.notInitialized
-		}
-
-		guard let whisperKitInstance = whisperKit else {
-			throw WhisperKitError.notInitialized
-		}
+		try await waitForReadyForTranscription()
+		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
 		var decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
 

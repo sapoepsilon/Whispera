@@ -223,6 +223,8 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 	private func transcribeWithProgress(url: URL, enableTranslation: Bool, withTimestamps: Bool)
 		async throws -> Any
 	{
+		try await whisperKit.waitForReadyForTranscription()
+
 		// Access WhisperKit's internal transcribe method with progress callback
 		guard let whisperKitInstance = whisperKit.whisperKit else {
 			throw FileTranscriptionError.transcriptionFailed("WhisperKit not initialized")
