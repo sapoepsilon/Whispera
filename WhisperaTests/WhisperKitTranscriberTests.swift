@@ -144,6 +144,17 @@ final class WhisperKitTranscriberTests: XCTestCase {
 		}
 	}
 
+	func testWaitForReadyForTranscriptionDoesNotThrowNotInitialized() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		do {
+			try await transcriber.waitForReadyForTranscription(timeoutSeconds: 0.1)
+		} catch WhisperKitError.notInitialized {
+			XCTFail("Should not throw notInitialized; readiness should wait and then throw noModelLoaded/notReady if needed")
+		} catch {
+			// Any other outcome is acceptable in unit test environments.
+		}
+	}
+
 	func testAudioArrayVsFileTranscriptionConsistency() async throws {
 		// Given
 		let transcriber = WhisperKitTranscriber.shared
