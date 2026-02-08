@@ -170,7 +170,7 @@ struct SettingsView: View {
 	@State var updateManager: UpdateManager
 	@State var appLibraryManager: AppLibraryManager
 	@Bindable var audioManager: AudioManager
-	@ObservedObject var softwareUpdater: SoftwareUpdater
+	@Bindable var softwareUpdater: SoftwareUpdater
 	@State var whisperKit = WhisperKitTranscriber.shared
 	@State private var availableModels: [String] = []
 	@State private var isRecordingShortcut = false
