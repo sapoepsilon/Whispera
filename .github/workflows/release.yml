@@ -160,12 +160,11 @@ jobs:
 
           git worktree remove --force main-worktree 2>/dev/null || true
           rm -rf main-worktree
-          git worktree add main-worktree origin/main
+          git worktree add --detach main-worktree origin/main
 
           cp appcast.xml main-worktree/appcast.xml
 
           cd main-worktree
-          git checkout -B main
 
           git add appcast.xml
           if git diff --staged --quiet; then
