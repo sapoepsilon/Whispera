@@ -874,7 +874,7 @@ import WhisperKit
 		if let currentOptions = decodingOptions {
 			// Preserve the current translation setting
 			let isTranslating = currentOptions.task == .translate
-			decodingOptions = createDecodingOptions(enableTranslation: !isTranslating)
+			decodingOptions = createDecodingOptions(enableTranslation: isTranslating)
 		}
 	}
 
