@@ -30,9 +30,28 @@ struct ListeningView: View {
 					.foregroundColor(.secondary)
 			}
 		case .transcribing:
-			Text("Transcribing...")
-				.font(.system(.caption, design: .rounded))
-				.foregroundColor(.secondary)
+			if whisperKit.isWaitingForModel
+				|| whisperKit.isInitializing
+				|| whisperKit.isModelLoading
+				|| !whisperKit.isCurrentModelLoaded()
+			{
+				HStack(spacing: 6) {
+					ProgressView()
+						.scaleEffect(0.7)
+					Text(
+						whisperKit.isWaitingForModel
+							? whisperKit.waitingForModelStatusText
+							: (whisperKit.isInitializing ? whisperKit.initializationStatus : "Loading model...")
+					)
+						.font(.system(.caption, design: .rounded))
+						.foregroundColor(.secondary)
+						.lineLimit(1)
+				}
+			} else {
+				Text("Transcribing...")
+					.font(.system(.caption, design: .rounded))
+					.foregroundColor(.secondary)
+			}
 		case .recording:
 			HStack(spacing: 8) {
 				AudioMeterView(levels: audioManager.audioLevels)
