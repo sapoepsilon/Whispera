@@ -269,7 +269,6 @@ if [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
       <enclosure url="${DOWNLOAD_URL}"
                  ${SIGNATURE}
-                 length="${FILE_SIZE}"
                  type="application/octet-stream"/>
     </item>
   </channel>

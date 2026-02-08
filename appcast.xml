@@ -13,7 +13,6 @@
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
       <enclosure url="https://github.com/sapoepsilon/Whispera/releases/download/v1.1.9/Whispera-1.1.9.dmg"
                  sparkle:edSignature="0jJoeKzJ6btjDIixt50zYzDVDuQuN1cMxZtjinxAn9MdsTwDaeh2r8hEvj6+4ArFH4Hakg7Au/40eeqVLPnyAA==" length="18250539"
-                 length="18250539"
                  type="application/octet-stream"/>
     </item>
   </channel>

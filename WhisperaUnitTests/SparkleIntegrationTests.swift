@@ -50,6 +50,27 @@ struct SparkleIntegrationTests {
 		}
 	}
 
+	@Test func ciAppcastTemplateHasNoDuplicateAttributes() throws {
+		let script = try String(
+			contentsOfFile: projectRoot + "/scripts/release-distribute-ci.sh",
+			encoding: .utf8
+		)
+		// sign_update already outputs `sparkle:edSignature="..." length="..."`.
+		// The template must not add its own length="${FILE_SIZE}" or it produces
+		// duplicate XML attributes that break Sparkle's feed parser.
+		let enclosurePattern = script.components(separatedBy: "\n")
+			.filter { $0.contains("length=") && $0.contains("enclosure") == false }
+		let lengthLinesInTemplate = enclosurePattern.filter {
+			let trimmed = $0.trimmingCharacters(in: .whitespaces)
+			return trimmed.hasPrefix("length=") && !trimmed.hasPrefix("#")
+				&& !trimmed.contains("FILE_SIZE=$(")
+		}
+		#expect(
+			lengthLinesInTemplate.isEmpty,
+			"Appcast template must not add a separate length attribute — sign_update already includes it in $SIGNATURE"
+		)
+	}
+
 	@Test func infoPlistHasRequiredSparkleKeys() throws {
 		let plistPath = projectRoot + "/Info.plist"
 		let data = try Data(contentsOf: URL(fileURLWithPath: plistPath))
