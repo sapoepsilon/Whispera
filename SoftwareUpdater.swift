@@ -93,6 +93,9 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     }
 
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        let nsError = error as NSError
+        // SPUNoUpdateFoundError (domain: SPUNoUpdateFoundError, code: 0) is not a real error
+        if nsError.domain == "SPUNoUpdateFoundError" { return }
         lastUpdaterError = error.localizedDescription
         AppLogger.shared.general.error("❌ Sparkle update aborted: \(error.localizedDescription)")
     }
