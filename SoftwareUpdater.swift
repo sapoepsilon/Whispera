@@ -32,6 +32,7 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     @Published var canCheckForUpdates = false
     @Published var lastUpdateCheckDate: Date?
+    @Published var lastUpdaterError: String?
     @Published var automaticallyChecksForUpdates: Bool = true {
         didSet {
             updater.automaticallyChecksForUpdates = automaticallyChecksForUpdates
@@ -50,10 +51,18 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     override init() {
         super.init()
         updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: false,
             updaterDelegate: self,
             userDriverDelegate: nil
         )
+
+        do {
+            try updaterController.updater.start()
+            lastUpdaterError = nil
+        } catch {
+            lastUpdaterError = error.localizedDescription
+            AppLogger.shared.general.error("❌ Sparkle updater failed to start: \(error.localizedDescription)")
+        }
 
         updater.publisher(for: \.canCheckForUpdates)
             .assign(to: &$canCheckForUpdates)
@@ -66,10 +75,12 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     }
 
     func checkForUpdates() {
+        lastUpdaterError = nil
         updater.checkForUpdates()
     }
 
     func checkForUpdatesInBackground() {
+        lastUpdaterError = nil
         updater.checkForUpdatesInBackground()
     }
 
@@ -79,5 +90,10 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     nonisolated func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         return Set()
+    }
+
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        lastUpdaterError = error.localizedDescription
+        AppLogger.shared.general.error("❌ Sparkle update aborted: \(error.localizedDescription)")
     }
 }

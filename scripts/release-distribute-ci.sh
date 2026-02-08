@@ -68,11 +68,51 @@ if [ -n "${SIGNING_KEYCHAIN:-}" ]; then
     KEYCHAIN_PARAM="--keychain ${SIGNING_KEYCHAIN}"
 fi
 
-codesign --force --deep --options runtime \
+# Sign inside-out: XPC services first, then frameworks, then main app.
+# --deep breaks Sparkle 2.x XPC services by stripping their entitlements.
+APP_BUNDLE="${DIST_PATH}/${APP_NAME}.app"
+
+if [ -d "$APP_BUNDLE/Contents/XPCServices" ]; then
+  echo "⚠️ Found app-level XPCServices (Sparkle 2.x incompatible). Removing..."
+  rm -rf "$APP_BUNDLE/Contents/XPCServices"
+fi
+
+SPARKLE_FRAMEWORK="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FRAMEWORK" ]; then
+  for xpc in "$SPARKLE_FRAMEWORK"/Versions/*/XPCServices/*.xpc; do
+    [ -e "$xpc" ] || continue
+    echo "  Signing Sparkle XPC service: $(basename "$xpc")"
+    codesign --force --options runtime \
+      --sign "$DEVELOPER_ID" \
+      $KEYCHAIN_PARAM \
+      "$xpc"
+  done
+
+  for helper in "$SPARKLE_FRAMEWORK"/Versions/*/Updater.app "$SPARKLE_FRAMEWORK"/Versions/*/Autoupdate; do
+    [ -e "$helper" ] || continue
+    echo "  Signing Sparkle helper: $(basename "$helper")"
+    codesign --force --options runtime \
+      --sign "$DEVELOPER_ID" \
+      $KEYCHAIN_PARAM \
+      "$helper"
+  done
+fi
+
+for framework in "$APP_BUNDLE"/Contents/Frameworks/*.framework; do
+  [ -e "$framework" ] || continue
+  echo "  Signing framework: $(basename "$framework")"
+  codesign --force --options runtime \
+    --sign "$DEVELOPER_ID" \
+    $KEYCHAIN_PARAM \
+    "$framework"
+done
+
+echo "  Signing main app bundle..."
+codesign --force --options runtime \
   --entitlements "${APP_NAME}.entitlements" \
   --sign "$DEVELOPER_ID" \
   $KEYCHAIN_PARAM \
-  "${DIST_PATH}/${APP_NAME}.app"
+  "$APP_BUNDLE"
 
 # Verify code signing
 echo "🔍 Verifying code signature..."

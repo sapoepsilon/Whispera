@@ -171,7 +171,7 @@ struct TestStepView: View {
 							Image(systemName: "arrow.right.circle.fill")
 								.foregroundColor(.green)
 							Text(
-								"Translation Mode: Any Supported Language -> \(selectedLanguage.capitalized)"
+								"Translation Mode: \(selectedLanguage.capitalized) -> English"
 							)
 							.font(.caption)
 							.foregroundColor(.green)

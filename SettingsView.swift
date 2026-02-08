@@ -225,6 +225,14 @@ struct SettingsView: View {
 							.disabled(!softwareUpdater.canCheckForUpdates)
 						}
 
+						if let error = softwareUpdater.lastUpdaterError, !error.isEmpty {
+							InfoBox(style: .warning) {
+								Text("Update check error: \(error)")
+									.font(.caption)
+									.foregroundColor(.secondary)
+							}
+						}
+
 						SettingRow(
 							"Automatic Updates",
 							description: "Automatically check for updates"
