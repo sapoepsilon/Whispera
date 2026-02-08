@@ -89,6 +89,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
           TEAM_ID: ${{ secrets.TEAM_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           chmod +x scripts/release-distribute-ci.sh
           ./scripts/release-distribute-ci.sh
@@ -135,11 +136,47 @@ jobs:
           body_path: release_notes.md
           files: |
             dist/Whispera.dmg
+            dist/Whispera-${{ steps.version.outputs.version }}.dmg
             dist/Whispera.app.zip
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish appcast.xml to main
+        if: success()
+        run: |
+          set -e
+
+          if [ ! -f appcast.xml ]; then
+            echo "⚠️ appcast.xml not found, skipping publish"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main
+
+          git worktree remove --force main-worktree 2>/dev/null || true
+          rm -rf main-worktree
+          git worktree add main-worktree origin/main
+
+          cp appcast.xml main-worktree/appcast.xml
+
+          cd main-worktree
+          git checkout -B main
+
+          git add appcast.xml
+          if git diff --staged --quiet; then
+            echo "No changes to appcast.xml"
+            exit 0
+          fi
+
+          git commit -m "chore(release): update appcast for v${{ steps.version.outputs.version }}"
+          git push origin HEAD:main
+
+          echo "✅ Appcast committed and pushed"
 
       - name: Cleanup keychain
         if: always()
@@ -158,4 +195,3 @@ jobs:
             build/
             *.log
           retention-days: 7
-
