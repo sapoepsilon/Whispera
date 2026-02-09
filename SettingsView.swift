@@ -181,6 +181,7 @@ struct SettingsView: View {
 	@State private var showingLLMSettings = false
 	@State private var showingToolsSettings = false
 	@State private var showingSafetySettings = false
+	@State private var showingUpdaterError = false
 	@State private var showingNoUpdateAlert = false
 	@State private var showingStorageDetails = false
 	@State private var showingClearAllConfirmation = false
@@ -223,14 +224,6 @@ struct SettingsView: View {
 							}
 							.buttonStyle(.bordered)
 							.disabled(!softwareUpdater.canCheckForUpdates)
-						}
-
-						if let error = softwareUpdater.lastUpdaterError, !error.isEmpty {
-							InfoBox(style: .warning) {
-								Text("Update check error: \(error)")
-									.font(.caption)
-									.foregroundColor(.secondary)
-							}
 						}
 
 						SettingRow(
@@ -1081,6 +1074,18 @@ struct SettingsView: View {
 			}
 		} message: {
 			Text(errorMessage ?? "An unknown error occurred")
+		}
+		.alert(
+			"Update Error",
+			isPresented: $showingUpdaterError,
+			presenting: softwareUpdater.lastUpdaterError
+		) { _ in
+			Button("OK") { softwareUpdater.lastUpdaterError = nil }
+		} message: { error in
+			Text(error)
+		}
+		.onChange(of: softwareUpdater.lastUpdaterError) {
+			showingUpdaterError = softwareUpdater.lastUpdaterError != nil
 		}
 		.alert("Storage Details", isPresented: $showingStorageDetails) {
 			Button("OK") {}
