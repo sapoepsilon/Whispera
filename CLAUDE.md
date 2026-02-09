@@ -108,6 +108,10 @@ xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:Whisp
 4. Use commitlint format for git commits
 5. Never mention Anthropic or Claude Code in commits/PRs
 
+### UI Patterns
+1. Use `.alert()` for error messages, not inline `InfoBox` — alerts are dismissible and don't clutter the layout
+2. Use the `presenting:` data pattern for alerts driven by optional state (see Apple docs for `alert(_:isPresented:presenting:actions:message:)`)
+
 ### Settings Storage
 - Model settings: `selectedModel`, `lastUsedModel` in UserDefaults
 - Decoding options: Persistent via computed properties in WhisperKitTranscriber

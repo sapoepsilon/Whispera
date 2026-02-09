@@ -87,6 +87,31 @@ struct SparkleIntegrationTests {
 		#expect(publicKey?.isEmpty == false, "SUPublicEDKey must not be empty")
 	}
 
+	// MARK: - UI Patterns
+
+	@Test func updaterErrorUsesAlertNotInfoBox() throws {
+		let source = try String(
+			contentsOfFile: projectRoot + "/SettingsView.swift",
+			encoding: .utf8
+		)
+		let lines = source.components(separatedBy: "\n")
+
+		for (i, line) in lines.enumerated() where line.contains("lastUpdaterError") {
+			let start = max(0, i - 3)
+			let end = min(lines.count - 1, i + 3)
+			let context = lines[start...end].joined()
+			#expect(
+				!context.contains("InfoBox"),
+				"Line \(i + 1): lastUpdaterError must use .alert(), not InfoBox"
+			)
+		}
+
+		#expect(
+			source.contains("\"Update Error\""),
+			"SettingsView must have an .alert for updater errors"
+		)
+	}
+
 	// MARK: - Built App Bundle Structure
 	// These tests run inside the host app, so Bundle.main is the Whispera.app bundle.
 
