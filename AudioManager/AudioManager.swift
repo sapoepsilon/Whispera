@@ -53,6 +53,7 @@ final class AudioManager: NSObject {
 
 	let timer = RecordingTimer()
 	let levelMonitor = AudioLevelMonitor()
+	let deviceManager = AudioDeviceManager.shared
 
 	@ObservationIgnored
 	private let engineController = AudioEngineController()
@@ -106,6 +107,33 @@ final class AudioManager: NSObject {
 			stopRecording()
 		} else {
 			startRecording()
+		}
+	}
+
+	func switchInputDevice(to uid: String) async {
+		deviceManager.selectDevice(uid: uid)
+
+		if isRecording {
+			if currentRecordingMode == .liveTranscription {
+				stopLiveTranscription()
+				startLiveTranscription()
+			} else if useStreamingTranscription {
+				let savedBuffer = audioBuffer
+				engineController.cleanup()
+
+				do {
+					let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
+					try engineController.installTap { [weak self] buffer, format in
+						self?.processAudioBuffer(buffer, originalFormat: format)
+					}
+					audioBuffer = savedBuffer
+					AppLogger.shared.audioManager.info("🔄 Switched input device while recording")
+				} catch {
+					AppLogger.shared.audioManager.error("❌ Failed to switch device: \(error)")
+					isRecording = false
+					timer.stop()
+				}
+			}
 		}
 	}
 
@@ -252,7 +280,7 @@ extension AudioManager {
 
 		Task {
 			do {
-				let _ = try await engineController.setup()
+				let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
 				try engineController.installTap { [weak self] buffer, format in
 					self?.processAudioBuffer(buffer, originalFormat: format)
 				}

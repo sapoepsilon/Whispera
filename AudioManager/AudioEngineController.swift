@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import CoreAudio
 import Foundation
@@ -46,11 +47,16 @@ final class AudioEngineController {
 
 	// MARK: - Setup
 
-	func setup() async throws -> AVAudioInputNode {
+	func setup(deviceID: AudioDeviceID? = nil) async throws -> AVAudioInputNode {
 		cleanup()
 
 		let newEngine = AVAudioEngine()
 		engine = newEngine
+
+		if let deviceID {
+			try setInputDevice(deviceID, on: newEngine)
+		}
+
 		let input = newEngine.inputNode
 		let format = input.inputFormat(forBus: 0)
 
@@ -65,6 +71,29 @@ final class AudioEngineController {
 		setupRouteObserver()
 
 		return input
+	}
+
+	private func setInputDevice(_ deviceID: AudioDeviceID, on engine: AVAudioEngine) throws {
+		let inputNode = engine.inputNode
+		guard let audioUnit = inputNode.audioUnit else {
+			throw AudioEngineError.deviceSetupFailed("Could not access audio unit")
+		}
+
+		var mutableDeviceID = deviceID
+		let status = AudioUnitSetProperty(
+			audioUnit,
+			kAudioOutputUnitProperty_CurrentDevice,
+			kAudioUnitScope_Global,
+			0,
+			&mutableDeviceID,
+			UInt32(MemoryLayout<AudioDeviceID>.size)
+		)
+
+		guard status == noErr else {
+			throw AudioEngineError.deviceSetupFailed("AudioUnitSetProperty failed with status \(status)")
+		}
+
+		AppLogger.shared.deviceManager.info("Set input device to ID: \(deviceID)")
 	}
 
 	// TODO: Improve this function

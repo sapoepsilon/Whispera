@@ -54,6 +54,12 @@ struct ListeningView: View {
 			}
 		case .recording:
 			HStack(spacing: 8) {
+				if let device = AudioDeviceManager.shared.selectedDevice {
+					Text(device.name)
+						.font(.system(.caption2, design: .rounded))
+						.foregroundColor(.secondary)
+						.lineLimit(1)
+				}
 				AudioMeterView(levels: audioManager.audioLevels)
 				Button(action: {
 					audioManager.toggleRecording()
