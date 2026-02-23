@@ -298,22 +298,17 @@ class TranscriptionQueueManager {
 		do {
 			// Determine if it's a YouTube URL, network URL, or local file
 			if isYouTubeURL(item.url) {
-				// YouTube URL - use YouTubeTranscriptionManager
 				logger.info("🎬 Detected YouTube URL, using YouTube transcription")
 				let youtubeManager = YouTubeTranscriptionManager(
 					fileTranscriptionManager: fileTranscriptionManager,
 					networkDownloader: networkDownloader
 				)
 
-				do {
-					let videoInfo = try await youtubeManager.getVideoInfo(item.url)
-					item.displayName = videoInfo.title
-					logger.info("📺 Updated display name to: \(videoInfo.title)")
-				} catch {
-					logger.debug("⚠️ Could not get video title, keeping original display name")
-				}
-
 				let result = try await youtubeManager.transcribeYouTubeURL(item.url)
+
+				if let title = youtubeManager.videoInfo?.title {
+					item.displayName = title
+				}
 
 				item.result = result
 				item.status = QueueItemStatus.completed

@@ -285,14 +285,29 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 	}
 
 	private func extractVideoID(from url: URL) -> String? {
-		if url.host == "youtu.be" {
-			return url.lastPathComponent
+		let host = url.host?.lowercased() ?? ""
+
+		if host == "youtu.be" {
+			let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+			return path.isEmpty ? nil : String(path.prefix(11))
 		}
+
 		if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-			let queryItems = components.queryItems
+			let videoID = components.queryItems?.first(where: { $0.name == "v" })?.value,
+			!videoID.isEmpty
 		{
-			return queryItems.first { $0.name == "v" }?.value
+			return videoID
 		}
+
+		let pathComponents = url.pathComponents
+		if let pathIndex = pathComponents.firstIndex(where: {
+			["shorts", "embed", "live", "v"].contains($0)
+		}),
+			pathComponents.index(after: pathIndex) < pathComponents.endIndex
+		{
+			return pathComponents[pathComponents.index(after: pathIndex)]
+		}
+
 		return nil
 	}
 
