@@ -229,7 +229,7 @@ class LogManager {
 	}
 
 	private static func writeCrashLog(_ crashInfo: String) {
-		let logEntry = "[ERROR] [CrashHandler] 💥 CRASH: \(crashInfo)\n"
+		let logEntry = "[ERROR] [CrashHandler] CRASH: \(crashInfo)\n"
 
 		fputs(logEntry, stderr)
 		fflush(stderr)

@@ -1210,7 +1210,7 @@ struct SettingsView: View {
 					}
 				}
 			} catch {
-				print("Failed to load models: \(error)")
+				AppLogger.shared.general.error("Failed to load models: \(error)")
 				await MainActor.run {
 					errorMessage = "Failed to load available models: \(error.localizedDescription)"
 					showingError = true
@@ -1327,9 +1327,9 @@ struct SettingsView: View {
 	private func switchToModel(_ modelName: String) async {
 		do {
 			try await whisperKit.switchModel(to: modelName)
-			print("✅ Successfully switched to model: \(modelName)")
+			AppLogger.shared.general.info("Successfully switched to model: \(modelName)")
 		} catch {
-			print("❌ Failed to switch to model \(modelName): \(error)")
+			AppLogger.shared.general.error("Failed to switch to model \(modelName): \(error)")
 			await MainActor.run {
 				errorMessage = "Failed to switch to model \(modelName): \(error.localizedDescription)"
 				showingError = true
@@ -1359,7 +1359,7 @@ struct SettingsView: View {
 
 	private func setLaunchAtStartup(_ enabled: Bool) {
 		guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
-			print("❌ Could not get bundle identifier")
+			AppLogger.shared.general.error("Could not get bundle identifier")
 			return
 		}
 
@@ -1397,17 +1397,17 @@ struct SettingsView: View {
 
 				// Write the plist file
 				try plistContent.write(to: launchAgentURL, atomically: true, encoding: .utf8)
-				print("✅ Launch at startup enabled")
+				AppLogger.shared.general.info("Launch at startup enabled")
 			} catch {
-				print("❌ Failed to enable launch at startup: \(error)")
+				AppLogger.shared.general.error("Failed to enable launch at startup: \(error)")
 			}
 		} else {
 			// Remove launch agent plist
 			do {
 				try FileManager.default.removeItem(at: launchAgentURL)
-				print("✅ Launch at startup disabled")
+				AppLogger.shared.general.info("Launch at startup disabled")
 			} catch {
-				print("❌ Failed to disable launch at startup: \(error)")
+				AppLogger.shared.general.error("Failed to disable launch at startup: \(error)")
 			}
 		}
 	}

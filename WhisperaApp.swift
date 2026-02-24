@@ -101,7 +101,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		if shouldTerminateDuplicateInstances() {
 			AppLogger.shared.general.info(
-				"🚫 Another instance is already running. Activating existing instance and terminating this one."
+				"Another instance is already running. Activating existing instance and terminating this one."
 			)
 			activateExistingInstance()
 			NSApp.terminate(nil)
@@ -145,12 +145,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 						let hasUpdate = try await updateManager?.checkForUpdates() ?? false
 						if hasUpdate {
 							AppLogger.shared.general.info(
-								"🆕 Update available: \(self.updateManager?.latestVersion ?? "unknown")")
+								"Update available: \(self.updateManager?.latestVersion ?? "unknown")")
 						} else {
-							AppLogger.shared.general.info("✅ App is up to date")
+							AppLogger.shared.general.info("App is up to date")
 						}
 					} catch {
-						AppLogger.shared.general.info("⚠️ Failed to check for updates: \(error)")
+						AppLogger.shared.general.error("Failed to check for updates: \(error)")
 					}
 				}
 			}
@@ -206,7 +206,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		}
 
 		AppLogger.shared.general.info(
-			"🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")"
+			"Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")"
 		)
 	}
 
@@ -609,22 +609,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			UserDefaults.standard.string(forKey: "selectedModel") ?? "openai_whisper-small.en"
 
 		guard audioManager.whisperKitTranscriber.isInitialized else {
-			AppLogger.shared.general.info("⚠️ WhisperKit not initialized, cannot switch model")
+			AppLogger.shared.general.info("WhisperKit not initialized, cannot switch model")
 			return
 		}
 
 		guard storedModel != audioManager.whisperKitTranscriber.currentModel else {
-			AppLogger.shared.general.info("📝 Model already matches stored preference: \(storedModel)")
+			AppLogger.shared.general.info("Model already matches stored preference: \(storedModel)")
 			return
 		}
 
-		AppLogger.shared.general.info("🔄 Applying stored model after onboarding: \(storedModel)")
+		AppLogger.shared.general.info("Applying stored model after onboarding: \(storedModel)")
 		Task {
 			do {
 				try await audioManager.whisperKitTranscriber.switchModel(to: storedModel)
-				AppLogger.shared.general.info("✅ Successfully switched to stored model: \(storedModel)")
+				AppLogger.shared.general.info("Successfully switched to stored model: \(storedModel)")
 			} catch {
-				AppLogger.shared.general.info("❌ Failed to switch to stored model: \(error)")
+				AppLogger.shared.general.error("Failed to switch to stored model: \(error)")
 			}
 		}
 	}
@@ -648,7 +648,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			object: nil,
 			queue: .main
 		) { _ in
-			AppLogger.shared.general.info("💤 System will sleep")
+			AppLogger.shared.general.info("System will sleep")
 		}
 
 		wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -656,7 +656,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			object: nil,
 			queue: .main
 		) { _ in
-			AppLogger.shared.general.info("☀️ System did wake")
+			AppLogger.shared.general.info("System did wake")
 		}
 	}
 
@@ -676,7 +676,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				do {
 					try await updateManager?.downloadUpdate()
 				} catch {
-					AppLogger.shared.general.info("❌ Failed to download update: \(error)")
+					AppLogger.shared.general.error("Failed to download update: \(error)")
 				}
 			}
 		case .alertThirdButtonReturn:

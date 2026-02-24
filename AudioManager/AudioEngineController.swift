@@ -114,16 +114,16 @@ final class AudioEngineController {
 	// MARK: - Cleanup
 
 	func cleanup() {
-		AppLogger.shared.audioManager.debug("🧹 Cleaning up audio engine")
+		AppLogger.shared.audioManager.debug("Cleaning up audio engine")
 
 		if let node = engine?.inputNode {
 			node.removeTap(onBus: 0)
-			AppLogger.shared.audioManager.debug("✅ Tap removed")
+			AppLogger.shared.audioManager.debug("Tap removed")
 		}
 
 		if let engine, engine.isRunning {
 			engine.stop()
-			AppLogger.shared.audioManager.debug("✅ Engine stopped")
+			AppLogger.shared.audioManager.debug("Engine stopped")
 		}
 
 		removeRouteObserver()
@@ -151,7 +151,7 @@ final class AudioEngineController {
 			handler(buffer, buffer.format)
 		}
 
-		AppLogger.shared.audioManager.debug("✅ Microphone tap installed")
+		AppLogger.shared.audioManager.debug("Microphone tap installed")
 	}
 
 	// MARK: - Device Management
@@ -191,7 +191,7 @@ extension AudioEngineController {
 		) { [weak self] _ in
 			guard let self else { return }
 			AppLogger.shared.audioManager.debug(
-				"🔄 Audio engine configuration changed"
+				"Audio engine configuration changed"
 			)
 
 			Task { @MainActor in

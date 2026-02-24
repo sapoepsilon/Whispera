@@ -121,7 +121,7 @@ class TranscriptionQueueManager {
 
 	// MARK: - Queue Management
 	func addFiles(_ urls: [URL]) {
-		logger.info("📋 Adding \(urls.count) files to transcription queue")
+		logger.info("Adding \(urls.count) files to transcription queue")
 		let newItems = urls.map { TranscriptionQueueItem(url: $0) }
 		items.append(contentsOf: newItems)
 		if !isProcessing {
@@ -130,7 +130,7 @@ class TranscriptionQueueManager {
 	}
 
 	func addFiles(_ urls: [URL], displayNames: [String]) {
-		logger.info("📋 Adding \(urls.count) files to transcription queue with custom names")
+		logger.info("Adding \(urls.count) files to transcription queue with custom names")
 		let newItems = zip(urls, displayNames).map { url, displayName in
 			TranscriptionQueueItem(url: url, displayName: displayName)
 		}
@@ -145,7 +145,7 @@ class TranscriptionQueueManager {
 	}
 
 	func removeItem(_ item: TranscriptionQueueItem) {
-		logger.info("🗑️ Removing item from queue: \(item.displayName)")
+		logger.info("Removing item from queue: \(item.displayName)")
 		if item.status == .processing {
 			fileTranscriptionManager.cancelTranscription()
 			currentItem = nil
@@ -157,7 +157,7 @@ class TranscriptionQueueManager {
 	}
 
 	func cancelItem(_ item: TranscriptionQueueItem) {
-		logger.info("🛑 Cancelling transcription for: \(item.displayName)")
+		logger.info("Cancelling transcription for: \(item.displayName)")
 
 		if item.status == QueueItemStatus.processing {
 			fileTranscriptionManager.cancelTranscription()
@@ -171,7 +171,7 @@ class TranscriptionQueueManager {
 	}
 
 	func cancelAll() {
-		logger.info("🛑 Cancelling all transcriptions in queue")
+		logger.info("Cancelling all transcriptions in queue")
 
 		// Cancel current processing
 		if isProcessing {
@@ -187,19 +187,19 @@ class TranscriptionQueueManager {
 	}
 
 	func clearCompleted() {
-		logger.info("🧹 Clearing completed items from queue")
+		logger.info("Clearing completed items from queue")
 		items.removeAll { item in item.status == QueueItemStatus.completed }
 	}
 
 	func clearAll() {
-		logger.info("🧹 Clearing all items from queue")
+		logger.info("Clearing all items from queue")
 		cancelAll()
 		items.removeAll()
 		isExpanded = false
 	}
 
 	func retryFailed() {
-		logger.info("🔄 Retrying failed transcriptions")
+		logger.info("Retrying failed transcriptions")
 
 		for item in failedItems {
 			item.status = QueueItemStatus.pending
@@ -218,7 +218,7 @@ class TranscriptionQueueManager {
 	private func startProcessing() {
 		guard !isProcessing, !pendingItems.isEmpty else { return }
 
-		logger.info("▶️ Starting queue processing")
+		logger.info("Starting queue processing")
 		isProcessing = true
 
 		// Notify UI of processing state change
@@ -231,7 +231,7 @@ class TranscriptionQueueManager {
 	}
 
 	private func stopProcessing() {
-		logger.info("⏹️ Stopping queue processing")
+		logger.info("Stopping queue processing")
 
 		processingTask?.cancel()
 		processingTask = nil
@@ -244,7 +244,7 @@ class TranscriptionQueueManager {
 	}
 
 	private func processQueue() async {
-		logger.info("🔄 Processing transcription queue")
+		logger.info("Processing transcription queue")
 
 		while isProcessing {
 			// Get next pending item
@@ -255,13 +255,13 @@ class TranscriptionQueueManager {
 
 			// Check for cancellation
 			if Task.isCancelled {
-				logger.info("🛑 Queue processing cancelled")
+				logger.info("Queue processing cancelled")
 				break
 			}
 
-			logger.info("🎯 Starting to process: \(nextItem.displayName)")
+			logger.info("Starting to process: \(nextItem.displayName)")
 			await processItem(nextItem)
-			logger.info("✅ Finished processing: \(nextItem.displayName)")
+			logger.info("Finished processing: \(nextItem.displayName)")
 
 			// Small delay between items
 			try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1 second
@@ -270,7 +270,7 @@ class TranscriptionQueueManager {
 		// Processing complete
 		isProcessing = false
 		currentItem = nil
-		logger.info("✅ Queue processing completed - no more pending items")
+		logger.info("Queue processing completed - no more pending items")
 
 		// Notify UI of processing state change
 		NotificationCenter.default.post(
@@ -278,7 +278,7 @@ class TranscriptionQueueManager {
 	}
 
 	private func processItem(_ item: TranscriptionQueueItem) async {
-		logger.info("🎵 Processing: \(item.displayName)")
+		logger.info("Processing: \(item.displayName)")
 
 		currentItem = item
 		item.status = QueueItemStatus.processing
@@ -298,7 +298,7 @@ class TranscriptionQueueManager {
 		do {
 			// Determine if it's a YouTube URL, network URL, or local file
 			if isYouTubeURL(item.url) {
-				logger.info("🎬 Detected YouTube URL, using YouTube transcription")
+				logger.info("Detected YouTube URL, using YouTube transcription")
 				let youtubeManager = YouTubeTranscriptionManager(
 					fileTranscriptionManager: fileTranscriptionManager,
 					networkDownloader: networkDownloader
@@ -313,7 +313,7 @@ class TranscriptionQueueManager {
 				item.status = QueueItemStatus.completed
 				item.progress = 1.0
 
-				logger.info("✅ YouTube transcription completed: \(item.displayName)")
+				logger.info("YouTube transcription completed: \(item.displayName)")
 
 			} else if item.url.scheme == "http" || item.url.scheme == "https" {
 				let result =
@@ -328,7 +328,7 @@ class TranscriptionQueueManager {
 				item.status = QueueItemStatus.completed
 				item.progress = 1.0
 
-				logger.info("✅ Network file transcription completed: \(item.displayName)")
+				logger.info("Network file transcription completed: \(item.displayName)")
 
 			} else {
 				let result = try await fileTranscriptionManager.transcribeFile(at: item.url)
@@ -336,14 +336,14 @@ class TranscriptionQueueManager {
 				item.result = result
 				item.status = QueueItemStatus.completed
 				item.progress = 1.0
-				logger.info("✅ Local file transcription completed: \(item.displayName)")
+				logger.info("Local file transcription completed: \(item.displayName)")
 			}
 			await saveTranscriptionResult(item.result ?? "", filename: item.displayName, item: item)
 		} catch is CancellationError {
-			logger.info("🛑 Transcription cancelled: \(item.displayName)")
+			logger.info("Transcription cancelled: \(item.displayName)")
 			items.removeAll { $0.id == item.id }
 		} catch {
-			logger.error("❌ Transcription failed for \(item.displayName): \(error.localizedDescription)")
+			logger.error("Transcription failed for \(item.displayName): \(error.localizedDescription)")
 			item.status = QueueItemStatus.failed
 			item.error = error.localizedDescription
 		}
@@ -374,7 +374,7 @@ class TranscriptionQueueManager {
 		let pasteboard = NSPasteboard.general
 		pasteboard.clearContents()
 		pasteboard.setString(text, forType: .string)
-		logger.info("📋 Transcription result copied to clipboard for: \(filename)")
+		logger.info("Transcription result copied to clipboard for: \(filename)")
 	}
 
 	// TODO: make it global
@@ -397,42 +397,42 @@ class TranscriptionQueueManager {
 			UserDefaults.standard.string(forKey: "transcriptionFileLocation") ?? "Desktop"
 		let customPath = UserDefaults.standard.string(forKey: "customTranscriptionPath") ?? ""
 
-		logger.debug("📁 Transcription location setting: \(transcriptionLocation)")
-		logger.debug("📁 Custom path setting: \(customPath)")
+		logger.debug("Transcription location setting: \(transcriptionLocation)")
+		logger.debug("Custom path setting: \(customPath)")
 
 		let baseURL: URL
 		switch transcriptionLocation {
 		case "Documents":
 			baseURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-			logger.info("📁 Using Documents directory: \(baseURL.path)")
+			logger.info("Using Documents directory: \(baseURL.path)")
 		case "Downloads":
 			baseURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
-			logger.info("📁 Using Downloads directory: \(baseURL.path)")
+			logger.info("Using Downloads directory: \(baseURL.path)")
 		case "Custom":
 			if !customPath.isEmpty && FileManager.default.fileExists(atPath: customPath) {
 				baseURL = URL(fileURLWithPath: customPath)
-				logger.info("📁 Using custom directory: \(baseURL.path)")
+				logger.info("Using custom directory: \(baseURL.path)")
 			} else {
 				// Fallback to Desktop if custom path is invalid
 				baseURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
 				logger.debug(
-					"⚠️ Custom transcription path '\(customPath)' is invalid or empty, falling back to Desktop"
+					"Custom transcription path '\(customPath)' is invalid or empty, falling back to Desktop"
 				)
 			}
 		default:  // "Desktop"
 			baseURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
-			logger.info("📁 Using Desktop directory: \(baseURL.path)")
+			logger.info("Using Desktop directory: \(baseURL.path)")
 		}
 
 		let fileURL = baseURL.appendingPathComponent(transcriptionFilename)
 
 		do {
 			try transcription.write(to: fileURL, atomically: true, encoding: .utf8)
-			logger.info("💾 Transcription saved to: \(fileURL.path)")
+			logger.info("Transcription saved to: \(fileURL.path)")
 			item.filePath = fileURL.path
 			UserDefaults.standard.set(fileURL.path, forKey: "lastTranscriptionFilePath")
 		} catch {
-			logger.error("❌ Failed to save transcription to file: \(error.localizedDescription)")
+			logger.error("Failed to save transcription to file: \(error.localizedDescription)")
 		}
 	}
 

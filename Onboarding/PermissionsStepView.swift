@@ -186,11 +186,11 @@ struct PermissionsStepView: View {
 	private func requestMicrophonePermissionFromUser(completion: @escaping (Bool) -> Void) {
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
 		case .authorized:
-			print("authorized")
+			AppLogger.shared.general.debug("Microphone permission already authorized")
 			completion(true)
 
 		case .notDetermined:
-			print("notDetermined")
+			AppLogger.shared.general.debug("Microphone permission not determined, requesting access")
 			AVCaptureDevice.requestAccess(for: .audio) { granted in
 				DispatchQueue.main.async {
 					completion(granted)
@@ -198,12 +198,12 @@ struct PermissionsStepView: View {
 			}
 
 		case .denied, .restricted:
-			print("denied")
+			AppLogger.shared.general.info("Microphone permission denied, opening settings")
 			openMicrophoneSettings()
 			completion(false)
 
 		@unknown default:
-			print("unknown")
+			AppLogger.shared.general.error("Unknown microphone authorization status")
 			completion(false)
 		}
 	}
