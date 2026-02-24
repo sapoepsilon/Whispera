@@ -76,11 +76,43 @@ class FileDropHandler: DragDropHandler {
 			}
 		}
 
+		if info.hasItemsConforming(to: [.url]) {
+			let providers = info.itemProviders(for: [.url])
+			if !providers.isEmpty {
+				draggedItemsCount = providers.count
+				draggedItemsPreview = providers.count == 1 ? "URL" : "\(providers.count) URLs"
+				isValidDrop = true
+				logger.info("✅ Accepting \(providers.count) URL item(s)")
+				return true
+			}
+		}
+
 		if info.hasItemsConforming(to: [.text, .plainText]) {
 			return validateTextItems(info)
 		}
 
+		if info.providers.contains(where: hasPotentialURLPayload) {
+			draggedItemsCount = max(1, info.providers.count)
+			draggedItemsPreview = draggedItemsCount == 1 ? "URL" : "\(draggedItemsCount) URLs"
+			isValidDrop = true
+			logger.info("✅ Accepting provider with URL-like payload")
+			return true
+		}
+
+		// Fallback: read directly from the macOS drag pasteboard
+		// Safari and some other apps provide URLs via pasteboard types that
+		// NSItemProvider doesn't bridge properly
+		let pasteboardURLs = readURLsFromDragPasteboard()
+		if !pasteboardURLs.isEmpty {
+			draggedItemsCount = pasteboardURLs.count
+			draggedItemsPreview = pasteboardURLs.count == 1 ? "URL" : "\(pasteboardURLs.count) URLs"
+			isValidDrop = true
+			logger.info("✅ Accepting \(pasteboardURLs.count) URL(s) from drag pasteboard (fallback)")
+			return true
+		}
+
 		logger.info("❌ Drop rejected - no supported items found")
+		logger.info("📋 Provider type identifiers: \(info.providers.flatMap { $0.registeredTypeIdentifiers })")
 		return false
 	}
 
@@ -128,6 +160,60 @@ class FileDropHandler: DragDropHandler {
 			}
 		}
 
+		if info.hasItemsConforming(to: [.url]) {
+			let urls = await getURLItems(from: info)
+			if !urls.isEmpty {
+				if let queueManager = queueManager {
+					queueManager.addFiles(urls)
+					logger.info("✅ Added \(urls.count) URLs to transcription queue")
+				} else {
+					await transcribeNetworkFiles(urls)
+				}
+				return true
+			}
+		}
+
+		let fallbackURLs = await getFallbackURLs(from: info)
+		if !fallbackURLs.isEmpty {
+			if let queueManager = queueManager {
+				queueManager.addFiles(fallbackURLs)
+				logger.info("✅ Added \(fallbackURLs.count) fallback URL(s) to transcription queue")
+			} else {
+				await transcribeNetworkFiles(fallbackURLs)
+			}
+			return true
+		}
+
+		// Last resort: read directly from the macOS drag pasteboard (handles Safari)
+		let pasteboardURLs = readURLsFromDragPasteboard()
+		if !pasteboardURLs.isEmpty {
+			let fileURLs = pasteboardURLs.filter { $0.isFileURL }
+			let webURLs = pasteboardURLs.filter { !$0.isFileURL }
+
+			if !fileURLs.isEmpty {
+				let validFiles = fileURLs.filter { acceptedFileTypes.contains($0.pathExtension.lowercased()) }
+				if !validFiles.isEmpty {
+					if let queueManager = queueManager {
+						queueManager.addFiles(validFiles)
+						logger.info("✅ Added \(validFiles.count) file(s) from drag pasteboard to queue")
+					} else {
+						await transcribeFiles(validFiles)
+					}
+					return true
+				}
+			}
+
+			if !webURLs.isEmpty {
+				if let queueManager = queueManager {
+					queueManager.addFiles(webURLs)
+					logger.info("✅ Added \(webURLs.count) URL(s) from drag pasteboard to queue")
+				} else {
+					await transcribeNetworkFiles(webURLs)
+				}
+				return true
+			}
+		}
+
 		logger.error("❌ Drop handling failed - no valid items")
 		return false
 	}
@@ -158,7 +244,132 @@ class FileDropHandler: DragDropHandler {
 			draggedItemsCount = 1
 			draggedItemsPreview = "URL"
 			isValidDrop = true
+		} else if info.hasItemsConforming(to: [.url]) {
+			let providers = info.itemProviders(for: [.url])
+			draggedItemsCount = max(1, providers.count)
+			draggedItemsPreview = draggedItemsCount == 1 ? "URL" : "\(draggedItemsCount) URLs"
+			isValidDrop = true
 		}
+	}
+
+	private func getURLItems(from info: DropInfo) async -> [URL] {
+		var urls: [URL] = []
+
+		for provider in info.itemProviders(for: [.url]) {
+			do {
+				let item = try await provider.loadItem(forTypeIdentifier: UTType.url.identifier)
+
+				if let url = item as? URL, !url.isFileURL {
+					urls.append(url)
+				} else if let data = item as? Data,
+					let url = URL(dataRepresentation: data, relativeTo: nil),
+					!url.isFileURL
+				{
+					urls.append(url)
+				} else if let string = item as? String,
+					let url = URL(string: string.trimmingCharacters(in: .whitespacesAndNewlines)),
+					!url.isFileURL
+				{
+					urls.append(url)
+				}
+			} catch {
+				logger.error("❌ Failed to load URL item: \(error.localizedDescription)")
+			}
+		}
+
+		return urls.filter { $0.scheme == "http" || $0.scheme == "https" }
+	}
+
+	private func getFallbackURLs(from info: DropInfo) async -> [URL] {
+		var urls: [URL] = []
+
+		for provider in info.providers {
+			for typeIdentifier in provider.registeredTypeIdentifiers {
+				guard typeIdentifier.contains("url") || typeIdentifier.contains("text") else {
+					continue
+				}
+
+				do {
+					let item = try await provider.loadItem(forTypeIdentifier: typeIdentifier)
+					if let extracted = extractURL(from: item) {
+						urls.append(extracted)
+						break
+					}
+				} catch {
+					logger.error("❌ Failed to load fallback item (\(typeIdentifier)): \(error.localizedDescription)")
+				}
+			}
+		}
+
+		return urls.filter { $0.scheme == "http" || $0.scheme == "https" }
+	}
+
+	private func hasPotentialURLPayload(_ provider: NSItemProvider) -> Bool {
+		provider.registeredTypeIdentifiers.contains { typeIdentifier in
+			typeIdentifier.contains("url") || typeIdentifier.contains("text")
+		}
+	}
+
+	/// Reads URLs directly from the macOS drag pasteboard, bypassing NSItemProvider.
+	/// Safari and some apps provide URLs via pasteboard types that SwiftUI's
+	/// NSItemProvider bridge doesn't handle.
+	private func readURLsFromDragPasteboard() -> [URL] {
+		let pasteboard = NSPasteboard(name: .drag)
+
+		if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
+			let httpURLs = urls.filter { $0.scheme == "http" || $0.scheme == "https" }
+			if !httpURLs.isEmpty {
+				logger.info("📋 Read \(httpURLs.count) URL(s) from drag pasteboard via NSURL")
+				return httpURLs
+			}
+		}
+
+		if let strings = pasteboard.readObjects(forClasses: [NSString.self]) as? [String] {
+			let urls = strings.compactMap { string -> URL? in
+				let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+				guard let url = URL(string: trimmed),
+					url.scheme == "http" || url.scheme == "https"
+				else {
+					return nil
+				}
+				return url
+			}
+			if !urls.isEmpty {
+				logger.info("📋 Read \(urls.count) URL(s) from drag pasteboard via string parsing")
+				return urls
+			}
+		}
+
+		return []
+	}
+
+	private func extractURL(from item: NSSecureCoding?) -> URL? {
+		if let url = item as? URL, !url.isFileURL {
+			return url
+		}
+
+		if let data = item as? Data,
+			let url = URL(dataRepresentation: data, relativeTo: nil),
+			!url.isFileURL
+		{
+			return url
+		}
+
+		if let string = item as? String {
+			let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+			if let url = URL(string: trimmed), !url.isFileURL {
+				return url
+			}
+		}
+
+		if let nsString = item as? NSString {
+			let trimmed = (nsString as String).trimmingCharacters(in: .whitespacesAndNewlines)
+			if let url = URL(string: trimmed), !url.isFileURL {
+				return url
+			}
+		}
+
+		return nil
 	}
 
 	private func getFileURLsAsync(from info: DropInfo) async -> [URL] {
