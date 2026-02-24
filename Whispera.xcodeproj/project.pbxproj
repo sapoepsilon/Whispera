@@ -75,6 +75,8 @@
 		D6SOFTUPD2ED700000000005 /* SoftwareUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */; };
 		D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D6SPARKLE2ED700000000002 /* Sparkle */; };
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
+		D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */; };
+		D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -165,6 +167,8 @@
 		D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingTimer.swift; sourceTree = "<group>"; };
 		D6LMTEST22F0000000000001 /* LargeModelTranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LargeModelTranscriptionTests.swift; sourceTree = "<group>"; };
 		D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdater.swift; sourceTree = "<group>"; };
+		D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
+		D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManagerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -300,6 +304,7 @@
 				D63850BC2E17907D000FD465 /* ModelSynchronizationTests.swift */,
 				D63850BD2E17907D000FD465 /* WhisperKitTranscriberTests.swift */,
 				D6LMTEST22F0000000000001 /* LargeModelTranscriptionTests.swift */,
+				D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */,
 			);
 			path = WhisperaTests;
 			sourceTree = "<group>";
@@ -355,6 +360,7 @@
 			isa = PBXGroup;
 			children = (
 				2A2A2A2A2A2A2A2A2A2A2A2D /* AudioManager.swift */,
+				D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */,
 				D6F9D7812ED6C31C00959822 /* AudioEngineController.swift */,
 				D6F9D7822ED6C31C00959822 /* AudioLevelMonitor.swift */,
 			);
@@ -550,6 +556,7 @@
 				D63900D72E3D77EF005B5623 /* YouTubeTranscriptionManager.swift in Sources */,
 				D63900D82E3D77EF005B5623 /* NetworkFileDownloader.swift in Sources */,
 				D63900DF2E3D8103005B5623 /* FileTranscriptionViewModel.swift in Sources */,
+				D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */,
 				D6F9D7842ED6C31C00959822 /* AudioEngineController.swift in Sources */,
 				D6F9D7852ED6C31C00959822 /* AudioLevelMonitor.swift in Sources */,
 				D6F9D7862ED6C31C00959822 /* RecordingTimer.swift in Sources */,
@@ -604,6 +611,7 @@
 				D698B9082E18EC70008FE0CF /* VersionTests.swift in Sources */,
 				D698B9092E18EC70008FE0CF /* SingleInstanceTests.swift in Sources */,
 				D6LMTEST12F0000000000001 /* LargeModelTranscriptionTests.swift in Sources */,
+				D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

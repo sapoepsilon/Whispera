@@ -559,6 +559,9 @@ struct StatusCardView: View {
 				}
 			}
 
+			// Microphone selection
+			MicrophonePickerSection(audioManager: audioManager)
+
 			// Transcription Queue section - only show if queue has items
 			if !queueManager.items.isEmpty {
 				VStack(spacing: 8) {
@@ -1526,6 +1529,52 @@ struct NotificationBanner: View {
 				.stroke(type.color.opacity(0.3), lineWidth: 1)
 		)
 		.shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+	}
+}
+
+// MARK: - Microphone Picker
+
+struct MicrophonePickerSection: View {
+	@Bindable var audioManager: AudioManager
+	@State private var deviceManager = AudioDeviceManager.shared
+
+	var body: some View {
+		HStack {
+			HStack(spacing: 6) {
+				Circle()
+					.fill(.green)
+					.frame(width: 8, height: 8)
+
+				Text("Microphone")
+					.font(.caption)
+					.foregroundColor(.secondary)
+			}
+
+			Spacer()
+
+			Picker("", selection: Binding(
+				get: { deviceManager.persistedDeviceUID },
+				set: { newUID in
+					Task {
+						await audioManager.switchInputDevice(to: newUID)
+					}
+				}
+			)) {
+				Text("System Default")
+					.tag(AudioDeviceManager.systemDefaultUID)
+
+				if !deviceManager.availableDevices.isEmpty {
+					Divider()
+				}
+
+				ForEach(deviceManager.availableDevices) { device in
+					Text(device.name)
+						.tag(device.uid)
+				}
+			}
+			.pickerStyle(.menu)
+			.frame(maxWidth: 160)
+		}
 	}
 }
 

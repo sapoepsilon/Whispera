@@ -569,7 +569,8 @@ import WhisperKit
 				isLiveTranscriptionMode = true
 				lastConfirmedSegmentCount = 0
 
-				try? whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
+				let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
+				try? whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) { [weak self] _ in
 					Task { @MainActor in
 						self?.shouldShowLiveTranscriptionWindow = true
 					}
