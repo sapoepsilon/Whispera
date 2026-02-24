@@ -238,7 +238,7 @@ struct MenuBarView: View {
 			.animation(.spring(response: 0.4, dampingFraction: 0.8), value: successMessage)
 		}
 		.onDrop(
-			of: [.fileURL, .text, .plainText],
+			of: [.fileURL, .url, .text, .plainText],
 			isTargeted: Binding(
 				get: { fileDropHandler?.isDragging ?? false },
 				set: { isDragging in
@@ -253,6 +253,8 @@ struct MenuBarView: View {
 			guard let dropHandler = fileDropHandler else { return false }
 
 			let info = DropInfo(providers: providers)
+			let canAccept = dropHandler.canAccept(info)
+			guard canAccept else { return false }
 
 			// Perform async operation in the background without blocking UI
 			Task { @MainActor in
@@ -263,8 +265,7 @@ struct MenuBarView: View {
 				let _ = await dropHandler.handleDrop(info)
 			}
 
-			// Return true to indicate we can handle the drop
-			return dropHandler.canAccept(info)
+			return true
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .fileTranscriptionError)) { notification in
 			guard let message = notification.userInfo?["message"] as? String else { return }

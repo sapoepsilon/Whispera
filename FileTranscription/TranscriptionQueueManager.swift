@@ -304,11 +304,10 @@ class TranscriptionQueueManager {
 					networkDownloader: networkDownloader
 				)
 
-				let result = try await youtubeManager.transcribeYouTubeURL(item.url)
+				let info = try await youtubeManager.getVideoInfo(item.url)
+				item.displayName = info.title
 
-				if let title = youtubeManager.videoInfo?.title {
-					item.displayName = title
-				}
+				let result = try await youtubeManager.transcribeYouTubeURL(item.url, prefetchedInfo: info)
 
 				item.result = result
 				item.status = QueueItemStatus.completed
