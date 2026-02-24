@@ -258,7 +258,7 @@ class NetworkFileDownloader: FileDownloadable {
 	private func downloadChunksInParallel(from url: URL, chunks: [ChunkInfo]) async throws
 		-> [ChunkData]
 	{
-		let maxConcurrentDownloads = min(4, chunks.count)  // Limit concurrent downloads
+		let maxConcurrentDownloads = min(6, chunks.count)
 
 		return try await withThrowingTaskGroup(of: ChunkData.self, returning: [ChunkData].self) {
 			taskGroup in
