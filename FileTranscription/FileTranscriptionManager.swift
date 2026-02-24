@@ -32,7 +32,7 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 	// MARK: - FileTranscriptionCapable Methods
 
 	func transcribeFile(at url: URL) async throws -> String {
-		logger.info("🎵 Starting file transcription for: \(url.lastPathComponent)")
+		logger.info("Starting file transcription for: \(url.lastPathComponent)")
 
 		guard supportsFileType(url) else {
 			throw FileTranscriptionError.unsupportedFormat(url.pathExtension)
@@ -45,7 +45,7 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 
 		// Check user setting for timestamps
 		let showTimestamps = UserDefaults.standard.bool(forKey: "showTimestamps")
-		logger.info("📝 User setting showTimestamps: \(showTimestamps)")
+		logger.info("User setting showTimestamps: \(showTimestamps)")
 
 		if showTimestamps {
 			// Return timestamped transcription formatted as string
@@ -60,14 +60,14 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 	}
 
 	func transcribeFiles(at urls: [URL]) async throws -> [String] {
-		logger.info("🎵 Starting batch transcription for \(urls.count) files")
+		logger.info("Starting batch transcription for \(urls.count) files")
 
 		var results: [String] = []
 
 		for (index, url) in urls.enumerated() {
 			// Check for task cancellation before each file
 			if Task.isCancelled {
-				logger.info("🛑 Batch transcription cancelled at file \(index + 1)/\(urls.count)")
+				logger.info("Batch transcription cancelled at file \(index + 1)/\(urls.count)")
 				break
 			}
 
@@ -79,7 +79,7 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 				results.append(result)
 			} catch {
 				logger.error(
-					"❌ Failed to transcribe \(url.lastPathComponent): \(error.localizedDescription)")
+					"Failed to transcribe \(url.lastPathComponent): \(error.localizedDescription)")
 				results.append("Error: \(error.localizedDescription)")
 			}
 		}
@@ -91,7 +91,7 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 	}
 
 	func transcribeFileWithTimestamps(at url: URL) async throws -> [TranscriptionSegment] {
-		logger.info("🎵 Starting timestamped transcription for: \(url.lastPathComponent)")
+		logger.info("Starting timestamped transcription for: \(url.lastPathComponent)")
 
 		guard supportsFileType(url) else {
 			throw FileTranscriptionError.unsupportedFormat(url.pathExtension)
@@ -108,7 +108,7 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 
 	func transcribeSegment(at url: URL, startTime: Double, endTime: Double) async throws -> String {
 		logger.info(
-			"🎵 Starting segment transcription for: \(url.lastPathComponent) [\(startTime)s - \(endTime)s]"
+			"Starting segment transcription for: \(url.lastPathComponent) [\(startTime)s - \(endTime)s]"
 		)
 
 		guard supportsFileType(url) else {
@@ -129,7 +129,7 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 	}
 
 	func cancelTranscription() {
-		logger.info("🛑 Cancelling file transcription")
+		logger.info("Cancelling file transcription")
 		transcriptionTask?.cancel()
 		currentProgress?.cancel()
 		currentTask?.cancel()
@@ -151,14 +151,14 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 
 	private func formatSegmentsAsString(_ segments: [TranscriptionSegment]) -> String {
 		let timestampFormat = UserDefaults.standard.string(forKey: "timestampFormat") ?? "MM:SS"
-		logger.info("📝 Formatting \(segments.count) segments with timestamp format: \(timestampFormat)")
+		logger.info("Formatting \(segments.count) segments with timestamp format: \(timestampFormat)")
 
 		let formattedString = segments.map { segment in
 			let timestamp = formatTimestamp(segment.startTime, format: timestampFormat)
 			return "[\(timestamp)] \(segment.text)"
 		}.joined(separator: "\n")
 
-		logger.info("📝 Generated formatted string length: \(formattedString.count) characters")
+		logger.info("Generated formatted string length: \(formattedString.count) characters")
 		return formattedString
 	}
 
@@ -211,11 +211,11 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 			}
 
 		} catch is CancellationError {
-			logger.info("🛑 Transcription cancelled by user")
+			logger.info("Transcription cancelled by user")
 			throw CancellationError()
 		} catch {
 			self.error = error
-			logger.error("❌ Transcription failed: \(error.localizedDescription)")
+			logger.error("Transcription failed: \(error.localizedDescription)")
 			throw error
 		}
 	}
@@ -232,14 +232,14 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 
 		// Configure decoding options based on timestamp requirements
 		if withTimestamps {
-			logger.info("📝 Configuring for timestamps - withoutTimestamps: false, wordTimestamps: true")
+			logger.info("Configuring for timestamps - withoutTimestamps: false, wordTimestamps: true")
 			// Configure for timestamp output
 			whisperKit.updateAdvancedSettings(
 				withoutTimestamps: false,
 				wordTimestamps: true
 			)
 		} else {
-			logger.info("📝 Configuring for plain text - withoutTimestamps: true, wordTimestamps: false")
+			logger.info("Configuring for plain text - withoutTimestamps: true, wordTimestamps: false")
 			whisperKit.updateAdvancedSettings(
 				withoutTimestamps: true,
 				wordTimestamps: false
@@ -290,10 +290,10 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 					)
 				}
 			}
-			logger.info("📝 Generated \(allSegments.count) timestamped segments")
+			logger.info("Generated \(allSegments.count) timestamped segments")
 			if allSegments.isEmpty {
 				logger.warning(
-					"⚠️ No timestamped segments generated - this may indicate timestamp configuration issue")
+					"No timestamped segments generated - this may indicate timestamp configuration issue")
 			}
 			return allSegments
 		} else {
@@ -309,7 +309,7 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 	{
 		// This is a placeholder implementation since we need to access WhisperKit's internal methods
 		// In a real implementation, we would need to modify WhisperKitTranscriber to expose the raw segments
-		logger.info("🎯 Performing timestamped transcription")
+		logger.info("Performing timestamped transcription")
 
 		// For now, we'll get the plain text and create dummy segments
 		// TODO: Modify WhisperKitTranscriber to return raw segments with timestamps
@@ -342,7 +342,7 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 	private func performSegmentTranscription(url: URL, startTime: Double, endTime: Double)
 		async throws -> String
 	{
-		logger.info("🎯 Performing segment transcription from \(startTime)s to \(endTime)s")
+		logger.info("Performing segment transcription from \(startTime)s to \(endTime)s")
 
 		isTranscribing = true
 		currentFileName = url.lastPathComponent

@@ -179,7 +179,7 @@ class UpdateManager: NSObject {
 
 		// Prevent concurrent downloads
 		guard !isDownloadingUpdate else {
-			print("⚠️ Download already in progress")
+			AppLogger.shared.general.info("Download already in progress")
 			return
 		}
 
@@ -188,7 +188,7 @@ class UpdateManager: NSObject {
 
 		// Check if file already exists
 		if FileManager.default.fileExists(atPath: localURL.path) {
-			print("✅ Update file already exists at: \(localURL.path)")
+			AppLogger.shared.general.info("Update file already exists at: \(localURL.path)")
 			downloadLocation = localURL.path
 
 			// Auto-install if enabled
@@ -216,13 +216,13 @@ class UpdateManager: NSObject {
 					self?.downloadingVersion = nil
 
 					if let error = error {
-						print("❌ Download failed: \(error)")
+						AppLogger.shared.general.error("Download failed: \(error)")
 						continuation.resume(throwing: UpdateError.downloadFailed)
 						return
 					}
 
 					guard let tempURL = tempURL else {
-						print("❌ No temp URL for download")
+						AppLogger.shared.general.error("No temp URL for download")
 						continuation.resume(throwing: UpdateError.downloadFailed)
 						return
 					}
@@ -234,7 +234,7 @@ class UpdateManager: NSObject {
 						}
 						try FileManager.default.moveItem(at: tempURL, to: localURL)
 
-						print("✅ Update downloaded to: \(localURL.path)")
+						AppLogger.shared.general.info("Update downloaded to: \(localURL.path)")
 
 						// Auto-install if enabled
 						if self?.autoInstallUpdates == true {
@@ -251,7 +251,7 @@ class UpdateManager: NSObject {
 						continuation.resume()
 
 					} catch {
-						print("❌ Failed to move downloaded file: \(error)")
+						AppLogger.shared.general.error("Failed to move downloaded file: \(error)")
 						continuation.resume(throwing: UpdateError.downloadFailed)
 					}
 				}
@@ -339,7 +339,7 @@ class UpdateManager: NSObject {
 			return true
 
 		} catch {
-			print("❌ Failed to install update: \(error)")
+			AppLogger.shared.general.error("Failed to install update: \(error)")
 			return false
 		}
 	}

@@ -245,16 +245,16 @@ struct FileTranscriptionView: View {
 		case .success(let urls):
 			viewModel.addFiles(urls)
 		case .failure(let error):
-			print("File selection failed: \(error)")
+			AppLogger.shared.fileTranscriber.error("File selection failed: \(error)")
 		}
 	}
 
 	private func handleExportResult(_ result: Result<URL, Error>) {
 		switch result {
 		case .success(let url):
-			print("Exported to: \(url)")
+			AppLogger.shared.fileTranscriber.info("Exported to: \(url)")
 		case .failure(let error):
-			print("Export failed: \(error)")
+			AppLogger.shared.fileTranscriber.error("Export failed: \(error)")
 		}
 	}
 
