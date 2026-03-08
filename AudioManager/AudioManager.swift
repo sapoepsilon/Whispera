@@ -35,7 +35,12 @@ final class AudioManager: NSObject {
 	var lastTranscription: String?
 	var transcriptionError: String?
 	var currentRecordingMode: RecordingMode = .text
-	var isMicrophoneInitializing = false
+	var isMicrophoneInitializing = false {
+		didSet {
+			NotificationCenter.default.post(
+				name: NSNotification.Name("RecordingStateChanged"), object: nil)
+		}
+	}
 
 	var currentState: AudioState {
 		if isMicrophoneInitializing {
@@ -83,6 +88,8 @@ final class AudioManager: NSObject {
 	private let maxBufferSize = 16000 * 1800
 	@ObservationIgnored
 	private var meteringTimer: Timer?
+	@ObservationIgnored
+	private var deviceActivationTask: Task<Void, Never>?
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -110,30 +117,47 @@ final class AudioManager: NSObject {
 		}
 	}
 
-	func switchInputDevice(to uid: String) async {
+	func switchInputDevice(to uid: String) {
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
 		deviceManager.selectDevice(uid: uid)
 
-		if isRecording {
+		guard isRecording || isMicrophoneInitializing else { return }
+
+		isMicrophoneInitializing = true
+		deviceActivationTask = Task {
 			if currentRecordingMode == .liveTranscription {
-				stopLiveTranscription()
-				startLiveTranscription()
+				await whisperKitTranscriber.switchLiveStreamDevice()
+				guard !Task.isCancelled else { return }
+				isMicrophoneInitializing = false
 			} else if useStreamingTranscription {
 				let savedBuffer = audioBuffer
 				engineController.cleanup()
 
 				do {
+					await deviceManager.activateSelectedDevice()
+					guard !Task.isCancelled else { return }
 					let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
 					try engineController.installTap { [weak self] buffer, format in
 						self?.processAudioBuffer(buffer, originalFormat: format)
 					}
 					audioBuffer = savedBuffer
-					AppLogger.shared.audioManager.info("🔄 Switched input device while recording")
+					isMicrophoneInitializing = false
+					AppLogger.shared.audioManager.info("Switched input device while recording")
 				} catch {
-					AppLogger.shared.audioManager.error("❌ Failed to switch device: \(error)")
+					guard !Task.isCancelled else { return }
+					isMicrophoneInitializing = false
+					AppLogger.shared.audioManager.error("Failed to switch device: \(error)")
 					isRecording = false
 					timer.stop()
 				}
+			} else {
+				deviceManager.restoreSystemDefault()
+				await deviceManager.activateSelectedDevice()
+				guard !Task.isCancelled else { return }
+				isMicrophoneInitializing = false
 			}
+			deviceActivationTask = nil
 		}
 	}
 
@@ -201,37 +225,46 @@ extension AudioManager {
 
 extension AudioManager {
 	fileprivate func startFileBasedRecording() {
-		let appSupportPath = getApplicationSupportDirectory()
-		let audioFilename =
-			appSupportPath
-			.appendingPathComponent("recordings")
-			.appendingPathComponent("recording_\(Date().timeIntervalSince1970).wav")
-		audioFileURL = audioFilename
+		isMicrophoneInitializing = true
 
-		try? FileManager.default.createDirectory(
-			at: audioFilename.deletingLastPathComponent(),
-			withIntermediateDirectories: true
-		)
+		deviceActivationTask = Task {
+			await deviceManager.activateSelectedDevice()
+			guard !Task.isCancelled else { return }
 
-		let settings: [String: Any] = [
-			AVFormatIDKey: Int(kAudioFormatLinearPCM),
-			AVSampleRateKey: 16000.0,
-			AVNumberOfChannelsKey: 1,
-			AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-		]
+			let appSupportPath = getApplicationSupportDirectory()
+			let audioFilename =
+				appSupportPath
+				.appendingPathComponent("recordings")
+				.appendingPathComponent("recording_\(Date().timeIntervalSince1970).wav")
+			audioFileURL = audioFilename
 
-		do {
-			audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
-			audioRecorder?.isMeteringEnabled = true
-			audioRecorder?.record()
-			isRecording = true
-			timer.start()
-			playFeedbackSound(start: true)
-			startMeteringTimer()
-			AppLogger.shared.audioManager.debug("🎤 File-based recording started")
-		} catch {
-			AppLogger.shared.audioManager.error("❌ Failed to start recording: \(error)")
-			showRecordingErrorAlert(error)
+			try? FileManager.default.createDirectory(
+				at: audioFilename.deletingLastPathComponent(),
+				withIntermediateDirectories: true
+			)
+
+			let settings: [String: Any] = [
+				AVFormatIDKey: Int(kAudioFormatLinearPCM),
+				AVSampleRateKey: 16000.0,
+				AVNumberOfChannelsKey: 1,
+				AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+			]
+
+			do {
+				audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
+				audioRecorder?.isMeteringEnabled = true
+				audioRecorder?.record()
+				isMicrophoneInitializing = false
+				isRecording = true
+				timer.start()
+				playFeedbackSound(start: true)
+				startMeteringTimer()
+				AppLogger.shared.audioManager.debug("🎤 File-based recording started")
+			} catch {
+				isMicrophoneInitializing = false
+				AppLogger.shared.audioManager.error("❌ Failed to start recording: \(error)")
+				showRecordingErrorAlert(error)
+			}
 		}
 	}
 	fileprivate func stopFileBasedRecording() {
@@ -241,6 +274,7 @@ extension AudioManager {
 		isRecording = false
 		timer.stop()
 		playFeedbackSound(start: false)
+		deviceManager.restoreSystemDefault()
 
 		if let audioFileURL {
 			Task {
@@ -278,8 +312,10 @@ extension AudioManager {
 		audioBuffer.removeAll()
 		isMicrophoneInitializing = true
 
-		Task {
+		deviceActivationTask = Task {
 			do {
+				await deviceManager.activateSelectedDevice()
+				guard !Task.isCancelled else { return }
 				let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
 				try engineController.installTap { [weak self] buffer, format in
 					self?.processAudioBuffer(buffer, originalFormat: format)
@@ -309,6 +345,7 @@ extension AudioManager {
 		levelMonitor.reset()
 
 		engineController.cleanup()
+		deviceManager.restoreSystemDefault()
 
 		AppLogger.shared.audioManager.info("🛑 Streaming recording stopped")
 
@@ -375,26 +412,32 @@ extension AudioManager {
 // MARK: - Live Transcription
 extension AudioManager {
 	fileprivate func startLiveTranscription() {
+		isMicrophoneInitializing = true
 		isRecording = true
 		timer.start()
 		playFeedbackSound(start: true)
 		whisperKitTranscriber.clearLiveTranscriptionState()
 		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
 
-		Task {
+		deviceActivationTask = Task {
 			do {
 				try await whisperKitTranscriber.liveStream()
+				guard !Task.isCancelled else { return }
+				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.info("🎤 Live transcription started")
 			} catch {
-				await MainActor.run {
-					isRecording = false
-					timer.stop()
-					AppLogger.shared.audioManager.error("❌ Failed to start live transcription: \(error)")
-				}
+				guard !Task.isCancelled else { return }
+				isMicrophoneInitializing = false
+				isRecording = false
+				timer.stop()
+				AppLogger.shared.audioManager.error("❌ Failed to start live transcription: \(error)")
 			}
 		}
 	}
 	fileprivate func stopLiveTranscription() {
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+		isMicrophoneInitializing = false
 		isRecording = false
 		timer.stop()
 		playFeedbackSound(start: false)

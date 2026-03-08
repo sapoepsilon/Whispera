@@ -218,7 +218,7 @@ struct MenuBarView: View {
 		.onPreferenceChange(ViewHeightKey.self) { height in
 			contentHeight = min(max(height, 400), 700)
 		}
-		.frame(width: 320, height: contentHeight)
+		.frame(width: 320, height: contentHeight, alignment: .top)
 		.background(materialStyle.material)
 		.overlay(dropZoneOverlay)
 		.overlay(alignment: .bottom) {
@@ -1537,44 +1537,115 @@ struct NotificationBanner: View {
 struct MicrophonePickerSection: View {
 	@Bindable var audioManager: AudioManager
 	@State private var deviceManager = AudioDeviceManager.shared
+	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
+	@State private var isExpanded = false
+
+	private func isDeviceSelected(_ device: AudioInputDevice) -> Bool {
+		if selectedUID == AudioDeviceManager.systemDefaultUID {
+			return device.isDefault
+		}
+		return device.uid == selectedUID
+	}
+
+	private var activeDeviceIcon: String {
+		if selectedUID == AudioDeviceManager.systemDefaultUID {
+			return deviceManager.availableDevices.first(where: \.isDefault)?.iconName ?? "mic.fill"
+		}
+		return deviceManager.availableDevices.first(where: { $0.uid == selectedUID })?.iconName ?? "mic.fill"
+	}
 
 	var body: some View {
-		HStack {
-			HStack(spacing: 6) {
-				Circle()
-					.fill(.green)
-					.frame(width: 8, height: 8)
+		VStack(spacing: 8) {
+			Button {
+				withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+					isExpanded.toggle()
+				}
+			} label: {
+				HStack(spacing: 6) {
+					Image(systemName: "mic.fill")
+						.font(.system(size: 11))
+						.foregroundColor(.secondary)
 
-				Text("Microphone")
-					.font(.caption)
-					.foregroundColor(.secondary)
+					Text("Input Device")
+						.font(.system(size: 11, weight: .medium, design: .rounded))
+						.foregroundColor(.secondary)
+
+					Spacer()
+
+					if !isExpanded {
+						Image(systemName: activeDeviceIcon)
+							.font(.system(size: 11))
+							.foregroundColor(.secondary)
+					}
+
+					Image(systemName: "chevron.down")
+						.font(.system(size: 10))
+						.foregroundColor(.secondary)
+						.rotationEffect(.degrees(isExpanded ? -180 : 0))
+				}
+				.contentShape(Rectangle())
 			}
+			.buttonStyle(.plain)
 
-			Spacer()
+			if isExpanded {
+				VStack(spacing: 2) {
+					deviceRow(
+						icon: "mic.fill",
+						name: "System Default",
+						isSelected: selectedUID == AudioDeviceManager.systemDefaultUID
+					) {
+						Task {
+							await audioManager.switchInputDevice(to: AudioDeviceManager.systemDefaultUID)
+						}
+					}
 
-			Picker("", selection: Binding(
-				get: { deviceManager.persistedDeviceUID },
-				set: { newUID in
-					Task {
-						await audioManager.switchInputDevice(to: newUID)
+					ForEach(deviceManager.availableDevices) { device in
+						deviceRow(
+							icon: device.iconName,
+							name: device.name,
+							isSelected: isDeviceSelected(device)
+						) {
+							Task {
+								await audioManager.switchInputDevice(to: device.uid)
+							}
+						}
 					}
 				}
-			)) {
-				Text("System Default")
-					.tag(AudioDeviceManager.systemDefaultUID)
+				.transition(.move(edge: .top))
+			}
+		}
+	}
 
-				if !deviceManager.availableDevices.isEmpty {
-					Divider()
-				}
+	private func deviceRow(icon: String, name: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+		Button(action: action) {
+			HStack(spacing: 8) {
+				Image(systemName: icon)
+					.font(.system(size: 12))
+					.frame(width: 20)
+					.foregroundColor(isSelected ? .blue : .secondary)
 
-				ForEach(deviceManager.availableDevices) { device in
-					Text(device.name)
-						.tag(device.uid)
+				Text(name)
+					.font(.system(size: 12, design: .rounded))
+					.foregroundColor(Color(nsColor: NSColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)))
+					.lineLimit(1)
+
+				Spacer()
+
+				if isSelected {
+					Image(systemName: "checkmark.circle.fill")
+						.font(.system(size: 14))
+						.foregroundColor(.blue)
 				}
 			}
-			.pickerStyle(.menu)
-			.frame(maxWidth: 160)
+			.padding(.horizontal, 10)
+			.padding(.vertical, 8)
+			.background(
+				RoundedRectangle(cornerRadius: 8)
+					.fill(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+			)
+			.contentShape(Rectangle())
 		}
+		.buttonStyle(.plain)
 	}
 }
 

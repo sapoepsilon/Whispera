@@ -151,17 +151,17 @@ final class AudioDeviceManagerTests: XCTestCase {
 	// MARK: - Model Tests
 
 	func testAudioInputDeviceEquality() async throws {
-		let device1 = AudioInputDevice(id: 1, uid: "uid-1", name: "Mic 1", isDefault: true)
-		let device2 = AudioInputDevice(id: 2, uid: "uid-1", name: "Mic 1 Renamed", isDefault: false)
-		let device3 = AudioInputDevice(id: 3, uid: "uid-2", name: "Mic 2", isDefault: false)
+		let device1 = AudioInputDevice(id: 1, uid: "uid-1", name: "Mic 1", isDefault: true, transportType: 0)
+		let device2 = AudioInputDevice(id: 2, uid: "uid-1", name: "Mic 1 Renamed", isDefault: false, transportType: 0)
+		let device3 = AudioInputDevice(id: 3, uid: "uid-2", name: "Mic 2", isDefault: false, transportType: 0)
 
 		XCTAssertEqual(device1, device2, "Devices with same UID should be equal")
 		XCTAssertNotEqual(device1, device3, "Devices with different UIDs should not be equal")
 	}
 
 	func testAudioInputDeviceHashable() async throws {
-		let device1 = AudioInputDevice(id: 1, uid: "uid-1", name: "Mic 1", isDefault: true)
-		let device2 = AudioInputDevice(id: 2, uid: "uid-1", name: "Mic 1", isDefault: false)
+		let device1 = AudioInputDevice(id: 1, uid: "uid-1", name: "Mic 1", isDefault: true, transportType: 0)
+		let device2 = AudioInputDevice(id: 2, uid: "uid-1", name: "Mic 1", isDefault: false, transportType: 0)
 
 		var set = Set<AudioInputDevice>()
 		set.insert(device1)

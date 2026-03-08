@@ -3,11 +3,54 @@ import CoreAudio
 import Foundation
 import SwiftUI
 
+enum AudioDeviceIcon: String, Sendable {
+	case builtIn = "laptopcomputer"
+	case airpodsPro = "airpodspro"
+	case airpodsMax = "airpodsmax"
+	case airpods = "airpods.gen3"
+	case headphones = "headphones"
+	case iPhone = "iphone"
+	case usb = "music.mic"
+	case virtual = "waveform"
+	case generic = "mic.fill"
+
+	static func resolve(transportType: UInt32, deviceName: String) -> AudioDeviceIcon {
+		let lowered = deviceName.lowercased()
+
+		if lowered.contains("iphone") || lowered.contains("ipad") { return .iPhone }
+
+		switch transportType {
+		case kAudioDeviceTransportTypeBuiltIn:
+			return .builtIn
+		case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE:
+			if lowered.contains("airpods pro") { return .airpodsPro }
+			if lowered.contains("airpods max") { return .airpodsMax }
+			if lowered.contains("airpods") { return .airpods }
+			return .headphones
+		case kAudioDeviceTransportTypeUSB:
+			return .usb
+		case kAudioDeviceTransportTypeVirtual:
+			return .virtual
+		default:
+			return .generic
+		}
+	}
+}
+
 struct AudioInputDevice: Identifiable, Equatable, Hashable, Sendable {
 	let id: AudioDeviceID
 	let uid: String
 	let name: String
 	let isDefault: Bool
+	let transportType: UInt32
+
+	var icon: AudioDeviceIcon {
+		AudioDeviceIcon.resolve(transportType: transportType, deviceName: name)
+	}
+
+	var iconName: String {
+		icon.rawValue
+	}
 
 	static func == (lhs: Self, rhs: Self) -> Bool {
 		lhs.uid == rhs.uid
@@ -21,6 +64,8 @@ struct AudioInputDevice: Identifiable, Equatable, Hashable, Sendable {
 extension Notification.Name {
 	static let audioDevicesChanged = Notification.Name("AudioDevicesChanged")
 	static let audioInputDeviceChanged = Notification.Name("AudioInputDeviceChanged")
+	static let devicePickerToggled = Notification.Name("DevicePickerToggled")
+	static let devicePickerDismissed = Notification.Name("DevicePickerDismissed")
 }
 
 @MainActor
@@ -39,6 +84,8 @@ final class AudioDeviceManager {
 	private var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
 	@ObservationIgnored
 	private var defaultDeviceListenerBlock: AudioObjectPropertyListenerBlock?
+	@ObservationIgnored
+	private var savedSystemDefaultDeviceID: AudioDeviceID?
 
 	private init() {
 		refreshDevices()
@@ -68,8 +115,79 @@ final class AudioDeviceManager {
 		AppLogger.shared.deviceManager.info("Selected device: \(uid)")
 	}
 
+	func activateSelectedDevice() async {
+		guard persistedDeviceUID != AudioDeviceManager.systemDefaultUID else {
+			AppLogger.shared.deviceManager.debug("activateSelectedDevice: system default selected, skipping")
+			restoreSystemDefault()
+			return
+		}
+
+		guard let device = availableDevices.first(where: { $0.uid == persistedDeviceUID }) else {
+			AppLogger.shared.deviceManager.error("activateSelectedDevice: device \(persistedDeviceUID) not found in \(availableDevices.map { "\($0.name):\($0.uid)" })")
+			restoreSystemDefault()
+			return
+		}
+
+		let currentDefault = getSystemDefaultInputDeviceID()
+		let currentDefaultName = currentDefault.flatMap { getDeviceName(for: $0) } ?? "unknown"
+		AppLogger.shared.deviceManager.info("activateSelectedDevice: current default=\(currentDefaultName) (ID: \(currentDefault ?? 0)), switching to \(device.name) (ID: \(device.id))")
+
+		if savedSystemDefaultDeviceID == nil {
+			savedSystemDefaultDeviceID = currentDefault
+		}
+
+		let targetDeviceID = device.id
+		let targetDeviceName = device.name
+		await Task.detached(priority: .userInitiated) {
+			Self.setSystemDefaultInputDeviceSync(targetDeviceID)
+		}.value
+
+		let newDefault = getSystemDefaultInputDeviceID()
+		let newDefaultName = newDefault.flatMap { getDeviceName(for: $0) } ?? "unknown"
+		if newDefault == targetDeviceID {
+			AppLogger.shared.deviceManager.info("activateSelectedDevice: verified system default changed to \(newDefaultName)")
+		} else {
+			AppLogger.shared.deviceManager.error("activateSelectedDevice: FAILED - system default is still \(newDefaultName) (ID: \(newDefault ?? 0)), expected \(targetDeviceName) (ID: \(targetDeviceID))")
+		}
+	}
+
+	func restoreSystemDefault() {
+		guard let original = savedSystemDefaultDeviceID else { return }
+		setSystemDefaultInputDevice(original)
+		let name = getDeviceName(for: original) ?? "unknown"
+		AppLogger.shared.deviceManager.info("Restored original system default: \(name) (ID: \(original))")
+		savedSystemDefaultDeviceID = nil
+	}
+
+	private nonisolated static func setSystemDefaultInputDeviceSync(_ deviceID: AudioDeviceID) {
+		var mutableDeviceID = deviceID
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioHardwarePropertyDefaultInputDevice,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+
+		let status = AudioObjectSetPropertyData(
+			AudioObjectID(kAudioObjectSystemObject),
+			&address,
+			0,
+			nil,
+			UInt32(MemoryLayout<AudioDeviceID>.size),
+			&mutableDeviceID
+		)
+
+		if status != noErr {
+			AppLogger.shared.deviceManager.error("setSystemDefaultInputDevice: FAILED with OSStatus \(status) for ID \(deviceID)")
+		}
+	}
+
+	private func setSystemDefaultInputDevice(_ deviceID: AudioDeviceID) {
+		Self.setSystemDefaultInputDeviceSync(deviceID)
+	}
+
 	func resolveActiveDeviceID() -> AudioDeviceID? {
 		if persistedDeviceUID == AudioDeviceManager.systemDefaultUID {
+			AppLogger.shared.deviceManager.debug("resolveActiveDeviceID → nil (system default)")
 			return nil
 		}
 
@@ -79,6 +197,7 @@ final class AudioDeviceManager {
 			return nil
 		}
 
+		AppLogger.shared.deviceManager.info("resolveActiveDeviceID → \(device.name) (ID: \(device.id), UID: \(device.uid))")
 		return device.id
 	}
 
@@ -137,7 +256,8 @@ final class AudioDeviceManager {
 					id: deviceID,
 					uid: uid,
 					name: name,
-					isDefault: deviceID == defaultDeviceID
+					isDefault: deviceID == defaultDeviceID,
+					transportType: getDeviceTransportType(for: deviceID)
 				))
 		}
 
@@ -203,6 +323,27 @@ final class AudioDeviceManager {
 		)
 
 		return status == noErr ? name as String : nil
+	}
+
+	private func getDeviceTransportType(for deviceID: AudioDeviceID) -> UInt32 {
+		var transportType: UInt32 = 0
+		var size = UInt32(MemoryLayout<UInt32>.size)
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioDevicePropertyTransportType,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+
+		let status = AudioObjectGetPropertyData(
+			deviceID,
+			&address,
+			0,
+			nil,
+			&size,
+			&transportType
+		)
+
+		return status == noErr ? transportType : 0
 	}
 
 	private func getSystemDefaultInputDeviceID() -> AudioDeviceID? {

@@ -53,28 +53,35 @@ final class AudioEngineController {
 		let newEngine = AVAudioEngine()
 		engine = newEngine
 
+		let inputNode = newEngine.inputNode
+
+		#if os(macOS)
 		if let deviceID {
-			try setInputDevice(deviceID, on: newEngine)
+			try setInputDevice(deviceID, on: inputNode)
 		}
+		#endif
 
-		let input = newEngine.inputNode
-		let format = input.inputFormat(forBus: 0)
+		let hardwareSampleRate = inputNode.inputFormat(forBus: 0).sampleRate
+		let outputFormat = inputNode.outputFormat(forBus: 0)
 
-		guard format.sampleRate > 0, format.channelCount > 0 else {
+		guard hardwareSampleRate > 0, outputFormat.channelCount > 0 else {
 			throw AudioEngineError.invalidFormat
 		}
-		showDeviceName()
-		try await Task.detached(priority: .userInitiated) {
-			try newEngine.start()
-		}.value
+
+		newEngine.prepare()
+		try newEngine.start()
+
+		if let deviceID {
+			verifyActiveDevice(expected: deviceID)
+		}
+
 		isRunning = true
 		setupRouteObserver()
 
-		return input
+		return inputNode
 	}
 
-	private func setInputDevice(_ deviceID: AudioDeviceID, on engine: AVAudioEngine) throws {
-		let inputNode = engine.inputNode
+	private func setInputDevice(_ deviceID: AudioDeviceID, on inputNode: AVAudioInputNode) throws {
 		guard let audioUnit = inputNode.audioUnit else {
 			throw AudioEngineError.deviceSetupFailed("Could not access audio unit")
 		}
@@ -93,51 +100,47 @@ final class AudioEngineController {
 			throw AudioEngineError.deviceSetupFailed("AudioUnitSetProperty failed with status \(status)")
 		}
 
-		AppLogger.shared.deviceManager.info("Set input device to ID: \(deviceID)")
+		let name = getDeviceName(for: deviceID) ?? "unknown"
+		AppLogger.shared.deviceManager.info("Set input device to: \(name) (ID: \(deviceID))")
 	}
 
-	// TODO: Improve this function
-	func showDeviceName() {
-		var deviceId = AudioDeviceID(0)
-		var deviceSize = UInt32(MemoryLayout.size(ofValue: deviceId))
+	private func verifyActiveDevice(expected: AudioDeviceID) {
+		guard let audioUnit = engine?.inputNode.audioUnit else { return }
+
+		var actualDeviceID: AudioDeviceID = 0
+		var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+		let status = AudioUnitGetProperty(
+			audioUnit,
+			kAudioOutputUnitProperty_CurrentDevice,
+			kAudioUnitScope_Global,
+			0,
+			&actualDeviceID,
+			&size
+		)
+
+		if status == noErr {
+			let name = getDeviceName(for: actualDeviceID) ?? "unknown"
+			if actualDeviceID == expected {
+				AppLogger.shared.deviceManager.info("Verified active input device: \(name) (ID: \(actualDeviceID))")
+			} else {
+				let expectedName = getDeviceName(for: expected) ?? "unknown"
+				AppLogger.shared.deviceManager.error(
+					"Device mismatch — expected: \(expectedName) (ID: \(expected)), actual: \(name) (ID: \(actualDeviceID))")
+			}
+		}
+	}
+
+	private func getDeviceName(for deviceID: AudioDeviceID) -> String? {
+		var name: CFString = "" as CFString
+		var size = UInt32(MemoryLayout<CFString>.size)
 		var address = AudioObjectPropertyAddress(
-			mSelector: kAudioHardwarePropertyDefaultInputDevice,
+			mSelector: kAudioDevicePropertyDeviceNameCFString,
 			mScope: kAudioObjectPropertyScopeGlobal,
 			mElement: kAudioObjectPropertyElementMain
 		)
-		var err = AudioObjectGetPropertyData(
-			AudioObjectID(kAudioObjectSystemObject),
-			&address,
-			0,
-			nil,
-			&deviceSize,
-			&deviceId
-		)
 
-		if err == 0 {
-			// change the query property and use previously fetched details
-			address.mSelector = kAudioDevicePropertyDeviceNameCFString
-			var deviceName = "" as CFString
-			deviceSize = UInt32(MemoryLayout.size(ofValue: deviceName))
-			err = AudioObjectGetPropertyData(
-				deviceId,
-				&address,
-				0,
-				nil,
-				&deviceSize,
-				&deviceName
-			)
-			if err == 0 {
-				AppLogger.shared
-					.audioManager.debug(
-						"### current default mic:: \(deviceName) "
-					)
-			} else {
-				// TODO:: unable to fetch device name
-			}
-		} else {
-			// TODO:: unable to fetch the default input device
-		}
+		let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &name)
+		return status == noErr ? name as String : nil
 	}
 
 	// MARK: - Cleanup

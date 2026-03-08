@@ -312,11 +312,11 @@ struct SettingsView: View {
 									AudioDeviceManager.shared.selectDevice(uid: newUID)
 								}
 							)) {
-								Text("System Default")
+								Label("System Default", systemImage: "mic.fill")
 									.tag(AudioDeviceManager.systemDefaultUID)
 
 								ForEach(AudioDeviceManager.shared.availableDevices) { device in
-									Text(device.name)
+									Label(device.name, systemImage: device.iconName)
 										.tag(device.uid)
 								}
 							}

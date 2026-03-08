@@ -569,6 +569,7 @@ import WhisperKit
 				isLiveTranscriptionMode = true
 				lastConfirmedSegmentCount = 0
 
+				await AudioDeviceManager.shared.activateSelectedDevice()
 				let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
 				try? whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) { [weak self] _ in
 					Task { @MainActor in
@@ -591,6 +592,24 @@ import WhisperKit
 		try await liveStreamStartupTask?.value
 		liveStreamStartupTask = nil
 	}
+	func switchLiveStreamDevice() async {
+		guard isLiveTranscriptionMode, let whisperKit else { return }
+
+		await AudioDeviceManager.shared.activateSelectedDevice()
+		let newDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
+		whisperKit.audioProcessor.pauseRecording()
+
+		do {
+			try whisperKit.audioProcessor.resumeRecordingLive(inputDeviceID: newDeviceID, callback: nil)
+			let deviceName = newDeviceID.flatMap { id -> String? in
+				AudioDeviceManager.shared.availableDevices.first(where: { $0.id == id })?.name
+			} ?? "System Default"
+			AppLogger.shared.transcriber.info("Switched live stream device to: \(deviceName)")
+		} catch {
+			AppLogger.shared.transcriber.error("Failed to switch live stream device: \(error)")
+		}
+	}
+
 	func stopLiveStream() {
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
@@ -599,6 +618,7 @@ import WhisperKit
 		isTranscribing = false
 		shouldShowLiveTranscriptionWindow = false
 		whisperKit?.audioProcessor.stopRecording()
+		AudioDeviceManager.shared.restoreSystemDefault()
 
 		confirmPendingText()
 		isLiveTranscriptionMode = false
