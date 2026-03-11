@@ -7,12 +7,12 @@
     <language>en</language>
     <item>
       <title>Version 1.2.0</title>
-      <pubDate>Wed, 11 Mar 2026 04:29:39 +0000</pubDate>
+      <pubDate>Wed, 11 Mar 2026 04:39:31 +0000</pubDate>
       <sparkle:version>17</sparkle:version>
       <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
       <enclosure url="https://github.com/sapoepsilon/Whispera/releases/download/v1.2.0/Whispera-1.2.0.dmg"
-                 sparkle:edSignature="jty5EwXyQdVQ09pU1NkM1gPw+V4YFXeAdkjiJ47ni5PD8gMPPEM9DFos1fIRkp7r/mo/y89AUkhSuUO56JqrAw==" length="18321251"
+                 sparkle:edSignature="Xoi5jqeg03rT5KtBdA1FVoX90DAaAIBPpv6nONaHI9xHTO01o8N/ea/EWyW5TtNWkF6NNXcDSmokJ7qQq2BxBA==" length="18321358"
                  type="application/octet-stream"/>
     </item>
   </channel>
