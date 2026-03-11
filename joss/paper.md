@@ -30,7 +30,7 @@ Speech transcription is a common need across research and professional workflows
 
 For users with motor or visual impairments, voice-driven interfaces serve as a primary mode of interaction [@pradhan2018accessibility]. macOS Voice Control provides basic accessibility support but lacks extensibility for developer-oriented workflows and does not allow user-defined command mappings.
 
-Whispera addresses both needs in a single application: a privacy-first transcription tool that handles diverse input sources (live speech, files, URLs, streams) with no cloud dependency, and a configurable voice command system for hands-free macOS control. Researchers working on speech processing, accessibility, or privacy-preserving interfaces can use Whispera as a testbed or build on its architecture.
+Whispera addresses both needs in a single application: a privacy-first transcription tool that handles diverse input sources (live speech, files, URLs, streams) with no cloud dependency, and a configurable voice command system for hands-free macOS control. The software serves as a research platform for three active areas of investigation: (1) on-device speech processing, where researchers can study latency, accuracy, and model-size trade-offs on consumer hardware without cloud confounds; (2) privacy-preserving human-computer interaction, where the fully local pipeline provides a controlled environment for studying voice interfaces with zero data exfiltration; and (3) voice-driven accessibility, where the extensible command configuration enables rapid prototyping of custom voice workflows for users with diverse needs.
 
 # State of the field
 
@@ -68,7 +68,7 @@ The software architecture separates concerns across modules: `AudioManager` for 
 
 # Research impact statement
 
-Whispera ([github.com/sapoepsilon/Whispera](https://github.com/sapoepsilon/Whispera)) has been in active public development since June 2025, with over 140 GitHub stars, 9 tagged releases, and ongoing community engagement through issues and pull requests. The application provides a ready-to-use research tool for studies involving on-device speech processing, voice-driven accessibility, or privacy-preserving interaction on macOS. The command mode architecture, training pipeline, and evaluation suite are documented in a companion repository ([whisperaModel](https://github.com/sapoepsilon/whisperaModel)), with model weights and dataset publicly hosted on HuggingFace, enabling reproducible benchmarking for on-device voice command research.
+Whispera ([github.com/sapoepsilon/Whispera](https://github.com/sapoepsilon/Whispera)) has been in active public development since June 2025, with over 140 GitHub stars, 9 tagged releases, and ongoing community engagement through issues and pull requests. The application provides a reproducible research platform: researchers can benchmark on-device speech recognition across Whisper model sizes, study the accuracy-latency trade-off of local intent parsing, or prototype custom voice-driven accessibility workflows by editing a JSON configuration file. The command mode's training pipeline and evaluation suite — including five baselines, per-category accuracy analysis, ablation studies, and ASR noise robustness analysis — are documented in a companion repository ([whisperaModel](https://github.com/sapoepsilon/whisperaModel)), with model weights and dataset publicly hosted on HuggingFace for reproducibility.
 
 # AI usage disclosure
 
