@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: Whispera
+authors:
+  - family-names: Mansurov
+    given-names: Ismatulla
+    orcid: "https://orcid.org/0009-0006-9946-8851"
+repository-code: "https://github.com/sapoepsilon/Whispera"
+license: MIT
+date-released: "2025-06-04"
+abstract: >-
+  A native macOS application for privacy-first voice transcription and
+  voice-driven system control. Whispera runs entirely on-device using
+  Apple Silicon, providing speech-to-text via WhisperKit and a command
+  mode that maps natural-language commands to auditable shell templates.
+keywords:
+  - voice-control
+  - macOS
+  - on-device-inference
+  - transcription
+  - Apple-Silicon
+  - accessibility
