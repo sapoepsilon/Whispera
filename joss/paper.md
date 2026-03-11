@@ -1,13 +1,14 @@
 ---
-title: 'Whispera: A Privacy-First Voice Control System for macOS'
+title: 'Whispera: Privacy-First Voice Transcription and Control for macOS'
 tags:
   - Swift
   - macOS
+  - speech recognition
+  - transcription
   - voice control
   - on-device inference
   - accessibility
   - Apple Silicon
-  - natural language understanding
 authors:
   - name: Ismatulla Mansurov
     orcid: 0009-0006-9946-8851
@@ -21,55 +22,66 @@ bibliography: paper.bib
 
 # Summary
 
-Whispera is a native macOS application that provides privacy-first voice transcription and voice-driven system control. In its command mode, Whispera converts spoken natural-language commands into structured JSON intents, which are matched against auditable shell command templates defined in a single configuration file. The entire pipeline—speech recognition, intent parsing, and command execution—runs on-device using Apple Silicon, with no data sent to external servers. The configuration currently covers 43 categories and 358 operations spanning system control, developer tools, file management, and network utilities. Users can extend coverage by editing the JSON configuration without modifying application code.
+Whispera is a native macOS application that provides on-device speech transcription and voice-driven system control. It replaces the built-in macOS dictation with WhisperKit — running OpenAI's Whisper model on Apple's Neural Engine — delivering higher transcription accuracy while keeping all audio data on the user's machine. Whispera supports live speech-to-text, local audio and video file transcription, YouTube video transcription, and network stream transcription, all processed locally on Apple Silicon. An optional command mode extends the application into a voice control system, converting spoken commands into structured intents mapped to auditable shell templates for hands-free macOS operation.
 
 # Statement of need
 
-Voice assistants like Siri, Alexa, and Google Assistant route audio to cloud servers for processing, raising privacy concerns [@kairouz2021federated] and introducing network latency. Users with motor or visual impairments who rely on voice control [@pradhan2018accessibility] are particularly affected by these trade-offs. While macOS includes built-in Voice Control, it lacks extensibility for developer-oriented commands (git, homebrew, docker, npm) and does not allow user-defined command mappings.
+Speech transcription is a common need across research and professional workflows: transcribing interviews, lectures, meeting recordings, and media content. Existing tools either route audio to cloud APIs (raising privacy concerns, especially with sensitive recordings [@kairouz2021federated]) or require complex local setup with command-line tools that are inaccessible to non-technical users. The built-in macOS dictation is limited to short-form input and does not support file or URL transcription.
 
-Whispera addresses this by providing a fully on-device voice control system with a config-driven architecture. Researchers studying on-device voice interfaces, privacy-preserving interaction, or macOS accessibility can use Whispera as a testbed or extend its command configuration to new domains. Developers building local voice-driven tools can integrate the template engine and intent parser directly.
+For users with motor or visual impairments, voice-driven interfaces serve as a primary mode of interaction [@pradhan2018accessibility]. macOS Voice Control provides basic accessibility support but lacks extensibility for developer-oriented workflows and does not allow user-defined command mappings.
+
+Whispera addresses both needs in a single application: a privacy-first transcription tool that handles diverse input sources (live speech, files, URLs, streams) with no cloud dependency, and a configurable voice command system for hands-free macOS control. Researchers working on speech processing, accessibility, or privacy-preserving interfaces can use Whispera as a testbed or build on its architecture.
 
 # State of the field
 
-On-device voice understanding has been explored by Snips [@coucke2018snips], which used lightweight classifiers for IoT devices, and by Apple's on-device trigger detection [@apple2017siri]. Open-source NLU frameworks like Rasa [@bocklisch2017rasa] provide intent classification pipelines but target server-side deployment and chatbot workflows rather than desktop system control.
+Cloud transcription services (Otter.ai, Rev, Google Speech-to-Text) offer high accuracy but require uploading audio to external servers, which may be unacceptable for sensitive content such as medical interviews, legal proceedings, or confidential meetings. Local alternatives like Whisper.cpp and whisper-rs provide command-line access to Whisper models but require manual setup and lack a graphical interface or system integration on macOS.
 
-Whispera differs from these systems in three ways: (1) it is a native macOS application with direct system integration (global shortcuts, accessibility APIs, menu bar interface); (2) it enforces a security boundary by mapping structured intents to auditable shell templates, preventing arbitrary command execution; and (3) its config-driven design lets users add new commands by editing a JSON file rather than writing code or retraining models.
+WhisperKit [@whisperkit] brought Whisper inference to Apple's Neural Engine, enabling fast on-device transcription. However, WhisperKit is a framework, not an end-user application — it requires developers to build their own interface around it.
+
+For voice control, Snips [@coucke2018snips] pioneered on-device voice understanding for IoT devices, and Rasa [@bocklisch2017rasa] provides open-source NLU pipelines for chatbot workflows. Neither targets desktop system control or provides a native macOS experience.
+
+Whispera combines WhisperKit-based transcription with a native macOS interface (menu bar app, global shortcuts, accessibility API integration) and adds voice command capabilities through a config-driven template engine. This combination of transcription and control in a single privacy-first application is not available in existing open-source tools.
 
 # Software design
 
-Whispera is a Swift application built for macOS 13+ on Apple Silicon. It operates in two modes:
+Whispera is a Swift/SwiftUI application built for macOS 13+ on Apple Silicon. It runs as a menu bar application with a global keyboard shortcut for activation.
 
-**Transcription mode** replaces macOS built-in dictation with WhisperKit (on-device Whisper inference on the Neural Engine), supporting live speech, local audio/video files, YouTube URLs, and network streams.
+**Transcription mode** supports four input types:
 
-**Command mode** activates a four-stage pipeline:
+- **Live speech**: Real-time dictation that types transcribed text directly into the active application, replacing macOS built-in dictation.
+- **Local files**: Batch transcription of audio and video files with timestamp output.
+- **YouTube URLs**: Automatic download and transcription of YouTube videos.
+- **Network streams**: Transcription of streaming audio/video from arbitrary URLs.
 
-1. **Speech-to-text**: WhisperKit produces text from audio input using the Neural Engine.
-2. **Preprocessing**: Typo correction, casual-prefix stripping (e.g., "hey", "please"), and text normalization.
-3. **Intent parsing**: A language model maps the preprocessed text to a JSON object containing `category`, `operation`, and operation-specific parameters.
-4. **Template mapping and execution**: The JSON intent is matched against shell command templates in `macos_operations.json`. Unrecognized intents are rejected. Parameter values are substituted into fixed templates with quoting to prevent injection.
+All transcription runs on-device via WhisperKit, which executes Whisper models on Apple's Neural Engine. Whispera supports multiple Whisper model sizes and provides multi-language transcription and real-time translation.
 
-The JSON intermediate representation creates an auditable boundary: the model cannot produce arbitrary shell commands. Only category/operation pairs defined in the configuration may be executed.
+**Command mode** activates a pipeline that converts spoken commands into system actions:
 
-The intent parser uses a LoRA-adapted Qwen2.5-0.5B-Instruct model [@qwen25] fine-tuned on Apple's MLX framework [@mlx2023] with parameter-efficient fine-tuning [@lora]. The adapter adds 8.4 MB of storage. The application also includes runtime robustness features: fuzzy app-name matching, semantic fallback for unrecognized outputs, and confidence scoring that flags low-confidence predictions for user review.
+1. Speech is transcribed on-device via WhisperKit.
+2. The text is preprocessed (typo correction, normalization).
+3. An intent parser maps the text to a JSON object with `category`, `operation`, and parameters.
+4. The JSON intent is matched against shell command templates in a configuration file (`macos_operations.json`), covering 43 categories and 358 operations.
 
-The software architecture separates concerns across distinct modules: `AudioManager` handles recording and streaming, `LiveTranscription` manages real-time speech-to-text, `FileTranscription` handles file and URL processing, and the command pipeline is independent of the transcription path. The codebase includes unit tests, integration tests, and UI tests, with CI via GitHub Actions.
+The intent parser uses a LoRA-adapted language model [@lora] fine-tuned on Apple's MLX framework [@mlx2023]. The JSON intermediate representation acts as a security boundary — the model cannot produce arbitrary shell commands, only intents matching predefined templates.
+
+The software architecture separates concerns across modules: `AudioManager` for recording and streaming, `LiveTranscription` for real-time speech-to-text, `FileTranscription` for file and URL processing, and the command pipeline as an independent path. The codebase includes unit tests, integration tests, and UI tests, with CI via GitHub Actions.
 
 # Research impact statement
 
-Whispera ([github.com/sapoepsilon/Whispera](https://github.com/sapoepsilon/Whispera)) has been in active public development since June 2025, with 147 GitHub stars, 9 tagged releases, and 13 open issues reflecting ongoing community engagement. The command mode architecture, training pipeline, and evaluation suite are documented in a companion repository (`sapoepsilon/whisperaModel`), with model weights and dataset publicly hosted on HuggingFace. The evaluation pipeline includes five baselines, per-category accuracy analysis, ablation studies, and simulated ASR noise robustness analysis, providing a reproducible benchmark for researchers working on on-device voice command systems.
+Whispera ([github.com/sapoepsilon/Whispera](https://github.com/sapoepsilon/Whispera)) has been in active public development since June 2025, with over 140 GitHub stars, 9 tagged releases, and ongoing community engagement through issues and pull requests. The application provides a ready-to-use research tool for studies involving on-device speech processing, voice-driven accessibility, or privacy-preserving interaction on macOS. The command mode architecture, training pipeline, and evaluation suite are documented in a companion repository ([whisperaModel](https://github.com/sapoepsilon/whisperaModel)), with model weights and dataset publicly hosted on HuggingFace, enabling reproducible benchmarking for on-device voice command research.
 
 # AI usage disclosure
 
 Claude (Anthropic, versions 3.5 Sonnet and Claude Code) was used during development for:
 
 - **Code assistance**: Refactoring suggestions and boilerplate generation for Swift UI components and test scaffolding, reviewed and modified by the author.
-- **Evaluation scripts**: Initial structure for Python evaluation scripts (`eval_models.py`, `ablation_iterations.py`), subsequently validated and extended by the author.
+- **Evaluation scripts**: Initial structure for Python evaluation scripts in the companion repository, subsequently validated and extended by the author.
 - **Documentation**: Early drafts of README sections and dataset cards, rewritten by the author.
 
-All architectural decisions—command mode pipeline design, JSON intent representation, template-based execution boundary, config-driven extensibility, module separation—were made by the author. All experimental results were produced by the author's code on the author's hardware. The author reviewed, edited, and validated all AI-assisted outputs.
+All architectural decisions — application design, transcription pipeline, command mode architecture, template-based execution boundary, module separation — were made by the author. The author reviewed, edited, and validated all AI-assisted outputs.
 
 # Acknowledgements
 
-This work was conducted independently without external funding. Whispera builds on [WhisperKit](https://github.com/argmaxinc/WhisperKit) for on-device speech recognition.
+This work was conducted independently without external funding. Whispera builds on [WhisperKit](https://github.com/argmaxinc/WhisperKit) for on-device speech recognition, [YouTubeKit](https://github.com/alexeichhorn/YouTubeKit) for content extraction, and [swift-markdown-ui](https://github.com/gonzalezreal/swift-markdown-ui) for rendering.
 
 # References
