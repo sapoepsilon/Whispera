@@ -1,33 +1,29 @@
 import SwiftUI
+import MetalOrb
 
 struct AudioOrbView: View {
 	let audioLevel: Float
-	@State private var startDate = Date()
+	let audioBands: [Float]
 
-	private let orbSize: CGFloat = 80
+	@State private var preset = OrbPreset.transparent.values
+
+	private var mappedBands: SIMD4<Float> {
+		guard audioBands.count >= 4 else {
+			return SIMD4<Float>(repeating: audioLevel)
+		}
+		// 7 bands → 4 groups: bass(0-1), mid(2-3), high(4-5), treble(6)
+		let bass = (audioBands[0] + audioBands[1]) / 2
+		let mid = (audioBands[2] + audioBands[3]) / 2
+		let high = (audioBands[4] + audioBands[5]) / 2
+		let treble = audioBands.count > 6 ? audioBands[6] : high
+		return SIMD4<Float>(bass, mid, high, treble)
+	}
 
 	var body: some View {
-		TimelineView(.animation) { timeline in
-			let elapsed = timeline.date.timeIntervalSince(startDate)
-			Canvas { context, size in
-				context.addFilter(.colorMultiply(.white))
-				let rect = CGRect(origin: .zero, size: size)
-				context.fill(Path(rect), with: .color(.clear))
-			}
-			.frame(width: orbSize, height: orbSize)
-			.colorEffect(
-				ShaderLibrary.audioOrb(
-					.float2(Float(orbSize), Float(orbSize)),
-					.float(Float(elapsed)),
-					.float(audioLevel)
-				)
-			)
-		}
+		MetalOrbView(
+			preset: $preset,
+			audioLevel: audioLevel,
+			audioBands: mappedBands
+		)
 	}
-}
-
-#Preview {
-	AudioOrbView(audioLevel: 0.5)
-		.frame(width: 120, height: 120)
-		.background(.black)
 }

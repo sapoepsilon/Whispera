@@ -1,6 +1,15 @@
 {
-  "originHash" : "df523d0548936977a9c633016a0e15bdd5a1f471c7b4d5de85d6193e889a2264",
+  "originHash" : "9887338ea5083c58a069ee5bd2242b238d8073eff85107beba8446167e1cf4cd",
   "pins" : [
+    {
+      "identity" : "metal-orb",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/metal-orb.git",
+      "state" : {
+        "revision" : "7c8f211cf5803b1b675f88843fad8efb13b88829",
+        "version" : "1.0.0"
+      }
+    },
     {
       "identity" : "networkimage",
       "kind" : "remoteSourceControl",

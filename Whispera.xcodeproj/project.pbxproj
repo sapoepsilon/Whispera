@@ -39,6 +39,7 @@
 		D63A31112E2EE20C00BA20B7 /* DictationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A31102E2EE20C00BA20B7 /* DictationView.swift */; };
 		D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D648B7CA2DF9FF8B006079ED /* Constants.swift */; };
 		D64B1B292DF11A7B00D2CEAB /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */; };
+		D65E93D92F68F05700576C20 /* MetalOrb in Frameworks */ = {isa = PBXBuildFile; productRef = D65E93D82F68F05700576C20 /* MetalOrb */; };
 		D66E6D5A2E18495A00F55A5B /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D592E18495900F55A5B /* Logger.swift */; };
 		D66E6D5D2E1859FF00F55A5B /* WelcomeStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D5C2E1859FA00F55A5B /* WelcomeStepView.swift */; };
 		D66E6D5F2E185A5700F55A5B /* PermissionsStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D5E2E185A5400F55A5B /* PermissionsStepView.swift */; };
@@ -66,20 +67,19 @@
 		D6BENCH012F0000000000003 /* BenchmarkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6BENCH022F0000000000003 /* BenchmarkView.swift */; };
 		D6C81FC92E0001AB00D32F2A /* ContextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */; };
 		D6D486252EA482B200C1D5FA /* AudioMeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6D486242EA482B200C1D5FA /* AudioMeterView.swift */; };
-		D6DEVPK012F0000000000001 /* DevicePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVPK022F0000000000001 /* DevicePickerView.swift */; };
-		D6ORB00012F0000000000001 /* AudioOrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6ORB00022F0000000000001 /* AudioOrbView.swift */; };
-		D6ORB00032F0000000000001 /* OrbShader.metal in Sources */ = {isa = PBXBuildFile; fileRef = D6ORB00042F0000000000001 /* OrbShader.metal */; };
 		D6D4862F2EA49C0500C1D5FA /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6D4862E2EA49C0500C1D5FA /* WhisperKit */; };
 		D6D486322EA49C1F00C1D5FA /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6D486312EA49C1F00C1D5FA /* WhisperKit */; };
+		D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */; };
+		D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */; };
+		D6DEVPK012F0000000000001 /* DevicePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVPK022F0000000000001 /* DevicePickerView.swift */; };
 		D6F9D7842ED6C31C00959822 /* AudioEngineController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F9D7812ED6C31C00959822 /* AudioEngineController.swift */; };
 		D6F9D7852ED6C31C00959822 /* AudioLevelMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F9D7822ED6C31C00959822 /* AudioLevelMonitor.swift */; };
 		D6F9D7862ED6C31C00959822 /* RecordingTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */; };
 		D6LMTEST12F0000000000001 /* LargeModelTranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6LMTEST22F0000000000001 /* LargeModelTranscriptionTests.swift */; };
+		D6ORB00012F0000000000001 /* AudioOrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6ORB00022F0000000000001 /* AudioOrbView.swift */; };
 		D6SOFTUPD2ED700000000005 /* SoftwareUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */; };
 		D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D6SPARKLE2ED700000000002 /* Sparkle */; };
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
-		D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */; };
-		D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -165,16 +165,15 @@
 		D6BENCH022F0000000000003 /* BenchmarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkView.swift; sourceTree = "<group>"; };
 		D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextProvider.swift; sourceTree = "<group>"; };
 		D6D486242EA482B200C1D5FA /* AudioMeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMeterView.swift; sourceTree = "<group>"; };
+		D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
+		D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManagerTests.swift; sourceTree = "<group>"; };
 		D6DEVPK022F0000000000001 /* DevicePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePickerView.swift; sourceTree = "<group>"; };
-		D6ORB00022F0000000000001 /* AudioOrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioOrbView.swift; sourceTree = "<group>"; };
-		D6ORB00042F0000000000001 /* OrbShader.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = OrbShader.metal; sourceTree = "<group>"; };
 		D6F9D7812ED6C31C00959822 /* AudioEngineController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngineController.swift; sourceTree = "<group>"; };
 		D6F9D7822ED6C31C00959822 /* AudioLevelMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioLevelMonitor.swift; sourceTree = "<group>"; };
 		D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingTimer.swift; sourceTree = "<group>"; };
 		D6LMTEST22F0000000000001 /* LargeModelTranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LargeModelTranscriptionTests.swift; sourceTree = "<group>"; };
+		D6ORB00022F0000000000001 /* AudioOrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioOrbView.swift; sourceTree = "<group>"; };
 		D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdater.swift; sourceTree = "<group>"; };
-		D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
-		D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManagerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -187,6 +186,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D65E93D92F68F05700576C20 /* MetalOrb in Frameworks */,
 				D6D4862F2EA49C0500C1D5FA /* WhisperKit in Frameworks */,
 				D69B300D2DFA0E020024A2DA /* MarkdownUI in Frameworks */,
 				D6D486322EA49C1F00C1D5FA /* WhisperKit in Frameworks */,
@@ -271,7 +271,6 @@
 				D6DEVPK022F0000000000001 /* DevicePickerView.swift */,
 				D60F53F52EA4688E0063C008 /* ListeningWindow.swift */,
 				D60F53F22EA451200063C008 /* ListeningView.swift */,
-				D6ORB00042F0000000000001 /* OrbShader.metal */,
 			);
 			path = "What's up?";
 			sourceTree = "<group>";
@@ -480,6 +479,7 @@
 				D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */,
 				D6D486302EA49C1F00C1D5FA /* XCRemoteSwiftPackageReference "WhisperKit" */,
 				D6SPARKLE2ED700000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				D65E93D72F68F05700576C20 /* XCRemoteSwiftPackageReference "metal-orb" */,
 			);
 			productRefGroup = 8A8A8A8A8A8A8A8A8A8A8A8A /* Products */;
 			projectDirPath = "";
@@ -577,7 +577,6 @@
 				D6D486252EA482B200C1D5FA /* AudioMeterView.swift in Sources */,
 				D6DEVPK012F0000000000001 /* DevicePickerView.swift in Sources */,
 				D6ORB00012F0000000000001 /* AudioOrbView.swift in Sources */,
-				D6ORB00032F0000000000001 /* OrbShader.metal in Sources */,
 				4FF3C022671FE9ADF92F13DA /* AppLibraryManager.swift in Sources */,
 				D66E6D632E185AE400F55A5B /* PermissionRowView.swift in Sources */,
 				D63A31112E2EE20C00BA20B7 /* DictationView.swift in Sources */,
@@ -963,6 +962,14 @@
 				minimumVersion = 0.2.8;
 			};
 		};
+		D65E93D72F68F05700576C20 /* XCRemoteSwiftPackageReference "metal-orb" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sapoepsilon/metal-orb.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
 		D69B300B2DFA0E020024A2DA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
@@ -1002,6 +1009,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */;
 			productName = YouTubeKit;
+		};
+		D65E93D82F68F05700576C20 /* MetalOrb */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D65E93D72F68F05700576C20 /* XCRemoteSwiftPackageReference "metal-orb" */;
+			productName = MetalOrb;
 		};
 		D69B300C2DFA0E020024A2DA /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;

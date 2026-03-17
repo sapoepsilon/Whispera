@@ -144,11 +144,14 @@ struct ListeningView: View {
 
 	private var orbRecordingContent: some View {
 		HStack(spacing: 12) {
+			stopButton
 			devicePickerButton
 
-			AudioOrbView(audioLevel: audioManager.levelMonitor.averageLevel)
-
-			stopButton
+			AudioOrbView(
+				audioLevel: audioManager.levelMonitor.averageLevel,
+				audioBands: audioManager.levelMonitor.levels
+			)
+			.frame(width: 80, height: 80)
 		}
 	}
 
