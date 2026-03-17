@@ -1611,7 +1611,8 @@ struct MicrophonePickerSection: View {
 						}
 					}
 				}
-				.transition(.move(edge: .top))
+				.clipShape(RoundedRectangle(cornerRadius: 8))
+			.transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
 			}
 		}
 	}

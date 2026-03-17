@@ -25,9 +25,13 @@ struct ListeningView: View {
 		case .idle:
 			EmptyView()
 		case .initializing:
-			HStack(spacing: 6) {
-				ProgressView()
-					.scaleEffect(0.7)
+			HStack(spacing: 8) {
+				ZStack {
+					ProgressView()
+						.scaleEffect(0.7)
+				}
+				.frame(width: 20, height: 20)
+
 				Image(systemName: deviceManager.selectedDevice?.iconName ?? "mic.fill")
 					.font(.system(size: 11))
 					.foregroundColor(.secondary)
@@ -38,9 +42,12 @@ struct ListeningView: View {
 				|| whisperKit.isModelLoading
 				|| !whisperKit.isCurrentModelLoaded()
 			{
-				HStack(spacing: 6) {
-					ProgressView()
-						.scaleEffect(0.7)
+				HStack(spacing: 8) {
+					ZStack {
+						ProgressView()
+							.scaleEffect(0.7)
+					}
+					.frame(width: 20, height: 20)
 					Text(
 						whisperKit.isWaitingForModel
 							? whisperKit.waitingForModelStatusText

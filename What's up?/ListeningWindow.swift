@@ -98,8 +98,8 @@ class ListeningWindow: NSWindow {
 					|| abs(fitting.width - currentFrame.width) > 1
 				else { return }
 
+				let newOriginX = currentFrame.midX - fitting.width / 2
 				let newOriginY = currentFrame.origin.y + (currentFrame.height - fitting.height)
-				let newOriginX = currentFrame.origin.x + (currentFrame.width - fitting.width) / 2
 				let newFrame = NSRect(
 					x: newOriginX,
 					y: newOriginY,
