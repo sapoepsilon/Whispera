@@ -18,7 +18,7 @@ struct ListeningView: View {
 	@State private var deviceManager = AudioDeviceManager.shared
 	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
 	@AppStorage("listeningViewCornerRadius") private var cornerRadius = 10.0
-	@AppStorage("listeningVisualization") private var visualizationRaw = ListeningVisualization.orb.rawValue
+	@AppStorage("listeningVisualization") private var visualizationRaw = ListeningVisualization.bars.rawValue
 	private let audioManager: AudioManager
 
 	init(audioManager: AudioManager) {
@@ -26,7 +26,7 @@ struct ListeningView: View {
 	}
 
 	private var visualization: ListeningVisualization {
-		ListeningVisualization(rawValue: visualizationRaw) ?? .orb
+		ListeningVisualization(rawValue: visualizationRaw) ?? .bars
 	}
 
 	private var isOrb: Bool {
@@ -143,15 +143,27 @@ struct ListeningView: View {
 	// MARK: - Recording: Orb Layout
 
 	private var orbRecordingContent: some View {
-		HStack(spacing: 12) {
-			stopButton
-			devicePickerButton
+		HStack(spacing: 0) {
+			HStack(spacing: 8) {
+				stopButton
+				devicePickerButton
+			}
+			.padding(.horizontal, 10)
+			.padding(.vertical, 6)
+			.background(
+				Capsule()
+					.fill(.ultraThinMaterial)
+			)
+			.overlay(
+				Capsule()
+					.strokeBorder(Color.blue.opacity(0.2), lineWidth: 0.5)
+			)
 
 			AudioOrbView(
 				audioLevel: audioManager.levelMonitor.averageLevel,
 				audioBands: audioManager.levelMonitor.levels
 			)
-			.frame(width: 80, height: 80)
+			.frame(width: 50, height: 25)
 		}
 	}
 

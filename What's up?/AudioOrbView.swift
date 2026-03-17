@@ -1,17 +1,28 @@
-import SwiftUI
 import MetalOrb
+import SwiftUI
 
 struct AudioOrbView: View {
 	let audioLevel: Float
 	let audioBands: [Float]
 
-	@State private var preset = OrbPreset.transparent.values
+	@State private var preset: OrbPresetValues = {
+		var p = OrbPreset.transparent.values
+		p.baseOpacity = 1.0
+		p.lightIntensity = 1.6
+		p.edgeGlow = 1.2
+		p.heatIntensity = 0.3
+		p.audioReactivity = 0.4
+		p.color1 = OrbColor(1.0, 1.0, 1.0)
+		p.color2 = OrbColor(0.95, 0.95, 1.0)
+		p.color3 = OrbColor(1.0, 0.95, 0.95)
+		p.color4 = OrbColor(0.95, 1.0, 0.95)
+		return p
+	}()
 
 	private var mappedBands: SIMD4<Float> {
 		guard audioBands.count >= 4 else {
 			return SIMD4<Float>(repeating: audioLevel)
 		}
-		// 7 bands → 4 groups: bass(0-1), mid(2-3), high(4-5), treble(6)
 		let bass = (audioBands[0] + audioBands[1]) / 2
 		let mid = (audioBands[2] + audioBands[3]) / 2
 		let high = (audioBands[4] + audioBands[5]) / 2
@@ -23,7 +34,8 @@ struct AudioOrbView: View {
 		MetalOrbView(
 			preset: $preset,
 			audioLevel: audioLevel,
-			audioBands: mappedBands
+			audioBands: mappedBands,
+			transparentBackground: true
 		)
 	}
 }

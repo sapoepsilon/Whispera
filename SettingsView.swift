@@ -132,6 +132,7 @@ struct SettingsView: View {
 	@AppStorage("launchAtStartup") private var launchAtStartup = false
 	@AppStorage("enableTranslation") private var enableTranslation = false
 	@AppStorage("enableStreaming") private var enableStreaming = false
+	@AppStorage("listeningVisualization") private var listeningVisualization = ListeningVisualization.bars.rawValue
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
 	@AppStorage("autoDetectLanguageFromKeyboard") private var autoDetectLanguageFromKeyboard = true
 	@AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
@@ -440,6 +441,19 @@ struct SettingsView: View {
 						}
 
 						SettingRow(
+							"Orb Visualizer",
+							description: "Use a 3D Metal orb instead of audio bars while recording"
+						) {
+							HStack(spacing: 8) {
+								GlassBetaElement(onTap: {})
+								Toggle("", isOn: Binding(
+									get: { listeningVisualization == ListeningVisualization.orb.rawValue },
+									set: { listeningVisualization = $0 ? ListeningVisualization.orb.rawValue : ListeningVisualization.bars.rawValue }
+								))
+							}
+						}
+
+						SettingRow(
 							"Auto-detect from Keyboard",
 							description: "Automatically use keyboard input language when recording starts"
 						) {
@@ -472,19 +486,6 @@ struct SettingsView: View {
 					}
 					Divider()
 
-					SettingsSection("Performance") {
-						VStack(alignment: .leading, spacing: 8) {
-							Text("Optimized Compute Configuration")
-								.font(.subheadline)
-							Text(
-								"Audio processing uses CPU + GPU, text decoding uses CPU + Neural Engine for optimal performance on Apple Silicon."
-							)
-							.font(.caption)
-							.foregroundColor(.secondary)
-						}
-					}
-
-					Divider()
 
 					SettingsSection("System") {
 						SettingRow("Launch at Startup") {

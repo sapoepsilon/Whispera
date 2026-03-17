@@ -962,13 +962,9 @@
 				minimumVersion = 0.2.8;
 			};
 		};
-		D65E93D72F68F05700576C20 /* XCRemoteSwiftPackageReference "metal-orb" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/sapoepsilon/metal-orb.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.0.0;
-			};
+		D65E93D72F68F05700576C20 /* XCLocalSwiftPackageReference "metal-orb" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../metal-orb";
 		};
 		D69B300B2DFA0E020024A2DA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
 			isa = XCRemoteSwiftPackageReference;
