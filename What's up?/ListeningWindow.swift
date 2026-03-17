@@ -1,10 +1,3 @@
-//
-//  ListeningWindow.swift
-//  Whispera
-//
-//  Created by Varkhuman Mac on 10/18/25.
-//
-
 import AppKit
 import SwiftUI
 
@@ -12,6 +5,11 @@ import SwiftUI
 class ListeningWindow: NSWindow {
 	private let audioManager: AudioManager
 	private var observationTimer: Timer?
+	private var frameObserver: Timer?
+	private var stateObserver: NSObjectProtocol?
+	private var pickerWindow: NSWindow?
+	private var pickerToggleObserver: NSObjectProtocol?
+	private var pickerDismissObserver: NSObjectProtocol?
 	@AppStorage("enableStreaming") private var enableStreaming = false
 
 	init(audioManager: AudioManager) {
@@ -36,27 +34,154 @@ class ListeningWindow: NSWindow {
 		self.contentView = hostingView
 
 		setupObservation()
+		setupFrameObserver()
+		setupPickerObservers()
 	}
 
 	deinit {
 		observationTimer?.invalidate()
+		frameObserver?.invalidate()
+		if let observer = stateObserver {
+			NotificationCenter.default.removeObserver(observer)
+		}
+		if let observer = pickerToggleObserver {
+			NotificationCenter.default.removeObserver(observer)
+		}
+		if let observer = pickerDismissObserver {
+			NotificationCenter.default.removeObserver(observer)
+		}
+	}
+
+	private func updateVisibility() {
+		let state = audioManager.currentState
+		let shouldShow = state == .initializing
+			|| (state != .idle && !enableStreaming)
+
+		if shouldShow && !isVisible {
+			positionAtBottomCenter()
+			orderFront(nil)
+		} else if !shouldShow && isVisible {
+			hidePickerWindow()
+			orderOut(nil)
+		}
 	}
 
 	private func setupObservation() {
+		stateObserver = NotificationCenter.default.addObserver(
+			forName: NSNotification.Name("RecordingStateChanged"),
+			object: nil,
+			queue: .main
+		) { [weak self] _ in
+			Task { @MainActor in
+				self?.updateVisibility()
+			}
+		}
+
 		observationTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
 			Task { @MainActor in
-				guard let self = self else { return }
+				self?.updateVisibility()
+			}
+		}
+	}
 
-				let shouldShow = self.audioManager.currentState != .idle && !self.enableStreaming
+	private func setupFrameObserver() {
+		frameObserver = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+			Task { @MainActor in
+				guard let self = self, self.isVisible,
+					let hostingView = self.contentView
+				else { return }
 
-				if shouldShow && !self.isVisible {
-					self.positionAtBottomCenter()
-					self.orderFront(nil)
-				} else if !shouldShow && self.isVisible {
-					self.orderOut(nil)
+				let fitting = hostingView.fittingSize
+				let currentFrame = self.frame
+
+				guard abs(fitting.height - currentFrame.height) > 1
+					|| abs(fitting.width - currentFrame.width) > 1
+				else { return }
+
+				let newOriginX = currentFrame.midX - fitting.width / 2
+				let newOriginY = currentFrame.origin.y + (currentFrame.height - fitting.height)
+				let newFrame = NSRect(
+					x: newOriginX,
+					y: newOriginY,
+					width: fitting.width,
+					height: fitting.height
+				)
+				self.setFrame(newFrame, display: true, animate: false)
+				self.repositionPickerWindow()
+			}
+		}
+	}
+
+	// MARK: - Picker Window
+
+	private func setupPickerObservers() {
+		pickerToggleObserver = NotificationCenter.default.addObserver(
+			forName: .devicePickerToggled,
+			object: nil,
+			queue: .main
+		) { [weak self] notification in
+			Task { @MainActor in
+				let show = (notification.userInfo?["show"] as? Bool) ?? false
+				if show {
+					self?.showPickerWindow()
+				} else {
+					self?.hidePickerWindow()
 				}
 			}
 		}
+
+		pickerDismissObserver = NotificationCenter.default.addObserver(
+			forName: .devicePickerDismissed,
+			object: nil,
+			queue: .main
+		) { [weak self] _ in
+			Task { @MainActor in
+				self?.hidePickerWindow()
+			}
+		}
+	}
+
+	private func showPickerWindow() {
+		if pickerWindow == nil {
+			let window = NSWindow(
+				contentRect: .zero,
+				styleMask: [.borderless],
+				backing: .buffered,
+				defer: false
+			)
+			window.level = .floating
+			window.isOpaque = false
+			window.backgroundColor = .clear
+			window.hasShadow = false
+
+			let hostingView = NSHostingView(rootView: DevicePickerView(audioManager: audioManager))
+			window.contentView = hostingView
+			pickerWindow = window
+		}
+
+		repositionPickerWindow()
+		pickerWindow?.orderFront(nil)
+	}
+
+	private func hidePickerWindow() {
+		guard pickerWindow?.isVisible == true else { return }
+		pickerWindow?.orderOut(nil)
+		NotificationCenter.default.post(name: .devicePickerDismissed, object: self)
+	}
+
+	private func repositionPickerWindow() {
+		guard let picker = pickerWindow, let pickerContent = picker.contentView else { return }
+
+		let fittingSize = pickerContent.fittingSize
+		let listeningFrame = self.frame
+
+		let pickerX = listeningFrame.midX - fittingSize.width / 2
+		let pickerY = listeningFrame.maxY + 8
+
+		picker.setFrame(
+			NSRect(x: pickerX, y: pickerY, width: fittingSize.width, height: fittingSize.height),
+			display: true
+		)
 	}
 
 	private func positionAtBottomCenter() {

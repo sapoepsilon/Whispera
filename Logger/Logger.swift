@@ -63,6 +63,9 @@ class AppLogger {
 	lazy var youtubeTranscriber = ExtendedLogger(
 		logger: Logger(subsystem: subsystem, category: "WhisperYouTubeTranscriber"),
 		category: "WhisperYouTubeTranscriber")
+	lazy var deviceManager = ExtendedLogger(
+		logger: Logger(subsystem: subsystem, category: "AudioDeviceManager"),
+		category: "AudioDeviceManager")
 
 	private init() {
 		let defaults = UserDefaults.standard

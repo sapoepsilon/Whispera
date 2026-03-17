@@ -87,6 +87,17 @@ class FileDropHandler: DragDropHandler {
 			}
 		}
 
+		if info.hasItemsConforming(to: [.url]) {
+			let providers = info.itemProviders(for: [.url])
+			if !providers.isEmpty {
+				draggedItemsCount = providers.count
+				draggedItemsPreview = providers.count == 1 ? "URL" : "\(providers.count) URLs"
+				isValidDrop = true
+				logger.info("✅ Accepting \(providers.count) URL item(s)")
+				return true
+			}
+		}
+
 		if info.hasItemsConforming(to: [.text, .plainText]) {
 			return validateTextItems(info)
 		}

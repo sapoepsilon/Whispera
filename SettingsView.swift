@@ -301,6 +301,43 @@ struct SettingsView: View {
 					}
 					Divider()
 
+					SettingsSection("Microphone") {
+						SettingRow(
+							"Input Device",
+							description: "Select which microphone to use for recording"
+						) {
+							Picker("", selection: Binding(
+								get: { AudioDeviceManager.shared.persistedDeviceUID },
+								set: { newUID in
+									AudioDeviceManager.shared.selectDevice(uid: newUID)
+								}
+							)) {
+								Label("System Default", systemImage: "mic.fill")
+									.tag(AudioDeviceManager.systemDefaultUID)
+
+								ForEach(AudioDeviceManager.shared.availableDevices) { device in
+									Label(device.name, systemImage: device.iconName)
+										.tag(device.uid)
+								}
+							}
+							.frame(maxWidth: 200)
+						}
+
+						if AudioDeviceManager.shared.persistedDeviceUID != AudioDeviceManager.systemDefaultUID,
+						   AudioDeviceManager.shared.selectedDevice == nil {
+							HStack(spacing: 6) {
+								Image(systemName: "exclamationmark.triangle.fill")
+									.foregroundColor(.orange)
+									.font(.caption)
+								Text("Selected device is not currently available. Will use system default.")
+									.font(.caption)
+									.foregroundColor(.orange)
+							}
+							.padding(.top, 4)
+						}
+					}
+					Divider()
+
 					SettingsSection("Whisper Model") {
 						if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
 							VStack(alignment: .leading, spacing: 8) {
