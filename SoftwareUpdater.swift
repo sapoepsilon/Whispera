@@ -61,7 +61,7 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
             lastUpdaterError = nil
         } catch {
             lastUpdaterError = error.localizedDescription
-            AppLogger.shared.general.error("❌ Sparkle updater failed to start: \(error.localizedDescription)")
+            AppLogger.shared.general.error("Sparkle updater failed to start: \(error.localizedDescription)")
         }
 
         updater.publisher(for: \.canCheckForUpdates)
@@ -97,6 +97,6 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         // SPUNoUpdateFoundError (domain: SPUNoUpdateFoundError, code: 0) is not a real error
         if nsError.domain == "SPUNoUpdateFoundError" { return }
         lastUpdaterError = error.localizedDescription
-        AppLogger.shared.general.error("❌ Sparkle update aborted: \(error.localizedDescription)")
+        AppLogger.shared.general.error("Sparkle update aborted: \(error.localizedDescription)")
     }
 }

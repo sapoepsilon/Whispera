@@ -524,8 +524,8 @@ struct StatusCardView: View {
 						// Translation toggle
 						Button(action: {
 							audioManager.enableTranslation.toggle()
-							print(
-								"🟠 StatusCardView - Translation toggled to: \(audioManager.enableTranslation)"
+							AppLogger.shared.ui.debug(
+								"StatusCardView - Translation toggled to: \(audioManager.enableTranslation)"
 							)
 						}) {
 							HStack(spacing: 2) {

@@ -58,7 +58,7 @@ class FileDropHandler: DragDropHandler {
 	}
 
 	func canAccept(_ info: DropInfo) -> Bool {
-		logger.info("🔍 Checking if drop can be accepted")
+		logger.info("Checking if drop can be accepted")
 
 		draggedItemsCount = 0
 		draggedItemsPreview = ""
@@ -71,7 +71,18 @@ class FileDropHandler: DragDropHandler {
 				draggedItemsCount = providers.count
 				draggedItemsPreview = providers.count == 1 ? "File" : "\(providers.count) files"
 				isValidDrop = true
-				logger.info("✅ Accepting \(providers.count) file(s) - will validate on drop")
+				logger.info("Accepting \(providers.count) file(s) - will validate on drop")
+				return true
+			}
+		}
+
+		if info.hasItemsConforming(to: [.url]) {
+			let providers = info.itemProviders(for: [.url])
+			if !providers.isEmpty {
+				draggedItemsCount = providers.count
+				draggedItemsPreview = providers.count == 1 ? "URL" : "\(providers.count) URLs"
+				isValidDrop = true
+				logger.info("Accepting \(providers.count) URL item(s)")
 				return true
 			}
 		}
@@ -95,7 +106,7 @@ class FileDropHandler: DragDropHandler {
 			draggedItemsCount = max(1, info.providers.count)
 			draggedItemsPreview = draggedItemsCount == 1 ? "URL" : "\(draggedItemsCount) URLs"
 			isValidDrop = true
-			logger.info("✅ Accepting provider with URL-like payload")
+			logger.info("Accepting provider with URL-like payload")
 			return true
 		}
 
@@ -107,17 +118,17 @@ class FileDropHandler: DragDropHandler {
 			draggedItemsCount = pasteboardURLs.count
 			draggedItemsPreview = pasteboardURLs.count == 1 ? "URL" : "\(pasteboardURLs.count) URLs"
 			isValidDrop = true
-			logger.info("✅ Accepting \(pasteboardURLs.count) URL(s) from drag pasteboard (fallback)")
+			logger.info("Accepting \(pasteboardURLs.count) URL(s) from drag pasteboard (fallback)")
 			return true
 		}
 
-		logger.info("❌ Drop rejected - no supported items found")
-		logger.info("📋 Provider type identifiers: \(info.providers.flatMap { $0.registeredTypeIdentifiers })")
+		logger.info("Drop rejected - no supported items found")
+		logger.info("Provider type identifiers: \(info.providers.flatMap { $0.registeredTypeIdentifiers })")
 		return false
 	}
 
 	func handleDrop(_ info: DropInfo) async -> Bool {
-		logger.info("📁 Handling drop operation")
+		logger.info("Handling drop operation")
 
 		if info.hasItemsConforming(to: [.fileURL]) {
 			let fileURLs = await getFileURLsAsync(from: info)
@@ -126,7 +137,7 @@ class FileDropHandler: DragDropHandler {
 				let fileExtension = url.pathExtension.lowercased()
 				let isSupported = self.acceptedFileTypes.contains(fileExtension)
 				self.logger.info(
-					"🔍 Validating dropped file: \(url.lastPathComponent), extension: .\(fileExtension), supported: \(isSupported)"
+					"Validating dropped file: \(url.lastPathComponent), extension: .\(fileExtension), supported: \(isSupported)"
 				)
 				return isSupported
 			}
@@ -134,13 +145,13 @@ class FileDropHandler: DragDropHandler {
 			if !validURLs.isEmpty {
 				if let queueManager = queueManager {
 					queueManager.addFiles(validURLs)
-					logger.info("✅ Added \(validURLs.count) files to transcription queue")
+					logger.info("Added \(validURLs.count) files to transcription queue")
 				} else {
 					await transcribeFiles(validURLs)
 				}
 				return true
 			} else if !fileURLs.isEmpty {
-				logger.error("❌ No supported file formats in dropped files")
+				logger.error("No supported file formats in dropped files")
 				await showError(
 					"Unsupported file format. Supported formats: \(SupportedFileTypes.formattedDescription)")
 				return false
@@ -152,7 +163,7 @@ class FileDropHandler: DragDropHandler {
 			if !urls.isEmpty {
 				if let queueManager = queueManager {
 					queueManager.addFiles(urls)
-					logger.info("✅ Added \(urls.count) URLs to transcription queue")
+					logger.info("Added \(urls.count) URLs to transcription queue")
 				} else {
 					await transcribeNetworkFiles(urls)
 				}
@@ -165,7 +176,7 @@ class FileDropHandler: DragDropHandler {
 			if !urls.isEmpty {
 				if let queueManager = queueManager {
 					queueManager.addFiles(urls)
-					logger.info("✅ Added \(urls.count) URLs to transcription queue")
+					logger.info("Added \(urls.count) URLs to transcription queue")
 				} else {
 					await transcribeNetworkFiles(urls)
 				}
@@ -177,7 +188,7 @@ class FileDropHandler: DragDropHandler {
 		if !fallbackURLs.isEmpty {
 			if let queueManager = queueManager {
 				queueManager.addFiles(fallbackURLs)
-				logger.info("✅ Added \(fallbackURLs.count) fallback URL(s) to transcription queue")
+				logger.info("Added \(fallbackURLs.count) fallback URL(s) to transcription queue")
 			} else {
 				await transcribeNetworkFiles(fallbackURLs)
 			}
@@ -195,7 +206,7 @@ class FileDropHandler: DragDropHandler {
 				if !validFiles.isEmpty {
 					if let queueManager = queueManager {
 						queueManager.addFiles(validFiles)
-						logger.info("✅ Added \(validFiles.count) file(s) from drag pasteboard to queue")
+						logger.info("Added \(validFiles.count) file(s) from drag pasteboard to queue")
 					} else {
 						await transcribeFiles(validFiles)
 					}
@@ -206,7 +217,7 @@ class FileDropHandler: DragDropHandler {
 			if !webURLs.isEmpty {
 				if let queueManager = queueManager {
 					queueManager.addFiles(webURLs)
-					logger.info("✅ Added \(webURLs.count) URL(s) from drag pasteboard to queue")
+					logger.info("Added \(webURLs.count) URL(s) from drag pasteboard to queue")
 				} else {
 					await transcribeNetworkFiles(webURLs)
 				}
@@ -214,7 +225,7 @@ class FileDropHandler: DragDropHandler {
 			}
 		}
 
-		logger.error("❌ Drop handling failed - no valid items")
+		logger.error("Drop handling failed - no valid items")
 		return false
 	}
 
@@ -223,7 +234,7 @@ class FileDropHandler: DragDropHandler {
 		isValidDrop = true
 		draggedItemsCount = 1
 		draggedItemsPreview = "file(s)"
-		logger.info("🎯 Drag entered drop zone")
+		logger.info("Drag entered drop zone")
 	}
 
 	func dragExited() {
@@ -231,7 +242,7 @@ class FileDropHandler: DragDropHandler {
 		draggedItemsCount = 0
 		draggedItemsPreview = ""
 		isValidDrop = false
-		logger.info("🚪 Drag exited drop zone")
+		logger.info("Drag exited drop zone")
 	}
 
 	func dragUpdated(_ info: DropInfo) {
@@ -273,7 +284,7 @@ class FileDropHandler: DragDropHandler {
 					urls.append(url)
 				}
 			} catch {
-				logger.error("❌ Failed to load URL item: \(error.localizedDescription)")
+				logger.error("Failed to load URL item: \(error.localizedDescription)")
 			}
 		}
 
@@ -296,7 +307,7 @@ class FileDropHandler: DragDropHandler {
 						break
 					}
 				} catch {
-					logger.error("❌ Failed to load fallback item (\(typeIdentifier)): \(error.localizedDescription)")
+					logger.error("Failed to load fallback item (\(typeIdentifier)): \(error.localizedDescription)")
 				}
 			}
 		}
@@ -319,7 +330,7 @@ class FileDropHandler: DragDropHandler {
 		if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
 			let httpURLs = urls.filter { $0.scheme == "http" || $0.scheme == "https" }
 			if !httpURLs.isEmpty {
-				logger.info("📋 Read \(httpURLs.count) URL(s) from drag pasteboard via NSURL")
+				logger.info("Read \(httpURLs.count) URL(s) from drag pasteboard via NSURL")
 				return httpURLs
 			}
 		}
@@ -335,7 +346,7 @@ class FileDropHandler: DragDropHandler {
 				return url
 			}
 			if !urls.isEmpty {
-				logger.info("📋 Read \(urls.count) URL(s) from drag pasteboard via string parsing")
+				logger.info("Read \(urls.count) URL(s) from drag pasteboard via string parsing")
 				return urls
 			}
 		}
@@ -387,7 +398,7 @@ class FileDropHandler: DragDropHandler {
 						urls.append(url)
 					}
 				} catch {
-					logger.error("❌ Failed to load file URL: \(error)")
+					logger.error("Failed to load file URL: \(error)")
 				}
 			}
 		}
@@ -398,18 +409,18 @@ class FileDropHandler: DragDropHandler {
 	private func getTextURLs(from info: DropInfo) async -> [URL] {
 		var urls: [URL] = []
 
-		logger.info("🔍 Processing text items for URLs...")
-		logger.info("📋 Available providers: \(info.providers.count)")
+		logger.info("Processing text items for URLs...")
+		logger.info("Available providers: \(info.providers.count)")
 
 		for (index, provider) in info.itemProviders(for: [.text, .plainText]).enumerated() {
-			logger.info("🔍 Processing provider \(index + 1)")
-			logger.info("📝 Provider types: \(provider.registeredTypeIdentifiers)")
+			logger.info("Processing provider \(index + 1)")
+			logger.info("Provider types: \(provider.registeredTypeIdentifiers)")
 
 			var foundText = false
 
 			// Method 1: Try loadObject(ofClass: NSString.self) - preferred for strings
 			if provider.canLoadObject(ofClass: NSString.self) {
-				logger.info("✅ Provider can load NSString object")
+				logger.info("Provider can load NSString object")
 				do {
 					let stringObject: NSString = try await withCheckedThrowingContinuation {
 						(continuation: CheckedContinuation<NSString, Error>) in
@@ -430,14 +441,14 @@ class FileDropHandler: DragDropHandler {
 						}
 					}
 					let text = stringObject as String
-					logger.info("📝 Found text content via NSString: \(text)")
+					logger.info("Found text content via NSString: \(text)")
 					foundText = true
 
 					let extractedURLs = extractURLsFromText(text)
 					urls.append(contentsOf: extractedURLs)
 
 				} catch {
-					logger.error("❌ Failed to load NSString object: \(error.localizedDescription)")
+					logger.error("Failed to load NSString object: \(error.localizedDescription)")
 				}
 			}
 
@@ -454,7 +465,7 @@ class FileDropHandler: DragDropHandler {
 
 				for textType in textTypes {
 					if provider.hasItemConformingToTypeIdentifier(textType) {
-						logger.info("✅ Provider has type: \(textType)")
+						logger.info("Provider has type: \(textType)")
 
 						do {
 							let item = try await provider.loadItem(
@@ -464,19 +475,19 @@ class FileDropHandler: DragDropHandler {
 							// Handle different possible return types
 							if let stringItem = item as? String {
 								text = stringItem
-								logger.info("📝 Found text as String for type: \(textType)")
+								logger.info("Found text as String for type: \(textType)")
 							} else if let dataItem = item as? Data {
 								text = String(data: dataItem, encoding: .utf8)
-								logger.info("📝 Found text as Data for type: \(textType)")
+								logger.info("Found text as Data for type: \(textType)")
 							} else if let nsStringItem = item as? NSString {
 								text = nsStringItem as String
-								logger.info("📝 Found text as NSString for type: \(textType)")
+								logger.info("Found text as NSString for type: \(textType)")
 							} else {
-								logger.info("❌ Unknown item type for \(textType): \(type(of: item))")
+								logger.info("Unknown item type for \(textType): \(type(of: item))")
 							}
 
 							if let text = text {
-								logger.info("📝 Successfully extracted text (\(textType)): \(text)")
+								logger.info("Successfully extracted text (\(textType)): \(text)")
 								foundText = true
 
 								// Process the text for URLs
@@ -487,7 +498,7 @@ class FileDropHandler: DragDropHandler {
 
 						} catch {
 							logger.error(
-								"❌ Failed to load text item for type \(textType): \(error.localizedDescription)"
+								"Failed to load text item for type \(textType): \(error.localizedDescription)"
 							)
 						}
 					}
@@ -495,11 +506,11 @@ class FileDropHandler: DragDropHandler {
 			}
 
 			if !foundText {
-				logger.info("⚠️ No text content found in provider \(index + 1)")
+				logger.info("No text content found in provider \(index + 1)")
 			}
 		}
 
-		logger.info("✅ Extracted \(urls.count) URLs from text")
+		logger.info("Extracted \(urls.count) URLs from text")
 		return urls
 	}
 
@@ -513,10 +524,10 @@ class FileDropHandler: DragDropHandler {
 			if let url = URL(string: trimmedLine),
 				url.scheme == "http" || url.scheme == "https"
 			{
-				logger.info("🔗 Found valid URL: \(url.absoluteString)")
+				logger.info("Found valid URL: \(url.absoluteString)")
 				urls.append(url)
 			} else if !trimmedLine.isEmpty {
-				logger.info("❌ Invalid URL format: '\(trimmedLine)'")
+				logger.info("Invalid URL format: '\(trimmedLine)'")
 			}
 		}
 
@@ -529,18 +540,18 @@ class FileDropHandler: DragDropHandler {
 		draggedItemsPreview = "URL"
 		isValidDrop = true
 
-		logger.info("✅ Text items appear to be valid URLs")
+		logger.info("Text items appear to be valid URLs")
 		return true
 	}
 
 	private func transcribeFiles(_ urls: [URL]) async {
-		logger.info("🎵 Starting transcription for \(urls.count) file(s)")
+		logger.info("Starting transcription for \(urls.count) file(s)")
 
 		do {
 			if urls.count == 1 {
 				let result = try await fileTranscriptionManager.transcribeFile(at: urls[0])
 				await copyToClipboard(result, filename: urls[0].lastPathComponent)
-				logger.info("✅ Single file transcription completed")
+				logger.info("Single file transcription completed")
 			} else {
 				let results = try await fileTranscriptionManager.transcribeFiles(at: urls)
 				let combinedResult = zip(urls, results).map { url, result in
@@ -548,24 +559,24 @@ class FileDropHandler: DragDropHandler {
 				}.joined(separator: "\n\n" + String(repeating: "-", count: 50) + "\n\n")
 
 				await copyToClipboard(combinedResult, filename: "Multiple Files")
-				logger.info("✅ Batch file transcription completed")
+				logger.info("Batch file transcription completed")
 			}
 		} catch {
-			logger.error("❌ File transcription failed: \(error.localizedDescription)")
+			logger.error("File transcription failed: \(error.localizedDescription)")
 			await showError("File transcription failed: \(error.localizedDescription)")
 		}
 	}
 
 	private func transcribeNetworkFiles(_ urls: [URL]) async {
-		logger.info("🌐 Starting network file transcription for \(urls.count) URL(s)")
+		logger.info("Starting network file transcription for \(urls.count) URL(s)")
 
 		for (index, url) in urls.enumerated() {
 			do {
-				logger.info("⬇️ Processing URL \(index + 1)/\(urls.count): \(url.absoluteString)")
+				logger.info("Processing URL \(index + 1)/\(urls.count): \(url.absoluteString)")
 
 				// Check if it's a YouTube URL
 				if isYouTubeURL(url) {
-					logger.info("🎬 Detected YouTube URL, using YouTube transcription")
+					logger.info("Detected YouTube URL, using YouTube transcription")
 					let youtubeManager = YouTubeTranscriptionManager(
 						fileTranscriptionManager: fileTranscriptionManager,
 						networkDownloader: networkDownloader
@@ -587,11 +598,11 @@ class FileDropHandler: DragDropHandler {
 					await copyToClipboard(result, filename: filename)
 				}
 
-				logger.info("✅ Network file transcription completed for: \(url.absoluteString)")
+				logger.info("Network file transcription completed for: \(url.absoluteString)")
 
 			} catch {
 				logger.error(
-					"❌ Network file transcription failed for \(url.absoluteString): \(error.localizedDescription)"
+					"Network file transcription failed for \(url.absoluteString): \(error.localizedDescription)"
 				)
 				await showError(
 					"Network transcription failed for \(url.absoluteString): \(error.localizedDescription)")
@@ -610,7 +621,7 @@ class FileDropHandler: DragDropHandler {
 		pasteboard.clearContents()
 		pasteboard.setString(text, forType: .string)
 
-		logger.info("📋 Transcription result copied to clipboard for: \(filename)")
+		logger.info("Transcription result copied to clipboard for: \(filename)")
 
 		// Offer to save to file as well
 		await saveTranscriptionToFile(text, originalFilename: filename)
@@ -639,15 +650,15 @@ class FileDropHandler: DragDropHandler {
 
 		do {
 			try transcription.write(to: fileURL, atomically: true, encoding: .utf8)
-			logger.info("💾 Transcription saved to: \(fileURL.path)")
+			logger.info("Transcription saved to: \(fileURL.path)")
 		} catch {
-			logger.error("❌ Failed to save transcription to file: \(error.localizedDescription)")
+			logger.error("Failed to save transcription to file: \(error.localizedDescription)")
 			await showError("Failed to save transcription to file: \(error.localizedDescription)")
 		}
 	}
 
 	private func showSuccess(_ message: String) async {
-		logger.info("✅ Success: \(message)")
+		logger.info("Success: \(message)")
 
 		// Send notification through NotificationCenter for UI updates
 		NotificationCenter.default.post(
@@ -658,7 +669,7 @@ class FileDropHandler: DragDropHandler {
 	}
 
 	private func showError(_ message: String) async {
-		logger.error("❌ Error: \(message)")
+		logger.error("Error: \(message)")
 
 		// Send notification through NotificationCenter for UI updates
 		NotificationCenter.default.post(

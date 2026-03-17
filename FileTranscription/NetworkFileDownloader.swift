@@ -66,11 +66,11 @@ class NetworkFileDownloader: FileDownloadable {
 	// MARK: - FileDownloadable Methods
 
 	func downloadFile(from url: URL) async throws -> URL {
-		logger.info("🌐 Starting download from: \(url.absoluteString)")
+		logger.info("Starting download from: \(url.absoluteString)")
 
 		// Check cache first
 		if let cachedFile = getCachedFile(for: url) {
-			logger.info("🎯 Using cached file: \(cachedFile.lastPathComponent)")
+			logger.info("Using cached file: \(cachedFile.lastPathComponent)")
 			return cachedFile
 		}
 
@@ -126,13 +126,13 @@ class NetworkFileDownloader: FileDownloadable {
 			return localFile
 
 		} catch {
-			logger.error("❌ Download failed: \(error.localizedDescription)")
+			logger.error("Download failed: \(error.localizedDescription)")
 			throw NetworkDownloadError.downloadFailed(error.localizedDescription)
 		}
 	}
 
 	func cancelDownload() {
-		logger.info("🛑 Cancelling download")
+		logger.info("Cancelling download")
 		currentDownloadTask?.cancel()
 		currentDownloadTask = nil
 		isDownloading = false
@@ -149,11 +149,11 @@ class NetworkFileDownloader: FileDownloadable {
 	func downloadFileWithChunks(
 		from url: URL, chunkSize: Int64 = 2_097_152, preferredFileName: String? = nil
 	) async throws -> URL {
-		logger.info("🚀 Starting chunked download from: \(url.absoluteString)")
+		logger.info("Starting chunked download from: \(url.absoluteString)")
 
 		// Check cache first
 		if let cachedFile = getCachedFile(for: url) {
-			logger.info("🎯 Using cached file: \(cachedFile.lastPathComponent)")
+			logger.info("Using cached file: \(cachedFile.lastPathComponent)")
 			return cachedFile
 		}
 
@@ -190,7 +190,7 @@ class NetworkFileDownloader: FileDownloadable {
 			let fileSize = try await getFileSize(from: url)
 			totalBytes = fileSize
 
-			logger.info("📏 File size: \(ByteCountFormatter().string(fromByteCount: fileSize))")
+			logger.info("File size: \(ByteCountFormatter().string(fromByteCount: fileSize))")
 
 			// Step 2: Calculate chunks
 			let numberOfChunks = Int((fileSize + chunkSize - 1) / chunkSize)  // Round up
@@ -201,7 +201,7 @@ class NetworkFileDownloader: FileDownloadable {
 			}
 
 			logger.info(
-				"🧩 Downloading \(chunks.count) chunks of ~\(ByteCountFormatter().string(fromByteCount: chunkSize)) each"
+				"Downloading \(chunks.count) chunks of ~\(ByteCountFormatter().string(fromByteCount: chunkSize)) each"
 			)
 
 			// Step 3: Download chunks in parallel
@@ -214,20 +214,20 @@ class NetworkFileDownloader: FileDownloadable {
 			// Step 5: Validate the combined file
 			do {
 				try self.validateDownloadedFile(at: finalURL)
-				logger.info("✅ Chunked download completed and validated: \(finalURL.lastPathComponent)")
+				logger.info("Chunked download completed and validated: \(finalURL.lastPathComponent)")
 
 				// Add to cache on successful download
 				addToCache(url: url, localPath: finalURL)
 				return finalURL
 			} catch {
-				logger.error("❌ Chunked download validation failed: \(error.localizedDescription)")
+				logger.error("Chunked download validation failed: \(error.localizedDescription)")
 				// Clean up invalid file
 				try? FileManager.default.removeItem(at: finalURL)
 				throw error
 			}
 
 		} catch {
-			logger.error("❌ Chunked download failed: \(error.localizedDescription)")
+			logger.error("Chunked download failed: \(error.localizedDescription)")
 			throw error
 		}
 	}
@@ -323,7 +323,7 @@ class NetworkFileDownloader: FileDownloadable {
 				"Failed to download chunk \(chunk.index): HTTP \(httpResponse.statusCode)")
 		}
 
-		logger.debug("📦 Downloaded chunk \(chunk.index): \(data.count) bytes")
+		logger.debug("Downloaded chunk \(chunk.index): \(data.count) bytes")
 
 		return ChunkData(index: chunk.index, data: data)
 	}
@@ -390,12 +390,12 @@ class NetworkFileDownloader: FileDownloadable {
 				let bytesWritten = outputStream.write(
 					bytes.bindMemory(to: UInt8.self).baseAddress!, maxLength: chunk.data.count)
 				if bytesWritten != chunk.data.count {
-					logger.error("⚠️ Failed to write complete chunk \(chunk.index)")
+					logger.error("Failed to write complete chunk \(chunk.index)")
 				}
 			}
 		}
 
-		logger.info("📁 Combined file saved to: \(finalURL.path)")
+		logger.info("Combined file saved to: \(finalURL.path)")
 		return finalURL
 	}
 
@@ -422,7 +422,7 @@ class NetworkFileDownloader: FileDownloadable {
 	// MARK: - File Management
 
 	func cleanupTemporaryFiles() {
-		logger.info("🧹 Cleaning up download files")
+		logger.info("Cleaning up download files")
 
 		do {
 			let contents = try fileManager.contentsOfDirectory(
@@ -433,7 +433,7 @@ class NetworkFileDownloader: FileDownloadable {
 					continue
 				}
 				try fileManager.removeItem(at: fileURL)
-				logger.info("🗑️ Deleted download file: \(fileURL.lastPathComponent)")
+				logger.info("Deleted download file: \(fileURL.lastPathComponent)")
 			}
 
 			// Clear the cache dictionary as well
@@ -441,12 +441,12 @@ class NetworkFileDownloader: FileDownloadable {
 			saveDownloadCache()
 
 		} catch {
-			logger.error("❌ Failed to clean up download files: \(error.localizedDescription)")
+			logger.error("Failed to clean up download files: \(error.localizedDescription)")
 		}
 	}
 
 	func clearExpiredCache() {
-		logger.info("🧹 Clearing expired cache entries")
+		logger.info("Clearing expired cache entries")
 
 		let now = Date()
 		var expiredCount = 0
@@ -480,7 +480,7 @@ class NetworkFileDownloader: FileDownloadable {
 
 		if expiredCount > 0 {
 			saveDownloadCache()
-			logger.info("🗑️ Removed \(expiredCount) expired cache entries")
+			logger.info("Removed \(expiredCount) expired cache entries")
 		}
 	}
 
@@ -488,11 +488,11 @@ class NetworkFileDownloader: FileDownloadable {
 		do {
 			if fileManager.fileExists(atPath: url.path) {
 				try fileManager.removeItem(at: url)
-				logger.info("🗑️ Deleted file: \(url.lastPathComponent)")
+				logger.info("Deleted file: \(url.lastPathComponent)")
 			}
 		} catch {
 			logger.error(
-				"❌ Failed to delete file \(url.lastPathComponent): \(error.localizedDescription)")
+				"Failed to delete file \(url.lastPathComponent): \(error.localizedDescription)")
 		}
 	}
 
@@ -502,7 +502,7 @@ class NetworkFileDownloader: FileDownloadable {
 		do {
 			try fileManager.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
 		} catch {
-			logger.error("❌ Failed to create downloads directory: \(error.localizedDescription)")
+			logger.error("Failed to create downloads directory: \(error.localizedDescription)")
 		}
 	}
 
@@ -510,7 +510,7 @@ class NetworkFileDownloader: FileDownloadable {
 
 	private func loadDownloadCache() {
 		guard fileManager.fileExists(atPath: cacheMetadataURL.path) else {
-			logger.info("📂 No download cache found, starting fresh")
+			logger.info("No download cache found, starting fresh")
 			return
 		}
 
@@ -531,9 +531,9 @@ class NetworkFileDownloader: FileDownloadable {
 				return nil
 			}
 
-			logger.info("📂 Loaded download cache with \(self.downloadCache.count) valid entries")
+			logger.info("Loaded download cache with \(self.downloadCache.count) valid entries")
 		} catch {
-			logger.error("❌ Failed to load download cache: \(error.localizedDescription)")
+			logger.error("Failed to load download cache: \(error.localizedDescription)")
 			downloadCache = [:]
 		}
 	}
@@ -549,9 +549,9 @@ class NetworkFileDownloader: FileDownloadable {
 			let data = try encoder.encode(cacheData)
 			try data.write(to: cacheMetadataURL)
 
-			logger.info("💾 Saved download cache with \(self.downloadCache.count) entries")
+			logger.info("Saved download cache with \(self.downloadCache.count) entries")
 		} catch {
-			logger.error("❌ Failed to save download cache: \(error.localizedDescription)")
+			logger.error("Failed to save download cache: \(error.localizedDescription)")
 		}
 	}
 
@@ -564,11 +564,11 @@ class NetworkFileDownloader: FileDownloadable {
 				do {
 					// Validate the cached file
 					try validateDownloadedFile(at: cachedPath)
-					logger.info("✅ Found valid cached file for URL: \(url.absoluteString)")
+					logger.info("Found valid cached file for URL: \(url.absoluteString)")
 					return cachedPath
 				} catch {
 					logger.warning(
-						"⚠️ Cached file validation failed, will re-download: \(error.localizedDescription)")
+						"Cached file validation failed, will re-download: \(error.localizedDescription)")
 					// Remove invalid entry from cache
 					downloadCache.removeValue(forKey: urlString)
 					saveDownloadCache()
@@ -587,7 +587,7 @@ class NetworkFileDownloader: FileDownloadable {
 		downloadCache[url.absoluteString] = localPath
 		saveDownloadCache()
 		logger.info(
-			"➕ Added to download cache: \(url.absoluteString) -> \(localPath.lastPathComponent)")
+			"Added to download cache: \(url.absoluteString) -> \(localPath.lastPathComponent)")
 	}
 
 	fileprivate nonisolated func validateDownloadedFile(at url: URL) throws {
@@ -614,7 +614,7 @@ class NetworkFileDownloader: FileDownloadable {
 
 			// Note: Using print instead of logger since this is nonisolated
 			print(
-				"📏 File size validation passed: \(ByteCountFormatter().string(fromByteCount: fileSize))")
+				"File size validation passed: \(ByteCountFormatter().string(fromByteCount: fileSize))")
 
 		} catch let error as NetworkDownloadError {
 			throw error
@@ -629,7 +629,7 @@ class NetworkFileDownloader: FileDownloadable {
 			let format = audioFile.fileFormat
 			let duration = Double(audioFile.length) / format.sampleRate
 
-			print("🎵 Audio format validation passed:")
+			print("Audio format validation passed:")
 			print("  - Format: \(format.commonFormat.rawValue)")
 			print("  - Sample Rate: \(format.sampleRate) Hz")
 			print("  - Channels: \(format.channelCount)")
@@ -645,7 +645,7 @@ class NetworkFileDownloader: FileDownloadable {
 			throw error
 		} catch {
 			// If AVAudioFile fails, the file format is not supported or corrupted
-			print("🚫 Audio format validation failed: \(error.localizedDescription)")
+			print("Audio format validation failed: \(error.localizedDescription)")
 
 			// Determine if it's a format issue or corruption based on error type
 			let errorString = error.localizedDescription.lowercased()
@@ -689,7 +689,7 @@ extension NetworkFileDownloader {
 		deleteAfterTranscription: Bool = true
 	) async throws -> Any {
 
-		logger.info("🌐📝 Starting download and transcribe workflow for: \(url.absoluteString)")
+		logger.info("Starting download and transcribe workflow for: \(url.absoluteString)")
 
 		// Download the file
 		let localURL = try await downloadFile(from: url)
@@ -708,7 +708,7 @@ extension NetworkFileDownloader {
 				return try await transcriptionManager.transcribeFile(at: localURL)
 			}
 		} catch {
-			logger.error("❌ Transcription failed for downloaded file: \(error.localizedDescription)")
+			logger.error("Transcription failed for downloaded file: \(error.localizedDescription)")
 			throw error
 		}
 	}
@@ -727,7 +727,7 @@ private class NetworkDownloadDelegate: NSObject, URLSessionDownloadDelegate {
 		_ session: URLSession, downloadTask: URLSessionDownloadTask,
 		didFinishDownloadingTo location: URL
 	) {
-		logger.info("✅ Download completed, moving file from temporary location")
+		logger.info("Download completed, moving file from temporary location")
 
 		do {
 			// Generate final destination
@@ -782,7 +782,7 @@ private class NetworkDownloadDelegate: NSObject, URLSessionDownloadDelegate {
 			// Move file to final location
 			try FileManager.default.moveItem(at: location, to: finalURL)
 
-			logger.info("📁 File saved to: \(finalURL.path)")
+			logger.info("File saved to: \(finalURL.path)")
 
 			// Validate the downloaded file
 			do {
@@ -799,17 +799,17 @@ private class NetworkDownloadDelegate: NSObject, URLSessionDownloadDelegate {
 						throw NetworkDownloadError.corruptedFile("Downloaded file is too small")
 					}
 				}
-				logger.info("✅ File validation successful: \(finalURL.lastPathComponent)")
+				logger.info("File validation successful: \(finalURL.lastPathComponent)")
 				completion?.resume(returning: finalURL)
 			} catch {
-				logger.error("❌ File validation failed: \(error.localizedDescription)")
+				logger.error("File validation failed: \(error.localizedDescription)")
 				// Clean up invalid file
 				try? FileManager.default.removeItem(at: finalURL)
 				completion?.resume(throwing: error)
 			}
 
 		} catch {
-			logger.error("❌ Failed to move downloaded file: \(error.localizedDescription)")
+			logger.error("Failed to move downloaded file: \(error.localizedDescription)")
 			completion?.resume(throwing: NetworkDownloadError.fileMoveError(error.localizedDescription))
 		}
 	}
@@ -828,7 +828,7 @@ private class NetworkDownloadDelegate: NSObject, URLSessionDownloadDelegate {
 
 	func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
 		if let error = error {
-			logger.error("❌ Download failed with error: \(error.localizedDescription)")
+			logger.error("Download failed with error: \(error.localizedDescription)")
 			completion?.resume(throwing: NetworkDownloadError.downloadFailed(error.localizedDescription))
 		}
 	}

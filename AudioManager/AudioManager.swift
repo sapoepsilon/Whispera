@@ -259,10 +259,10 @@ extension AudioManager {
 				timer.start()
 				playFeedbackSound(start: true)
 				startMeteringTimer()
-				AppLogger.shared.audioManager.debug("🎤 File-based recording started")
+				AppLogger.shared.audioManager.debug("File-based recording started")
 			} catch {
 				isMicrophoneInitializing = false
-				AppLogger.shared.audioManager.error("❌ Failed to start recording: \(error)")
+				AppLogger.shared.audioManager.error("Failed to start recording: \(error)")
 				showRecordingErrorAlert(error)
 			}
 		}
@@ -308,7 +308,7 @@ extension AudioManager {
 // MARK: - Streaming Recording
 extension AudioManager {
 	fileprivate func startStreamingRecording() {
-		AppLogger.shared.audioManager.info("🎙️ Starting streaming recording")
+		AppLogger.shared.audioManager.info("Starting streaming recording")
 		audioBuffer.removeAll()
 		isMicrophoneInitializing = true
 
@@ -328,7 +328,7 @@ extension AudioManager {
 
 			} catch {
 				isMicrophoneInitializing = false
-				AppLogger.shared.audioManager.error("❌ Failed to start streaming: \(error)")
+				AppLogger.shared.audioManager.error("Failed to start streaming: \(error)")
 				useStreamingTranscription = false
 				startFileBasedRecording()
 			}
@@ -347,14 +347,14 @@ extension AudioManager {
 		engineController.cleanup()
 		deviceManager.restoreSystemDefault()
 
-		AppLogger.shared.audioManager.info("🛑 Streaming recording stopped")
+		AppLogger.shared.audioManager.info("Streaming recording stopped")
 
 		if !capturedAudio.isEmpty {
 			Task {
 				await transcribeAudioBuffer(audioArray: capturedAudio, enableTranslation: enableTranslation)
 			}
 		} else {
-			AppLogger.shared.audioManager.info("⚠️ No audio captured")
+			AppLogger.shared.audioManager.info("No audio captured")
 		}
 
 		scheduleTimerReset()
@@ -424,13 +424,13 @@ extension AudioManager {
 				try await whisperKitTranscriber.liveStream()
 				guard !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
-				AppLogger.shared.audioManager.info("🎤 Live transcription started")
+				AppLogger.shared.audioManager.info("Live transcription started")
 			} catch {
 				guard !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
 				isRecording = false
 				timer.stop()
-				AppLogger.shared.audioManager.error("❌ Failed to start live transcription: \(error)")
+				AppLogger.shared.audioManager.error("Failed to start live transcription: \(error)")
 			}
 		}
 	}
@@ -443,7 +443,7 @@ extension AudioManager {
 		playFeedbackSound(start: false)
 
 		whisperKitTranscriber.stopLiveStream()
-		AppLogger.shared.audioManager.info("🛑 Live transcription stopped")
+		AppLogger.shared.audioManager.info("Live transcription stopped")
 
 		scheduleTimerReset()
 	}
@@ -513,7 +513,7 @@ extension AudioManager {
 
 		if detectedLanguage != selectedLanguage {
 			AppLogger.shared.audioManager.info(
-				"🔄 Updating language from \(selectedLanguage) to \(detectedLanguage)")
+				"Updating language from \(selectedLanguage) to \(detectedLanguage)")
 			selectedLanguage = detectedLanguage
 		}
 	}
@@ -552,22 +552,22 @@ extension AudioManager {
 	fileprivate func checkAndRequestMicrophonePermission() {
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
 		case .notDetermined:
-			AppLogger.shared.audioManager.debug("🎤 Requesting microphone permission")
+			AppLogger.shared.audioManager.debug("Requesting microphone permission")
 			AVCaptureDevice.requestAccess(for: .audio) { granted in
 				DispatchQueue.main.async {
 					if granted {
-						AppLogger.shared.audioManager.debug("✅ Microphone access granted")
+						AppLogger.shared.audioManager.debug("Microphone access granted")
 					} else {
-						AppLogger.shared.audioManager.debug("❌ Microphone access denied")
+						AppLogger.shared.audioManager.debug("Microphone access denied")
 						self.showMicrophonePermissionAlert()
 					}
 				}
 			}
 		case .denied, .restricted:
-			AppLogger.shared.audioManager.info("❌ Microphone access denied or restricted")
+			AppLogger.shared.audioManager.info("Microphone access denied or restricted")
 			showMicrophonePermissionAlert()
 		case .authorized:
-			AppLogger.shared.audioManager.debug("✅ Microphone already authorized")
+			AppLogger.shared.audioManager.debug("Microphone already authorized")
 		@unknown default:
 			break
 		}

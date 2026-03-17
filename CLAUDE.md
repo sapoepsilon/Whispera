@@ -107,6 +107,7 @@ xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:Whisp
 3. Never skip hooks (`--no-verify`, `--no-gpg-sign`) in git commands
 4. Use commitlint format for git commits
 5. Never mention Anthropic or Claude Code in commits/PRs
+6. Never use emojis in log messages or code — only allowed in user-facing UI strings where explicitly needed
 
 ### UI Patterns
 1. Use `.alert()` for error messages, not inline `InfoBox` — alerts are dismissible and don't clutter the layout
