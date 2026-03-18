@@ -29,10 +29,14 @@ jobs:
         with:
           path: |
             .build
-            ~/Library/Developer/Xcode/DerivedData
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
           key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
           restore-keys: |
             ${{ runner.os }}-spm-
+
+      - name: Clean stale build artifacts
+        run: |
+          find ~/Library/Developer/Xcode/DerivedData -name "*.pcm" -delete 2>/dev/null || true
 
       - name: Resolve Swift Package Dependencies
         run: |
