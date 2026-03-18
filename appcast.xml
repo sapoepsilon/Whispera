@@ -6,13 +6,13 @@
     <description>Most recent updates to Whispera</description>
     <language>en</language>
     <item>
-      <title>Version 1.2.0</title>
-      <pubDate>Wed, 11 Mar 2026 04:39:31 +0000</pubDate>
+      <title>Version 1.2.1</title>
+      <pubDate>Wed, 18 Mar 2026 02:21:53 +0000</pubDate>
       <sparkle:version>17</sparkle:version>
-      <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+      <sparkle:shortVersionString>1.2.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/sapoepsilon/Whispera/releases/download/v1.2.0/Whispera-1.2.0.dmg"
-                 sparkle:edSignature="Xoi5jqeg03rT5KtBdA1FVoX90DAaAIBPpv6nONaHI9xHTO01o8N/ea/EWyW5TtNWkF6NNXcDSmokJ7qQq2BxBA==" length="18321358"
+      <enclosure url="https://github.com/sapoepsilon/Whispera/releases/download/v1.2.1/Whispera-1.2.1.dmg"
+                 sparkle:edSignature="XBT3hLhkvYiArbulWqxMOzPEY4ktVFV29xDvlOjWEQB1UOfd+5vmdPnn7LFIz0ogT9fEEaYDQbRhasBui2wKBg==" length="20753778"
                  type="application/octet-stream"/>
     </item>
   </channel>
