@@ -94,6 +94,9 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 
+	@ObservationIgnored
+	var recipeProcessor: ((String) async -> String)?
+
 	// MARK: - Initialization
 
 	override init() {
@@ -458,15 +461,7 @@ extension AudioManager {
 		do {
 			let transcription = try await whisperKitTranscriber.transcribeAudioArray(
 				audioArray, enableTranslation: enableTranslation)
-
-			await MainActor.run {
-				lastTranscription = transcription
-				isTranscribing = false
-
-				if currentRecordingMode == .text {
-					pasteToFocusedApp(transcription)
-				}
-			}
+			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {
 				transcriptionError = error.localizedDescription
@@ -482,15 +477,7 @@ extension AudioManager {
 		do {
 			let transcription = try await whisperKitTranscriber.transcribe(
 				audioURL: fileURL, enableTranslation: enableTranslation)
-
-			await MainActor.run {
-				lastTranscription = transcription
-				isTranscribing = false
-
-				if currentRecordingMode == .text {
-					pasteToFocusedApp(transcription)
-				}
-			}
+			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {
 				transcriptionError = error.localizedDescription
@@ -500,6 +487,20 @@ extension AudioManager {
 		}
 
 		try? FileManager.default.removeItem(at: fileURL)
+	}
+
+	fileprivate func applyAndPaste(_ transcription: String) async {
+		let toPaste: String
+		if currentRecordingMode == .text, let processor = recipeProcessor {
+			toPaste = await processor(transcription)
+		} else {
+			toPaste = transcription
+		}
+		lastTranscription = transcription
+		isTranscribing = false
+		if currentRecordingMode == .text {
+			pasteToFocusedApp(toPaste)
+		}
 	}
 }
 

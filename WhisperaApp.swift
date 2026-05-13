@@ -85,6 +85,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	var permissionManager: PermissionManager?
 	var appLibraryManager: AppLibraryManager?
 	var softwareUpdater: SoftwareUpdater?
+	var recipeOrchestrator: RecipeOrchestrator?
 	@AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
 	@AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
 	private var recordingObserver: NSObjectProtocol?
@@ -112,6 +113,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 		Task { @MainActor in
 			audioManager = AudioManager()
+			let recipeAPI = WhisperaAPI()
+			let recipeCache = RecipeCache(api: recipeAPI)
+			let orchestrator = RecipeOrchestrator(api: recipeAPI, cache: recipeCache)
+			self.recipeOrchestrator = orchestrator
+			audioManager.recipeProcessor = { [weak orchestrator] text in
+				guard let orchestrator else { return text }
+				return await orchestrator.processForPaste(text)
+			}
+			if !RecipeSettings.devToken.isEmpty {
+				Task { await recipeCache.refresh() }
+			}
 			shortcutManager = GlobalShortcutManager()
 			fileTranscriptionManager = FileTranscriptionManager()
 			networkDownloader = NetworkFileDownloader()
