@@ -95,7 +95,7 @@ final class AudioManager: NSObject {
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 
 	@ObservationIgnored
-	var recipeProcessor: ((String) async -> String)?
+	var polishProcessor: ((String) async -> String)?
 
 	// MARK: - Initialization
 
@@ -491,7 +491,7 @@ extension AudioManager {
 
 	fileprivate func applyAndPaste(_ transcription: String) async {
 		let toPaste: String
-		if currentRecordingMode == .text, let processor = recipeProcessor {
+		if currentRecordingMode == .text, let processor = polishProcessor {
 			toPaste = await processor(transcription)
 		} else {
 			toPaste = transcription

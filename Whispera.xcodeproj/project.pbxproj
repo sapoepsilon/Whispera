@@ -78,7 +78,7 @@
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
 		D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */; };
 		D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */; };
-		D6RECIPE12F0000000000001 /* RecipeEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6RECIPE22F0000000000001 /* RecipeEngine.swift */; };
+		D6RECIPE12F0000000000001 /* PolishEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6RECIPE22F0000000000001 /* PolishEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -172,7 +172,7 @@
 		D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdater.swift; sourceTree = "<group>"; };
 		D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
 		D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManagerTests.swift; sourceTree = "<group>"; };
-		D6RECIPE22F0000000000001 /* RecipeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeEngine.swift; sourceTree = "<group>"; };
+		D6RECIPE22F0000000000001 /* PolishEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -223,7 +223,7 @@
 				D604F4C02E356D07006D71D1 /* GlassBeta.swift */,
 				D63851172E184572000FD465 /* Whispera.xctestplan */,
 				D648B7CA2DF9FF8B006079ED /* Constants.swift */,
-				D6RECIPE22F0000000000001 /* RecipeEngine.swift */,
+				D6RECIPE22F0000000000001 /* PolishEngine.swift */,
 				D6077E972DF10E77009E7404 /* Assets.xcassets */,
 				D63850CC2E179188000FD465 /* WhisperaUITests */,
 				D63850DF2E1791AF000FD465 /* WhisperaUnitTests */,
@@ -550,7 +550,7 @@
 				D63900E52E3F13F7005B5623 /* TranscriptionQueueManager.swift in Sources */,
 				D63A30E52E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift in Sources */,
 				D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */,
-				D6RECIPE12F0000000000001 /* RecipeEngine.swift in Sources */,
+				D6RECIPE12F0000000000001 /* PolishEngine.swift in Sources */,
 				D66E6D5D2E1859FF00F55A5B /* WelcomeStepView.swift in Sources */,
 				D604F4C12E356D0C006D71D1 /* GlassBeta.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1B /* MenuBarView.swift in Sources */,
