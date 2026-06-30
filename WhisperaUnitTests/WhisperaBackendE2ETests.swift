@@ -94,4 +94,38 @@ struct WhisperaBackendE2ETests {
 			recipe: created, input: "hey send me the file by tomorrow")
 		#expect(!output.isEmpty)
 	}
+
+	/// Full dictation flow: spoken text → trigger match → strip trigger →
+	/// execute the matched recipe via backend → polished output. WHI-41 acceptance.
+	@Test func dictationTriggerToExecuteFlowAgainstBackend() async throws {
+		let store = AuthTokenStore(service: "com.whispera.clerk.e2e.\(UUID().uuidString)")
+		defer { try? store.delete() }
+		try store.save(devToken)
+		let api = client(store)
+
+		let created = try await api.createRecipe(
+			RecipeInput(
+				from: Recipe(
+					name: "Make professional \(UUID().uuidString.prefix(6))",
+					triggerPhrase: "make professional",
+					steps: [
+						RecipeStep(
+							config: LLMStepConfig(
+								prompt:
+									"Rewrite politely and professionally. Output only the message: {{input}}",
+								model: "gpt-5.4-mini"))
+					])))
+		defer { Task { try? await api.deleteRecipe(id: created.id) } }
+
+		let spoken = "make professional hey can you send me the file by tomorrow"
+		let match = RecipeMatcher.match(text: spoken, recipes: [created])
+		#expect(match?.recipe.id == created.id)
+		#expect(match?.remainder == "hey can you send me the file by tomorrow")
+
+		let output = try await BackendExecutor(providerKey: nil, api: api).run(
+			recipe: created, input: match!.remainder)
+		#expect(!output.isEmpty)
+		// The polished output should not be the raw spoken phrase verbatim.
+		#expect(output.lowercased() != spoken.lowercased())
+	}
 }
