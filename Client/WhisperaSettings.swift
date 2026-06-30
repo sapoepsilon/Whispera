@@ -19,4 +19,13 @@ enum WhisperaSettings {
 	static var serverURL: URL? {
 		URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines))
 	}
+
+	private static let defaultCommandIdKey = "whisperaDefaultCommandId"
+
+	/// Recipe id of the command that post-processes every dictation when no
+	/// trigger phrase matches. Empty = no default (paste raw). See WHI-49.
+	static var defaultCommandId: String {
+		get { defaults.string(forKey: defaultCommandIdKey) ?? "" }
+		set { defaults.set(newValue, forKey: defaultCommandIdKey) }
+	}
 }

@@ -128,4 +128,42 @@ struct WhisperaBackendE2ETests {
 		// The polished output should not be the raw spoken phrase verbatim.
 		#expect(output.lowercased() != spoken.lowercased())
 	}
+
+	/// WHI-49: a trigger-less default command post-processes plain dictation
+	/// (no trigger phrase) end-to-end through the backend.
+	@MainActor
+	@Test func defaultCommandRunsOnPlainDictationViaBackend() async throws {
+		let store = AuthTokenStore(service: "com.whispera.clerk.e2e.\(UUID().uuidString)")
+		defer { try? store.delete() }
+		try store.save(devToken)
+		let api = client(store)
+
+		let created = try await api.createRecipe(
+			RecipeInput(
+				from: Recipe(
+					name: "Polish default \(UUID().uuidString.prefix(6))",
+					steps: [
+						RecipeStep(
+							config: LLMStepConfig(
+								prompt:
+									"Clean up grammar and filler, output only the cleaned text: {{input}}",
+								model: "gpt-5.4-mini"))
+					])))
+		defer { Task { try? await api.deleteRecipe(id: created.id) } }
+
+		let recipeURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+			"e2e-\(UUID().uuidString).json")
+		defer { try? FileManager.default.removeItem(at: recipeURL) }
+		let recipeStore = RecipeStore(auth: AuthManager(), fileURL: recipeURL)
+		await recipeStore.create(created)
+
+		let coordinator = DictationCoordinator(store: recipeStore, defaultCommandId: { created.id }) {
+			recipe, input in
+			try await BackendExecutor(providerKey: nil, api: api).run(recipe: recipe, input: input)
+		}
+
+		let result = await coordinator.process("um so like i wanted to say hi there")
+		#expect(result != nil)
+		#expect(!(result ?? "").isEmpty)
+	}
 }
