@@ -575,6 +575,12 @@ struct SettingsView: View {
 				Label("General", systemImage: "gear")
 			}
 
+			// MARK: - Account Tab
+			AccountSettingsView()
+				.tabItem {
+					Label("Account", systemImage: "person.crop.circle")
+				}
+
 			// MARK: - Storage & Downloads Tab
 			ScrollView {
 				VStack(spacing: 24) {
