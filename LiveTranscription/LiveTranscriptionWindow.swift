@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 class LiveTranscriptionWindow: NSWindow {
 	private let whisperKit = WhisperKitTranscriber.shared
+	private let coordinator = DictationCoordinator.shared
 	private let audioManager: AudioManager
 	private var observationTimer: Timer?
 	private var lastCaretPosition: NSPoint?
@@ -69,11 +70,14 @@ class LiveTranscriptionWindow: NSWindow {
 	}
 
 	private func shouldShowWindow() -> Bool {
-		RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
+		// Keep the HUD up while a recipe runs (or briefly after it errors)
+		// so the "Running …" indicator is visible after transcription ends.
+		let recipeActive = coordinator.isRunning || coordinator.overlayError != nil
+		return RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
 			mode: audioManager.currentRecordingMode,
 			transcriberWantsWindow: whisperKit.shouldShowLiveTranscriptionWindow
 				&& (whisperKit.isTranscribing || whisperKit.isWaitingForModel)
-		)
+		) || recipeActive
 	}
 
 	private func refresh() {
@@ -123,6 +127,17 @@ class LiveTranscriptionWindow: NSWindow {
 	}
 
 	private func calculateDynamicSize() -> NSSize {
+		// Recipe indicator / error get their own comfortable width.
+		if coordinator.isRunning {
+			let label = "Running \(coordinator.runningRecipeName ?? "command")…"
+			let width = min(420, max(180, CGFloat(label.count) * 8 + 80))
+			return NSSize(width: width, height: 36)
+		}
+		if let overlayError = coordinator.overlayError {
+			let width = min(480, max(200, CGFloat(overlayError.count) * 7 + 60))
+			return NSSize(width: width, height: 44)
+		}
+
 		let pendingText =
 			whisperKit.isWaitingForModel
 			? whisperKit.waitingForModelStatusText

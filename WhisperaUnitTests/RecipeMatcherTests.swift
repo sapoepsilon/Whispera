@@ -120,4 +120,48 @@ struct DictationCoordinatorTests {
 		#expect(result == "make professional hi there")
 		#expect(coordinator.lastError != nil)
 	}
+
+	/// Drives the "Running <recipe>…" indicator: while a recipe executes,
+	/// isRunning is true and runningRecipeName is set; both clear afterward.
+	@Test func exposesRunningStateDuringExecution() async {
+		let (store, url) = await storeWithRecipe()
+		defer { try? FileManager.default.removeItem(at: url) }
+
+		var resume: (() -> Void)?
+		let coordinator = DictationCoordinator(store: store) { _, _ in
+			await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+				resume = { cont.resume() }
+			}
+			return "done"
+		}
+
+		let task = Task { await coordinator.process("make professional hi") }
+		while resume == nil { await Task.yield() }
+
+		#expect(coordinator.isRunning)
+		#expect(coordinator.runningRecipeName == "Make professional")
+
+		resume?()
+		let result = await task.value
+		#expect(result == "done")
+		#expect(!coordinator.isRunning)
+		#expect(coordinator.runningRecipeName == nil)
+	}
+
+	@Test func emptyResultSetsOverlayError() async {
+		let (store, url) = await storeWithRecipe()
+		defer { try? FileManager.default.removeItem(at: url) }
+		let coordinator = DictationCoordinator(store: store) { _, _ in "   " }
+		_ = await coordinator.process("make professional hi")
+		#expect(coordinator.overlayError != nil)
+	}
+
+	@Test func executionErrorSetsOverlayError() async {
+		struct Boom: LocalizedError { var errorDescription: String? { "kaboom" } }
+		let (store, url) = await storeWithRecipe()
+		defer { try? FileManager.default.removeItem(at: url) }
+		let coordinator = DictationCoordinator(store: store) { _, _ in throw Boom() }
+		_ = await coordinator.process("make professional hi")
+		#expect(coordinator.overlayError == "kaboom")
+	}
 }
