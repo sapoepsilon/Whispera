@@ -109,14 +109,16 @@ struct RemoteTranscriber {
 
 	/// POSTs multipart audio directly to OpenAI using the user's key. The backend
 	/// is never involved, so the key only reaches the user's own provider.
-	func transcribeViaBYOK(audio: Data, filename: String, mimetype: String, language: String?)
-		async throws -> String
-	{
+	/// `model` defaults to OpenAI's `whisper-1`; override for a custom
+	/// OpenAI-compatible endpoint that names its model differently.
+	func transcribeViaBYOK(
+		audio: Data, filename: String, mimetype: String, language: String?, model: String = "whisper-1"
+	) async throws -> String {
 		guard let key = try keyStore.load(provider: .openai), !key.isEmpty else {
 			throw RemoteTranscriberError.missingOpenAIKey
 		}
 
-		var fields: [String: String] = ["model": "whisper-1"]
+		var fields: [String: String] = ["model": model]
 		if let language { fields["language"] = language }
 		let (body, contentType) = Self.multipart(
 			fileField: "file", filename: filename, mimetype: mimetype, fileData: audio, fields: fields)
