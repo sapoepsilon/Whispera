@@ -219,6 +219,19 @@ struct DictationCoordinatorTests {
 		#expect(result == "plain words no trigger")
 	}
 
+	@Test func emptyTranscriptionNeverRunsModel() async {
+		let (store, defId, url) = await storeWithTriggerAndDefault()
+		defer { try? FileManager.default.removeItem(at: url) }
+		var ran = false
+		let coordinator = DictationCoordinator(store: store, defaultCommandId: { defId }) { _, _ in
+			ran = true
+			return "X"
+		}
+		let result = await coordinator.process("   \n  ")
+		#expect(ran == false)
+		#expect(result == nil)
+	}
+
 	@Test func staleDefaultIdFallsBackToRaw() async {
 		let (store, _, url) = await storeWithTriggerAndDefault()
 		defer { try? FileManager.default.removeItem(at: url) }

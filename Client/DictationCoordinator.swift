@@ -53,6 +53,11 @@ final class DictationCoordinator {
 	func process(_ transcription: String) async -> String? {
 		currentTask?.cancel()
 
+		// Empty/whitespace dictation: do nothing — never spend a model call.
+		guard !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+			return nil
+		}
+
 		// Trigger phrase wins; otherwise fall back to the default command; if
 		// neither applies, paste the raw transcription unchanged.
 		let recipe: Recipe
