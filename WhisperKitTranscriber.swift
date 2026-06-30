@@ -2425,7 +2425,7 @@ import WhisperKit
 	}
 
 	private func transcribe(
-		with engine: any TranscriptionEngine, input: TranscriptionInput, enableTranslation: Bool,
+		with engine: any LocalModelEngine, input: TranscriptionInput, enableTranslation: Bool,
 		logPrefix: String
 	) async throws -> String {
 		if enableTranslation {

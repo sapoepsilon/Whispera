@@ -65,7 +65,7 @@ Releases are cut by pushing a `vX.Y.Z` tag, which runs `.github/workflows/releas
   - Decoding options persistence in UserDefaults
   - Real WhisperKit transcription (never simulated)
 
-- **ModelEngines/**: `TranscriptionEngine` abstraction over WhisperKit and `ParakeetEngine` (FluidAudio, Parakeet TDT v2/v3), custom Whisper model import, compute unit preference.
+- **ModelEngines/**: `LocalModelEngine` abstraction over WhisperKit and `ParakeetEngine` (FluidAudio, Parakeet TDT v2/v3), custom Whisper model import, compute unit preference.
 
 - **AudioManager/**: `AudioManager` handles recording
   - File-based recording (AVAudioRecorder) and streaming recording (AVAudioEngine with 16kHz float buffers)

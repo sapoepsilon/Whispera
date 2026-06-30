@@ -28,10 +28,46 @@ struct LLMModeSettingsView: View {
 				case .subscription: SubscriptionModeConfig(isSignedIn: auth.isSignedIn, name: auth.displayName)
 				case .byok: ByokModeConfig()
 				}
+
+				TranscriptionEngineConfig()
 			}
 			.padding(20)
 		}
 		.task { await auth.refresh() }
+	}
+}
+
+private struct TranscriptionEngineConfig: View {
+	@AppStorage("whisperaTranscriptionEngine") private var engineRaw = TranscriptionEngine.whisperKit.rawValue
+
+	private var engine: TranscriptionEngine { TranscriptionEngine(rawValue: engineRaw) ?? .whisperKit }
+
+	var body: some View {
+		SettingsSection("Transcription Engine") {
+			VStack(alignment: .leading, spacing: 8) {
+				Picker("Speech-to-text", selection: $engineRaw) {
+					ForEach(TranscriptionEngine.allCases, id: \.rawValue) { engine in
+						Text(engine.displayName).tag(engine.rawValue)
+					}
+				}
+				.pickerStyle(.menu)
+
+				Text(note(for: engine))
+					.font(.caption)
+					.foregroundColor(.secondary)
+			}
+		}
+	}
+
+	private func note(for engine: TranscriptionEngine) -> String {
+		switch engine {
+		case .whisperKit:
+			return "On-device, private, no network. Default."
+		case .whisperViaWhispera:
+			return "Audio is uploaded to Whispera and transcribed with OpenAI Whisper. Requires sign-in."
+		case .whisperViaBYOK:
+			return "Audio is uploaded directly to OpenAI using your saved key. Requires a BYOK OpenAI key."
+		}
 	}
 }
 
