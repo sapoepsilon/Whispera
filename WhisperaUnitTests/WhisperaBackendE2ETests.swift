@@ -26,4 +26,28 @@ struct WhisperaBackendE2ETests {
 		let user = try await client(store).getMe()
 		#expect(user.clerkId == devToken)
 	}
+
+	@Test func recipeCrudRoundTripsAgainstBackend() async throws {
+		let store = AuthTokenStore(service: "com.whispera.clerk.e2e.\(UUID().uuidString)")
+		defer { try? store.delete() }
+		try store.save(devToken)
+		let api = client(store)
+
+		let unique = "E2E \(UUID().uuidString.prefix(8))"
+		let created = try await api.createRecipe(
+			RecipeInput(
+				from: Recipe(
+					name: unique, triggerPhrase: "e2e trigger",
+					steps: [
+						RecipeStep(config: LLMStepConfig(prompt: "echo {{input}}", model: "gpt-5.4-mini"))
+					])))
+		#expect(created.name == unique)
+
+		let listed = try await api.listRecipes()
+		#expect(listed.contains { $0.id == created.id })
+
+		try await api.deleteRecipe(id: created.id)
+		let afterDelete = try await api.listRecipes()
+		#expect(!afterDelete.contains { $0.id == created.id })
+	}
 }

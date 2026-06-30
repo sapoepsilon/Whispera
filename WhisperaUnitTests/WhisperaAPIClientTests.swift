@@ -74,6 +74,18 @@ struct WhisperaAPIClientTests {
 		#expect(MockURLProtocol.lastRequest?.value(forHTTPHeaderField: "X-Provider-Key") == "sk-byok-123")
 	}
 
+	@Test func queryStringIsPreservedNotPercentEncoded() async throws {
+		let service = "com.whispera.clerk.test.\(UUID().uuidString)"
+		let (client, store) = makeClient(service: service)
+		defer { try? store.delete() }
+		try store.save("t")
+		respond(200, #"{"ok":true}"#)
+
+		let _: EmptyResponseProbe = try await client.get("/recipes?limit=100")
+		#expect(MockURLProtocol.lastRequest?.url?.path == "/recipes")
+		#expect(MockURLProtocol.lastRequest?.url?.query == "limit=100")
+	}
+
 	@Test func missingTokenThrowsNotAuthenticated() async {
 		let service = "com.whispera.clerk.test.\(UUID().uuidString)"
 		let (client, store) = makeClient(service: service)

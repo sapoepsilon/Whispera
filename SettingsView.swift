@@ -581,6 +581,12 @@ struct SettingsView: View {
 					Label("Account", systemImage: "person.crop.circle")
 				}
 
+			// MARK: - Commands Tab
+			RecipesView()
+				.tabItem {
+					Label("Commands", systemImage: "wand.and.stars")
+				}
+
 			// MARK: - Storage & Downloads Tab
 			ScrollView {
 				VStack(spacing: 24) {
