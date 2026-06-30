@@ -9,6 +9,7 @@ struct RecipesView: View {
 	@State private var store = RecipeStore.shared
 	@State private var editing: Recipe?
 	@State private var isCreating = false
+	@AppStorage("whisperaDefaultCommandId") private var defaultCommandId = ""
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -17,6 +18,7 @@ struct RecipesView: View {
 			if store.recipes.isEmpty {
 				emptyState
 			} else {
+				defaultPicker
 				List {
 					ForEach(store.recipes) { recipe in
 						Button {
@@ -76,6 +78,24 @@ struct RecipesView: View {
 		.padding(20)
 	}
 
+	private var defaultPicker: some View {
+		HStack {
+			Text("Runs on every dictation")
+				.font(.subheadline)
+			Spacer()
+			Picker("", selection: $defaultCommandId) {
+				Text("None").tag("")
+				ForEach(store.recipes) { recipe in
+					Text(recipe.name.isEmpty ? "Untitled" : recipe.name).tag(recipe.id)
+				}
+			}
+			.labelsHidden()
+			.frame(maxWidth: 220)
+		}
+		.padding(.horizontal, 20)
+		.padding(.bottom, 10)
+	}
+
 	private var emptyState: some View {
 		VStack(spacing: 8) {
 			Image(systemName: "wand.and.stars")
@@ -96,12 +116,16 @@ struct RecipesView: View {
 		VStack(alignment: .leading, spacing: 2) {
 			Text(recipe.name.isEmpty ? "Untitled" : recipe.name)
 				.font(.subheadline.weight(.medium))
-			if let trigger = recipe.triggerPhrase, !trigger.isEmpty {
+			if recipe.id == defaultCommandId {
+				Text("Default · runs on every dictation")
+					.font(.caption)
+					.foregroundColor(.blue)
+			} else if let trigger = recipe.triggerPhrase, !trigger.isEmpty {
 				Text("“\(trigger)”")
 					.font(.caption)
 					.foregroundColor(.secondary)
 			} else {
-				Text("Runs on every dictation")
+				Text("No trigger — set as default to use")
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}

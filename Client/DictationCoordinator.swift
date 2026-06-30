@@ -22,19 +22,30 @@ final class DictationCoordinator {
 	private let store: RecipeStore
 	private let run: (Recipe, String) async throws -> String
 	private let errorDisplaySeconds: Double
+	private let defaultCommandId: () -> String
 	private var currentTask: Task<String?, Never>?
 	private var clearErrorTask: Task<Void, Never>?
 
 	init(
 		store: RecipeStore = .shared,
 		errorDisplaySeconds: Double = 3,
+		defaultCommandId: @escaping () -> String = { WhisperaSettings.defaultCommandId },
 		run: @escaping (Recipe, String) async throws -> String = { recipe, input in
 			try await RecipeRouter.shared.run(recipe: recipe, input: input)
 		}
 	) {
 		self.store = store
 		self.errorDisplaySeconds = errorDisplaySeconds
+		self.defaultCommandId = defaultCommandId
 		self.run = run
+	}
+
+	/// The configured default command, if it still exists in the store. Runs on
+	/// every dictation that doesn't match a trigger phrase. See WHI-49.
+	private func defaultCommand() -> Recipe? {
+		let id = defaultCommandId()
+		guard !id.isEmpty else { return nil }
+		return store.recipes.first { $0.id == id }
 	}
 
 	/// Returns the text to paste, or `nil` if nothing should be pasted (recipe
@@ -42,7 +53,22 @@ final class DictationCoordinator {
 	func process(_ transcription: String) async -> String? {
 		currentTask?.cancel()
 
-		guard let match = RecipeMatcher.match(text: transcription, recipes: store.recipes) else {
+		// Empty/whitespace dictation: do nothing — never spend a model call.
+		guard !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+			return nil
+		}
+
+		// Trigger phrase wins; otherwise fall back to the default command; if
+		// neither applies, paste the raw transcription unchanged.
+		let recipe: Recipe
+		let input: String
+		if let match = RecipeMatcher.match(text: transcription, recipes: store.recipes) {
+			recipe = match.recipe
+			input = match.remainder
+		} else if let fallback = defaultCommand() {
+			recipe = fallback
+			input = transcription
+		} else {
 			return transcription
 		}
 
@@ -50,7 +76,7 @@ final class DictationCoordinator {
 		overlayError = nil
 		clearErrorTask?.cancel()
 		isRunning = true
-		runningRecipeName = match.recipe.name
+		runningRecipeName = recipe.name
 		defer {
 			isRunning = false
 			runningRecipeName = nil
@@ -58,10 +84,10 @@ final class DictationCoordinator {
 
 		let task = Task { () -> String? in
 			do {
-				let output = try await run(match.recipe, match.remainder)
+				let output = try await run(recipe, input)
 				if Task.isCancelled { return nil }
 				guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-					self.flashError("“\(match.recipe.name)” returned nothing.")
+					self.flashError("“\(recipe.name)” returned nothing.")
 					return nil
 				}
 				return output
