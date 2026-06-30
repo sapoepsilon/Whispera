@@ -22,6 +22,16 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Local mode + self-hosted transcription hit HTTP servers on localhost
+		     or the LAN (ollama, llama-server, vLLM, whisper). Allow cleartext to
+		     local/private networks without weakening ATS for the public internet. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Whispera connects to local AI servers (e.g. ollama or a self-hosted Whisper endpoint) on your machine or network for Local-mode transcription and recipe execution.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Whispera needs accessibility access to monitor global keyboard shortcuts.</string>
 	<key>NSMicrophoneUsageDescription</key>
