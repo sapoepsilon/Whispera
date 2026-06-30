@@ -2,6 +2,8 @@ import SwiftUI
 
 struct DictationView: View {
 	@Bindable private var whisperKit = WhisperKitTranscriber.shared
+	@State private var coordinator = DictationCoordinator.shared
+	@State private var showCancel = false
 	private let audioManager: AudioManager
 
 	// Live transcription customization settings
@@ -31,7 +33,11 @@ struct DictationView: View {
 
 	var body: some View {
 		VStack(spacing: 0) {
-			if whisperKit.isWaitingForModel {
+			if coordinator.isRunning {
+				runningIndicator
+			} else if let overlayError = coordinator.overlayError {
+				errorIndicator(overlayError)
+			} else if whisperKit.isWaitingForModel {
 				HStack(spacing: 8) {
 					ProgressView()
 						.scaleEffect(0.7)
@@ -103,6 +109,48 @@ struct DictationView: View {
 		)
 		.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
 		.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
+		.task(id: coordinator.runningRecipeName) {
+			showCancel = false
+			guard coordinator.isRunning else { return }
+			// Offer a cancel button if the recipe is taking a while.
+			try? await Task.sleep(nanoseconds: 10 * 1_000_000_000)
+			if !Task.isCancelled && coordinator.isRunning { showCancel = true }
+		}
+	}
+
+	private var runningIndicator: some View {
+		HStack(spacing: 8) {
+			ProgressView()
+				.scaleEffect(0.7)
+			Text("Running \(coordinator.runningRecipeName ?? "command")…")
+				.font(.system(.caption, design: .rounded))
+				.foregroundColor(.secondary)
+				.lineLimit(1)
+			if showCancel {
+				Button("Cancel") { coordinator.cancel() }
+					.font(.system(.caption, design: .rounded))
+					.buttonStyle(.plain)
+					.foregroundColor(.blue)
+			}
+		}
+		.padding(.horizontal, 14)
+		.padding(.vertical, 10)
+		.transition(.opacity.combined(with: .scale(scale: 0.95)))
+	}
+
+	private func errorIndicator(_ message: String) -> some View {
+		HStack(spacing: 6) {
+			Image(systemName: "exclamationmark.triangle.fill")
+				.foregroundColor(.orange)
+				.imageScale(.small)
+			Text(message)
+				.font(.system(.caption, design: .rounded))
+				.foregroundColor(.primary)
+				.lineLimit(2)
+		}
+		.padding(.horizontal, 14)
+		.padding(.vertical, 10)
+		.transition(.opacity.combined(with: .scale(scale: 0.95)))
 	}
 }
 
