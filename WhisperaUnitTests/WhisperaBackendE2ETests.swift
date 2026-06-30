@@ -68,4 +68,30 @@ struct WhisperaBackendE2ETests {
 		let output = try await executor.run(recipe: recipe, input: "ignored")
 		#expect(output.uppercased().contains("WHISPERA"))
 	}
+
+	/// Subscription mode: create a recipe, execute it server-side via the backend
+	/// (LLM through VibeProxy), assert the polished output, then clean up.
+	@Test func subscriptionExecuteRoundTripsAgainstBackend() async throws {
+		let store = AuthTokenStore(service: "com.whispera.clerk.e2e.\(UUID().uuidString)")
+		defer { try? store.delete() }
+		try store.save(devToken)
+		let api = client(store)
+
+		let created = try await api.createRecipe(
+			RecipeInput(
+				from: Recipe(
+					name: "E2E professional \(UUID().uuidString.prefix(6))",
+					steps: [
+						RecipeStep(
+							config: LLMStepConfig(
+								prompt: "Rewrite politely, output only the message: {{input}}",
+								model: "gpt-5.4-mini"))
+					])))
+		defer { Task { try? await api.deleteRecipe(id: created.id) } }
+
+		let executor = BackendExecutor(providerKey: nil, api: api)
+		let output = try await executor.run(
+			recipe: created, input: "hey send me the file by tomorrow")
+		#expect(!output.isEmpty)
+	}
 }

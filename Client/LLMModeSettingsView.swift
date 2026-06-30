@@ -1,0 +1,170 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2025-2026 Ismatulla Mansurov
+
+import SwiftUI
+
+/// Settings tab to pick where recipe LLM steps run (Local / Subscription / BYOK)
+/// and configure each mode. See WHI-39.
+struct LLMModeSettingsView: View {
+	@AppStorage("whisperaLLMMode") private var modeRaw = LLMMode.local.rawValue
+	@State private var auth = AuthManager.shared
+
+	private var mode: LLMMode { LLMMode(rawValue: modeRaw) ?? .local }
+
+	var body: some View {
+		ScrollView {
+			VStack(spacing: 24) {
+				SettingsSection("AI Mode") {
+					Picker("Run recipe steps using", selection: $modeRaw) {
+						ForEach(LLMMode.allCases, id: \.rawValue) { mode in
+							Text(mode.displayName).tag(mode.rawValue)
+						}
+					}
+					.pickerStyle(.segmented)
+				}
+
+				switch mode {
+				case .local: LocalModeConfig()
+				case .subscription: SubscriptionModeConfig(isSignedIn: auth.isSignedIn, name: auth.displayName)
+				case .byok: ByokModeConfig()
+				}
+			}
+			.padding(20)
+		}
+		.task { await auth.refresh() }
+	}
+}
+
+private struct LocalModeConfig: View {
+	@AppStorage("whisperaLocalServerURL") private var serverURL = WhisperaSettings.defaultLocalServerURL
+	@AppStorage("whisperaLocalModel") private var model = ""
+	@State private var testResult: String?
+	@State private var testing = false
+
+	var body: some View {
+		SettingsSection("Local Server") {
+			VStack(alignment: .leading, spacing: 10) {
+				Text(
+					"On-device / local OpenAI-compatible server (ollama, llama-server, vLLM, LM Studio). No account, no network beyond your machine."
+				)
+				.font(.caption)
+				.foregroundColor(.secondary)
+				TextField("http://localhost:11434/v1", text: $serverURL)
+					.textFieldStyle(.roundedBorder)
+					.autocorrectionDisabled()
+				TextField("Model (e.g. llama3.2)", text: $model)
+					.textFieldStyle(.roundedBorder)
+					.autocorrectionDisabled()
+				HStack {
+					Button("Test") { runTest() }
+						.disabled(testing)
+					if testing { ProgressView().scaleEffect(0.7) }
+					if let testResult {
+						Text(testResult)
+							.font(.caption)
+							.foregroundColor(testResult.hasPrefix("OK") ? .green : .red)
+							.lineLimit(2)
+					}
+				}
+			}
+		}
+	}
+
+	private func runTest() {
+		testing = true
+		testResult = nil
+		Task {
+			defer { testing = false }
+			do {
+				let reply = try await LocalLLMExecutor().chat(
+					system: nil, prompt: "Reply with the single word: OK", model: nil, maxTokens: 10)
+				testResult = "OK — \(reply.prefix(40))"
+			} catch {
+				testResult = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+			}
+		}
+	}
+}
+
+private struct SubscriptionModeConfig: View {
+	let isSignedIn: Bool
+	let name: String
+
+	var body: some View {
+		SettingsSection("Subscription") {
+			VStack(alignment: .leading, spacing: 6) {
+				if isSignedIn {
+					Label("Signed in as \(name)", systemImage: "checkmark.seal.fill")
+						.foregroundColor(.green)
+				} else {
+					Label("Not signed in", systemImage: "exclamationmark.triangle.fill")
+						.foregroundColor(.orange)
+					Text("Sign in from the Account tab to use Subscription mode.")
+						.font(.caption)
+						.foregroundColor(.secondary)
+				}
+				Text("Recipe steps run on Whispera's servers using our provider keys.")
+					.font(.caption)
+					.foregroundColor(.secondary)
+			}
+		}
+	}
+}
+
+private struct ByokModeConfig: View {
+	@State private var openaiKey = ""
+	@State private var anthropicKey = ""
+	@State private var savedProviders: Set<ProviderId> = []
+	@State private var status: String?
+
+	var body: some View {
+		SettingsSection("Bring Your Own Key") {
+			VStack(alignment: .leading, spacing: 12) {
+				Text(
+					"Your provider keys stay in the macOS Keychain and are sent only as the X-Provider-Key header on recipe execution. Requires a (free) signed-in account for the backend pass-through."
+				)
+				.font(.caption)
+				.foregroundColor(.secondary)
+
+				keyRow(provider: .openai, placeholder: "sk-...", text: $openaiKey)
+				keyRow(provider: .anthropic, placeholder: "sk-ant-...", text: $anthropicKey)
+
+				if let status {
+					Text(status).font(.caption).foregroundColor(.secondary)
+				}
+			}
+		}
+		.onAppear { savedProviders = (try? Set(ByokKeyStore.shared.providers())) ?? [] }
+	}
+
+	private func keyRow(provider: ProviderId, placeholder: String, text: Binding<String>) -> some View {
+		HStack {
+			Text(provider.displayName).frame(width: 80, alignment: .leading)
+			if savedProviders.contains(provider) {
+				Text("Saved").foregroundColor(.green).font(.caption)
+				Spacer()
+				Button("Remove") {
+					try? ByokKeyStore.shared.delete(provider: provider)
+					savedProviders.remove(provider)
+					status = "\(provider.displayName) key removed."
+				}
+			} else {
+				SecureField(placeholder, text: text)
+					.textFieldStyle(.roundedBorder)
+				Button("Save") {
+					let value = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+					guard !value.isEmpty else { return }
+					do {
+						try ByokKeyStore.shared.save(provider: provider, key: value)
+						savedProviders.insert(provider)
+						text.wrappedValue = ""
+						status = "\(provider.displayName) key saved to Keychain."
+					} catch {
+						status = error.localizedDescription
+					}
+				}
+				.disabled(text.wrappedValue.isEmpty)
+			}
+		}
+	}
+}

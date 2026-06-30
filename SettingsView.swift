@@ -830,6 +830,8 @@ struct SettingsView: View {
 			}
 		case .account:
 			AccountSettingsView()
+		case .aiMode:
+			LLMModeSettingsView()
 		case .recipes:
 			RecipesView()
 		case .textInsertion:
