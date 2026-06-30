@@ -94,6 +94,12 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 
+	/// Transforms a finished transcription before it is pasted (recipe matching
+	/// + execution). Returns nil to paste nothing. Injected by the app so
+	/// AudioManager stays free of recipe/network dependencies. WHI-41.
+	@ObservationIgnored
+	var dictationProcessor: ((String) async -> String?)?
+
 	// MARK: - Initialization
 
 	override init() {
@@ -458,15 +464,7 @@ extension AudioManager {
 		do {
 			let transcription = try await whisperKitTranscriber.transcribeAudioArray(
 				audioArray, enableTranslation: enableTranslation)
-
-			await MainActor.run {
-				lastTranscription = transcription
-				isTranscribing = false
-
-				if currentRecordingMode == .text {
-					pasteToFocusedApp(transcription)
-				}
-			}
+			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {
 				transcriptionError = error.localizedDescription
@@ -482,15 +480,7 @@ extension AudioManager {
 		do {
 			let transcription = try await whisperKitTranscriber.transcribe(
 				audioURL: fileURL, enableTranslation: enableTranslation)
-
-			await MainActor.run {
-				lastTranscription = transcription
-				isTranscribing = false
-
-				if currentRecordingMode == .text {
-					pasteToFocusedApp(transcription)
-				}
-			}
+			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {
 				transcriptionError = error.localizedDescription
@@ -500,6 +490,25 @@ extension AudioManager {
 		}
 
 		try? FileManager.default.removeItem(at: fileURL)
+	}
+
+	/// Runs the transcription through the dictation processor (recipe matching +
+	/// execution) when in text mode, then pastes the result. WHI-41.
+	@MainActor
+	fileprivate func applyAndPaste(_ transcription: String) async {
+		let mode = currentRecordingMode
+		let toPaste: String?
+		if mode == .text, let processor = dictationProcessor {
+			toPaste = await processor(transcription)
+		} else {
+			toPaste = transcription
+		}
+
+		lastTranscription = transcription
+		isTranscribing = false
+		if mode == .text, let toPaste {
+			pasteToFocusedApp(toPaste)
+		}
 	}
 }
 
