@@ -581,6 +581,12 @@ struct SettingsView: View {
 					Label("Account", systemImage: "person.crop.circle")
 				}
 
+			// MARK: - AI Mode Tab
+			LLMModeSettingsView()
+				.tabItem {
+					Label("AI Mode", systemImage: "brain")
+				}
+
 			// MARK: - Commands Tab
 			RecipesView()
 				.tabItem {

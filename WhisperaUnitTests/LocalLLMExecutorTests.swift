@@ -26,32 +26,27 @@ struct LocalLLMInterpolationTests {
 	}
 }
 
-@Suite(.serialized)
 struct LocalLLMExecutorChatTests {
 
-	private func executor(model: String = "test-model") -> LocalLLMExecutor {
-		let config = URLSessionConfiguration.ephemeral
-		config.protocolClasses = [MockURLProtocol.self]
-		let session = URLSession(configuration: config)
-		return LocalLLMExecutor(
-			session: session,
-			serverURLProvider: { URL(string: "http://localhost:11434/v1") },
+	private func executor(mock: MockURLProtocol.Mock, model: String = "test-model") -> LocalLLMExecutor {
+		LocalLLMExecutor(
+			session: mock.session,
+			serverURLProvider: { mock.baseURL.appendingPathComponent("v1") },
 			defaultModelProvider: { model })
 	}
 
 	@Test func chatPostsOpenAIPayloadAndReturnsContent() async throws {
-		MockURLProtocol.handler = { request in
-			let r = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-			return (r, Data(#"{"choices":[{"message":{"content":"hi"}}]}"#.utf8))
-		}
-		let result = try await executor().chat(system: nil, prompt: "say hi", model: nil, maxTokens: 50)
+		let mock = MockURLProtocol.make(status: 200, json: #"{"choices":[{"message":{"content":"hi"}}]}"#)
+		let result = try await executor(mock: mock).chat(
+			system: nil, prompt: "say hi", model: nil, maxTokens: 50)
 		#expect(result == "hi")
-		#expect(MockURLProtocol.lastRequest?.url?.path == "/v1/chat/completions")
-		#expect(MockURLProtocol.lastRequest?.httpMethod == "POST")
+		#expect(MockURLProtocol.lastRequest(host: mock.host)?.url?.path == "/v1/chat/completions")
+		#expect(MockURLProtocol.lastRequest(host: mock.host)?.httpMethod == "POST")
 	}
 
 	@Test func noModelThrows() async {
-		let exec = executor(model: "")
+		let mock = MockURLProtocol.make(status: 200, json: #"{}"#)
+		let exec = executor(mock: mock, model: "")
 		await #expect(throws: LocalLLMError.self) {
 			_ = try await exec.chat(system: nil, prompt: "x", model: nil, maxTokens: nil)
 		}
@@ -59,7 +54,7 @@ struct LocalLLMExecutorChatTests {
 
 	@Test func runChainsStepsFeedingOutputForward() async throws {
 		// Each call echoes the user content so we can prove the chain wires step N → N+1.
-		MockURLProtocol.handler = { request in
+		let mock = MockURLProtocol.make { request in
 			let body = request.httpBodyStreamData() ?? request.httpBody ?? Data()
 			let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
 			let messages = object?["messages"] as? [[String: String]]
@@ -76,7 +71,7 @@ struct LocalLLMExecutorChatTests {
 				RecipeStep(config: LLMStepConfig(prompt: "a:{{input}}")),
 				RecipeStep(config: LLMStepConfig(prompt: "b:{{input}}")),
 			])
-		let result = try await executor().run(recipe: recipe, input: "x")
+		let result = try await executor(mock: mock).run(recipe: recipe, input: "x")
 		#expect(result == "[b:[a:x]]")
 	}
 }
