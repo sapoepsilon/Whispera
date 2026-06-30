@@ -50,4 +50,22 @@ struct WhisperaBackendE2ETests {
 		let afterDelete = try await api.listRecipes()
 		#expect(!afterDelete.contains { $0.id == created.id })
 	}
+
+	/// Local executor runs against any OpenAI-compatible server. Points at
+	/// VibeProxy (:8317) since no local model is pulled here.
+	@Test func localExecutorRunsRecipeAgainstOpenAICompatibleServer() async throws {
+		let executor = LocalLLMExecutor(
+			serverURLProvider: { URL(string: "http://localhost:8317/v1") },
+			defaultModelProvider: { "gpt-5.4-mini" })
+		let recipe = Recipe(
+			name: "echo",
+			steps: [
+				RecipeStep(
+					config: LLMStepConfig(
+						prompt: "Reply with exactly this word and nothing else: WHISPERA. Input: {{input}}")
+				)
+			])
+		let output = try await executor.run(recipe: recipe, input: "ignored")
+		#expect(output.uppercased().contains("WHISPERA"))
+	}
 }
