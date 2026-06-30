@@ -4,8 +4,10 @@ struct ListeningView: View {
 	@State private var whisperKit = WhisperKitTranscriber.shared
 	@State private var showDevicePicker = false
 	@State private var deviceManager = AudioDeviceManager.shared
+	@State private var recipeStore = RecipeStore.shared
 	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
 	@AppStorage("listeningViewCornerRadius") private var cornerRadius = 10.0
+	@AppStorage("whisperaDefaultCommandId") private var defaultCommandId = ""
 	private let audioManager: AudioManager
 
 	init(audioManager: AudioManager) {
@@ -51,11 +53,12 @@ struct ListeningView: View {
 					Text(
 						whisperKit.isWaitingForModel
 							? whisperKit.waitingForModelStatusText
-							: (whisperKit.isInitializing ? whisperKit.initializationStatus : "Loading model...")
+							: (whisperKit.isInitializing
+								? whisperKit.initializationStatus : "Loading model...")
 					)
-						.font(.system(.caption, design: .rounded))
-						.foregroundColor(.secondary)
-						.lineLimit(1)
+					.font(.system(.caption, design: .rounded))
+					.foregroundColor(.secondary)
+					.lineLimit(1)
 				}
 			} else {
 				Text("Transcribing...")
@@ -88,6 +91,8 @@ struct ListeningView: View {
 				}
 				.buttonStyle(.plain)
 
+				postActionPicker
+
 				AudioMeterView(levels: audioManager.audioLevels)
 
 				Button(action: {
@@ -101,6 +106,38 @@ struct ListeningView: View {
 				.help("Stop recording")
 			}
 		}
+	}
+
+	/// Dropdown to pick the default post-action command (runs on every dictation)
+	/// or "No action", mirroring the device picker affordance. See WHI-50.
+	private var postActionPicker: some View {
+		Menu {
+			Picker("Post action", selection: $defaultCommandId) {
+				Text("No action").tag("")
+				ForEach(recipeStore.recipes) { recipe in
+					Text(recipe.name.isEmpty ? "Untitled" : recipe.name).tag(recipe.id)
+				}
+			}
+			.pickerStyle(.inline)
+		} label: {
+			HStack(spacing: 3) {
+				Image(systemName: "wand.and.stars")
+					.font(.system(size: 11))
+				Image(systemName: "chevron.down")
+					.font(.system(size: 8, weight: .semibold))
+			}
+			.padding(.horizontal, 5)
+			.padding(.vertical, 3)
+			.background(
+				RoundedRectangle(cornerRadius: 5)
+					.fill(Color.blue.opacity(0.15))
+			)
+			.foregroundColor(.secondary)
+		}
+		.menuStyle(.borderlessButton)
+		.menuIndicator(.hidden)
+		.fixedSize()
+		.help(ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes))
 	}
 
 	private var pillContent: some View {
@@ -144,6 +181,17 @@ struct ListeningView: View {
 		.onReceive(NotificationCenter.default.publisher(for: .devicePickerDismissed)) { _ in
 			showDevicePicker = false
 		}
+	}
+}
+
+/// Resolves the human-readable label for the current post-action selection.
+/// Falls back to "No action" when unset or pointing at a deleted command.
+enum ListeningPostAction {
+	static func label(defaultCommandId: String, recipes: [Recipe]) -> String {
+		guard !defaultCommandId.isEmpty,
+			let recipe = recipes.first(where: { $0.id == defaultCommandId })
+		else { return "No action" }
+		return recipe.name.isEmpty ? "Untitled" : recipe.name
 	}
 }
 
