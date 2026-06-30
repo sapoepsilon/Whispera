@@ -148,6 +148,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 		Task { @MainActor in
 			audioManager = AudioManager()
+			let coordinator = DictationCoordinator.shared
+			audioManager.dictationProcessor = { text in await coordinator.process(text) }
 			shortcutManager = GlobalShortcutManager()
 			fileTranscriptionManager = FileTranscriptionManager()
 			networkDownloader = NetworkFileDownloader()

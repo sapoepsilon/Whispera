@@ -229,6 +229,12 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 
+	/// Transforms a finished transcription before it is pasted (recipe matching
+	/// + execution). Returns nil to paste nothing. Injected by the app so
+	/// AudioManager stays free of recipe/network dependencies. WHI-41.
+	@ObservationIgnored
+	var dictationProcessor: ((String) async -> String?)?
+
 	// MARK: - Initialization
 
 	override init() {
@@ -1446,10 +1452,16 @@ extension AudioManager {
 				AppLogger.shared.audioManager.info(
 					"Secure input is on; the dictation is pasted but not kept in history or post-processed")
 			}
+			let toPaste = await applyDictationProcessor(
+				transcription, mode: session.mode, secureInput: policy.concealClipboard)
+			guard !ledger.isCancelled(id) else {
+				AppLogger.shared.audioManager.info("Discarding the processed dictation of a cancelled recording")
+				return
+			}
 			finishTranscription(id)
 
-			if session.mode == .text {
-				pasteToFocusedApp(transcription, concealed: policy.concealClipboard)
+			if session.mode == .text, let toPaste {
+				pasteToFocusedApp(toPaste, concealed: policy.concealClipboard)
 			}
 			// After the paste so saving the recording never delays the text
 			if policy.saveToHistory {
@@ -1507,6 +1519,16 @@ extension AudioManager {
 	fileprivate func releaseModel(for session: Int) {
 		guard sessionsHoldingModel.remove(session) != nil else { return }
 		whisperKitTranscriber.endModelUse()
+	}
+
+	/// Runs the transcription through the dictation processor (recipe matching +
+	/// execution) when in text mode. Returns nil to paste nothing. Never runs on
+	/// a dictation into a secure input field, which stays out of every LLM. WHI-41.
+	fileprivate func applyDictationProcessor(
+		_ transcription: String, mode: RecordingMode, secureInput: Bool
+	) async -> String? {
+		guard mode == .text, !secureInput, let processor = dictationProcessor else { return transcription }
+		return await processor(transcription)
 	}
 }
 
