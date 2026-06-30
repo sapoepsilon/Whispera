@@ -15,18 +15,25 @@ final class DictationCoordinator {
 	private(set) var isRunning = false
 	private(set) var runningRecipeName: String?
 	var lastError: String?
+	/// Short-lived message for the dictation overlay; auto-clears so the HUD
+	/// doesn't linger after a failed/empty recipe run.
+	private(set) var overlayError: String?
 
 	private let store: RecipeStore
 	private let run: (Recipe, String) async throws -> String
+	private let errorDisplaySeconds: Double
 	private var currentTask: Task<String?, Never>?
+	private var clearErrorTask: Task<Void, Never>?
 
 	init(
 		store: RecipeStore = .shared,
+		errorDisplaySeconds: Double = 3,
 		run: @escaping (Recipe, String) async throws -> String = { recipe, input in
 			try await RecipeRouter.shared.run(recipe: recipe, input: input)
 		}
 	) {
 		self.store = store
+		self.errorDisplaySeconds = errorDisplaySeconds
 		self.run = run
 	}
 
@@ -40,6 +47,8 @@ final class DictationCoordinator {
 		}
 
 		lastError = nil
+		overlayError = nil
+		clearErrorTask?.cancel()
 		isRunning = true
 		runningRecipeName = match.recipe.name
 		defer {
@@ -52,7 +61,7 @@ final class DictationCoordinator {
 				let output = try await run(match.recipe, match.remainder)
 				if Task.isCancelled { return nil }
 				guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-					await MainActor.run { self.lastError = "“\(match.recipe.name)” returned nothing." }
+					self.flashError("“\(match.recipe.name)” returned nothing.")
 					return nil
 				}
 				return output
@@ -61,10 +70,7 @@ final class DictationCoordinator {
 			} catch {
 				// Don't lose the user's words: fall back to the raw transcription
 				// and surface why the recipe didn't run.
-				await MainActor.run {
-					self.lastError =
-						(error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-				}
+				self.flashError((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
 				return transcription
 			}
 		}
@@ -76,5 +82,18 @@ final class DictationCoordinator {
 		currentTask?.cancel()
 		isRunning = false
 		runningRecipeName = nil
+	}
+
+	/// Sets `lastError` and a self-clearing `overlayError` for the HUD.
+	private func flashError(_ message: String) {
+		lastError = message
+		overlayError = message
+		clearErrorTask?.cancel()
+		let seconds = errorDisplaySeconds
+		clearErrorTask = Task { [weak self] in
+			try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+			guard !Task.isCancelled else { return }
+			self?.overlayError = nil
+		}
 	}
 }
