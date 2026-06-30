@@ -31,6 +31,7 @@ struct RecipesView: View {
 						Task { for r in targets { await store.delete(r) } }
 					}
 				}
+				.scrollContentBackground(.hidden)
 			}
 
 			if let error = store.lastError {
@@ -42,6 +43,8 @@ struct RecipesView: View {
 					.frame(maxWidth: .infinity, alignment: .leading)
 			}
 		}
+		// Solid content background so the header isn't the window's gray material.
+		.background(Color(nsColor: .textBackgroundColor))
 		.task { await store.sync() }
 		.sheet(isPresented: $isCreating) {
 			RecipeEditor(
