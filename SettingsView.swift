@@ -828,6 +828,8 @@ struct SettingsView: View {
 				}
 				.padding(20)
 			}
+		case .account:
+			AccountSettingsView()
 		case .textInsertion:
 			TextInsertionSettingsView()
 		case .storage:

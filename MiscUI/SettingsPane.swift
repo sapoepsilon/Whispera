@@ -2,6 +2,7 @@ import AppKit
 
 enum SettingsPane: String, CaseIterable, Identifiable {
 	case general
+	case account
 	case textInsertion
 	case storage
 	case liveTranscription
@@ -17,6 +18,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	func title(bundle: Bundle = .main) -> String {
 		switch self {
 		case .general: return String(localized: "General", bundle: bundle)
+		case .account: return String(localized: "Account", bundle: bundle)
 		case .textInsertion: return String(localized: "Text Insertion", bundle: bundle)
 		case .storage: return String(localized: "Storage & Downloads", bundle: bundle)
 		case .liveTranscription: return String(localized: "Live Transcription", bundle: bundle)
@@ -32,6 +34,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	var systemImage: String {
 		switch self {
 		case .general: return "gear"
+		case .account: return "person.crop.circle"
 		case .textInsertion: return "text.cursor"
 		case .storage: return "internaldrive"
 		case .liveTranscription: return "waveform"
