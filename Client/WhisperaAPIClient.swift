@@ -96,11 +96,20 @@ struct WhisperaAPIClient {
 		path: String, method: String, body: Data?, providerKey: String?
 	) async throws -> Data {
 		guard let base = serverURLProvider() else { throw WhisperaAPIError.invalidServerURL }
+		// String join (not appendingPathComponent) so query strings like
+		// "/recipes?limit=100" aren't percent-encoded into the path.
+		let trimmedBase =
+			base.absoluteString.hasSuffix("/")
+			? String(base.absoluteString.dropLast()) : base.absoluteString
+		let fullPath = path.hasPrefix("/") ? path : "/" + path
+		guard let url = URL(string: trimmedBase + fullPath) else {
+			throw WhisperaAPIError.invalidServerURL
+		}
 		guard let token = try? tokenStore.load(), !token.isEmpty else {
 			throw WhisperaAPIError.notAuthenticated
 		}
 
-		var request = URLRequest(url: base.appendingPathComponent(path))
+		var request = URLRequest(url: url)
 		request.httpMethod = method
 		request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 		request.setValue("application/json", forHTTPHeaderField: "Accept")
