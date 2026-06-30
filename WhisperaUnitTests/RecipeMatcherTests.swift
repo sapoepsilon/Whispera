@@ -164,4 +164,68 @@ struct DictationCoordinatorTests {
 		_ = await coordinator.process("make professional hi")
 		#expect(coordinator.overlayError == "kaboom")
 	}
+
+	// MARK: - Default post-action command (WHI-49)
+
+	/// Builds a store with a trigger command ("Make professional") plus a
+	/// trigger-less default command ("Polish"), returning the default's id.
+	private func storeWithTriggerAndDefault() async -> (RecipeStore, String, URL) {
+		let url = FileManager.default.temporaryDirectory.appendingPathComponent("dd-\(UUID().uuidString).json")
+		let store = RecipeStore(auth: AuthManager(), fileURL: url)
+		await store.create(
+			Recipe(
+				name: "Make professional", triggerPhrase: "make professional",
+				steps: [RecipeStep(config: LLMStepConfig(prompt: "{{input}}"))]))
+		let def = Recipe(name: "Polish", steps: [RecipeStep(config: LLMStepConfig(prompt: "{{input}}"))])
+		await store.create(def)
+		return (store, def.id, url)
+	}
+
+	@Test func defaultCommandRunsWhenNoTriggerMatches() async {
+		let (store, defId, url) = await storeWithTriggerAndDefault()
+		defer { try? FileManager.default.removeItem(at: url) }
+		var ranWith: (name: String, input: String)?
+		let coordinator = DictationCoordinator(store: store, defaultCommandId: { defId }) { recipe, input in
+			ranWith = (recipe.name, input)
+			return "POLISHED"
+		}
+		let result = await coordinator.process("just some plain words")
+		#expect(result == "POLISHED")
+		#expect(ranWith?.name == "Polish")
+		// The whole transcript is the input for the default command.
+		#expect(ranWith?.input == "just some plain words")
+	}
+
+	@Test func triggerWinsOverDefault() async {
+		let (store, defId, url) = await storeWithTriggerAndDefault()
+		defer { try? FileManager.default.removeItem(at: url) }
+		var ranWith: (name: String, input: String)?
+		let coordinator = DictationCoordinator(store: store, defaultCommandId: { defId }) { recipe, input in
+			ranWith = (recipe.name, input)
+			return "OUT"
+		}
+		_ = await coordinator.process("make professional hello there")
+		#expect(ranWith?.name == "Make professional")
+		#expect(ranWith?.input == "hello there")
+	}
+
+	@Test func noDefaultAndNoTriggerPastesRaw() async {
+		let (store, _, url) = await storeWithTriggerAndDefault()
+		defer { try? FileManager.default.removeItem(at: url) }
+		let coordinator = DictationCoordinator(store: store, defaultCommandId: { "" }) { _, _ in
+			"SHOULD NOT RUN"
+		}
+		let result = await coordinator.process("plain words no trigger")
+		#expect(result == "plain words no trigger")
+	}
+
+	@Test func staleDefaultIdFallsBackToRaw() async {
+		let (store, _, url) = await storeWithTriggerAndDefault()
+		defer { try? FileManager.default.removeItem(at: url) }
+		let coordinator = DictationCoordinator(store: store, defaultCommandId: { "nonexistent-id" }) { _, _ in
+			"SHOULD NOT RUN"
+		}
+		let result = await coordinator.process("plain words")
+		#expect(result == "plain words")
+	}
 }
