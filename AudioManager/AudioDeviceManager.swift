@@ -93,22 +93,29 @@ final class AudioDeviceManager {
 	private var savedSystemDefaultDeviceID: AudioDeviceID?
 
 	private init() {
-		refreshDevices()
 		installDeviceChangeListeners()
 		applyPersistedSelection()
+		Task { await refreshDevices() }
 	}
 
 	// For testing
 	init(forTesting: Bool) {
-		refreshDevices()
 		applyPersistedSelection()
+		Task { await refreshDevices() }
 	}
 
 	// MARK: - Public API
 
-	func refreshDevices() {
-		let defaultID = getSystemDefaultInputDeviceID()
-		availableDevices = enumerateInputDevices(defaultDeviceID: defaultID)
+	/// Enumerating CoreAudio devices does blocking `AudioObjectGetPropertyData`
+	/// calls that can stall for seconds while a Continuity/wireless mic is mid
+	/// transition — and the HAL fires the change listeners exactly then. Run the
+	/// enumeration off the main actor so those notifications never freeze the UI.
+	/// WHI-54.
+	func refreshDevices() async {
+		let devices = await Task.detached(priority: .userInitiated) {
+			Self.enumerateInputDevices(defaultDeviceID: Self.getSystemDefaultInputDeviceID())
+		}.value
+		availableDevices = devices
 		applyPersistedSelection()
 		AppLogger.shared.deviceManager.debug("Refreshed devices: \(availableDevices.map(\.name))")
 	}
@@ -128,14 +135,18 @@ final class AudioDeviceManager {
 		}
 
 		guard let device = availableDevices.first(where: { $0.uid == persistedDeviceUID }) else {
-			AppLogger.shared.deviceManager.error("activateSelectedDevice: device \(persistedDeviceUID) not found in \(availableDevices.map { "\($0.name):\($0.uid)" })")
+			AppLogger.shared.deviceManager.error(
+				"activateSelectedDevice: device \(persistedDeviceUID) not found in \(availableDevices.map { "\($0.name):\($0.uid)" })"
+			)
 			restoreSystemDefault()
 			return
 		}
 
-		let currentDefault = getSystemDefaultInputDeviceID()
-		let currentDefaultName = currentDefault.flatMap { getDeviceName(for: $0) } ?? "unknown"
-		AppLogger.shared.deviceManager.info("activateSelectedDevice: current default=\(currentDefaultName) (ID: \(currentDefault ?? 0)), switching to \(device.name) (ID: \(device.id))")
+		let currentDefault = Self.getSystemDefaultInputDeviceID()
+		let currentDefaultName = currentDefault.flatMap { Self.getDeviceName(for: $0) } ?? "unknown"
+		AppLogger.shared.deviceManager.info(
+			"activateSelectedDevice: current default=\(currentDefaultName) (ID: \(currentDefault ?? 0)), switching to \(device.name) (ID: \(device.id))"
+		)
 
 		if savedSystemDefaultDeviceID == nil {
 			savedSystemDefaultDeviceID = currentDefault
@@ -147,19 +158,22 @@ final class AudioDeviceManager {
 			Self.setSystemDefaultInputDeviceSync(targetDeviceID)
 		}.value
 
-		let newDefault = getSystemDefaultInputDeviceID()
-		let newDefaultName = newDefault.flatMap { getDeviceName(for: $0) } ?? "unknown"
+		let newDefault = Self.getSystemDefaultInputDeviceID()
+		let newDefaultName = newDefault.flatMap { Self.getDeviceName(for: $0) } ?? "unknown"
 		if newDefault == targetDeviceID {
-			AppLogger.shared.deviceManager.info("activateSelectedDevice: verified system default changed to \(newDefaultName)")
+			AppLogger.shared.deviceManager.info(
+				"activateSelectedDevice: verified system default changed to \(newDefaultName)")
 		} else {
-			AppLogger.shared.deviceManager.error("activateSelectedDevice: FAILED - system default is still \(newDefaultName) (ID: \(newDefault ?? 0)), expected \(targetDeviceName) (ID: \(targetDeviceID))")
+			AppLogger.shared.deviceManager.error(
+				"activateSelectedDevice: FAILED - system default is still \(newDefaultName) (ID: \(newDefault ?? 0)), expected \(targetDeviceName) (ID: \(targetDeviceID))"
+			)
 		}
 	}
 
 	func restoreSystemDefault() {
 		guard let original = savedSystemDefaultDeviceID else { return }
 		setSystemDefaultInputDevice(original)
-		let name = getDeviceName(for: original) ?? "unknown"
+		let name = Self.getDeviceName(for: original) ?? "unknown"
 		AppLogger.shared.deviceManager.info("Restored original system default: \(name) (ID: \(original))")
 		savedSystemDefaultDeviceID = nil
 	}
@@ -182,7 +196,8 @@ final class AudioDeviceManager {
 		)
 
 		if status != noErr {
-			AppLogger.shared.deviceManager.error("setSystemDefaultInputDevice: FAILED with OSStatus \(status) for ID \(deviceID)")
+			AppLogger.shared.deviceManager.error(
+				"setSystemDefaultInputDevice: FAILED with OSStatus \(status) for ID \(deviceID)")
 		}
 	}
 
@@ -202,7 +217,8 @@ final class AudioDeviceManager {
 			return nil
 		}
 
-		AppLogger.shared.deviceManager.info("resolveActiveDeviceID → \(device.name) (ID: \(device.id), UID: \(device.uid))")
+		AppLogger.shared.deviceManager.info(
+			"resolveActiveDeviceID → \(device.name) (ID: \(device.id), UID: \(device.uid))")
 		return device.id
 	}
 
@@ -218,7 +234,7 @@ final class AudioDeviceManager {
 		}
 	}
 
-	private func enumerateInputDevices(defaultDeviceID: AudioDeviceID?) -> [AudioInputDevice] {
+	private nonisolated static func enumerateInputDevices(defaultDeviceID: AudioDeviceID?) -> [AudioInputDevice] {
 		var propertySize: UInt32 = 0
 		var address = AudioObjectPropertyAddress(
 			mSelector: kAudioHardwarePropertyDevices,
@@ -253,9 +269,9 @@ final class AudioDeviceManager {
 		var devices: [AudioInputDevice] = []
 
 		for deviceID in deviceIDs {
-			guard isInputDevice(deviceID),
-				let uid = getDeviceUID(for: deviceID),
-				let name = getDeviceName(for: deviceID)
+			guard Self.isInputDevice(deviceID),
+				let uid = Self.getDeviceUID(for: deviceID),
+				let name = Self.getDeviceName(for: deviceID)
 			else { continue }
 
 			devices.append(
@@ -264,14 +280,14 @@ final class AudioDeviceManager {
 					uid: uid,
 					name: name,
 					isDefault: deviceID == defaultDeviceID,
-					transportType: getDeviceTransportType(for: deviceID)
+					transportType: Self.getDeviceTransportType(for: deviceID)
 				))
 		}
 
 		return devices
 	}
 
-	private func isInputDevice(_ deviceID: AudioDeviceID) -> Bool {
+	private nonisolated static func isInputDevice(_ deviceID: AudioDeviceID) -> Bool {
 		var propertySize: UInt32 = 0
 		var address = AudioObjectPropertyAddress(
 			mSelector: kAudioDevicePropertyStreams,
@@ -290,7 +306,7 @@ final class AudioDeviceManager {
 		return status == noErr && propertySize > 0
 	}
 
-	private func getDeviceUID(for deviceID: AudioDeviceID) -> String? {
+	private nonisolated static func getDeviceUID(for deviceID: AudioDeviceID) -> String? {
 		var uid: CFString = "" as CFString
 		var size = UInt32(MemoryLayout<CFString>.size)
 		var address = AudioObjectPropertyAddress(
@@ -311,7 +327,7 @@ final class AudioDeviceManager {
 		return status == noErr ? uid as String : nil
 	}
 
-	private func getDeviceName(for deviceID: AudioDeviceID) -> String? {
+	private nonisolated static func getDeviceName(for deviceID: AudioDeviceID) -> String? {
 		var name: CFString = "" as CFString
 		var size = UInt32(MemoryLayout<CFString>.size)
 		var address = AudioObjectPropertyAddress(
@@ -332,7 +348,7 @@ final class AudioDeviceManager {
 		return status == noErr ? name as String : nil
 	}
 
-	private func getDeviceTransportType(for deviceID: AudioDeviceID) -> UInt32 {
+	private nonisolated static func getDeviceTransportType(for deviceID: AudioDeviceID) -> UInt32 {
 		var transportType: UInt32 = 0
 		var size = UInt32(MemoryLayout<UInt32>.size)
 		var address = AudioObjectPropertyAddress(
@@ -353,7 +369,7 @@ final class AudioDeviceManager {
 		return status == noErr ? transportType : 0
 	}
 
-	private func getSystemDefaultInputDeviceID() -> AudioDeviceID? {
+	private nonisolated static func getSystemDefaultInputDeviceID() -> AudioDeviceID? {
 		var deviceID: AudioDeviceID = 0
 		var size = UInt32(MemoryLayout<AudioDeviceID>.size)
 		var address = AudioObjectPropertyAddress(
@@ -385,7 +401,7 @@ final class AudioDeviceManager {
 
 		let devicesBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
 			Task { @MainActor in
-				self?.refreshDevices()
+				await self?.refreshDevices()
 				NotificationCenter.default.post(name: .audioDevicesChanged, object: nil)
 			}
 		}
@@ -406,7 +422,7 @@ final class AudioDeviceManager {
 
 		let defaultBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
 			Task { @MainActor in
-				self?.refreshDevices()
+				await self?.refreshDevices()
 			}
 		}
 		defaultDeviceListenerBlock = defaultBlock
