@@ -75,7 +75,6 @@ private struct LocalModeConfig: View {
 	@AppStorage("whisperaLocalServerURL") private var serverURL = WhisperaSettings.defaultLocalServerURL
 	@AppStorage("whisperaLocalModel") private var model = ""
 	@State private var testResult: String?
-	@State private var testing = false
 
 	var body: some View {
 		SettingsSection("Local Server") {
@@ -92,9 +91,7 @@ private struct LocalModeConfig: View {
 					.textFieldStyle(.roundedBorder)
 					.autocorrectionDisabled()
 				HStack {
-					Button("Test") { runTest() }
-						.disabled(testing)
-					if testing { ProgressView().scaleEffect(0.7) }
+					AsyncButton("Test") { await runTest() }
 					if let testResult {
 						Text(testResult)
 							.font(.caption)
@@ -106,18 +103,14 @@ private struct LocalModeConfig: View {
 		}
 	}
 
-	private func runTest() {
-		testing = true
+	private func runTest() async {
 		testResult = nil
-		Task {
-			defer { testing = false }
-			do {
-				let reply = try await LocalLLMExecutor().chat(
-					system: nil, prompt: "Reply with the single word: OK", model: nil, maxTokens: 10)
-				testResult = "OK — \(reply.prefix(40))"
-			} catch {
-				testResult = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-			}
+		do {
+			let reply = try await LocalLLMExecutor().chat(
+				system: nil, prompt: "Reply with the single word: OK", model: nil, maxTokens: 10)
+			testResult = "OK — \(reply.prefix(40))"
+		} catch {
+			testResult = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
 		}
 	}
 }
