@@ -306,12 +306,15 @@ struct SettingsView: View {
 							"Input Device",
 							description: "Select which microphone to use for recording"
 						) {
-							Picker("", selection: Binding(
-								get: { AudioDeviceManager.shared.persistedDeviceUID },
-								set: { newUID in
-									AudioDeviceManager.shared.selectDevice(uid: newUID)
-								}
-							)) {
+							Picker(
+								"",
+								selection: Binding(
+									get: { AudioDeviceManager.shared.persistedDeviceUID },
+									set: { newUID in
+										AudioDeviceManager.shared.selectDevice(uid: newUID)
+									}
+								)
+							) {
 								Label("System Default", systemImage: "mic.fill")
 									.tag(AudioDeviceManager.systemDefaultUID)
 
@@ -323,15 +326,19 @@ struct SettingsView: View {
 							.frame(maxWidth: 200)
 						}
 
-						if AudioDeviceManager.shared.persistedDeviceUID != AudioDeviceManager.systemDefaultUID,
-						   AudioDeviceManager.shared.selectedDevice == nil {
+						if AudioDeviceManager.shared.persistedDeviceUID
+							!= AudioDeviceManager.systemDefaultUID,
+							AudioDeviceManager.shared.selectedDevice == nil
+						{
 							HStack(spacing: 6) {
 								Image(systemName: "exclamationmark.triangle.fill")
 									.foregroundColor(.orange)
 									.font(.caption)
-								Text("Selected device is not currently available. Will use system default.")
-									.font(.caption)
-									.foregroundColor(.orange)
+								Text(
+									"Selected device is not currently available. Will use system default."
+								)
+								.font(.caption)
+								.foregroundColor(.orange)
 							}
 							.padding(.top, 4)
 						}
@@ -537,8 +544,11 @@ struct SettingsView: View {
 											)
 											.font(.caption)
 											Spacer()
-											Button("Open Settings") {
-												permissionManager.openMicrophoneSettings()
+											Button("Grant Access") {
+												Task {
+													await permissionManager
+														.requestMicrophoneAccess()
+												}
 											}
 											.buttonStyle(.bordered)
 											.controlSize(.small)
@@ -552,8 +562,8 @@ struct SettingsView: View {
 											)
 											.font(.caption)
 											Spacer()
-											Button("Open Settings") {
-												permissionManager.openAccessibilitySettings()
+											Button("Grant Access") {
+												permissionManager.requestAccessibilityAccess()
 											}
 											.buttonStyle(.bordered)
 											.controlSize(.small)
