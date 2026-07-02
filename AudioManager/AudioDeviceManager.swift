@@ -143,6 +143,14 @@ final class AudioDeviceManager {
 			"activateSelectedDevice: current default=\(currentDefaultName) (ID: \(currentDefault ?? 0)), switching to \(device.name) (ID: \(device.id))"
 		)
 
+		// Already the system default → nothing to switch (avoids a redundant,
+		// blocking CoreAudio call, e.g. iPhone 100 → 100). WHI-54.
+		if currentDefault == device.id {
+			AppLogger.shared.deviceManager.debug(
+				"activateSelectedDevice: \(device.name) already default, skipping switch")
+			return
+		}
+
 		if savedSystemDefaultDeviceID == nil {
 			savedSystemDefaultDeviceID = currentDefault
 		}
@@ -152,6 +160,7 @@ final class AudioDeviceManager {
 		await Task.detached(priority: .userInitiated) {
 			Self.setSystemDefaultInputDeviceSync(targetDeviceID)
 		}.value
+		if Task.isCancelled { return }
 
 		let newDefault = Self.getSystemDefaultInputDeviceID()
 		let newDefaultName = newDefault.flatMap { Self.getDeviceName(for: $0) } ?? "unknown"
@@ -167,10 +176,16 @@ final class AudioDeviceManager {
 
 	func restoreSystemDefault() {
 		guard let original = savedSystemDefaultDeviceID else { return }
-		setSystemDefaultInputDevice(original)
-		let name = Self.getDeviceName(for: original) ?? "unknown"
-		AppLogger.shared.deviceManager.info("Restored original system default: \(name) (ID: \(original))")
 		savedSystemDefaultDeviceID = nil
+		// Switching the default is a synchronous, uninterruptible CoreAudio call
+		// that blocks for seconds on Continuity/wireless devices — run it off the
+		// main actor so teardown/cancel never freezes the UI. WHI-54.
+		Task.detached(priority: .userInitiated) {
+			Self.setSystemDefaultInputDeviceSync(original)
+			let name = Self.getDeviceName(for: original) ?? "unknown"
+			AppLogger.shared.deviceManager.info(
+				"Restored original system default: \(name) (ID: \(original))")
+		}
 	}
 
 	private nonisolated static func setSystemDefaultInputDeviceSync(_ deviceID: AudioDeviceID) {
