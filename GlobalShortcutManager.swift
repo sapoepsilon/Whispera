@@ -13,6 +13,7 @@ class GlobalShortcutManager: ObservableObject {
 	private var networkDownloader: NetworkFileDownloader?
 	private var queueManager: TranscriptionQueueManager?
 	private var isProcessingFileOperation = false
+	private var isPollingForAccessibility = false
 	private let logger = AppLogger.shared.general
 	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
 	var fileSelectionShortcut: String =
@@ -25,6 +26,9 @@ class GlobalShortcutManager: ObservableObject {
 
 	init() {
 		setupShortcut()
+		if !AXIsProcessTrusted() {
+			startAccessibilityPolling()
+		}
 		NotificationCenter.default.addObserver(
 			forName: UserDefaults.didChangeNotification,
 			object: nil,
@@ -335,35 +339,33 @@ class GlobalShortcutManager: ObservableObject {
 			logger.info(
 				"Please go to System Settings > Privacy & Security > Accessibility and enable Whispera")
 			logger.info("Global shortcuts will NOT work until accessibility permissions are granted")
+			startAccessibilityPolling()
+		}
+	}
 
-			// Check again every 3 seconds for up to 30 seconds
-			var checkCount = 0
-			let maxChecks = 10
+	/// Polls until Accessibility is granted, then (re)installs the shortcut
+	/// monitors. Uncapped on purpose: the previous 10×3s retry meant a grant
+	/// made after the 30s window left shortcuts dead until app restart, and a
+	/// grant made outside onboarding (Settings, System Settings directly) was
+	/// never picked up at all. WHI-52.
+	func startAccessibilityPolling() {
+		guard !isPollingForAccessibility else { return }
+		isPollingForAccessibility = true
 
-			func checkPermissions() {
-				checkCount += 1
-				if AXIsProcessTrusted() {
-					self.logger.info(
-						"Accessibility permissions now granted! Setting up global shortcuts...")
-					self.setupShortcut()
-				} else if checkCount < maxChecks {
-					self.logger.info(
-						"Still waiting for accessibility permissions... (\(checkCount)/\(maxChecks))")
-					DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-						checkPermissions()
-					}
-				} else {
-					self.logger.error(
-						"Accessibility permissions still not granted. Global shortcuts disabled.")
-					self.logger.error(
-						"You can grant permissions later in System Settings > Privacy & Security > Accessibility"
-					)
+		func checkPermissions() {
+			if AXIsProcessTrusted() {
+				self.logger.info("Accessibility permissions now granted! Setting up global shortcuts...")
+				self.isPollingForAccessibility = false
+				self.setupShortcut()
+			} else {
+				DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+					checkPermissions()
 				}
 			}
+		}
 
-			DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-				checkPermissions()
-			}
+		DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+			checkPermissions()
 		}
 	}
 
