@@ -325,8 +325,7 @@ class GlobalShortcutManager: ObservableObject {
 
 	func requestAccessibilityPermissions() {
 		logger.info("Requesting accessibility permissions...")
-		let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true]
-		let accessEnabled = AXIsProcessTrustedWithOptions(options)
+		let accessEnabled = PermissionManager.promptForAccessibilityAccess()
 
 		if accessEnabled {
 			logger.info("Accessibility permissions granted, setting up shortcut")

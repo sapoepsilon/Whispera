@@ -4,6 +4,13 @@ import ApplicationServices
 import Foundation
 import Observation
 
+/// What the microphone flow should do for a given authorization status.
+enum MicrophonePermissionAction: Equatable {
+	case alreadyGranted
+	case promptUser
+	case openSystemSettings
+}
+
 @Observable
 class PermissionManager {
 
@@ -45,6 +52,53 @@ class PermissionManager {
 					continuation.resume(returning: granted)
 				}
 			}
+		}
+	}
+
+	// MARK: - Prompt-first requests (shared by Settings and onboarding, WHI-52)
+
+	/// The one AX consent incantation. Shows the OS dialog the first time; on
+	/// later calls (after a denial) it is silent, so callers pair it with the
+	/// Accessibility pane.
+	static func promptForAccessibilityAccess() -> Bool {
+		let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true]
+		return AXIsProcessTrustedWithOptions(options)
+	}
+
+	/// Prompt-first accessibility request: triggers the OS dialog when it can
+	/// and opens the Accessibility pane when access is still missing.
+	@discardableResult
+	func requestAccessibilityAccess() -> Bool {
+		let granted = Self.promptForAccessibilityAccess()
+		if !granted {
+			openAccessibilitySettings()
+		}
+		updatePermissionStatus()
+		return granted
+	}
+
+	/// Pure decision for the microphone flow — kept separate so it's testable.
+	static func microphoneAction(for status: AVAuthorizationStatus) -> MicrophonePermissionAction {
+		switch status {
+		case .authorized: return .alreadyGranted
+		case .notDetermined: return .promptUser
+		case .denied, .restricted: return .openSystemSettings
+		@unknown default: return .openSystemSettings
+		}
+	}
+
+	/// Prompt-first microphone request: real OS prompt when undetermined,
+	/// Microphone pane when previously denied.
+	@discardableResult
+	func requestMicrophoneAccess() async -> Bool {
+		switch Self.microphoneAction(for: AVCaptureDevice.authorizationStatus(for: .audio)) {
+		case .alreadyGranted:
+			return true
+		case .promptUser:
+			return await requestMicrophonePermission()
+		case .openSystemSettings:
+			openMicrophoneSettings()
+			return false
 		}
 	}
 
