@@ -124,24 +124,39 @@ final class AudioDeviceManager {
 	private var defaultDeviceListenerBlock: AudioObjectPropertyListenerBlock?
 	@ObservationIgnored
 	private var savedSystemDefaultDeviceID: AudioDeviceID?
+	@ObservationIgnored
+	private var refreshGeneration = 0
 
 	private init() {
-		refreshDevices()
+		publish(Self.enumerateInputDevices(defaultDeviceID: Self.getSystemDefaultInputDeviceID()))
 		installDeviceChangeListeners()
 		applyPersistedSelection()
 	}
 
 	// For testing
 	init(forTesting: Bool) {
-		refreshDevices()
+		publish(Self.enumerateInputDevices(defaultDeviceID: Self.getSystemDefaultInputDeviceID()))
 		applyPersistedSelection()
 	}
 
 	// MARK: - Public API
 
-	func refreshDevices() {
-		let defaultID = getSystemDefaultInputDeviceID()
-		availableDevices = enumerateInputDevices(defaultDeviceID: defaultID)
+	/// Enumerating CoreAudio devices makes blocking `AudioObjectGetPropertyData` calls that can
+	/// stall for seconds while a Continuity or wireless mic is mid-transition, which is exactly
+	/// when the HAL fires the change listeners. The enumeration runs off the main actor and only
+	/// the newest result is published, so a flood of notifications never freezes the UI. WHI-54
+	func refreshDevices() async {
+		refreshGeneration &+= 1
+		let generation = refreshGeneration
+		let devices = await Task.detached(priority: .userInitiated) {
+			Self.enumerateInputDevices(defaultDeviceID: Self.getSystemDefaultInputDeviceID())
+		}.value
+		guard generation == refreshGeneration else { return }
+		publish(devices)
+	}
+
+	private func publish(_ devices: [AudioInputDevice]) {
+		availableDevices = devices
 		applyPersistedSelection()
 		AppLogger.shared.deviceManager.debug("Refreshed devices: \(availableDevices.map(\.name))")
 	}
@@ -193,8 +208,8 @@ final class AudioDeviceManager {
 			return
 		}
 
-		let currentDefault = getSystemDefaultInputDeviceID()
-		let currentDefaultName = currentDefault.flatMap { getDeviceName(for: $0) } ?? "unknown"
+		let currentDefault = Self.getSystemDefaultInputDeviceID()
+		let currentDefaultName = currentDefault.flatMap { Self.getDeviceName(for: $0) } ?? "unknown"
 		AppLogger.shared.deviceManager.info("activateSelectedDevice: current default=\(currentDefaultName) (ID: \(currentDefault ?? 0)), switching to \(device.name) (ID: \(device.id))")
 
 		if savedSystemDefaultDeviceID == nil {
@@ -218,8 +233,8 @@ final class AudioDeviceManager {
 			return
 		}
 
-		let newDefault = getSystemDefaultInputDeviceID()
-		let newDefaultName = newDefault.flatMap { getDeviceName(for: $0) } ?? "unknown"
+		let newDefault = Self.getSystemDefaultInputDeviceID()
+		let newDefaultName = newDefault.flatMap { Self.getDeviceName(for: $0) } ?? "unknown"
 		if newDefault == targetDeviceID {
 			AppLogger.shared.deviceManager.info("activateSelectedDevice: verified system default changed to \(newDefaultName)")
 		} else {
@@ -230,7 +245,7 @@ final class AudioDeviceManager {
 	func restoreSystemDefault() {
 		guard let original = savedSystemDefaultDeviceID else { return }
 		setSystemDefaultInputDevice(original)
-		let name = getDeviceName(for: original) ?? "unknown"
+		let name = Self.getDeviceName(for: original) ?? "unknown"
 		AppLogger.shared.deviceManager.info("Restored original system default: \(name) (ID: \(original))")
 		savedSystemDefaultDeviceID = nil
 	}
@@ -288,11 +303,11 @@ final class AudioDeviceManager {
 		{
 			return device.id
 		}
-		return getSystemDefaultInputDeviceID()
+		return Self.getSystemDefaultInputDeviceID()
 	}
 
 	func deviceName(forID deviceID: AudioDeviceID) -> String? {
-		availableDevices.first(where: { $0.id == deviceID })?.name ?? getDeviceName(for: deviceID)
+		availableDevices.first(where: { $0.id == deviceID })?.name ?? Self.getDeviceName(for: deviceID)
 	}
 
 	/// Number of input channels the device exposes; `systemDefaultUID` means the
@@ -300,7 +315,7 @@ final class AudioDeviceManager {
 	func inputChannelCount(forUID uid: String) -> Int {
 		let deviceID: AudioDeviceID?
 		if uid == AudioDeviceManager.systemDefaultUID {
-			deviceID = getSystemDefaultInputDeviceID()
+			deviceID = Self.getSystemDefaultInputDeviceID()
 		} else {
 			deviceID = availableDevices.first(where: { $0.uid == uid })?.id
 		}
@@ -347,7 +362,7 @@ final class AudioDeviceManager {
 		}
 	}
 
-	private func enumerateInputDevices(defaultDeviceID: AudioDeviceID?) -> [AudioInputDevice] {
+	private nonisolated static func enumerateInputDevices(defaultDeviceID: AudioDeviceID?) -> [AudioInputDevice] {
 		var propertySize: UInt32 = 0
 		var address = AudioObjectPropertyAddress(
 			mSelector: kAudioHardwarePropertyDevices,
@@ -382,15 +397,15 @@ final class AudioDeviceManager {
 		var devices: [AudioInputDevice] = []
 
 		for deviceID in deviceIDs {
-			guard isInputDevice(deviceID),
-				let uid = getDeviceUID(for: deviceID),
-				let name = getDeviceName(for: deviceID)
+			guard Self.isInputDevice(deviceID),
+				let uid = Self.getDeviceUID(for: deviceID),
+				let name = Self.getDeviceName(for: deviceID)
 			else { continue }
-			let transportType = getDeviceTransportType(for: deviceID)
+			let transportType = Self.getDeviceTransportType(for: deviceID)
 			guard
 				!AudioInputDevice.isInternal(
 					uid: uid, name: name, transportType: transportType,
-					isPrivateAggregate: isPrivateAggregate(deviceID))
+					isPrivateAggregate: Self.isPrivateAggregate(deviceID))
 			else { continue }
 
 			devices.append(
@@ -406,7 +421,7 @@ final class AudioDeviceManager {
 		return devices
 	}
 
-	private func isInputDevice(_ deviceID: AudioDeviceID) -> Bool {
+	private nonisolated static func isInputDevice(_ deviceID: AudioDeviceID) -> Bool {
 		var propertySize: UInt32 = 0
 		var address = AudioObjectPropertyAddress(
 			mSelector: kAudioDevicePropertyStreams,
@@ -425,7 +440,7 @@ final class AudioDeviceManager {
 		return status == noErr && propertySize > 0
 	}
 
-	private func getDeviceUID(for deviceID: AudioDeviceID) -> String? {
+	private nonisolated static func getDeviceUID(for deviceID: AudioDeviceID) -> String? {
 		var uid: CFString = "" as CFString
 		var size = UInt32(MemoryLayout<CFString>.size)
 		var address = AudioObjectPropertyAddress(
@@ -446,7 +461,7 @@ final class AudioDeviceManager {
 		return status == noErr ? uid as String : nil
 	}
 
-	private func getDeviceName(for deviceID: AudioDeviceID) -> String? {
+	private nonisolated static func getDeviceName(for deviceID: AudioDeviceID) -> String? {
 		var name: CFString = "" as CFString
 		var size = UInt32(MemoryLayout<CFString>.size)
 		var address = AudioObjectPropertyAddress(
@@ -468,7 +483,7 @@ final class AudioDeviceManager {
 	}
 
 	/// Reads kAudioAggregateDeviceIsPrivateKey from the composition; false for anything that is not an aggregate.
-	private func isPrivateAggregate(_ deviceID: AudioDeviceID) -> Bool {
+	private nonisolated static func isPrivateAggregate(_ deviceID: AudioDeviceID) -> Bool {
 		var composition: Unmanaged<CFDictionary>?
 		var size = UInt32(MemoryLayout<Unmanaged<CFDictionary>?>.size)
 		var address = AudioObjectPropertyAddress(
@@ -483,7 +498,7 @@ final class AudioDeviceManager {
 		return (dictionary[kAudioAggregateDeviceIsPrivateKey] as? NSNumber)?.boolValue ?? false
 	}
 
-	private func getDeviceTransportType(for deviceID: AudioDeviceID) -> UInt32 {
+	private nonisolated static func getDeviceTransportType(for deviceID: AudioDeviceID) -> UInt32 {
 		var transportType: UInt32 = 0
 		var size = UInt32(MemoryLayout<UInt32>.size)
 		var address = AudioObjectPropertyAddress(
@@ -504,7 +519,7 @@ final class AudioDeviceManager {
 		return status == noErr ? transportType : 0
 	}
 
-	private func getSystemDefaultInputDeviceID() -> AudioDeviceID? {
+	private nonisolated static func getSystemDefaultInputDeviceID() -> AudioDeviceID? {
 		var deviceID: AudioDeviceID = 0
 		var size = UInt32(MemoryLayout<AudioDeviceID>.size)
 		var address = AudioObjectPropertyAddress(
@@ -537,7 +552,7 @@ final class AudioDeviceManager {
 		let devicesBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
 			Task { @MainActor in
 				guard let self else { return }
-				self.refreshDevices()
+				await self.refreshDevices()
 				NotificationCenter.default.post(name: .audioDevicesChanged, object: nil)
 				self.reportLostSessionDevice()
 			}
@@ -559,7 +574,7 @@ final class AudioDeviceManager {
 
 		let defaultBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
 			Task { @MainActor in
-				self?.refreshDevices()
+				await self?.refreshDevices()
 			}
 		}
 		defaultDeviceListenerBlock = defaultBlock
