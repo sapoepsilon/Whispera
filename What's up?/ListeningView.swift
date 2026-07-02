@@ -2,10 +2,12 @@ import SwiftUI
 
 struct ListeningView: View {
 	@State private var whisperKit = WhisperKitTranscriber.shared
-	@State private var showDevicePicker = false
+	@State private var showControls = false
 	@State private var deviceManager = AudioDeviceManager.shared
+	@State private var recipeStore = RecipeStore.shared
 	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
 	@AppStorage("listeningViewCornerRadius") private var cornerRadius = 10.0
+	@AppStorage("whisperaDefaultCommandId") private var defaultCommandId = ""
 	private let audioManager: AudioManager
 
 	init(audioManager: AudioManager) {
@@ -51,11 +53,12 @@ struct ListeningView: View {
 					Text(
 						whisperKit.isWaitingForModel
 							? whisperKit.waitingForModelStatusText
-							: (whisperKit.isInitializing ? whisperKit.initializationStatus : "Loading model...")
+							: (whisperKit.isInitializing
+								? whisperKit.initializationStatus : "Loading model...")
 					)
-						.font(.system(.caption, design: .rounded))
-						.foregroundColor(.secondary)
-						.lineLimit(1)
+					.font(.system(.caption, design: .rounded))
+					.foregroundColor(.secondary)
+					.lineLimit(1)
 				}
 			} else {
 				Text("Transcribing...")
@@ -64,29 +67,7 @@ struct ListeningView: View {
 			}
 		case .recording:
 			HStack(spacing: 8) {
-				Button {
-					showDevicePicker.toggle()
-					NotificationCenter.default.post(
-						name: .devicePickerToggled,
-						object: nil,
-						userInfo: ["show": showDevicePicker]
-					)
-				} label: {
-					HStack(spacing: 3) {
-						Image(systemName: activeDeviceIcon)
-							.font(.system(size: 11))
-						Image(systemName: showDevicePicker ? "chevron.up" : "chevron.down")
-							.font(.system(size: 8, weight: .semibold))
-					}
-					.padding(.horizontal, 5)
-					.padding(.vertical, 3)
-					.background(
-						RoundedRectangle(cornerRadius: 5)
-							.fill(Color.blue.opacity(0.15))
-					)
-					.foregroundColor(.secondary)
-				}
-				.buttonStyle(.plain)
+				controlsButton
 
 				AudioMeterView(levels: audioManager.audioLevels)
 
@@ -101,6 +82,35 @@ struct ListeningView: View {
 				.help("Stop recording")
 			}
 		}
+	}
+
+	/// Single pill control that opens the Control-Center-style dropdown
+	/// (Input Device + Post-dictation Action). See WHI-50.
+	private var controlsButton: some View {
+		Button {
+			showControls.toggle()
+			NotificationCenter.default.post(
+				name: .pillControlsToggled,
+				object: nil,
+				userInfo: ["show": showControls]
+			)
+		} label: {
+			HStack(spacing: 3) {
+				Image(systemName: "switch.2")
+					.font(.system(size: 11))
+				Image(systemName: showControls ? "chevron.up" : "chevron.down")
+					.font(.system(size: 8, weight: .semibold))
+			}
+			.padding(.horizontal, 5)
+			.padding(.vertical, 3)
+			.background(
+				RoundedRectangle(cornerRadius: 5)
+					.fill(Color.blue.opacity(0.15))
+			)
+			.foregroundColor(.secondary)
+		}
+		.buttonStyle(.plain)
+		.help("Input device & post-dictation action — \(ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes))")
 	}
 
 	private var pillContent: some View {
@@ -141,9 +151,20 @@ struct ListeningView: View {
 					.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
 			}
 		}
-		.onReceive(NotificationCenter.default.publisher(for: .devicePickerDismissed)) { _ in
-			showDevicePicker = false
+		.onReceive(NotificationCenter.default.publisher(for: .pillControlsDismissed)) { _ in
+			showControls = false
 		}
+	}
+}
+
+/// Resolves the human-readable label for the current post-action selection.
+/// Falls back to "No action" when unset or pointing at a deleted command.
+enum ListeningPostAction {
+	static func label(defaultCommandId: String, recipes: [Recipe]) -> String {
+		guard !defaultCommandId.isEmpty,
+			let recipe = recipes.first(where: { $0.id == defaultCommandId })
+		else { return "No action" }
+		return recipe.name.isEmpty ? "Untitled" : recipe.name
 	}
 }
 

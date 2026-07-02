@@ -10,6 +10,8 @@ class ListeningWindow: NSWindow {
 	private var pickerWindow: NSWindow?
 	private var pickerToggleObserver: NSObjectProtocol?
 	private var pickerDismissObserver: NSObjectProtocol?
+	private var postActionToggleObserver: NSObjectProtocol?
+	private var postActionDismissObserver: NSObjectProtocol?
 	@AppStorage("enableStreaming") private var enableStreaming = false
 
 	init(audioManager: AudioManager) {
@@ -50,6 +52,12 @@ class ListeningWindow: NSWindow {
 		if let observer = pickerDismissObserver {
 			NotificationCenter.default.removeObserver(observer)
 		}
+		if let observer = postActionToggleObserver {
+			NotificationCenter.default.removeObserver(observer)
+		}
+		if let observer = postActionDismissObserver {
+			NotificationCenter.default.removeObserver(observer)
+		}
 	}
 
 	private func updateVisibility() {
@@ -85,7 +93,7 @@ class ListeningWindow: NSWindow {
 	}
 
 	private func setupFrameObserver() {
-		frameObserver = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+		frameObserver = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
 			Task { @MainActor in
 				guard let self = self, self.isVisible,
 					let hostingView = self.contentView
@@ -116,22 +124,25 @@ class ListeningWindow: NSWindow {
 
 	private func setupPickerObservers() {
 		pickerToggleObserver = NotificationCenter.default.addObserver(
-			forName: .devicePickerToggled,
+			forName: .pillControlsToggled,
 			object: nil,
 			queue: .main
 		) { [weak self] notification in
 			Task { @MainActor in
+				guard let self else { return }
 				let show = (notification.userInfo?["show"] as? Bool) ?? false
 				if show {
-					self?.showPickerWindow()
+					self.showPickerWindow(PillControlsView(audioManager: self.audioManager, onSize: { [weak self] size in
+						self?.resizePickerWindow(to: size)
+					}))
 				} else {
-					self?.hidePickerWindow()
+					self.hidePickerWindow()
 				}
 			}
 		}
 
 		pickerDismissObserver = NotificationCenter.default.addObserver(
-			forName: .devicePickerDismissed,
+			forName: .pillControlsDismissed,
 			object: nil,
 			queue: .main
 		) { [weak self] _ in
@@ -141,7 +152,7 @@ class ListeningWindow: NSWindow {
 		}
 	}
 
-	private func showPickerWindow() {
+	private func showPickerWindow(_ rootView: some View) {
 		if pickerWindow == nil {
 			let window = NSWindow(
 				contentRect: .zero,
@@ -153,12 +164,12 @@ class ListeningWindow: NSWindow {
 			window.isOpaque = false
 			window.backgroundColor = .clear
 			window.hasShadow = false
-
-			let hostingView = NSHostingView(rootView: DevicePickerView(audioManager: audioManager))
-			window.contentView = hostingView
 			pickerWindow = window
 		}
 
+		// (Re)host the requested picker each time so one floating panel serves both
+		// the device picker and the post-action picker (WHI-50).
+		pickerWindow?.contentView = NSHostingView(rootView: rootView)
 		repositionPickerWindow()
 		pickerWindow?.orderFront(nil)
 	}
@@ -166,7 +177,7 @@ class ListeningWindow: NSWindow {
 	private func hidePickerWindow() {
 		guard pickerWindow?.isVisible == true else { return }
 		pickerWindow?.orderOut(nil)
-		NotificationCenter.default.post(name: .devicePickerDismissed, object: self)
+		NotificationCenter.default.post(name: .pillControlsDismissed, object: self)
 	}
 
 	private func repositionPickerWindow() {
@@ -182,6 +193,15 @@ class ListeningWindow: NSWindow {
 			NSRect(x: pickerX, y: pickerY, width: fittingSize.width, height: fittingSize.height),
 			display: true
 		)
+	}
+
+	/// Follows the picker's live (animating) SwiftUI size so the window grows/
+	/// shrinks smoothly during page transitions instead of snapping. WHI-50.
+	private func resizePickerWindow(to size: CGSize) {
+		guard let picker = pickerWindow, size.width > 1, size.height > 1 else { return }
+		let x = self.frame.midX - size.width / 2
+		let y = self.frame.maxY + 8
+		picker.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
 	}
 
 	private func positionAtBottomCenter() {
