@@ -5,7 +5,7 @@ struct PermissionsStepView: View {
 	@Binding var hasPermissions: Bool
 	@Bindable var audioManager: AudioManager
 	@ObservedObject var globalShortcutManager: GlobalShortcutManager
-
+	@State private var permissionManager = PermissionManager()
 	@State private var hasMicrophonePermission = false
 	private let permissionTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
@@ -101,27 +101,12 @@ struct PermissionsStepView: View {
 		}
 	}
 
+	// Shared prompt-first flow (same as Settings) — see PermissionManager, WHI-52.
+	// PermissionManager.requestMicrophoneAccess() owns the status switch: prompts
+	// when undetermined, opens the Microphone pane when previously denied.
 	private func requestMicrophonePermission() async {
-		let status = AVCaptureDevice.authorizationStatus(for: .audio)
-		switch status {
-		case .authorized:
-			AppLogger.shared.general.info("Microphone already authorized")
+		if await permissionManager.requestMicrophoneAccess() {
 			checkMicrophonePermission()
-		case .notDetermined:
-			let granted = await AVCaptureDevice.requestAccess(for: .audio)
-			if granted { checkMicrophonePermission() }
-		case .denied, .restricted:
-			openMicrophoneSettings()
-		@unknown default:
-			break
-		}
-	}
-
-	private func openMicrophoneSettings() {
-		if let url = URL(
-			string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
-		{
-			NSWorkspace.shared.open(url)
 		}
 	}
 }
