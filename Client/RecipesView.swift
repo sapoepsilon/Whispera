@@ -68,7 +68,7 @@ struct RecipesView: View {
 				.font(.headline)
 			if store.isSyncing { ProgressView().scaleEffect(0.6) }
 			Spacer()
-			Button("Load Starter Set") { Task { await store.loadDefaults() } }
+			AsyncButton("Load Starter Set") { await store.loadDefaults() }
 			Button {
 				isCreating = true
 			} label: {

@@ -123,6 +123,28 @@ final class AudioManager: NSObject {
 		}
 	}
 
+	/// Cancels an in-flight microphone activation (slow wireless/Continuity
+	/// mics can take seconds) and returns the app to idle. WHI-54.
+	func cancelMicrophoneInitialization() {
+		guard isMicrophoneInitializing else { return }
+		AppLogger.shared.audioManager.info("Microphone initialization cancelled by user")
+
+		if currentRecordingMode == .liveTranscription {
+			stopLiveTranscription()
+			return
+		}
+
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+		isMicrophoneInitializing = false
+		isRecording = false
+		timer.stop()
+		audioBuffer.removeAll()
+		levelMonitor.reset()
+		engineController.cleanup()
+		deviceManager.restoreSystemDefault()
+	}
+
 	func switchInputDevice(to uid: String) {
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
@@ -333,6 +355,8 @@ extension AudioManager {
 				playFeedbackSound(start: true)
 
 			} catch {
+				// A user cancel must not trigger the file-recording fallback.
+				guard !(error is CancellationError), !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start streaming: \(error)")
 				useStreamingTranscription = false

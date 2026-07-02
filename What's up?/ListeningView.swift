@@ -37,6 +37,10 @@ struct ListeningView: View {
 				Image(systemName: deviceManager.selectedDevice?.iconName ?? "mic.fill")
 					.font(.system(size: 11))
 					.foregroundColor(.secondary)
+
+				stopButton(help: "Cancel microphone setup") {
+					audioManager.cancelMicrophoneInitialization()
+				}
 			}
 		case .transcribing:
 			if whisperKit.isWaitingForModel
@@ -71,17 +75,22 @@ struct ListeningView: View {
 
 				AudioMeterView(levels: audioManager.audioLevels)
 
-				Button(action: {
+				stopButton(help: "Stop recording") {
 					audioManager.toggleRecording()
-				}) {
-					Image(systemName: "stop.circle.fill")
-						.font(.system(size: 16))
-						.foregroundColor(.secondary)
 				}
-				.buttonStyle(.plain)
-				.help("Stop recording")
 			}
 		}
+	}
+
+	/// The pill's stop control, shared by the recording and initializing states. WHI-54.
+	private func stopButton(help: String, action: @escaping () -> Void) -> some View {
+		Button(action: action) {
+			Image(systemName: "stop.circle.fill")
+				.font(.system(size: 16))
+				.foregroundColor(.secondary)
+		}
+		.buttonStyle(.plain)
+		.help(help)
 	}
 
 	/// Single pill control that opens the Control-Center-style dropdown
@@ -110,7 +119,9 @@ struct ListeningView: View {
 			.foregroundColor(.secondary)
 		}
 		.buttonStyle(.plain)
-		.help("Input device & post-dictation action — \(ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes))")
+		.help(
+			"Input device & post-dictation action — \(ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes))"
+		)
 	}
 
 	private var pillContent: some View {
