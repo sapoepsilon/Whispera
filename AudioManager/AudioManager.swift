@@ -123,6 +123,28 @@ final class AudioManager: NSObject {
 		}
 	}
 
+	/// Cancels an in-flight microphone activation (slow wireless/Continuity
+	/// mics can take seconds) and returns the app to idle. WHI-54.
+	func cancelMicrophoneInitialization() {
+		guard isMicrophoneInitializing else { return }
+		AppLogger.shared.audioManager.info("Microphone initialization cancelled by user")
+
+		if currentRecordingMode == .liveTranscription {
+			stopLiveTranscription()
+			return
+		}
+
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+		isMicrophoneInitializing = false
+		isRecording = false
+		timer.stop()
+		audioBuffer.removeAll()
+		levelMonitor.reset()
+		engineController.cleanup()
+		deviceManager.restoreSystemDefault()
+	}
+
 	func switchInputDevice(to uid: String) {
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
@@ -230,6 +252,21 @@ extension AudioManager {
 // MARK: - File-Based Recording
 
 extension AudioManager {
+	/// Builds and starts an AVAudioRecorder. `record()` is the blocking call on a
+	/// cold device, so this is only ever run off the main actor. WHI-54.
+	private nonisolated static func makeFileRecorder(url: URL) throws -> AVAudioRecorder {
+		let settings: [String: Any] = [
+			AVFormatIDKey: Int(kAudioFormatLinearPCM),
+			AVSampleRateKey: 16000.0,
+			AVNumberOfChannelsKey: 1,
+			AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+		]
+		let recorder = try AVAudioRecorder(url: url, settings: settings)
+		recorder.isMeteringEnabled = true
+		recorder.record()
+		return recorder
+	}
+
 	fileprivate func startFileBasedRecording() {
 		isMicrophoneInitializing = true
 
@@ -249,17 +286,20 @@ extension AudioManager {
 				withIntermediateDirectories: true
 			)
 
-			let settings: [String: Any] = [
-				AVFormatIDKey: Int(kAudioFormatLinearPCM),
-				AVSampleRateKey: 16000.0,
-				AVNumberOfChannelsKey: 1,
-				AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-			]
-
 			do {
-				audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
-				audioRecorder?.isMeteringEnabled = true
-				audioRecorder?.record()
+				// AVAudioRecorder.record() blocks for seconds while a cold
+				// Continuity/wireless mic connects — do it off the main actor so
+				// the UI stays responsive and the stop button works. WHI-54.
+				let recorder = try await Task.detached(priority: .userInitiated) {
+					try Self.makeFileRecorder(url: audioFilename)
+				}.value
+
+				guard !Task.isCancelled else {
+					recorder.stop()
+					return
+				}
+
+				audioRecorder = recorder
 				isMicrophoneInitializing = false
 				isRecording = true
 				timer.start()
@@ -267,6 +307,7 @@ extension AudioManager {
 				startMeteringTimer()
 				AppLogger.shared.audioManager.debug("File-based recording started")
 			} catch {
+				guard !(error is CancellationError), !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start recording: \(error)")
 				showRecordingErrorAlert(error)
@@ -333,6 +374,8 @@ extension AudioManager {
 				playFeedbackSound(start: true)
 
 			} catch {
+				// A user cancel must not trigger the file-recording fallback.
+				guard !(error is CancellationError), !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start streaming: \(error)")
 				useStreamingTranscription = false

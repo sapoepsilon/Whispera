@@ -1,5 +1,5 @@
-import AudioToolbox
 import AVFoundation
+import AudioToolbox
 import CoreAudio
 import Foundation
 
@@ -50,15 +50,42 @@ final class AudioEngineController {
 	func setup(deviceID: AudioDeviceID? = nil) async throws -> AVAudioInputNode {
 		cleanup()
 
-		let newEngine = AVAudioEngine()
+		// Engine start blocks for seconds while slow devices (Continuity/
+		// wireless mics) come up — run it off the main actor so the UI never
+		// freezes while waiting. WHI-54.
+		let newEngine = try await Task.detached(priority: .userInitiated) {
+			try Self.buildAndStartEngine(deviceID: deviceID)
+		}.value
+
+		// The user may have cancelled while the device was spinning up.
+		if Task.isCancelled {
+			newEngine.stop()
+			throw CancellationError()
+		}
+
 		engine = newEngine
 
+		if let deviceID {
+			verifyActiveDevice(expected: deviceID)
+		}
+
+		isRunning = true
+		setupRouteObserver()
+
+		return newEngine.inputNode
+	}
+
+	/// The blocking part of engine bring-up; must never run on the main actor.
+	private nonisolated static func buildAndStartEngine(deviceID: AudioDeviceID?) throws
+		-> AVAudioEngine
+	{
+		let newEngine = AVAudioEngine()
 		let inputNode = newEngine.inputNode
 
 		#if os(macOS)
-		if let deviceID {
-			try setInputDevice(deviceID, on: inputNode)
-		}
+			if let deviceID {
+				try setInputDevice(deviceID, on: inputNode)
+			}
 		#endif
 
 		let hardwareSampleRate = inputNode.inputFormat(forBus: 0).sampleRate
@@ -70,18 +97,12 @@ final class AudioEngineController {
 
 		newEngine.prepare()
 		try newEngine.start()
-
-		if let deviceID {
-			verifyActiveDevice(expected: deviceID)
-		}
-
-		isRunning = true
-		setupRouteObserver()
-
-		return inputNode
+		return newEngine
 	}
 
-	private func setInputDevice(_ deviceID: AudioDeviceID, on inputNode: AVAudioInputNode) throws {
+	private nonisolated static func setInputDevice(
+		_ deviceID: AudioDeviceID, on inputNode: AVAudioInputNode
+	) throws {
 		guard let audioUnit = inputNode.audioUnit else {
 			throw AudioEngineError.deviceSetupFailed("Could not access audio unit")
 		}
@@ -119,18 +140,20 @@ final class AudioEngineController {
 		)
 
 		if status == noErr {
-			let name = getDeviceName(for: actualDeviceID) ?? "unknown"
+			let name = Self.getDeviceName(for: actualDeviceID) ?? "unknown"
 			if actualDeviceID == expected {
-				AppLogger.shared.deviceManager.info("Verified active input device: \(name) (ID: \(actualDeviceID))")
+				AppLogger.shared.deviceManager.info(
+					"Verified active input device: \(name) (ID: \(actualDeviceID))")
 			} else {
-				let expectedName = getDeviceName(for: expected) ?? "unknown"
+				let expectedName = Self.getDeviceName(for: expected) ?? "unknown"
 				AppLogger.shared.deviceManager.error(
-					"Device mismatch — expected: \(expectedName) (ID: \(expected)), actual: \(name) (ID: \(actualDeviceID))")
+					"Device mismatch — expected: \(expectedName) (ID: \(expected)), actual: \(name) (ID: \(actualDeviceID))"
+				)
 			}
 		}
 	}
 
-	private func getDeviceName(for deviceID: AudioDeviceID) -> String? {
+	private nonisolated static func getDeviceName(for deviceID: AudioDeviceID) -> String? {
 		var name: CFString = "" as CFString
 		var size = UInt32(MemoryLayout<CFString>.size)
 		var address = AudioObjectPropertyAddress(

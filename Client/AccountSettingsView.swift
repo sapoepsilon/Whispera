@@ -81,16 +81,11 @@ struct AccountSettingsView: View {
 				HStack {
 					SecureField("token", text: $token)
 						.textFieldStyle(.roundedBorder)
-					Button("Verify & Sign In") {
-						Task {
-							await auth.signIn(token: token)
-							if auth.isSignedIn { token = "" }
-						}
+					AsyncButton("Verify & Sign In") {
+						await auth.signIn(token: token)
+						if auth.isSignedIn { token = "" }
 					}
-					.disabled(auth.isWorking || token.isEmpty)
-				}
-				if auth.isWorking {
-					ProgressView().scaleEffect(0.7)
+					.disabled(token.isEmpty)
 				}
 			}
 		}

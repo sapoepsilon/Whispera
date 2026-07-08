@@ -21,14 +21,14 @@ final class AudioDeviceManagerTests: XCTestCase {
 	// MARK: - Device Enumeration
 
 	func testEnumerateDevicesReturnsAtLeastOneDevice() async throws {
-		deviceManager.refreshDevices()
+		await deviceManager.refreshDevices()
 		XCTAssertFalse(
 			deviceManager.availableDevices.isEmpty,
 			"Should find at least one input device")
 	}
 
 	func testAllDevicesHaveUIDsAndNames() async throws {
-		deviceManager.refreshDevices()
+		await deviceManager.refreshDevices()
 		for device in deviceManager.availableDevices {
 			XCTAssertFalse(device.uid.isEmpty, "Device '\(device.name)' should have a UID")
 			XCTAssertFalse(device.name.isEmpty, "Device with UID '\(device.uid)' should have a name")
@@ -36,13 +36,13 @@ final class AudioDeviceManagerTests: XCTestCase {
 	}
 
 	func testExactlyOneDefaultDevice() async throws {
-		deviceManager.refreshDevices()
+		await deviceManager.refreshDevices()
 		let defaultDevices = deviceManager.availableDevices.filter { $0.isDefault }
 		XCTAssertEqual(defaultDevices.count, 1, "There should be exactly one default input device")
 	}
 
 	func testDeviceUIDsAreUnique() async throws {
-		deviceManager.refreshDevices()
+		await deviceManager.refreshDevices()
 		let uids = deviceManager.availableDevices.map(\.uid)
 		let uniqueUIDs = Set(uids)
 		XCTAssertEqual(uids.count, uniqueUIDs.count, "All device UIDs should be unique")
@@ -57,7 +57,7 @@ final class AudioDeviceManagerTests: XCTestCase {
 	}
 
 	func testSelectSpecificDevice() async throws {
-		deviceManager.refreshDevices()
+		await deviceManager.refreshDevices()
 		guard let firstDevice = deviceManager.availableDevices.first else {
 			throw XCTSkip("No input devices available")
 		}
@@ -70,7 +70,7 @@ final class AudioDeviceManagerTests: XCTestCase {
 	// MARK: - Persistence
 
 	func testPersistsToUserDefaults() async throws {
-		deviceManager.refreshDevices()
+		await deviceManager.refreshDevices()
 		guard let firstDevice = deviceManager.availableDevices.first else {
 			throw XCTSkip("No input devices available")
 		}
@@ -106,7 +106,7 @@ final class AudioDeviceManagerTests: XCTestCase {
 	}
 
 	func testResolveSpecificDevice() async throws {
-		deviceManager.refreshDevices()
+		await deviceManager.refreshDevices()
 		guard let firstDevice = deviceManager.availableDevices.first else {
 			throw XCTSkip("No input devices available")
 		}
@@ -152,7 +152,8 @@ final class AudioDeviceManagerTests: XCTestCase {
 
 	func testAudioInputDeviceEquality() async throws {
 		let device1 = AudioInputDevice(id: 1, uid: "uid-1", name: "Mic 1", isDefault: true, transportType: 0)
-		let device2 = AudioInputDevice(id: 2, uid: "uid-1", name: "Mic 1 Renamed", isDefault: false, transportType: 0)
+		let device2 = AudioInputDevice(
+			id: 2, uid: "uid-1", name: "Mic 1 Renamed", isDefault: false, transportType: 0)
 		let device3 = AudioInputDevice(id: 3, uid: "uid-2", name: "Mic 2", isDefault: false, transportType: 0)
 
 		XCTAssertEqual(device1, device2, "Devices with same UID should be equal")
