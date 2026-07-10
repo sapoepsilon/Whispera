@@ -20,6 +20,14 @@ enum WhisperaSettings {
 		URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines))
 	}
 
+	/// Clerk publishable key is deployment config, not a secret. For now this is
+	/// read from the app process environment so local/test builds can point at the
+	/// developer's Clerk instance without committing project-specific values.
+	static var clerkPublishableKey: String? {
+		ProcessInfo.processInfo.environment["CLERK_PUBLISHABLE_KEY"]?
+			.trimmingCharacters(in: .whitespacesAndNewlines)
+	}
+
 	private static let defaultCommandIdKey = "whisperaDefaultCommandId"
 
 	/// Recipe id of the command that post-processes every dictation when no
