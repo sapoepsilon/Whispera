@@ -15,21 +15,28 @@ final class AuthManager {
 	private(set) var isSignedIn = false
 	private(set) var user: WhisperaUser?
 	var lastError: String?
+	var isClerkSheetPresented = false
 
 	private let api: WhisperaAPIClient
 	private let tokenStore: AuthTokenStore
+	private let clerk: ClerkSessionProviding
 
-	init(api: WhisperaAPIClient = .shared, tokenStore: AuthTokenStore = .shared) {
+	init(
+		api: WhisperaAPIClient = .shared,
+		tokenStore: AuthTokenStore = .shared,
+		clerk: ClerkSessionProviding = ClerkBridge.shared
+	) {
 		self.api = api
 		self.tokenStore = tokenStore
+		self.clerk = clerk
 	}
 
 	var displayName: String {
-		user?.email ?? user?.name ?? user?.clerkId ?? "Signed in"
+		user?.email ?? user?.name ?? clerk.userEmail ?? clerk.userName ?? clerk.userId ?? user?.clerkId ?? "Signed in"
 	}
 
-	/// Saves a token (Clerk JWT or dev token) and verifies it against /auth/me.
-	/// Reverts the stored token if verification fails so we never persist a bad one.
+	/// Saves a dev token and verifies it against /auth/me. This hidden shortcut
+	/// keeps WHI-41/42 development unblocked while the real Clerk app is wired.
 	func signIn(token: String) async {
 		let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
 		guard !trimmed.isEmpty else {
@@ -37,19 +44,37 @@ final class AuthManager {
 			return
 		}
 
+		await verifyAndPersist(token: trimmed)
+	}
+
+	func signInWithClerk() async {
 		isWorking = true
 		lastError = nil
 		defer { isWorking = false }
 
 		do {
-			try tokenStore.save(trimmed)
-			let me = try await api.getMe()
-			user = me
-			isSignedIn = true
+			try await clerk.load()
+			if clerk.hasActiveSession {
+				try await persistCurrentClerkToken()
+			} else {
+				isClerkSheetPresented = true
+			}
 		} catch {
-			try? tokenStore.delete()
-			isSignedIn = false
-			user = nil
+			lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+		}
+	}
+
+	/// Called by the Clerk sheet/auth event listener after a native Clerk flow
+	/// creates or recovers an active session.
+	func completeClerkSignIn() async {
+		isWorking = true
+		lastError = nil
+		defer { isWorking = false }
+
+		do {
+			try await persistCurrentClerkToken()
+			isClerkSheetPresented = false
+		} catch {
 			lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
 		}
 	}
@@ -74,16 +99,33 @@ final class AuthManager {
 	}
 
 	func signOut() {
+		Task { try? await clerk.signOut() }
 		try? tokenStore.delete()
 		isSignedIn = false
 		user = nil
 		lastError = nil
+		isClerkSheetPresented = false
 	}
 
-	// ponytail: native Clerk sign-in (Clerk Swift SDK / hosted WebView) is deferred
-	// until a Clerk app + publishable key exist to test against. The dev-token path
-	// above covers Subscription-mode development today (backend NODE_ENV=test). WHI-45.
-	func signInWithClerk() async {
-		lastError = "Clerk sign-in isn't wired yet — use a token for now."
+	private func persistCurrentClerkToken() async throws {
+		guard let token = try await clerk.sessionToken(), !token.isEmpty else {
+			throw ClerkBridgeError.noActiveSession
+		}
+		await verifyAndPersist(token: token)
+	}
+
+	private func verifyAndPersist(token: String) async {
+		lastError = nil
+		do {
+			try tokenStore.save(token)
+			let me = try await api.getMe()
+			user = me
+			isSignedIn = true
+		} catch {
+			try? tokenStore.delete()
+			isSignedIn = false
+			user = nil
+			lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+		}
 	}
 }
