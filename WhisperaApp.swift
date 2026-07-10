@@ -3,8 +3,17 @@ import Observation
 import Sparkle
 import SwiftUI
 
+#if canImport(ClerkKit)
+import ClerkKit
+import ClerkKitUI
+#endif
+
 @main
 struct WhisperaApp: App {
+	init() {
+		ClerkBridge.shared.configureIfPossible()
+	}
+
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	private let softwareUpdater = SoftwareUpdater.shared
 

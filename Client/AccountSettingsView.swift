@@ -3,6 +3,11 @@
 
 import SwiftUI
 
+#if canImport(ClerkKit)
+import ClerkKit
+import ClerkKitUI
+#endif
+
 /// Settings tab for connecting the Mac client to the Whispera backend and
 /// signing in for Subscription mode. See WHI-24 / WHI-45.
 struct AccountSettingsView: View {
@@ -11,7 +16,7 @@ struct AccountSettingsView: View {
 	@State private var token = ""
 
 	var body: some View {
-		ScrollView {
+		let content = ScrollView {
 			VStack(spacing: 24) {
 				SettingsSection("Whispera Server") {
 					VStack(alignment: .leading, spacing: 8) {
@@ -44,6 +49,19 @@ struct AccountSettingsView: View {
 			.padding(20)
 		}
 		.task { await auth.refresh() }
+		.sheet(isPresented: $auth.isClerkSheetPresented) {
+			ClerkSignInSheet(auth: auth)
+		}
+
+		#if canImport(ClerkKit)
+		if ClerkBridge.shared.isConfigured {
+			content.environment(Clerk.shared)
+		} else {
+			content
+		}
+		#else
+		content
+		#endif
 	}
 
 	private var signedInView: some View {
@@ -62,13 +80,10 @@ struct AccountSettingsView: View {
 
 	private var signedOutView: some View {
 		VStack(alignment: .leading, spacing: 12) {
-			Button {
-				Task { await auth.signInWithClerk() }
-			} label: {
-				Label("Sign in with Clerk", systemImage: "person.crop.circle")
+			AsyncButton("Sign in with Clerk") {
+				await auth.signInWithClerk()
 			}
 			.buttonStyle(.borderedProminent)
-			.disabled(auth.isWorking)
 
 			Divider()
 
@@ -91,3 +106,39 @@ struct AccountSettingsView: View {
 		}
 	}
 }
+
+private struct ClerkSignInSheet: View {
+	let auth: AuthManager
+
+	var body: some View {
+		#if canImport(ClerkKit)
+		ClerkAuthView(auth: auth)
+		#else
+		Text("Clerk SDK is unavailable in this build.")
+			.padding(24)
+		#endif
+	}
+}
+
+#if canImport(ClerkKit)
+private struct ClerkAuthView: View {
+	@Environment(Clerk.self) private var clerk
+	let auth: AuthManager
+
+	var body: some View {
+		AuthView(mode: .signIn)
+			.task {
+				for await event in clerk.auth.events {
+					switch event {
+					case .sessionChanged(_, let newValue) where newValue?.status == .active:
+						await auth.completeClerkSignIn()
+					case .signInCompleted:
+						await auth.completeClerkSignIn()
+					default:
+						break
+					}
+				}
+			}
+	}
+}
+#endif
