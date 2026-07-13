@@ -138,6 +138,9 @@ struct SettingsView: View {
 	@AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
+	@AppStorage("enableRecordingGlow") private var enableRecordingGlow = true
+	@AppStorage(RecordingGlowColor.key) private var recordingGlowColorHex = RecordingGlowColor
+		.defaultHex
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
 
 	private var materialStyle: MaterialStyle {
@@ -297,6 +300,31 @@ struct SettingsView: View {
 							description: "Trackpad vibration when shortcut is triggered"
 						) {
 							Toggle("", isOn: $shortcutHapticFeedback)
+						}
+
+						SettingRow(
+							"Recording Glow",
+							description: "Glow around the screen edges while recording"
+						) {
+							Toggle("", isOn: $enableRecordingGlow)
+						}
+
+						if enableRecordingGlow {
+							SettingRow("Glow Color") {
+								ColorPicker(
+									"",
+									selection: Binding(
+										get: {
+											RecordingGlowColor.color(fromHex: recordingGlowColorHex)
+										},
+										set: {
+											recordingGlowColorHex = RecordingGlowColor.hex(from: $0)
+										}
+									),
+									supportsOpacity: false
+								)
+								.labelsHidden()
+							}
 						}
 					}
 					Divider()

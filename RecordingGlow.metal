@@ -5,28 +5,30 @@ using namespace metal;
 constant float glowWidth = 28.0;
 // exp(-4.6) < 1%: past this distance the glow is invisible, skip the math
 constant float glowCutoff = glowWidth * 4.6;
-
-static half3 spectrum(float t) {
-	return half3(0.5 + 0.5 * cos(6.2831853 * (float3(0.0, 0.33, 0.67) + t)));
-}
+constant float cornerRadius = 36.0;
+constant float tau = 6.2831853;
 
 [[stitchable]] half4 recordingGlow(
-	float2 position, half4 color, float4 bounds, float time, float pulse
+	float2 position, half4 color, float4 bounds, half4 glowColor, float time, float pulse
 ) {
-	float2 size = bounds.zw;
-	float edgeDistance = min(
-		min(position.x, size.x - position.x),
-		min(position.y, size.y - position.y)
-	);
+	float2 halfSize = bounds.zw * 0.5;
+	// signed distance to a rounded rectangle inset to the screen bounds,
+	// negative inside; the glow hugs its rounded border instead of the
+	// sharp screen corners
+	float2 q = abs(position - halfSize) - (halfSize - cornerRadius);
+	float sdf = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - cornerRadius;
+	float edgeDistance = max(-sdf, 0.0);
 	if (edgeDistance > glowCutoff) {
 		return half4(0.0);
 	}
-	float intensity = exp(-edgeDistance / glowWidth) * pulse;
 
-	float2 centered = position - size * 0.5;
-	float angle = atan2(centered.y, centered.x) / 6.2831853;
-	half3 rgb = spectrum(angle + time * 0.2);
+	float2 centered = position - halfSize;
+	float angle = atan2(centered.y, centered.x) / tau;
+	// brightness-only wave traveling around the border; hue stays fixed
+	float travel = 0.6 + 0.4 * cos((angle - time * 0.2) * 2.0 * tau);
+	float intensity = exp(-edgeDistance / glowWidth) * pulse * travel;
 
 	// premultiplied alpha, as SwiftUI colorEffect expects
-	return half4(rgb * half(intensity), half(intensity));
+	half alpha = half(intensity) * glowColor.a;
+	return half4(glowColor.rgb * alpha, alpha);
 }

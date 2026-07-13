@@ -3,7 +3,36 @@ import SwiftUI
 
 private let logger = AppLogger.shared.ui
 
+enum RecordingGlowColor {
+	static let key = "recordingGlowColor"
+	static let defaultHex = "0A84FF"
+
+	static func color(fromHex hex: String) -> Color {
+		var value: UInt64 = 0
+		let scanner = Scanner(string: hex)
+		guard hex.count == 6, scanner.scanHexInt64(&value), scanner.isAtEnd else {
+			return Color(red: 0x0A / 255.0, green: 0x84 / 255.0, blue: 1.0)
+		}
+		return Color(
+			red: Double((value >> 16) & 0xFF) / 255.0,
+			green: Double((value >> 8) & 0xFF) / 255.0,
+			blue: Double(value & 0xFF) / 255.0
+		)
+	}
+
+	static func hex(from color: Color) -> String {
+		guard let srgb = NSColor(color).usingColorSpace(.sRGB) else { return defaultHex }
+		return String(
+			format: "%02X%02X%02X",
+			Int(round(srgb.redComponent * 255)),
+			Int(round(srgb.greenComponent * 255)),
+			Int(round(srgb.blueComponent * 255))
+		)
+	}
+}
+
 struct RecordingGlowView: View {
+	@AppStorage(RecordingGlowColor.key) private var glowColorHex = RecordingGlowColor.defaultHex
 	private let startDate = Date()
 
 	var body: some View {
@@ -15,6 +44,7 @@ struct RecordingGlowView: View {
 				.colorEffect(
 					ShaderLibrary.recordingGlow(
 						.boundingRect,
+						.color(RecordingGlowColor.color(fromHex: glowColorHex)),
 						.float(time),
 						.float(0.8 + 0.2 * sin(time * 2.0))
 					)
