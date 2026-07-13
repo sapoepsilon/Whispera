@@ -4,7 +4,7 @@ import SwiftUI
 struct MenuBarView: View {
 	@Bindable var audioManager: AudioManager
 	var whisperKit = WhisperKitTranscriber.shared
-	@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
+	@AppStorage("globalShortcut") private var shortcutKey = "⌥⌘R"
 	@AppStorage("globalCommandShortcut") private var commandShortcutKey = "⌘⌥C"
 	@AppStorage("enableTranslation") private var enableTranslation = false
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue

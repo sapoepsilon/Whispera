@@ -15,6 +15,20 @@ enum AudioState {
 	case transcribing
 }
 
+// Both recording windows route through this policy so they can never disagree
+// via separate preferences: exactly one surface is eligible per recording mode.
+enum RecordingWindowPolicy {
+	static func shouldShowListeningWindow(state: AudioState, mode: RecordingMode) -> Bool {
+		state != .idle && mode == .text
+	}
+
+	static func shouldShowLiveTranscriptionWindow(
+		mode: RecordingMode, transcriberWantsWindow: Bool
+	) -> Bool {
+		mode == .liveTranscription && transcriberWantsWindow
+	}
+}
+
 @MainActor
 @Observable
 final class AudioManager: NSObject {
@@ -70,7 +84,7 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	@AppStorage("useStreamingTranscription") var useStreamingTranscription = true
 	@ObservationIgnored
-	@AppStorage("enableStreaming") var enableStreaming = true
+	@AppStorage("enableStreaming") var enableStreaming = Constants.enableStreamingDefault
 	@ObservationIgnored
 	@AppStorage("autoDetectLanguageFromKeyboard") var autoDetectLanguageFromKeyboard = false
 	@ObservationIgnored
@@ -108,11 +122,12 @@ final class AudioManager: NSObject {
 	// MARK: - Public API
 
 	func toggleRecording() {
-		currentRecordingMode = enableStreaming ? .liveTranscription : .text
-
 		if isRecording {
+			// Keep the mode the session started with: re-reading enableStreaming here
+			// would route stop to the wrong path if the setting changed mid-recording.
 			stopRecording()
 		} else {
+			currentRecordingMode = enableStreaming ? .liveTranscription : .text
 			startRecording()
 		}
 	}

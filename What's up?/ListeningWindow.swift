@@ -10,7 +10,6 @@ class ListeningWindow: NSWindow {
 	private var pickerWindow: NSWindow?
 	private var pickerToggleObserver: NSObjectProtocol?
 	private var pickerDismissObserver: NSObjectProtocol?
-	@AppStorage("enableStreaming") private var enableStreaming = false
 
 	init(audioManager: AudioManager) {
 		self.audioManager = audioManager
@@ -53,9 +52,10 @@ class ListeningWindow: NSWindow {
 	}
 
 	private func updateVisibility() {
-		let state = audioManager.currentState
-		let shouldShow = state == .initializing
-			|| (state != .idle && !enableStreaming)
+		let shouldShow = RecordingWindowPolicy.shouldShowListeningWindow(
+			state: audioManager.currentState,
+			mode: audioManager.currentRecordingMode
+		)
 
 		if shouldShow && !isVisible {
 			positionAtBottomCenter()
