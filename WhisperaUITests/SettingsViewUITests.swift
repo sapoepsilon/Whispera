@@ -122,6 +122,45 @@ final class SettingsViewUITests: XCTestCase {
 		return false
 	}
 
+	func testStreamingTranscriptionToggleIsSwitchAndToggles() throws {
+		let app = XCUIApplication()
+		app.launch()
+
+		app.typeKey(",", modifierFlags: .command)
+
+		let toggle = app.descendants(matching: .any)
+			.matching(identifier: "streamingTranscriptionToggle").firstMatch
+		XCTAssertTrue(
+			toggle.waitForExistence(timeout: 10),
+			"Streaming Transcription switch should exist in Settings > Transcription")
+
+		// The Transcription section can sit below the fold at the minimum window height
+		let scrollView = app.scrollViews.firstMatch
+		for _ in 0..<15 where !toggle.isHittable {
+			scrollView.scroll(byDeltaX: 0, deltaY: -100)
+		}
+		XCTAssertTrue(toggle.isHittable, "Streaming Transcription switch should be visible and hittable")
+
+		let frame = toggle.frame
+		XCTAssertGreaterThan(
+			frame.width, frame.height,
+			"Control should be a horizontal switch, not a collapsed square: \(frame)")
+		XCTAssertGreaterThan(frame.width, 24, "Switch should have visible width: \(frame)")
+
+		let initialValue = String(describing: toggle.value ?? "nil")
+		toggle.click()
+
+		var changedValue = initialValue
+		for _ in 0..<10 where changedValue == initialValue {
+			Thread.sleep(forTimeInterval: 0.3)
+			changedValue = String(describing: toggle.value ?? "nil")
+		}
+		XCTAssertNotEqual(changedValue, initialValue, "Clicking the switch should change its value")
+
+		// Restore the user-visible setting so the test run doesn't flip streaming mode
+		toggle.click()
+	}
+
 	func testModelPickerShowsCurrentlyLoadedModel() throws {
 		// Given
 		let app = XCUIApplication()
