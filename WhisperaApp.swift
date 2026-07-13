@@ -96,6 +96,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var onboardingWindow: NSWindow?
 	private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
+	private var recordingGlowController: RecordingGlowController?
 	private var popoverFrame: NSRect?
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
@@ -135,6 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
+			recordingGlowController = RecordingGlowController(audioManager: audioManager)
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
@@ -199,6 +201,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 		if UserDefaults.standard.object(forKey: "soundFeedback") == nil {
 			UserDefaults.standard.set(true, forKey: "soundFeedback")
+		}
+
+		if UserDefaults.standard.object(forKey: "enableRecordingGlow") == nil {
+			UserDefaults.standard.set(true, forKey: "enableRecordingGlow")
 		}
 
 		if UserDefaults.standard.object(forKey: "materialStyle") == nil {
@@ -352,6 +358,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		) { [weak self] _ in
 			Task { @MainActor in
 				self?.updateStatusIcon()
+				self?.recordingGlowController?.updateVisibility()
 			}
 		}
 
