@@ -417,7 +417,10 @@ struct SettingsView: View {
 							description:
 								"Process audio in real-time (max 30 minutes) instead of saving to file"
 						) {
-							Toggle("", isOn: $useStreamingTranscription)
+							Toggle("Streaming Transcription", isOn: $useStreamingTranscription)
+								.toggleStyle(.switch)
+								.labelsHidden()
+								.accessibilityIdentifier("streamingTranscriptionToggle")
 						}
 
 						SettingRow(
