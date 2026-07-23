@@ -1,6 +1,8 @@
 import AppKit
 import SwiftUI
 
+private let logger = AppLogger.shared.ui
+
 class RecordingIndicatorWindow: NSWindow {
 	init() {
 		super.init(
@@ -22,17 +24,17 @@ class RecordingIndicatorWindow: NSWindow {
 	}
 
 	func showNearCaret() {
-		print("📍 showNearCaret called")
+		logger.debug("showNearCaret called")
 
 		// Try to get the active text field/view insertion point
 		let caretPosition = getCaretPosition()
 
 		// If we can't find the caret, don't show the indicator
 		if caretPosition == NSPoint.zero {
-			print("❌ Could not find caret position - not showing indicator")
+			logger.debug("Could not find caret position - not showing indicator")
 			return
 		} else {
-			print("✅ Using caret position: \(caretPosition)")
+			logger.debug("Using caret position: \(caretPosition)")
 		}
 
 		// Position the window precisely at the caret
@@ -43,7 +45,7 @@ class RecordingIndicatorWindow: NSWindow {
 			height: 60
 		)
 
-		print("🪟 Setting window frame: \(windowFrame)")
+		logger.debug("Setting window frame: \(windowFrame)")
 		self.setFrame(windowFrame, display: true)
 		self.orderFront(nil)
 
@@ -57,19 +59,19 @@ class RecordingIndicatorWindow: NSWindow {
 	}
 
 	private func getCaretPosition() -> NSPoint {
-		print("🔍 Getting caret position using native-only detection...")
+		logger.debug("Getting caret position using native-only detection...")
 
 		// Check if we have accessibility permissions
 		let trusted = AXIsProcessTrusted()
 		if !trusted {
-			print("❌ App doesn't have accessibility permissions!")
+			logger.error("App doesn't have accessibility permissions")
 			let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true]
 			let trustedWithPrompt = AXIsProcessTrustedWithOptions(options as CFDictionary)
-			print("🔐 Requested accessibility permissions: \(trustedWithPrompt)")
+			logger.info("Requested accessibility permissions: \(trustedWithPrompt)")
 			return NSPoint.zero
 		}
 
-		print("✅ App has accessibility permissions")
+		logger.debug("App has accessibility permissions")
 
 		// Only try exact caret position method
 
@@ -78,11 +80,11 @@ class RecordingIndicatorWindow: NSWindow {
 			return position
 		}
 
-		print("❌ Native caret detection failed - not showing indicator")
+		logger.debug("Native caret detection failed - not showing indicator")
 		return NSPoint.zero
 	}
 	private func tryDirectFocusedElementMethod() -> NSPoint? {
-		print("🎯 Trying direct focused element method...")
+		logger.debug("Trying direct focused element method...")
 
 		let system = AXUIElementCreateSystemWide()
 		var application: CFTypeRef?
@@ -93,7 +95,7 @@ class RecordingIndicatorWindow: NSWindow {
 			AXUIElementCopyAttributeValue(
 				system, kAXFocusedApplicationAttribute as CFString, &application) == .success
 		else {
-			print("❌ Could not get focused application")
+			logger.error("Could not get focused application")
 			return nil
 		}
 
@@ -103,7 +105,7 @@ class RecordingIndicatorWindow: NSWindow {
 				application! as! AXUIElement, kAXFocusedUIElementAttribute as CFString, &focusedElement)
 				== .success
 		else {
-			print("❌ Could not get focused UI element")
+			logger.error("Could not get focused UI element")
 			return nil
 		}
 

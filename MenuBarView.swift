@@ -4,7 +4,7 @@ import SwiftUI
 struct MenuBarView: View {
 	@Bindable var audioManager: AudioManager
 	var whisperKit = WhisperKitTranscriber.shared
-	@AppStorage("globalShortcut") private var shortcutKey = "⌘⌥D"
+	@AppStorage("globalShortcut") private var shortcutKey = "⌥⌘R"
 	@AppStorage("globalCommandShortcut") private var commandShortcutKey = "⌘⌥C"
 	@AppStorage("enableTranslation") private var enableTranslation = false
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
@@ -218,7 +218,7 @@ struct MenuBarView: View {
 		.onPreferenceChange(ViewHeightKey.self) { height in
 			contentHeight = min(max(height, 400), 700)
 		}
-		.frame(width: 320, height: contentHeight)
+		.frame(width: 320, height: contentHeight, alignment: .top)
 		.background(materialStyle.material)
 		.overlay(dropZoneOverlay)
 		.overlay(alignment: .bottom) {
@@ -238,7 +238,7 @@ struct MenuBarView: View {
 			.animation(.spring(response: 0.4, dampingFraction: 0.8), value: successMessage)
 		}
 		.onDrop(
-			of: [.fileURL, .text, .plainText],
+			of: [.fileURL, .url, .text, .plainText],
 			isTargeted: Binding(
 				get: { fileDropHandler?.isDragging ?? false },
 				set: { isDragging in
@@ -253,6 +253,8 @@ struct MenuBarView: View {
 			guard let dropHandler = fileDropHandler else { return false }
 
 			let info = DropInfo(providers: providers)
+			let canAccept = dropHandler.canAccept(info)
+			guard canAccept else { return false }
 
 			// Perform async operation in the background without blocking UI
 			Task { @MainActor in
@@ -263,8 +265,7 @@ struct MenuBarView: View {
 				let _ = await dropHandler.handleDrop(info)
 			}
 
-			// Return true to indicate we can handle the drop
-			return dropHandler.canAccept(info)
+			return true
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .fileTranscriptionError)) { notification in
 			guard let message = notification.userInfo?["message"] as? String else { return }
@@ -523,8 +524,8 @@ struct StatusCardView: View {
 						// Translation toggle
 						Button(action: {
 							audioManager.enableTranslation.toggle()
-							print(
-								"🟠 StatusCardView - Translation toggled to: \(audioManager.enableTranslation)"
+							AppLogger.shared.ui.debug(
+								"StatusCardView - Translation toggled to: \(audioManager.enableTranslation)"
 							)
 						}) {
 							HStack(spacing: 2) {
@@ -557,6 +558,9 @@ struct StatusCardView: View {
 					}
 				}
 			}
+
+			// Microphone selection
+			MicrophonePickerSection(audioManager: audioManager)
 
 			// Transcription Queue section - only show if queue has items
 			if !queueManager.items.isEmpty {
@@ -1525,6 +1529,124 @@ struct NotificationBanner: View {
 				.stroke(type.color.opacity(0.3), lineWidth: 1)
 		)
 		.shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+	}
+}
+
+// MARK: - Microphone Picker
+
+struct MicrophonePickerSection: View {
+	@Bindable var audioManager: AudioManager
+	@State private var deviceManager = AudioDeviceManager.shared
+	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
+	@State private var isExpanded = false
+
+	private func isDeviceSelected(_ device: AudioInputDevice) -> Bool {
+		if selectedUID == AudioDeviceManager.systemDefaultUID {
+			return device.isDefault
+		}
+		return device.uid == selectedUID
+	}
+
+	private var activeDeviceIcon: String {
+		if selectedUID == AudioDeviceManager.systemDefaultUID {
+			return deviceManager.availableDevices.first(where: \.isDefault)?.iconName ?? "mic.fill"
+		}
+		return deviceManager.availableDevices.first(where: { $0.uid == selectedUID })?.iconName ?? "mic.fill"
+	}
+
+	var body: some View {
+		VStack(spacing: 8) {
+			Button {
+				withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+					isExpanded.toggle()
+				}
+			} label: {
+				HStack(spacing: 6) {
+					Image(systemName: "mic.fill")
+						.font(.system(size: 11))
+						.foregroundColor(.secondary)
+
+					Text("Input Device")
+						.font(.system(size: 11, weight: .medium, design: .rounded))
+						.foregroundColor(.secondary)
+
+					Spacer()
+
+					if !isExpanded {
+						Image(systemName: activeDeviceIcon)
+							.font(.system(size: 11))
+							.foregroundColor(.secondary)
+					}
+
+					Image(systemName: "chevron.down")
+						.font(.system(size: 10))
+						.foregroundColor(.secondary)
+						.rotationEffect(.degrees(isExpanded ? -180 : 0))
+				}
+				.contentShape(Rectangle())
+			}
+			.buttonStyle(.plain)
+
+			if isExpanded {
+				VStack(spacing: 2) {
+					deviceRow(
+						icon: "mic.fill",
+						name: "System Default",
+						isSelected: selectedUID == AudioDeviceManager.systemDefaultUID
+					) {
+						Task {
+							await audioManager.switchInputDevice(to: AudioDeviceManager.systemDefaultUID)
+						}
+					}
+
+					ForEach(deviceManager.availableDevices) { device in
+						deviceRow(
+							icon: device.iconName,
+							name: device.name,
+							isSelected: isDeviceSelected(device)
+						) {
+							Task {
+								await audioManager.switchInputDevice(to: device.uid)
+							}
+						}
+					}
+				}
+				.clipShape(RoundedRectangle(cornerRadius: 8))
+			.transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+			}
+		}
+	}
+
+	private func deviceRow(icon: String, name: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+		Button(action: action) {
+			HStack(spacing: 8) {
+				Image(systemName: icon)
+					.font(.system(size: 12))
+					.frame(width: 20)
+					.foregroundColor(isSelected ? .blue : .secondary)
+
+				Text(name)
+					.font(.system(size: 12, design: .rounded))
+					.foregroundColor(Color(nsColor: NSColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)))
+					.lineLimit(1)
+
+				Spacer()
+
+				if isSelected {
+					Image(systemName: "checkmark.circle.fill")
+						.font(.system(size: 14))
+						.foregroundColor(.blue)
+				}
+			}
+			.padding(.horizontal, 10)
+			.padding(.vertical, 8)
+			.background(
+				RoundedRectangle(cornerRadius: 8)
+					.fill(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+			)
+			.contentShape(Rectangle())
+		}
+		.buttonStyle(.plain)
 	}
 }
 

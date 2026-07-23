@@ -68,11 +68,51 @@ if [ -n "${SIGNING_KEYCHAIN:-}" ]; then
     KEYCHAIN_PARAM="--keychain ${SIGNING_KEYCHAIN}"
 fi
 
-codesign --force --deep --options runtime \
+# Sign inside-out: XPC services first, then frameworks, then main app.
+# --deep breaks Sparkle 2.x XPC services by stripping their entitlements.
+APP_BUNDLE="${DIST_PATH}/${APP_NAME}.app"
+
+if [ -d "$APP_BUNDLE/Contents/XPCServices" ]; then
+  echo "⚠️ Found app-level XPCServices (Sparkle 2.x incompatible). Removing..."
+  rm -rf "$APP_BUNDLE/Contents/XPCServices"
+fi
+
+SPARKLE_FRAMEWORK="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FRAMEWORK" ]; then
+  for xpc in "$SPARKLE_FRAMEWORK"/Versions/*/XPCServices/*.xpc; do
+    [ -e "$xpc" ] || continue
+    echo "  Signing Sparkle XPC service: $(basename "$xpc")"
+    codesign --force --options runtime \
+      --sign "$DEVELOPER_ID" \
+      $KEYCHAIN_PARAM \
+      "$xpc"
+  done
+
+  for helper in "$SPARKLE_FRAMEWORK"/Versions/*/Updater.app "$SPARKLE_FRAMEWORK"/Versions/*/Autoupdate; do
+    [ -e "$helper" ] || continue
+    echo "  Signing Sparkle helper: $(basename "$helper")"
+    codesign --force --options runtime \
+      --sign "$DEVELOPER_ID" \
+      $KEYCHAIN_PARAM \
+      "$helper"
+  done
+fi
+
+for framework in "$APP_BUNDLE"/Contents/Frameworks/*.framework; do
+  [ -e "$framework" ] || continue
+  echo "  Signing framework: $(basename "$framework")"
+  codesign --force --options runtime \
+    --sign "$DEVELOPER_ID" \
+    $KEYCHAIN_PARAM \
+    "$framework"
+done
+
+echo "  Signing main app bundle..."
+codesign --force --options runtime \
   --entitlements "${APP_NAME}.entitlements" \
   --sign "$DEVELOPER_ID" \
   $KEYCHAIN_PARAM \
-  "${DIST_PATH}/${APP_NAME}.app"
+  "$APP_BUNDLE"
 
 # Verify code signing
 echo "🔍 Verifying code signature..."
@@ -167,6 +207,84 @@ echo "🗜️ Zipped app: ${DIST_PATH}/${APP_NAME}.app.zip"
 # Show final file sizes
 echo "📊 Release artifacts:"
 ls -lh "${DIST_PATH}/"*.dmg "${DIST_PATH}/"*.zip 2>/dev/null || true
+
+# Get version from Info.plist
+VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "Info.plist")
+BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "Info.plist")
+
+# Rename DMG with version
+DMG_VERSIONED="${APP_NAME}-${VERSION}.dmg"
+if [ -f "${DIST_PATH}/${APP_NAME}.dmg" ]; then
+    cp "${DIST_PATH}/${APP_NAME}.dmg" "${DIST_PATH}/${DMG_VERSIONED}"
+    echo "📦 Created versioned DMG: ${DMG_VERSIONED}"
+fi
+
+# Generate Sparkle signature if private key is available
+if [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
+    echo "🔐 Generating Sparkle EdDSA signature..."
+
+    # Write private key to temp file
+    SPARKLE_KEY_FILE=$(mktemp)
+    echo "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_KEY_FILE"
+
+    # Find Sparkle sign_update tool
+    SIGN_UPDATE=""
+    for path in \
+        "./build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
+        "$(find ~/Library/Developer/Xcode/DerivedData -name 'sign_update' -type f 2>/dev/null | head -1)"; do
+        if [ -f "$path" ]; then
+            SIGN_UPDATE="$path"
+            break
+        fi
+    done
+
+		if [ -n "$SIGN_UPDATE" ]; then
+			# Sign the versioned DMG
+			SIGNATURE=$("$SIGN_UPDATE" "${DIST_PATH}/${DMG_VERSIONED}" -f "$SPARKLE_KEY_FILE" | tr -d '\r\n')
+			if [ -z "$SIGNATURE" ]; then
+				echo "⚠️ Sparkle sign_update produced empty output"
+			fi
+			echo "✅ Sparkle signature generated"
+
+        # Get file size
+        FILE_SIZE=$(stat -f%z "${DIST_PATH}/${DMG_VERSIONED}")
+
+        # Generate appcast.xml
+        DATE=$(date -R)
+        DOWNLOAD_URL="https://github.com/sapoepsilon/Whispera/releases/download/v${VERSION}/${DMG_VERSIONED}"
+
+        cat > appcast.xml << EOF
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Whispera Updates</title>
+    <link>https://github.com/sapoepsilon/Whispera/releases</link>
+    <description>Most recent updates to Whispera</description>
+    <language>en</language>
+    <item>
+      <title>Version ${VERSION}</title>
+      <pubDate>${DATE}</pubDate>
+      <sparkle:version>${BUILD}</sparkle:version>
+      <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <enclosure url="${DOWNLOAD_URL}"
+                 ${SIGNATURE}
+                 type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>
+EOF
+        echo "✅ Appcast generated: appcast.xml"
+        cat appcast.xml
+    else
+        echo "⚠️ Sparkle sign_update tool not found, skipping signature"
+    fi
+
+    # Clean up key file
+    rm -f "$SPARKLE_KEY_FILE"
+else
+    echo "⚠️ SPARKLE_PRIVATE_KEY not set, skipping Sparkle signing"
+fi
 
 echo ""
 echo "🎯 Ready for GitHub release!"

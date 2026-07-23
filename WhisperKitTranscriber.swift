@@ -12,6 +12,8 @@ import WhisperKit
 	var isInitialized = false
 	private var cancellables = Set<AnyCancellable>()
 	var isInitializing = false
+	var isWaitingForModel: Bool = false
+	var waitingForModelStatusText: String = ""
 	var isStreamingAudio: Bool = false
 	var initializationProgress: Double = 0.0
 	var initializationStatus = "Starting..."
@@ -19,6 +21,7 @@ import WhisperKit
 	var currentModel: String?
 	var downloadedModels: Set<String> = []
 	var onConfirmedTextChange: ((String) -> Void)?
+	@ObservationIgnored var onLiveAudioSamples: (@MainActor ([Float]) -> Void)?
 	var shouldShowLiveTranscriptionWindow: Bool = false
 	var isTranscribing: Bool = false
 	var decodingOptions: DecodingOptions?
@@ -42,6 +45,10 @@ import WhisperKit
 	}
 
 	func clearLiveTranscriptionState() {
+		liveStreamStartupTask?.cancel()
+		liveStreamStartupTask = nil
+		isWaitingForModel = false
+		waitingForModelStatusText = ""
 		pendingText = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
@@ -53,6 +60,129 @@ import WhisperKit
 		transcriptionTask = nil
 		lastBufferSize = 0
 		lastConfirmedSegmentCount = 0
+	}
+
+	func beginLiveTranscriptionWaitingUI() {
+		pendingText = ""
+		stableDisplayText = ""
+		lastDisplayedPendingText = ""
+		confirmedText = ""
+		shouldShowLiveTranscriptionWindow = true
+		isWaitingForModel = true
+		waitingForModelStatusText = "Waiting for model..."
+	}
+
+	private func updateWaitingStatusText() {
+		guard isWaitingForModel else { return }
+
+		if isDownloadingModel {
+			let name = downloadingModelName ?? "model"
+			let pct = Int((downloadProgress * 100.0).rounded())
+			waitingForModelStatusText = "Downloading \(name)... \(pct)%"
+			return
+		}
+
+		if isInitializing {
+			waitingForModelStatusText = initializationStatus
+			return
+		}
+
+		if isModelLoading {
+			let modelName = currentModel ?? selectedModel ?? "model"
+			let pct = Int((loadProgress * 100.0).rounded())
+			waitingForModelStatusText = "Loading \(modelName)... \(pct)%"
+			return
+		}
+
+		waitingForModelStatusText = "Waiting for model..."
+	}
+
+	private func ensureInitializedIfNeeded() async {
+		if isInitialized { return }
+		if initializationTask == nil {
+			startInitialization()
+		}
+		await initializationTask?.value
+	}
+
+	private func chooseDownloadedModelToLoad(downloaded: Set<String>) -> String? {
+		if let last = lastUsedModel, downloaded.contains(last) { return last }
+		if let selected = selectedModel, downloaded.contains(selected) { return selected }
+		let recommended = getRecommendedModels().default
+		if downloaded.contains(recommended) { return recommended }
+		return downloaded.sorted().first
+	}
+
+	private func ensureModelReadyForLiveTranscription(timeoutSeconds: TimeInterval = 30) async throws {
+		try Task.checkCancellation()
+		await ensureInitializedIfNeeded()
+		try Task.checkCancellation()
+
+		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
+		downloadedModels = refreshedDownloaded
+
+		if whisperKit == nil {
+			guard !refreshedDownloaded.isEmpty else {
+				isWaitingForModel = true
+				waitingForModelStatusText = "No model downloaded. Download one in Settings."
+				throw WhisperKitError.noModelLoaded
+			}
+
+			if let modelToLoad = chooseDownloadedModelToLoad(downloaded: refreshedDownloaded) {
+				updateWaitingStatusText()
+				try await loadModel(modelToLoad)
+			}
+		}
+
+		let start = Date()
+		while true {
+			try Task.checkCancellation()
+			updateWaitingStatusText()
+
+			if isCurrentModelLoaded() {
+				return
+			}
+
+			if Date().timeIntervalSince(start) > timeoutSeconds {
+				throw WhisperKitError.notReady
+			}
+
+			try await Task.sleep(nanoseconds: 200_000_000)
+		}
+	}
+
+	func waitForReadyForTranscription(timeoutSeconds: TimeInterval = 30) async throws {
+		try Task.checkCancellation()
+		await ensureInitializedIfNeeded()
+		try Task.checkCancellation()
+
+		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
+		downloadedModels = refreshedDownloaded
+
+		if whisperKit == nil {
+			guard !refreshedDownloaded.isEmpty else {
+				throw WhisperKitError.noModelLoaded
+			}
+
+			if let modelToLoad = chooseDownloadedModelToLoad(downloaded: refreshedDownloaded) {
+				try await loadModel(modelToLoad)
+			}
+		}
+
+		let start = Date()
+		while true {
+			try Task.checkCancellation()
+
+			if isCurrentModelLoaded() {
+				return
+			}
+
+			if Date().timeIntervalSince(start) > timeoutSeconds {
+				throw WhisperKitError.notReady
+			}
+
+			try await Task.sleep(nanoseconds: 200_000_000)
+		}
 	}
 
 	private func shouldUpdatePendingText(newText: String) -> Bool {
@@ -271,6 +401,7 @@ import WhisperKit
 
 	@MainActor var whisperKit: WhisperKit?
 	private var transcriptionTask: Task<Void, Never>?
+	@MainActor private var liveStreamStartupTask: Task<Void, Never>?
 	private var lastBufferSize: Int = 0
 	private var realtimeDelayInterval: Float = 0.3
 	@MainActor private var initializationTask: Task<Void, Never>?
@@ -302,7 +433,7 @@ import WhisperKit
 
 	func startInitialization() {
 		guard initializationTask == nil else {
-			AppLogger.shared.transcriber.log("📋 WhisperKit initialization already in progress...")
+			AppLogger.shared.transcriber.log("WhisperKit initialization already in progress...")
 			return
 		}
 
@@ -317,14 +448,14 @@ import WhisperKit
 
 	func initialize() async {
 		guard !isInitialized else {
-			AppLogger.shared.transcriber.log("📋 WhisperKit already initialized")
+			AppLogger.shared.transcriber.log("WhisperKit already initialized")
 			isInitializing = false
 			return
 		}
 		await updateProgress(0.1, "Loading WhisperKit framework...")
 		try? await Task.sleep(nanoseconds: 500_000_000)  // Small delay for UI feedback
 
-		AppLogger.shared.transcriber.log("🔄 Initializing WhisperKit framework...")
+		AppLogger.shared.transcriber.log("Initializing WhisperKit framework...")
 		await updateProgress(0.3, "Setting up AI framework...")
 
 		// Sync our cache with what's actually on disk
@@ -343,18 +474,18 @@ import WhisperKit
 					self.setupModelStateCallback(for: whisperKitInstance)
 					return whisperKitInstance
 				}.value
-				AppLogger.shared.transcriber.log("✅ WhisperKit initialized with existing models")
+				AppLogger.shared.transcriber.log("WhisperKit initialized with existing models")
 				await updateProgress(0.9, "Loading last used model...")
 				try await autoLoadLastModel()
 
 			} catch {
-				AppLogger.shared.transcriber.log("⚠️ Failed to initialize with existing models: \(error)")
+				AppLogger.shared.transcriber.log("Failed to initialize with existing models: \(error)")
 				AppLogger.shared.transcriber.log(
-					"📋 Will initialize WhisperKit when first model is downloaded")
+					"Will initialize WhisperKit when first model is downloaded")
 			}
 		} else {
 			AppLogger.shared.transcriber.log(
-				"📋 No models downloaded yet - WhisperKit will be initialized with first model download")
+				"No models downloaded yet - WhisperKit will be initialized with first model download")
 		}
 
 		await updateProgress(1.0, "Ready for model selection!")
@@ -364,32 +495,32 @@ import WhisperKit
 
 		isInitialized = true
 		isInitializing = false
-		AppLogger.shared.transcriber.log("✅ WhisperKit framework initialized - ready for transcription")
+		AppLogger.shared.transcriber.log("WhisperKit framework initialized - ready for transcription")
 		initializationTask = nil
 	}
 
 	private func autoLoadLastModel() async throws {
 		guard let lastModel = lastUsedModel else {
-			AppLogger.shared.transcriber.log("📋 No last used model found, will use default when needed")
+			AppLogger.shared.transcriber.log("No last used model found, will use default when needed")
 			return
 		}
 
 		guard downloadedModels.contains(lastModel) else {
 			AppLogger.shared.transcriber.log(
-				"⚠️ Last used model '\(lastModel)' is no longer available, clearing preference")
+				"Last used model '\(lastModel)' is no longer available, clearing preference")
 			lastUsedModel = nil
 			return
 		}
 
 		do {
-			AppLogger.shared.transcriber.log("🔄 Auto-loading last used model: \(lastModel)")
+			AppLogger.shared.transcriber.log("Auto-loading last used model: \(lastModel)")
 			try await loadModel(lastModel)
 			try await refreshAvailableModels()
-			AppLogger.shared.transcriber.log("✅ Successfully auto-loaded last used model: \(lastModel)")
+			AppLogger.shared.transcriber.log("Successfully auto-loaded last used model: \(lastModel)")
 		} catch {
 			AppLogger.shared.transcriber.log(
-				"⚠️ Failed to auto-load last used model '\(lastModel)': \(error)")
-			AppLogger.shared.transcriber.log("📋 Clearing invalid model preference")
+				"Failed to auto-load last used model '\(lastModel)': \(error)")
+			AppLogger.shared.transcriber.log("Clearing invalid model preference")
 			lastUsedModel = nil
 			throw error
 		}
@@ -417,44 +548,89 @@ import WhisperKit
 	}
 	func liveStream() async throws {
 		AppLogger.shared.transcriber.info("Starting live stream...")
-		guard isInitialized else {
-			throw WhisperKitError.notInitialized
-		}
+		beginLiveTranscriptionWaitingUI()
 
-		guard let whisperKit = whisperKit else {
-			throw WhisperKitError.notInitialized
-		}
+		liveStreamStartupTask?.cancel()
+		liveStreamStartupTask = Task { @MainActor in
+			do {
+				try await ensureModelReadyForLiveTranscription()
+				try Task.checkCancellation()
+				isWaitingForModel = false
+				waitingForModelStatusText = ""
 
-		guard isWhisperKitReady() else {
-			throw WhisperKitError.notReady
-		}
+				guard let whisperKit = whisperKit, isWhisperKitReady() else {
+					throw WhisperKitError.notReady
+				}
 
-		dictationWordTracker = DictationWordTracker()  // TODO: Make sure this is a correct way of doing it
-		dictationWordTracker?.startNewSession()
+				dictationWordTracker = DictationWordTracker()
+				dictationWordTracker?.startNewSession()
 
-		shouldShowLiveTranscriptionWindow = true
-		isTranscribing = true
-		isLiveTranscriptionMode = true
-		lastConfirmedSegmentCount = 0
+				shouldShowLiveTranscriptionWindow = true
+				isTranscribing = true
+				isLiveTranscriptionMode = true
+				lastConfirmedSegmentCount = 0
 
-		try? whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
-			Task { @MainActor in
-				guard let self = self else { return }
-				self.shouldShowLiveTranscriptionWindow = true
+				await AudioDeviceManager.shared.activateSelectedDevice()
+				let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
+				try? whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) { [weak self] samples in
+					Task { @MainActor in
+						self?.shouldShowLiveTranscriptionWindow = true
+						self?.onLiveAudioSamples?(samples)
+					}
+				}
+				realtimeLoop()
+			} catch {
+				if Task.isCancelled { return }
+				isWaitingForModel = false
+				isTranscribing = false
+				if waitingForModelStatusText.isEmpty {
+					waitingForModelStatusText = "Unable to start dictation."
+				}
+				shouldShowLiveTranscriptionWindow = true
+				AppLogger.shared.transcriber.error("Failed to start live stream: \(error)")
 			}
 		}
-		realtimeLoop()
+
+		try await liveStreamStartupTask?.value
+		liveStreamStartupTask = nil
 	}
+	func switchLiveStreamDevice() async {
+		guard isLiveTranscriptionMode, let whisperKit else { return }
+
+		await AudioDeviceManager.shared.activateSelectedDevice()
+		let newDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
+		whisperKit.audioProcessor.pauseRecording()
+
+		do {
+			try whisperKit.audioProcessor.resumeRecordingLive(inputDeviceID: newDeviceID) { [weak self] samples in
+				Task { @MainActor in
+					self?.onLiveAudioSamples?(samples)
+				}
+			}
+			let deviceName = newDeviceID.flatMap { id -> String? in
+				AudioDeviceManager.shared.availableDevices.first(where: { $0.id == id })?.name
+			} ?? "System Default"
+			AppLogger.shared.transcriber.info("Switched live stream device to: \(deviceName)")
+		} catch {
+			AppLogger.shared.transcriber.error("Failed to switch live stream device: \(error)")
+		}
+	}
+
 	func stopLiveStream() {
+		liveStreamStartupTask?.cancel()
+		liveStreamStartupTask = nil
+		isWaitingForModel = false
+		waitingForModelStatusText = ""
 		isTranscribing = false
 		shouldShowLiveTranscriptionWindow = false
 		whisperKit?.audioProcessor.stopRecording()
+		AudioDeviceManager.shared.restoreSystemDefault()
 
 		confirmPendingText()
 		isLiveTranscriptionMode = false
 		dictationWordTracker?.endSession()
 		transcriptionTask?.cancel()
-		AppLogger.shared.transcriber.info("🛑 Live streaming stopped")
+		AppLogger.shared.transcriber.info("Live streaming stopped")
 	}
 	private func realtimeLoop() {
 		transcriptionTask = Task {
@@ -503,11 +679,11 @@ import WhisperKit
 				.map { $0.text.trimmingCharacters(in: .whitespaces) }
 				.joined(separator: " ")
 
-			print(
-				"📝 Transcription received: \(segments.count) segments, full text: '\(fullTranscriptionText)'"
+			AppLogger.shared.transcriber.debug(
+				"Transcription received: \(segments.count) segments, full text: '\(fullTranscriptionText)'"
 			)
-			print(
-				"📝 Current state: confirmedText.count=\(confirmedText.count), pendingText='\(pendingText)'")
+			AppLogger.shared.transcriber.debug(
+				"Current state: confirmedText.count=\(confirmedText.count), pendingText='\(pendingText)'")
 
 			let requiredSegmentsForConfirmation = 2
 
@@ -527,7 +703,7 @@ import WhisperKit
 						.map { $0.text.trimmingCharacters(in: .whitespaces) }
 						.joined(separator: " ")
 
-					print("📝 New segments to confirm: \(newSegmentsToConfirm), text: '\(newConfirmedText)'")
+					AppLogger.shared.transcriber.debug("New segments to confirm: \(newSegmentsToConfirm), text: '\(newConfirmedText)'")
 
 					if !newConfirmedText.isEmpty {
 						let updatedConfirmedText: String
@@ -540,8 +716,8 @@ import WhisperKit
 						lastConfirmedSegmentCount = numberOfSegmentsToConfirm
 					}
 				} else {
-					print(
-						"📝 No new segments to confirm (already confirmed \(lastConfirmedSegmentCount) segments)"
+					AppLogger.shared.transcriber.debug(
+						"No new segments to confirm (already confirmed \(lastConfirmedSegmentCount) segments)"
 					)
 				}
 				let remainingSegments = Array(segments.suffix(requiredSegmentsForConfirmation))
@@ -584,7 +760,7 @@ import WhisperKit
 
 		guard let options = decodingOptions else {
 			AppLogger.shared.transcriber.log(
-				"⚠️ Decoding options not initialized, creating default options")
+				"Decoding options not initialized, creating default options")
 			return nil
 		}
 
@@ -609,7 +785,7 @@ import WhisperKit
 				|| errorString.contains("beyond the end of the multi array")
 			{
 				AppLogger.shared.transcriber.log(
-					"⚠️ Array bounds error detected, retrying with smaller sampleLength")
+					"Array bounds error detected, retrying with smaller sampleLength")
 
 				// Retry with a smaller sampleLength
 				let fallbackOptions = DecodingOptions(
@@ -718,7 +894,7 @@ import WhisperKit
 		}
 
 		AppLogger.shared.transcriber.log(
-			"🔧 Updated decoding options - temperature: \(self.savedTemperature), sampleLength: \(self.savedSampleLength)"
+			"Updated decoding options - temperature: \(self.savedTemperature), sampleLength: \(self.savedSampleLength)"
 		)
 
 		// Recreate decoding options with updated values
@@ -736,17 +912,17 @@ import WhisperKit
 	// MARK: - Dynamic Settings Management
 	func reloadCurrentModelIfNeeded() async throws {
 		guard let currentModel = currentModel else {
-			AppLogger.shared.transcriber.log("📋 No current model to reload")
+			AppLogger.shared.transcriber.log("No current model to reload")
 			return
 		}
-		AppLogger.shared.transcriber.log("🔄 Reloading current model: \(currentModel)")
+		AppLogger.shared.transcriber.log("Reloading current model: \(currentModel)")
 		try await loadModel(currentModel)
 	}
 
 	func updateLanguageSettings(_ newLanguage: String) {
 		let oldLanguage = selectedLanguage
 		selectedLanguage = newLanguage
-		AppLogger.shared.transcriber.log("🔧 Updated language: \(oldLanguage) -> \(newLanguage)")
+		AppLogger.shared.transcriber.log("Updated language: \(oldLanguage) -> \(newLanguage)")
 		// Update decoding options with new language
 		updateDecodingOptionsForTranslation(
 			enableTranslation: enableTranslation ?? false
@@ -756,7 +932,7 @@ import WhisperKit
 	func updateDecodingOptionsForTranslation(enableTranslation: Bool) {
 		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
 		AppLogger.shared.transcriber.log(
-			"🔧 Updated decoding options for translation mode: \(enableTranslation ? "enabled" : "disabled")"
+			"Updated decoding options for translation mode: \(enableTranslation ? "enabled" : "disabled")"
 		)
 	}
 
@@ -772,7 +948,7 @@ import WhisperKit
 			usePrefillPrompt: usePrefillPrompt,
 			usePrefillCache: usePrefillCache
 		)
-		AppLogger.shared.transcriber.log("🔧 Updated transcription quality settings")
+		AppLogger.shared.transcriber.log("Updated transcription quality settings")
 	}
 
 	func updateAdvancedSettings(
@@ -785,7 +961,7 @@ import WhisperKit
 			withoutTimestamps: withoutTimestamps,
 			wordTimestamps: wordTimestamps
 		)
-		AppLogger.shared.transcriber.log("🔧 Updated advanced transcription settings")
+		AppLogger.shared.transcriber.log("Updated advanced transcription settings")
 	}
 
 	private func getModelSpecificSampleLength() -> Int {
@@ -803,7 +979,7 @@ import WhisperKit
 		savedSkipSpecialTokens = true
 		savedWithoutTimestamps = false
 		savedWordTimestamps = true
-		AppLogger.shared.transcriber.log("🔄 Reset all decoding options to defaults")
+		AppLogger.shared.transcriber.log("Reset all decoding options to defaults")
 	}
 
 	private enum TranscriptionInput {
@@ -814,17 +990,8 @@ import WhisperKit
 	private func performTranscription(
 		input: TranscriptionInput, enableTranslation: Bool, logPrefix: String
 	) async throws -> String {
-		guard isInitialized else {
-			throw WhisperKitError.notInitialized
-		}
-
-		guard whisperKit != nil else {
-			throw WhisperKitError.noModelLoaded
-		}
-
-		guard isWhisperKitReady() else {
-			throw WhisperKitError.notReady
-		}
+		try await waitForReadyForTranscription()
+		guard isWhisperKitReady() else { throw WhisperKitError.notReady }
 		let maxRetries = 3
 		var lastError: Error?
 		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
@@ -856,14 +1023,14 @@ import WhisperKit
 
 					if !transcription.isEmpty {
 						AppLogger.shared.transcriber.log(
-							"✅ WhisperKit \(logPrefix) transcription completed: \(transcription)")
+							"WhisperKit \(logPrefix) transcription completed: \(transcription)")
 						return transcription
 					} else {
-						AppLogger.shared.transcriber.log("⚠️ Transcription returned empty text")
+						AppLogger.shared.transcriber.log("Transcription returned empty text")
 						return "No speech detected"
 					}
 				} else {
-					AppLogger.shared.transcriber.log("⚠️ No transcription segments returned")
+					AppLogger.shared.transcriber.log("No transcription segments returned")
 					return "No speech detected"
 				}
 
@@ -875,7 +1042,7 @@ import WhisperKit
 					|| errorString.contains("beyond the end of the multi array")
 				{
 					AppLogger.shared.transcriber.log(
-						"⚠️ Array bounds error detected, retrying with smaller sampleLength")
+						"Array bounds error detected, retrying with smaller sampleLength")
 
 					let fallbackOptions = DecodingOptions(
 						verbose: false,
@@ -912,34 +1079,34 @@ import WhisperKit
 								.trimmingCharacters(in: .whitespacesAndNewlines)
 							if !transcription.isEmpty {
 								AppLogger.shared.transcriber.log(
-									"✅ WhisperKit \(logPrefix) transcription completed with fallback: \(transcription)")
+									"WhisperKit \(logPrefix) transcription completed with fallback: \(transcription)")
 								return transcription
 							}
 						}
 						return "No speech detected"
 					} catch {
 						AppLogger.shared.transcriber.log(
-							"❌ Fallback transcription also failed: \(error)")
+							"Fallback transcription also failed: \(error)")
 						throw WhisperKitError.transcriptionFailed(error.localizedDescription)
 					}
 				} else if errorString.contains("Failed to open resource file")
 					|| errorString.contains("MPSGraphComputePackage") || errorString.contains("Metal")
 				{
 					AppLogger.shared.transcriber.log(
-						"⚠️ Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
+						"Attempt \(attempt)/\(maxRetries) failed with MPS error: \(error)")
 
 					if attempt < maxRetries {
 						let delayNanoseconds = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
 						AppLogger.shared.transcriber.log(
-							"⏳ Waiting \(delayNanoseconds / 1_000_000_000)s before retry...")
+							"Waiting \(delayNanoseconds / 1_000_000_000)s before retry...")
 						try? await Task.sleep(nanoseconds: delayNanoseconds)
 
-						AppLogger.shared.transcriber.log("🔄 Allowing MPS to reinitialize...")
+						AppLogger.shared.transcriber.log("Allowing MPS to reinitialize...")
 						try? await Task.sleep(nanoseconds: 1_000_000_000)
 					}
 				} else {
 					AppLogger.shared.transcriber.log(
-						"❌ WhisperKit \(logPrefix) transcription failed with non-retryable error: \(error)")
+						"WhisperKit \(logPrefix) transcription failed with non-retryable error: \(error)")
 					break
 				}
 			}
@@ -989,12 +1156,12 @@ import WhisperKit
 
 	func transcribeAudioArray(_ audioArray: [Float], enableTranslation: Bool) async throws -> String {
 		guard !audioArray.isEmpty else {
-			AppLogger.shared.transcriber.log("⚠️ Empty audio array provided")
+			AppLogger.shared.transcriber.log("Empty audio array provided")
 			return "No audio data provided"
 		}
 
 		AppLogger.shared.transcriber.log(
-			"🎵 Starting audio array transcription with \(audioArray.count) samples")
+			"Starting audio array transcription with \(audioArray.count) samples")
 
 		return try await performTranscription(
 			input: .audioArray(audioArray),
@@ -1006,7 +1173,7 @@ import WhisperKit
 	// MARK: - File Transcription Methods
 
 	func transcribeFile(at url: URL, enableTranslation: Bool = false) async throws -> String {
-		AppLogger.shared.transcriber.log("📁 Starting file transcription for: \(url.lastPathComponent)")
+		AppLogger.shared.transcriber.log("Starting file transcription for: \(url.lastPathComponent)")
 
 		return try await performTranscription(
 			input: .audioPath(url.path),
@@ -1019,15 +1186,9 @@ import WhisperKit
 		-> [TranscriptionSegment]
 	{
 		AppLogger.shared.transcriber.log(
-			"📁⏱️ Starting timestamped file transcription for: \(url.lastPathComponent)")
-
-		guard isInitialized else {
-			throw WhisperKitError.notInitialized
-		}
-
-		guard let whisperKitInstance = whisperKit else {
-			throw WhisperKitError.notInitialized
-		}
+			"Starting timestamped file transcription for: \(url.lastPathComponent)")
+		try await waitForReadyForTranscription()
+		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
 		let decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
 
@@ -1058,10 +1219,10 @@ import WhisperKit
 			}
 
 			AppLogger.shared.transcriber.log(
-				"✅ WhisperKit file transcription completed with \(allSegments.count) segments")
+				"WhisperKit file transcription completed with \(allSegments.count) segments")
 			return allSegments
 		} else {
-			AppLogger.shared.transcriber.log("⚠️ No transcription segments returned")
+			AppLogger.shared.transcriber.log("No transcription segments returned")
 			return []
 		}
 	}
@@ -1070,7 +1231,7 @@ import WhisperKit
 		at url: URL, startTime: Double, endTime: Double, enableTranslation: Bool = false
 	) async throws -> String {
 		AppLogger.shared.transcriber.log(
-			"📁✂️ Starting segment transcription for: \(url.lastPathComponent) [\(startTime)s - \(endTime)s]"
+			"Starting segment transcription for: \(url.lastPathComponent) [\(startTime)s - \(endTime)s]"
 		)
 
 		guard startTime < endTime else {
@@ -1079,13 +1240,8 @@ import WhisperKit
 				userInfo: [NSLocalizedDescriptionKey: "Invalid time range"])
 		}
 
-		guard isInitialized else {
-			throw WhisperKitError.notInitialized
-		}
-
-		guard let whisperKitInstance = whisperKit else {
-			throw WhisperKitError.notInitialized
-		}
+		try await waitForReadyForTranscription()
+		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
 		var decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
 
@@ -1107,21 +1263,21 @@ import WhisperKit
 
 			if !transcription.isEmpty {
 				AppLogger.shared.transcriber.log(
-					"✅ WhisperKit segment transcription completed: \(transcription)")
+					"WhisperKit segment transcription completed: \(transcription)")
 				return transcription
 			} else {
-				AppLogger.shared.transcriber.log("⚠️ Segment transcription returned empty text")
+				AppLogger.shared.transcriber.log("Segment transcription returned empty text")
 				return "No speech detected in segment"
 			}
 		} else {
-			AppLogger.shared.transcriber.log("⚠️ No transcription segments returned for segment")
+			AppLogger.shared.transcriber.log("No transcription segments returned for segment")
 			return "No speech detected in segment"
 		}
 	}
 
 	func switchModel(to model: String) async throws {
 		if let existingTask = modelOperationTask {
-			AppLogger.shared.transcriber.log("⏳ Waiting for existing model operation to complete...")
+			AppLogger.shared.transcriber.log("Waiting for existing model operation to complete...")
 			try await existingTask.value
 		}
 
@@ -1150,14 +1306,14 @@ import WhisperKit
 			throw WhisperKitError.modelNotFound(model)
 		}
 
-		AppLogger.shared.transcriber.log("🔄 Switching to model: \(model)")
+		AppLogger.shared.transcriber.log("Switching to model: \(model)")
 
 		// Check if model is already downloaded
 		let currentlyDownloadedModels = try await getDownloadedModels()
 		downloadedModels = currentlyDownloadedModels
 
 		if !currentlyDownloadedModels.contains(model) {
-			AppLogger.shared.transcriber.log("📥 Model \(model) not found locally, downloading first...")
+			AppLogger.shared.transcriber.log("Model \(model) not found locally, downloading first...")
 			try await performDownloadModel(model)
 			return  // downloadModel already creates the WhisperKit instance
 		}
@@ -1192,7 +1348,7 @@ import WhisperKit
 
 		// Check if the models directory exists
 		guard FileManager.default.fileExists(atPath: baseDir.path) else {
-			AppLogger.shared.transcriber.log("📝 WhisperKit models directory doesn't exist yet")
+			AppLogger.shared.transcriber.log("WhisperKit models directory doesn't exist yet")
 			return Set<String>()
 		}
 
@@ -1212,7 +1368,7 @@ import WhisperKit
 			return modelNames
 
 		} catch {
-			AppLogger.shared.transcriber.log("❌ Error reading WhisperKit models directory: \(error)")
+			AppLogger.shared.transcriber.log("Error reading WhisperKit models directory: \(error)")
 			throw error
 		}
 	}
@@ -1229,10 +1385,10 @@ import WhisperKit
 			availableModels = uniqueModels
 
 			AppLogger.shared.transcriber.log(
-				"✅ Refreshed available models: \(self.availableModels.count) unique models")
+				"Refreshed available models: \(self.availableModels.count) unique models")
 		} catch {
 			AppLogger.shared.transcriber.log(
-				"❌ Failed to refresh available models, using defaults: \(error)")
+				"Failed to refresh available models, using defaults: \(error)")
 			// Fallback to defaults instead of throwing
 			availableModels = [
 				"openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small",
@@ -1279,7 +1435,7 @@ import WhisperKit
 	func downloadModel(_ modelName: String) async throws {
 		// Check if there's already a model operation in progress
 		if let existingTask = modelOperationTask {
-			AppLogger.shared.transcriber.log("⏳ Waiting for existing model operation to complete...")
+			AppLogger.shared.transcriber.log("Waiting for existing model operation to complete...")
 			try await existingTask.value
 		}
 
@@ -1315,14 +1471,14 @@ import WhisperKit
 						progress.fractionCompleted, "Downloading \(modelName)...")
 				}
 			}
-			AppLogger.shared.transcriber.log("📥 Model downloaded to: \(downloadedFolder)")
+			AppLogger.shared.transcriber.log("Model downloaded to: \(downloadedFolder)")
 
 			downloadedModels.insert(modelName)
 			try await loadModel(modelName)
-			AppLogger.shared.transcriber.log("✅ Successfully downloaded and loaded model: \(modelName)")
+			AppLogger.shared.transcriber.log("Successfully downloaded and loaded model: \(modelName)")
 
 		} catch {
-			AppLogger.shared.transcriber.log("❌ Failed to download model \(modelName): \(error)")
+			AppLogger.shared.transcriber.log("Failed to download model \(modelName): \(error)")
 			throw error
 		}
 
@@ -1339,7 +1495,7 @@ import WhisperKit
 			await updateLoadProgress(0.2, "Preparing to load \(modelName)...")
 
 			let recommendedModels = WhisperKit.recommendedModels()
-			AppLogger.shared.transcriber.debug("👂🏼 Recommended models: \(recommendedModels)")
+			AppLogger.shared.transcriber.debug("Recommended models: \(recommendedModels)")
 
 			await updateLoadProgress(0.6, "Loading \(modelName)...")
 			whisperKit = try await Task { @MainActor in
@@ -1366,11 +1522,11 @@ import WhisperKit
 			await updateLoadProgress(1.0, "Model ready!")
 
 			AppLogger.shared.transcriber.log(
-				"✅ Successfully loaded model: \(modelName) with sampleLength: \(self.getModelSpecificSampleLength()) (saved as last used)"
+				"Successfully loaded model: \(modelName) with sampleLength: \(self.getModelSpecificSampleLength()) (saved as last used)"
 			)
 
 		} catch {
-			AppLogger.shared.transcriber.log("❌ Failed to load model \(modelName): \(error)")
+			AppLogger.shared.transcriber.log("Failed to load model \(modelName): \(error)")
 			throw WhisperKitError.transcriptionFailed(
 				"Failed to load model: \(error.localizedDescription)")
 		}
@@ -1403,7 +1559,7 @@ import WhisperKit
 			// Buffer is already zeroed (silent)
 			try audioFile.write(from: silentBuffer)
 		} catch {
-			AppLogger.shared.transcriber.log("⚠️ Failed to create silent audio file: \(error)")
+			AppLogger.shared.transcriber.log("Failed to create silent audio file: \(error)")
 		}
 
 		return audioURL
@@ -1478,7 +1634,7 @@ import WhisperKit
 	func clearDownloadedModelsCache() {
 		downloadedModels.removeAll()
 		UserDefaults.standard.removeObject(forKey: "downloadedModels")
-		AppLogger.shared.transcriber.log("🗑️ Cleared downloaded models cache")
+		AppLogger.shared.transcriber.log("Cleared downloaded models cache")
 	}
 
 	// MARK: - WhisperKit Model State Management
@@ -1500,7 +1656,7 @@ import WhisperKit
 		isModelLoaded = (newState == .loaded || newState == .prewarmed)
 
 		AppLogger.shared.transcriber.log(
-			"🎯 WhisperKit model state changed: \(oldState.map(String.init(describing:)) ?? "nil") -> \(stateString)"
+			"WhisperKit model state changed: \(oldState.map(String.init(describing:)) ?? "nil") -> \(stateString)"
 		)
 
 		// Post notification for other parts of the app
@@ -1552,24 +1708,24 @@ import WhisperKit
 	}
 
 	private func handleLanguageSettingsChanged() {
-		AppLogger.shared.transcriber.log("🔄 Language changed to: \(self.selectedLanguage)")
+		AppLogger.shared.transcriber.log("Language changed to: \(self.selectedLanguage)")
 
 		decodingOptions = createDecodingOptions(
 			enableTranslation: enableTranslation ?? false
 		)
 		AppLogger.shared.transcriber.log(
-			"✅ Updated live transcription language to: \(self.selectedLanguage)")
+			"Updated live transcription language to: \(self.selectedLanguage)")
 
 	}
 
 	private func handleTranslationSettingsChanged() {
 		AppLogger.shared.transcriber.log(
-			"🔄 Translation mode changed to: \(self.enableTranslation ?? false)")
+			"Translation mode changed to: \(self.enableTranslation ?? false)")
 
 		// Update decoding options if we're actively transcribing
 		if isTranscribing && isLiveTranscriptionMode {
 			updateDecodingOptionsForTranslation(enableTranslation: self.enableTranslation ?? false)
-			AppLogger.shared.transcriber.log("✅ Updated live transcription translation mode")
+			AppLogger.shared.transcriber.log("Updated live transcription translation mode")
 		}
 	}
 

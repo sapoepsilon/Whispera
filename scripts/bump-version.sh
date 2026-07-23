@@ -33,12 +33,15 @@ fi
 
 IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-CURRENT_BUILD=$(grep -A1 "CFBundleVersion" "$INFO_PLIST" | grep "<string>" | sed 's/.*<string>\(.*\)<\/string>/\1/' | tr -d '\t' | tr -d ' ')
-if [[ "$CURRENT_BUILD" =~ ^[0-9]+$ ]]; then
-    BUILD_NUMBER=$((CURRENT_BUILD + 1))
+if [ -n "$GITHUB_RUN_NUMBER" ]; then
+    BUILD_NUMBER="$GITHUB_RUN_NUMBER"
 else
-    echo "⚠️ Could not parse current build number, using patch version as build number"
-    BUILD_NUMBER="$PATCH"
+    CURRENT_BUILD=$(grep -A1 "CFBundleVersion" "$INFO_PLIST" | grep "<string>" | sed 's/.*<string>\(.*\)<\/string>/\1/' | tr -d '\t' | tr -d ' ')
+    if [[ "$CURRENT_BUILD" =~ ^[0-9]+$ ]]; then
+        BUILD_NUMBER=$((CURRENT_BUILD + 1))
+    else
+        BUILD_NUMBER="$PATCH"
+    fi
 fi
 
 echo "📋 Version components:"

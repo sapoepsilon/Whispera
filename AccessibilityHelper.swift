@@ -1,9 +1,9 @@
 import AppKit
 import ApplicationServices
 
-/// Shared utility for accessibility-based caret position detection
 @MainActor
 class AccessibilityHelper {
+	private static let logger = AppLogger.shared.general
 	static var caretPosition: NSPoint? {
 		didSet {
 			onCaretChange?(caretPosition)
@@ -14,7 +14,7 @@ class AccessibilityHelper {
 	/// Get the current caret position in screen coordinates
 	static func getCaretPosition() -> NSPoint? {
 		guard AXIsProcessTrusted() else {
-			print("❌ App doesn't have accessibility permissions")
+			logger.error("App doesn't have accessibility permissions")
 			return nil
 		}
 		return tryDirectFocusedElementMethod()
@@ -24,7 +24,7 @@ class AccessibilityHelper {
 	static func requestAccessibilityPermissions() {
 		let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true]
 		let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
-		print("🔐 Accessibility permissions: \(trusted)")
+		logger.info("Accessibility permissions: \(trusted)")
 	}
 
 	/// Check if accessibility permissions are granted
@@ -44,7 +44,7 @@ class AccessibilityHelper {
 			AXUIElementCopyAttributeValue(
 				system, kAXFocusedApplicationAttribute as CFString, &application) == .success
 		else {
-			print("❌ Could not get focused application")
+			logger.error("Could not get focused application")
 			return nil
 		}
 
@@ -54,7 +54,7 @@ class AccessibilityHelper {
 				application! as! AXUIElement, kAXFocusedUIElementAttribute as CFString, &focusedElement)
 				== .success
 		else {
-			print("❌ Could not get focused UI element")
+			logger.error("Could not get focused UI element")
 			return nil
 		}
 

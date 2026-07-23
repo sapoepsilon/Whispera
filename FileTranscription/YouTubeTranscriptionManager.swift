@@ -54,7 +54,7 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 				let result = try await transcribeFile(at: url)
 				results.append(result)
 			} catch {
-				logger.error("❌ Failed to transcribe \(url.absoluteString): \(error.localizedDescription)")
+				logger.error("Failed to transcribe \(url.absoluteString): \(error.localizedDescription)")
 				results.append("Error: \(error.localizedDescription)")
 			}
 		}
@@ -81,7 +81,7 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 	}
 
 	func cancelTranscription() {
-		logger.info("🛑 Cancelling YouTube transcription")
+		logger.info("Cancelling YouTube transcription")
 		currentTask?.cancel()
 		currentTask = nil
 		networkDownloader.cancelDownload()
@@ -101,7 +101,11 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 
 	// MARK: - YouTubeTranscriptionCapable Methods
 	func transcribeYouTubeURL(_ url: URL) async throws -> String {
-		logger.info("🎬 Starting YouTube transcription for: \(url.absoluteString)")
+		return try await transcribeYouTubeURL(url, prefetchedInfo: nil)
+	}
+
+	func transcribeYouTubeURL(_ url: URL, prefetchedInfo: YouTubeVideoInfo?) async throws -> String {
+		logger.info("Starting YouTube transcription for: \(url.absoluteString)")
 		guard isYouTubeURL(url) else {
 			throw YouTubeTranscriptionError.invalidYouTubeURL
 		}
@@ -115,12 +119,15 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 		}
 
 		do {
-			// Step 1: Get video info (10% progress)
-			progress = 0.1
-			let info = try await getVideoInfo(url)
-			videoInfo = info
-			currentFileName = info.title
-			// Step 2: Extract audio stream URL (20% progress)
+			if let info = prefetchedInfo {
+				videoInfo = info
+				currentFileName = info.title
+			} else {
+				progress = 0.1
+				let info = try await getVideoInfo(url)
+				videoInfo = info
+				currentFileName = info.title
+			}
 			progress = 0.2
 			let audioStreamURL = try await extractAudioStreamURL(from: url, quality: preferredQuality)
 			// Step 3: Download audio file (20% -> 70% progress)
@@ -142,7 +149,7 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 	}
 
 	func transcribeYouTubeURLWithTimestamps(_ url: URL) async throws -> [TranscriptionSegment] {
-		logger.info("🎬⏱️ Starting timestamped YouTube transcription for: \(url.absoluteString)")
+		logger.info("Starting timestamped YouTube transcription for: \(url.absoluteString)")
 
 		guard isYouTubeURL(url) else {
 			throw YouTubeTranscriptionError.invalidYouTubeURL
@@ -192,7 +199,7 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 	func transcribeYouTubeSegment(_ url: URL, from startTime: TimeInterval, to endTime: TimeInterval)
 		async throws -> String
 	{
-		logger.info("🎬✂️ Starting YouTube segment transcription [\(startTime)s - \(endTime)s]")
+		logger.info("Starting YouTube segment transcription [\(startTime)s - \(endTime)s]")
 
 		guard isYouTubeURL(url) else {
 			throw YouTubeTranscriptionError.invalidYouTubeURL
@@ -248,7 +255,7 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 	}
 
 	func getVideoInfo(_ url: URL) async throws -> YouTubeVideoInfo {
-		logger.info("📺 Getting video info for: \(url.absoluteString)")
+		logger.info("Getting video info for: \(url.absoluteString)")
 
 		guard isYouTubeURL(url) else {
 			throw YouTubeTranscriptionError.invalidYouTubeURL
@@ -261,18 +268,19 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 		logger.info("🆔 Extracted video ID: \(videoID)")
 
 		do {
-			let youtube = YouTube(videoID: videoID)
+			let youtube = YouTube(videoID: videoID, methods: [.local, .remote])
 			let metadata = try await youtube.metadata
 			let info = YouTubeVideoInfo(
 				title: metadata?.title ?? "YouTube Video (\(videoID))",
 				duration: 300.0,
-				thumbnailURL: URL(string: "https://img.youtube.com/vi/\(videoID)/maxresdefault.jpg"),
+				thumbnailURL: metadata?.thumbnail?.url
+					?? URL(string: "https://img.youtube.com/vi/\(videoID)/maxresdefault.jpg"),
 				videoID: videoID
 			)
-			logger.info("✅ Retrieved video info: '\(info.title)', duration: \(info.duration)s")
+			logger.info("Retrieved video info: '\(info.title)', duration: \(info.duration)s")
 			return info
 		} catch {
-			logger.error("❌ Failed to get video info: \(error.localizedDescription)")
+			logger.error("Failed to get video info: \(error.localizedDescription)")
 			throw YouTubeTranscriptionError.videoInfoRetrievalFailed
 		}
 	}
@@ -285,59 +293,69 @@ class YouTubeTranscriptionManager: YouTubeTranscriptionCapable {
 	}
 
 	private func extractVideoID(from url: URL) -> String? {
-		if url.host == "youtu.be" {
-			return url.lastPathComponent
+		let host = url.host?.lowercased() ?? ""
+
+		if host == "youtu.be" {
+			let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+			return path.isEmpty ? nil : String(path.prefix(11))
 		}
+
 		if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-			let queryItems = components.queryItems
+			let videoID = components.queryItems?.first(where: { $0.name == "v" })?.value,
+			!videoID.isEmpty
 		{
-			return queryItems.first { $0.name == "v" }?.value
+			return videoID
 		}
+
+		let pathComponents = url.pathComponents
+		if let pathIndex = pathComponents.firstIndex(where: {
+			["shorts", "embed", "live", "v"].contains($0)
+		}),
+			pathComponents.index(after: pathIndex) < pathComponents.endIndex
+		{
+			return pathComponents[pathComponents.index(after: pathIndex)]
+		}
+
 		return nil
 	}
 
 	private func extractAudioStreamURL(from youtubeURL: URL, quality: YouTubeQuality) async throws
 		-> URL
 	{
-		logger.info("🎵 Extracting audio stream URL with quality: \(quality.rawValue)")
+		logger.info("Extracting audio stream URL with quality: \(quality.rawValue)")
 		guard let videoID = extractVideoID(from: youtubeURL) else {
 			throw YouTubeTranscriptionError.videoIDExtractionFailed
 		}
 
 		do {
-			let youtube = YouTube(videoID: videoID)
+			let youtube = YouTube(videoID: videoID, methods: [.local, .remote])
 			let streams = try await youtube.streams
-			let audioStreams = streams.filter { stream in
-				stream.includesAudioTrack && !stream.includesVideoTrack
+			let audioStreams = streams.filterAudioOnly()
+
+			let selectedStream: YouTubeKit.Stream?
+			switch quality {
+			case .high:
+				selectedStream = audioStreams.highestAudioBitrateStream()
+			case .medium, .low:
+				selectedStream = audioStreams.lowestAudioBitrateStream()
 			}
 
-			let sortedStreams = audioStreams.sorted { stream1, stream2 in
-				let bitrate1 = stream1.bitrate ?? 0
-				let bitrate2 = stream2.bitrate ?? 0
-
-				switch quality {
-				case .high:
-					return bitrate1 > bitrate2
-				case .medium, .low:
-					return abs(bitrate1 - 128) < abs(bitrate2 - 128)  // Prefer ~128kbps
-				}
-			}
-
-			guard let selectedStream = sortedStreams.first else {
+			guard let selectedStream else {
 				throw YouTubeTranscriptionError.audioExtractionFailed
 			}
-			let streamURL = selectedStream.url
-			logger.info("✅ Selected audio stream: bitrate \(selectedStream.bitrate ?? 0)")
-			return streamURL
+			logger.info("Selected audio stream: bitrate \(selectedStream.bitrate ?? 0)")
+			return selectedStream.url
 
+		} catch let error as YouTubeTranscriptionError {
+			throw error
 		} catch {
-			logger.error("❌ Failed to extract audio stream: \(error.localizedDescription)")
+			logger.error("Failed to extract audio stream: \(error.localizedDescription)")
 			throw YouTubeTranscriptionError.audioExtractionFailed
 		}
 	}
 
 	private func downloadAudioStream(from streamURL: URL) async throws -> URL {
-		logger.info("⬇️ Downloading audio stream using chunked download for optimal speed")
+		logger.info("Downloading audio stream using chunked download for optimal speed")
 		// Use chunked download for YouTube streams to improve speed significantly
 		// Pass video title if available for better filename
 		let preferredName = videoInfo?.title

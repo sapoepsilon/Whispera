@@ -124,6 +124,9 @@ dist/
 *.p12
 *.cer
 
+# Serverless
+.serverless/
+
 # Claude
 .mcp.json
 plans/

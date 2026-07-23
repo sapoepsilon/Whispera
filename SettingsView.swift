@@ -55,7 +55,7 @@ struct SettingRow<Content: View>: View {
 	}
 
 	var body: some View {
-		HStack {
+		HStack(spacing: 12) {
 			VStack(alignment: .leading, spacing: 2) {
 				Text(label)
 					.font(.subheadline)
@@ -63,10 +63,12 @@ struct SettingRow<Content: View>: View {
 					Text(description)
 						.font(.caption)
 						.foregroundColor(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
 				}
 			}
-			Spacer()
+			.frame(maxWidth: .infinity, alignment: .leading)
 			content
+				.layoutPriority(1)
 		}
 	}
 }
@@ -108,6 +110,7 @@ struct InfoBox<Content: View>: View {
 				.foregroundColor(style.color)
 				.imageScale(.medium)
 			content
+				.fixedSize(horizontal: false, vertical: true)
 				.frame(maxWidth: .infinity, alignment: .leading)
 		}
 		.padding(12)
@@ -123,7 +126,7 @@ struct InfoBox<Content: View>: View {
 }
 
 struct SettingsView: View {
-	@AppStorage("globalShortcut") private var globalShortcut = "⌘⌥D"
+	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
 	@AppStorage("selectedModel") private var selectedModel = ""
 	@AppStorage("autoDownloadModel") private var autoDownloadModel = true
 	@AppStorage("soundFeedback") private var soundFeedback = true
@@ -131,13 +134,16 @@ struct SettingsView: View {
 	@AppStorage("stopSound") private var stopSound = "Pop"
 	@AppStorage("launchAtStartup") private var launchAtStartup = false
 	@AppStorage("enableTranslation") private var enableTranslation = false
-	@AppStorage("enableStreaming") private var enableStreaming = false
+	@AppStorage("enableStreaming") private var enableStreaming = Constants.enableStreamingDefault
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
 	@AppStorage("autoDetectLanguageFromKeyboard") private var autoDetectLanguageFromKeyboard = true
 	@AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
 	@AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
+	@AppStorage("enableRecordingGlow") private var enableRecordingGlow = true
+	@AppStorage(RecordingGlowColor.key) private var recordingGlowColorHex = RecordingGlowColor
+		.defaultHex
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
 
 	private var materialStyle: MaterialStyle {
@@ -169,6 +175,7 @@ struct SettingsView: View {
 	@State var permissionManager: PermissionManager
 	@State var updateManager: UpdateManager
 	@State var appLibraryManager: AppLibraryManager
+	@ObservedObject var softwareUpdater: SoftwareUpdater
 	@State var whisperKit = WhisperKitTranscriber.shared
 	@State private var availableModels: [String] = []
 	@State private var isRecordingShortcut = false
@@ -180,6 +187,7 @@ struct SettingsView: View {
 	@State private var showingLLMSettings = false
 	@State private var showingToolsSettings = false
 	@State private var showingSafetySettings = false
+	@State private var showingUpdaterError = false
 	@State private var showingNoUpdateAlert = false
 	@State private var showingStorageDetails = false
 	@State private var showingClearAllConfirmation = false
@@ -205,97 +213,37 @@ struct SettingsView: View {
 							VStack(alignment: .leading, spacing: 2) {
 								Text("Whispera")
 									.font(.headline)
-								Text(AppVersion.current.versionString)
-									.font(.caption)
-									.foregroundColor(.secondary)
+								HStack(spacing: 4) {
+									Text(AppVersion.current.versionString)
+										.font(.caption)
+										.foregroundColor(.secondary)
+									if let lastCheck = softwareUpdater.lastUpdateCheckDate {
+										Text("• Last checked: \(lastCheck, style: .relative) ago")
+											.font(.caption2)
+											.foregroundColor(.secondary)
+									}
+								}
 							}
 							Spacer()
-							if updateManager.isCheckingForUpdates {
-								ProgressView()
-									.scaleEffect(0.8)
-							} else {
-								Button("Check for Updates") {
-									Task {
-										do {
-											let hasUpdate =
-												try await updateManager.checkForUpdates()
-											if !hasUpdate {
-												showNoUpdateAlert()
-											}
-										} catch {
-											errorMessage =
-												"Failed to check for updates: \(error.localizedDescription)"
-											showingError = true
-										}
-									}
-								}
-								.buttonStyle(.bordered)
-								.disabled(updateManager.isCheckingForUpdates)
+							Button("Check for Updates") {
+								softwareUpdater.checkForUpdates()
 							}
+							.buttonStyle(.bordered)
+							.disabled(!softwareUpdater.canCheckForUpdates)
 						}
 
-						// MARK: - Update Notification Banner
-						if let latestVersion = updateManager.latestVersion,
-							AppVersion(latestVersion) > AppVersion.current
-						{
-							InfoBox(style: .info) {
-								VStack(alignment: .leading, spacing: 8) {
-									Text("Whispera \(latestVersion) is available")
-										.font(.headline)
+						SettingRow(
+							"Automatic Updates",
+							description: "Automatically check for updates"
+						) {
+							Toggle("", isOn: $softwareUpdater.automaticallyChecksForUpdates)
+						}
 
-									if let releaseNotes = updateManager.releaseNotes,
-										!releaseNotes.isEmpty
-									{
-										Text(releaseNotes)
-											.font(.caption)
-											.foregroundColor(.secondary)
-											.lineLimit(3)
-									}
-
-									HStack {
-										if updateManager.isUpdateDownloaded {
-											Button("Install Now") {
-												Task {
-													do {
-														try await updateManager
-															.installDownloadedUpdate()
-													} catch {
-														errorMessage =
-															"Failed to install update: \(error.localizedDescription)"
-														showingError = true
-													}
-												}
-											}
-											.buttonStyle(.borderedProminent)
-										} else {
-											Button("Download Update") {
-												Task {
-													do {
-														try await updateManager
-															.downloadUpdate()
-													} catch {
-														errorMessage =
-															"Failed to download update: \(error.localizedDescription)"
-														showingError = true
-													}
-												}
-											}
-											.buttonStyle(.borderedProminent)
-											.disabled(updateManager.isDownloadingUpdate)
-										}
-
-										if updateManager.isDownloadingUpdate {
-											ProgressView(value: updateManager.downloadProgress)
-												.frame(maxWidth: .infinity)
-										} else {
-											Button("View Release Notes") {
-												showReleaseNotes()
-											}
-											.buttonStyle(.bordered)
-										}
-									}
-								}
-							}
+						SettingRow(
+							"Auto-download Updates",
+							description: "Download updates in the background"
+						) {
+							Toggle("", isOn: $softwareUpdater.automaticallyDownloadsUpdates)
 						}
 					}
 
@@ -355,6 +303,68 @@ struct SettingsView: View {
 							description: "Trackpad vibration when shortcut is triggered"
 						) {
 							Toggle("", isOn: $shortcutHapticFeedback)
+						}
+
+						SettingRow(
+							"Recording Glow",
+							description: "Glow around the screen edges while recording"
+						) {
+							Toggle("", isOn: $enableRecordingGlow)
+						}
+
+						if enableRecordingGlow {
+							SettingRow("Glow Color") {
+								ColorPicker(
+									"",
+									selection: Binding(
+										get: {
+											RecordingGlowColor.color(fromHex: recordingGlowColorHex)
+										},
+										set: {
+											recordingGlowColorHex = RecordingGlowColor.hex(from: $0)
+										}
+									),
+									supportsOpacity: false
+								)
+								.labelsHidden()
+							}
+						}
+					}
+					Divider()
+
+					SettingsSection("Microphone") {
+						SettingRow(
+							"Input Device",
+							description: "Select which microphone to use for recording"
+						) {
+							Picker("", selection: Binding(
+								get: { AudioDeviceManager.shared.persistedDeviceUID },
+								set: { newUID in
+									AudioDeviceManager.shared.selectDevice(uid: newUID)
+								}
+							)) {
+								Label("System Default", systemImage: "mic.fill")
+									.tag(AudioDeviceManager.systemDefaultUID)
+
+								ForEach(AudioDeviceManager.shared.availableDevices) { device in
+									Label(device.name, systemImage: device.iconName)
+										.tag(device.uid)
+								}
+							}
+							.frame(maxWidth: 200)
+						}
+
+						if AudioDeviceManager.shared.persistedDeviceUID != AudioDeviceManager.systemDefaultUID,
+						   AudioDeviceManager.shared.selectedDevice == nil {
+							HStack(spacing: 6) {
+								Image(systemName: "exclamationmark.triangle.fill")
+									.foregroundColor(.orange)
+									.font(.caption)
+								Text("Selected device is not currently available. Will use system default.")
+									.font(.caption)
+									.foregroundColor(.orange)
+							}
+							.padding(.top, 4)
 						}
 					}
 					Divider()
@@ -438,7 +448,10 @@ struct SettingsView: View {
 							description:
 								"Process audio in real-time (max 30 minutes) instead of saving to file"
 						) {
-							Toggle("", isOn: $useStreamingTranscription)
+							Toggle("Streaming Transcription", isOn: $useStreamingTranscription)
+								.toggleStyle(.switch)
+								.labelsHidden()
+								.accessibilityIdentifier("streamingTranscriptionToggle")
 						}
 
 						SettingRow(
@@ -494,14 +507,16 @@ struct SettingsView: View {
 					Divider()
 
 					SettingsSection("Performance") {
-						VStack(alignment: .leading, spacing: 8) {
-							Text("Optimized Compute Configuration")
-								.font(.subheadline)
-							Text(
-								"Audio processing uses CPU + GPU, text decoding uses CPU + Neural Engine for optimal performance on Apple Silicon."
-							)
-							.font(.caption)
-							.foregroundColor(.secondary)
+						InfoBox(style: .info) {
+							VStack(alignment: .leading, spacing: 4) {
+								Text("Optimized Compute Configuration")
+									.font(.subheadline)
+								Text(
+									"Audio processing uses CPU + GPU, text decoding uses CPU + Neural Engine for optimal performance on Apple Silicon."
+								)
+								.font(.caption)
+								.foregroundColor(.secondary)
+							}
 						}
 					}
 
@@ -1133,6 +1148,18 @@ struct SettingsView: View {
 		} message: {
 			Text(errorMessage ?? "An unknown error occurred")
 		}
+		.alert(
+			"Update Error",
+			isPresented: $showingUpdaterError,
+			presenting: softwareUpdater.lastUpdaterError
+		) { _ in
+			Button("OK") { softwareUpdater.lastUpdaterError = nil }
+		} message: { error in
+			Text(error)
+		}
+		.onChange(of: softwareUpdater.lastUpdaterError) {
+			showingUpdaterError = softwareUpdater.lastUpdaterError != nil
+		}
 		.alert("Storage Details", isPresented: $showingStorageDetails) {
 			Button("OK") {}
 		} message: {
@@ -1256,7 +1283,7 @@ struct SettingsView: View {
 					}
 				}
 			} catch {
-				print("Failed to load models: \(error)")
+				AppLogger.shared.general.error("Failed to load models: \(error)")
 				await MainActor.run {
 					errorMessage = "Failed to load available models: \(error.localizedDescription)"
 					showingError = true
@@ -1373,9 +1400,9 @@ struct SettingsView: View {
 	private func switchToModel(_ modelName: String) async {
 		do {
 			try await whisperKit.switchModel(to: modelName)
-			print("✅ Successfully switched to model: \(modelName)")
+			AppLogger.shared.general.info("Successfully switched to model: \(modelName)")
 		} catch {
-			print("❌ Failed to switch to model \(modelName): \(error)")
+			AppLogger.shared.general.error("Failed to switch to model \(modelName): \(error)")
 			await MainActor.run {
 				errorMessage = "Failed to switch to model \(modelName): \(error.localizedDescription)"
 				showingError = true
@@ -1405,7 +1432,7 @@ struct SettingsView: View {
 
 	private func setLaunchAtStartup(_ enabled: Bool) {
 		guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
-			print("❌ Could not get bundle identifier")
+			AppLogger.shared.general.error("Could not get bundle identifier")
 			return
 		}
 
@@ -1443,17 +1470,17 @@ struct SettingsView: View {
 
 				// Write the plist file
 				try plistContent.write(to: launchAgentURL, atomically: true, encoding: .utf8)
-				print("✅ Launch at startup enabled")
+				AppLogger.shared.general.info("Launch at startup enabled")
 			} catch {
-				print("❌ Failed to enable launch at startup: \(error)")
+				AppLogger.shared.general.error("Failed to enable launch at startup: \(error)")
 			}
 		} else {
 			// Remove launch agent plist
 			do {
 				try FileManager.default.removeItem(at: launchAgentURL)
-				print("✅ Launch at startup disabled")
+				AppLogger.shared.general.info("Launch at startup disabled")
 			} catch {
-				print("❌ Failed to disable launch at startup: \(error)")
+				AppLogger.shared.general.error("Failed to disable launch at startup: \(error)")
 			}
 		}
 	}

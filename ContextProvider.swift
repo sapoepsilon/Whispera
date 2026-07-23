@@ -2,9 +2,10 @@ import Cocoa
 import Foundation
 import OSAKit
 
-/// Provides system context for command generation
 class ContextProvider {
 	static let shared = ContextProvider()
+
+	private let logger = AppLogger.shared.general
 
 	private init() {}
 
@@ -35,17 +36,17 @@ class ContextProvider {
 	private func getCurrentFinderPath() -> String? {
 		// Try Accessibility API first
 		if let accessibilityPath = getFinderPathViaAccessibility() {
-			print("🔍 Got Finder path via Accessibility API: \(accessibilityPath)")
+			logger.debug("Got Finder path via Accessibility API: \(accessibilityPath)")
 			return accessibilityPath
 		}
 
 		// Fallback to AppleScript
 		if let applescriptPath = getFinderPathViaAppleScript() {
-			print("🔍 Got Finder path via AppleScript: \(applescriptPath)")
+			logger.debug("Got Finder path via AppleScript: \(applescriptPath)")
 			return applescriptPath
 		}
 
-		print("⚠️ Could not determine current Finder path")
+		logger.info("Could not determine current Finder path")
 		return nil
 	}
 
@@ -131,7 +132,7 @@ class ContextProvider {
 		let result = osascript.executeAndReturnError(&error)
 
 		if let error = error {
-			print("❌ AppleScript error: \(error)")
+			logger.error("AppleScript error: \(error)")
 			return nil
 		}
 

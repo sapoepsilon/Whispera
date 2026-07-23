@@ -16,7 +16,7 @@ struct OnboardingView: View {
 	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
 	@AppStorage("selectedModel") private var storedModel = ""
 	@AppStorage("launchAtStartup") private var storedLaunchAtLogin = false
-	@AppStorage("enableStreaming") private var enableStreaming = true
+	@AppStorage("enableStreaming") private var enableStreaming = Constants.enableStreamingDefault
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
 

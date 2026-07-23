@@ -39,6 +39,37 @@ A native macOS app that replaces the built-in dictation with OpenAI's Whisper fo
 - **YouTube transcription**
 
 All processing runs locally. Internet required only for initial model download.
+
+## Command Mode
+
+Whispera includes a voice-driven command mode for controlling macOS hands-free. Speak a natural-language command and Whispera converts it into a structured JSON intent, which is matched against auditable shell command templates.
+
+**How it works:**
+
+1. Speech is transcribed on-device via WhisperKit
+2. The text is parsed by a fine-tuned language model (Qwen2.5-0.5B + LoRA, running locally via MLX)
+3. The model outputs a JSON intent (e.g., `{"category": "apps", "operation": "open", "app": "chrome"}`)
+4. The intent is matched against templates in `macos_operations.json` and executed
+
+**Example commands:**
+
+| You say | What happens |
+|---|---|
+| "open chrome" | Launches Google Chrome |
+| "mute volume" | Mutes system audio |
+| "git status" | Runs `git status` in the current terminal |
+| "install numpy" | Runs `pip install numpy` |
+| "take a screenshot" | Captures the screen |
+
+The configuration file defines 43 categories and 358 operations covering system control, developer tools (git, npm, docker, homebrew), file management, and network utilities. Add new commands by editing the JSON config — no code changes or retraining needed.
+
+All processing stays on-device. The model cannot execute arbitrary commands; only operations defined in the configuration are allowed.
+
+**Resources:**
+- Model weights: [sapoepsilon/whispera-voice-commands](https://huggingface.co/sapoepsilon/whispera-voice-commands) on HuggingFace
+- Training and evaluation code: [sapoepsilon/whisperaModel](https://github.com/sapoepsilon/whisperaModel)
+- Dataset: [sapoepsilon/mac-voice-commands](https://huggingface.co/datasets/sapoepsilon/mac-voice-commands)
+
 ## Roadmap
 
 - [x] Multi-language support beyond English 
@@ -74,6 +105,19 @@ Built with:
 
 Thanks to these projects for making privacy-focused, local transcription a reality.
 
+## Citing
+
+If you use Whispera in your research, please cite it:
+
+```bibtex
+@software{mansurov2025whispera,
+  author = {Mansurov, Ismatulla},
+  title = {Whispera},
+  year = {2025},
+  url = {https://github.com/sapoepsilon/Whispera}
+}
+```
+
 ## License
 
-MIT License
+MIT License — see [LICENSE](LICENSE) for details.

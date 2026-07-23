@@ -1,6 +1,8 @@
 import AppKit
 import Foundation
 
+private let logger = AppLogger.shared.liveTranscriber
+
 func simulateKeyPressWithModifier(keyCode: CGKeyCode, modifier: CGEventFlags) async {
 	let source = CGEventSource(stateID: .combinedSessionState)
 	let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
@@ -53,12 +55,12 @@ enum CorrectionCommand {
 				await pasteText(newContent)
 			}
 		} else {
-			print("📝 No new content to paste")
+			logger.debug("No new content to paste")
 		}
 	}
 
 	private func extractNewContent(from fullText: String) -> String {
-		print("full text: \(fullText) in extractNewContent")
+		logger.debug("Full text in extractNewContent: \(fullText)")
 		let trackedText = trackedWords.map(\.text).joined(separator: " ")
 
 		if trackedText.isEmpty {
@@ -87,8 +89,8 @@ enum CorrectionCommand {
 			}
 		}
 
-		AppLogger.shared.liveTranscriber.log(
-			"⚠️ Text filtering logic failed, returning the confirmed text by Whisperkit."
+		logger.log(
+			"Text filtering logic failed, returning the confirmed text by Whisperkit."
 		)
 		// TODO: Examine more, this is more of a fallback if the above logic fails. Do not remove the todo, and don't impelement it the original author will work on it on their own pace
 		return fullText
@@ -103,8 +105,8 @@ enum CorrectionCommand {
 
 	func endSession() {
 		isTrackingEnabled = false
-		AppLogger.shared.liveTranscriber.debug(
-			"📝 Ended dictation word tracking session - tracked \(self.trackedWords.count) words"
+		logger.debug(
+			"Ended dictation word tracking session - tracked \(self.trackedWords.count) words"
 		)
 	}
 	private func trackWords(from text: String) {
@@ -132,8 +134,8 @@ enum CorrectionCommand {
 			}
 		}
 
-		print("📝 Tracked \(words.count) new words: \(words.joined(separator: " "))")
-		print("📝 Total length now: \(totalLength), Total words: \(trackedWords.count)")
+		logger.debug("Tracked \(words.count) new words: \(words.joined(separator: " "))")
+		logger.debug("Total length now: \(totalLength), Total words: \(trackedWords.count)")
 	}
 
 	func trackPastedText(_ text: String) {
@@ -154,8 +156,8 @@ enum CorrectionCommand {
 
 		trackWords(from: newText)
 
-		print(
-			"📝 Updated tracking after correction: removed \(removedWordCount) words, added '\(newText)'")
+		logger.debug(
+			"Updated tracking after correction: removed \(removedWordCount) words, added '\(newText)'")
 	}
 
 	func getLastNWords(_ count: Int) -> [TrackedWord] {
@@ -235,10 +237,10 @@ enum CorrectionCommand {
 
 	private func replaceLastWords(count: Int, with newText: String) async {
 		guard let range = calculateSelectionRange(forLastWords: count) else {
-			print("❌ Cannot calculate range for last \(count) words")
+			logger.error("Cannot calculate range for last \(count) words")
 			return
 		}
-		print("📝 Attempting to replace last \(count) words with '\(newText)'")
+		logger.debug("Attempting to replace last \(count) words with '\(newText)'")
 		await selectTextRange(charactersBack: range.length)
 		try? await Task.sleep(nanoseconds: 100_000_000)
 		await pasteText(newText)
@@ -247,15 +249,15 @@ enum CorrectionCommand {
 
 	private func selectAllDictatedText() async {
 		guard totalLength > 0 else {
-			print("❌ No dictated text to select")
+			logger.error("No dictated text to select")
 			return
 		}
-		print("📝 Selecting all dictated text (\(totalLength) characters)")
+		logger.debug("Selecting all dictated text (\(totalLength) characters)")
 		await selectTextRange(charactersBack: totalLength)
 	}
 
 	private func undoAndCorrect(with newText: String) async {
-		print("📝 Undoing last paste and correcting with '\(newText)'")
+		logger.debug("Undoing last paste and correcting with '\(newText)'")
 
 		await simulateKeyPressWithModifier(
 			keyCode: 0x06,
@@ -277,14 +279,14 @@ enum CorrectionCommand {
 		guard
 			let wordIndex = trackedWords.lastIndex(where: { $0.text.lowercased() == target.lowercased() })
 		else {
-			print("❌ Could not find word '\(target)' in tracked words")
+			logger.error("Could not find word '\(target)' in tracked words")
 			return
 		}
 
 		let targetWord = trackedWords[wordIndex]
 		let wordsAfterTarget = trackedWords.count - wordIndex - 1
 
-		print("📝 Replacing '\(target)' with '\(newText)' (\(wordsAfterTarget) words after target)")
+		logger.debug("Replacing '\(target)' with '\(newText)' (\(wordsAfterTarget) words after target)")
 
 		let charactersToTarget =
 			trackedWords.suffix(wordsAfterTarget + 1).reduce(0) { total, word in
@@ -338,11 +340,7 @@ enum CorrectionCommand {
 	}
 
 	func printTrackingState() {
-		print("📊 Dictation Tracking State:")
-		print("   Enabled: \(isTrackingEnabled)")
-		print("   Words tracked: \(trackedWords.count)")
-		print("   Total length: \(totalLength)")
-		print("   Words: \(trackedWords.map(\.text).joined(separator: " "))")
+		logger.debug("Dictation Tracking State: enabled=\(isTrackingEnabled), words=\(trackedWords.count), length=\(totalLength), content=\(trackedWords.map(\.text).joined(separator: " "))")
 	}
 
 	func getTrackingStats() -> [String: Any] {

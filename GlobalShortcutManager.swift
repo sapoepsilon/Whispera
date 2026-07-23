@@ -35,14 +35,14 @@ class GlobalShortcutManager: ObservableObject {
 
 			if newShortcut != self?.currentShortcut {
 				self?.logger.info(
-					"🔄 Text shortcut changed: \(self?.currentShortcut ?? "nil") → \(newShortcut)")
+					"Text shortcut changed: \(self?.currentShortcut ?? "nil") → \(newShortcut)")
 				self?.currentShortcut = newShortcut
 				self?.setupShortcut()
 			}
 
 			if newFileShortcut != self?.fileSelectionShortcut {
 				self?.logger.info(
-					"🔄 File selection shortcut changed: \(self?.fileSelectionShortcut ?? "nil") → \(newFileShortcut)"
+					"File selection shortcut changed: \(self?.fileSelectionShortcut ?? "nil") → \(newFileShortcut)"
 				)
 				self?.fileSelectionShortcut = newFileShortcut
 				self?.setupShortcut()
@@ -52,40 +52,40 @@ class GlobalShortcutManager: ObservableObject {
 
 	func setAudioManager(_ manager: AudioManager) {
 		self.audioManager = manager
-		logger.info("🔗 AudioManager set, checking accessibility status...")
+		logger.info("AudioManager set, checking accessibility status...")
 		checkAccessibilityStatus()
 	}
 
 	func setFileTranscriptionManager(_ manager: FileTranscriptionManager) {
 		self.fileTranscriptionManager = manager
-		logger.info("🔗 FileTranscriptionManager set")
+		logger.info("FileTranscriptionManager set")
 	}
 
 	func setNetworkDownloader(_ downloader: NetworkFileDownloader) {
 		self.networkDownloader = downloader
-		logger.info("🔗 NetworkFileDownloader set")
+		logger.info("NetworkFileDownloader set")
 	}
 
 	func setQueueManager(_ manager: TranscriptionQueueManager) {
 		self.queueManager = manager
-		logger.info("🔗 TranscriptionQueueManager set")
+		logger.info("TranscriptionQueueManager set")
 	}
 
 	func checkAccessibilityStatus() {
 		let hasPermissions = AXIsProcessTrusted()
-		logger.info("🔐 Current accessibility permissions: \(hasPermissions)")
-		logger.info("🎯 Text shortcut: \(currentShortcut)")
-		logger.info("📁 File selection shortcut: \(fileSelectionShortcut)")
+		logger.info("Current accessibility permissions: \(hasPermissions)")
+		logger.info("Text shortcut: \(currentShortcut)")
+		logger.info("File selection shortcut: \(fileSelectionShortcut)")
 		logger.info(
-			"🎛️ Global monitors active - Text: \(globalMonitor != nil), File: \(fileSelectionGlobalMonitor != nil)"
+			"Global monitors active - Text: \(globalMonitor != nil), File: \(fileSelectionGlobalMonitor != nil)"
 		)
 
 		if !hasPermissions {
-			logger.error("⚠️ PROBLEM: No accessibility permissions - shortcuts will NOT work")
-			logger.error("💡 Go to System Settings > Privacy & Security > Accessibility")
-			logger.error("💡 Add Whispera to the list and enable it")
+			logger.error("PROBLEM: No accessibility permissions - shortcuts will NOT work")
+			logger.error("Go to System Settings > Privacy & Security > Accessibility")
+			logger.error("Add Whispera to the list and enable it")
 		} else if globalMonitor == nil || fileSelectionGlobalMonitor == nil {
-			logger.error("⚠️ PROBLEM: Some global monitors not set up despite having permissions")
+			logger.error("PROBLEM: Some global monitors not set up despite having permissions")
 			setupShortcut()
 		}
 	}
@@ -94,45 +94,45 @@ class GlobalShortcutManager: ObservableObject {
 		if let monitor = globalMonitor {
 			NSEvent.removeMonitor(monitor)
 			self.globalMonitor = nil
-			logger.info("🗑️ Removed old text global monitor")
+			logger.info("Removed old text global monitor")
 		}
 		if let monitor = localMonitor {
 			NSEvent.removeMonitor(monitor)
 			self.localMonitor = nil
-			logger.info("🗑️ Removed old text local monitor")
+			logger.info("Removed old text local monitor")
 		}
 		if let monitor = fileSelectionGlobalMonitor {
 			NSEvent.removeMonitor(monitor)
 			self.fileSelectionGlobalMonitor = nil
-			logger.info("🗑️ Removed old file selection global monitor")
+			logger.info("Removed old file selection global monitor")
 		}
 		if let monitor = fileSelectionLocalMonitor {
 			NSEvent.removeMonitor(monitor)
 			self.fileSelectionLocalMonitor = nil
-			logger.info("🗑️ Removed old file selection local monitor")
+			logger.info("Removed old file selection local monitor")
 		}
 
 		let (textModifiers, textKeyCode) = parseShortcut(currentShortcut)
 		logger.info(
-			"🎹 Setting up text shortcut for \(currentShortcut) (keyCode: \(textKeyCode), modifiers: \(textModifiers.rawValue))"
+			"Setting up text shortcut for \(currentShortcut) (keyCode: \(textKeyCode), modifiers: \(textModifiers.rawValue))"
 		)
 
 		let (fileModifiers, fileKeyCode) = parseShortcut(fileSelectionShortcut)
 		logger.info(
-			"📁 Setting up file selection shortcut for \(fileSelectionShortcut) (keyCode: \(fileKeyCode), modifiers: \(fileModifiers.rawValue))"
+			"Setting up file selection shortcut for \(fileSelectionShortcut) (keyCode: \(fileKeyCode), modifiers: \(fileModifiers.rawValue))"
 		)
 
-		logger.info("🌍 Installing global monitors...")
+		logger.info("Installing global monitors...")
 		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: textModifiers, expectedKeyCode: textKeyCode) == true
 			{
-				self?.logger.info("🎯 Global text shortcut detected!")
+				self?.logger.info("Global text shortcut detected!")
 				self?.handleTextHotKey()
 			} else if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
 			{
-				self?.logger.info("📁 Global file selection shortcut detected!")
+				self?.logger.info("Global file selection shortcut detected!")
 				self?.handleFileSelectionHotKey()
 			}
 		}
@@ -142,24 +142,24 @@ class GlobalShortcutManager: ObservableObject {
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
 			{
-				self?.logger.info("📁 Global file selection shortcut detected (dedicated monitor)!")
+				self?.logger.info("Global file selection shortcut detected (dedicated monitor)!")
 				self?.handleFileSelectionHotKey()
 			}
 		}
 
 		// Also set up local monitors as fallback (works when app is focused)
-		logger.info("🏠 Installing local monitors as fallback...")
+		logger.info("Installing local monitors as fallback...")
 		localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: textModifiers, expectedKeyCode: textKeyCode) == true
 			{
-				self?.logger.info("🎯 Local text shortcut detected!")
+				self?.logger.info("Local text shortcut detected!")
 				self?.handleTextHotKey()
 				return nil  // Consume the event
 			} else if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
 			{
-				self?.logger.info("📁 Local file selection shortcut detected!")
+				self?.logger.info("Local file selection shortcut detected!")
 				self?.handleFileSelectionHotKey()
 				return nil  // Consume the event
 			}
@@ -171,7 +171,7 @@ class GlobalShortcutManager: ObservableObject {
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
 			{
-				self?.logger.info("📁 Local file selection shortcut detected (dedicated monitor)!")
+				self?.logger.info("Local file selection shortcut detected (dedicated monitor)!")
 				self?.handleFileSelectionHotKey()
 				return nil  // Consume the event
 			}
@@ -179,10 +179,10 @@ class GlobalShortcutManager: ObservableObject {
 		}
 
 		logger.info(
-			"✅ Monitors installed - Text Global: \(globalMonitor != nil), Text Local: \(localMonitor != nil)"
+			"Monitors installed - Text Global: \(globalMonitor != nil), Text Local: \(localMonitor != nil)"
 		)
 		logger.info(
-			"✅ File monitors installed - File Global: \(fileSelectionGlobalMonitor != nil), File Local: \(fileSelectionLocalMonitor != nil)"
+			"File monitors installed - File Global: \(fileSelectionGlobalMonitor != nil), File Local: \(fileSelectionLocalMonitor != nil)"
 		)
 	}
 
@@ -190,7 +190,7 @@ class GlobalShortcutManager: ObservableObject {
 		var modifiers: NSEvent.ModifierFlags = []
 		var keyChar = ""
 
-		logger.debug("🔍 Parsing shortcut: '\(shortcut)'")
+		logger.debug("Parsing shortcut: '\(shortcut)'")
 
 		if shortcut.contains("⌘") { modifiers.insert(.command) }
 		if shortcut.contains("⌥") { modifiers.insert(.option) }
@@ -210,7 +210,7 @@ class GlobalShortcutManager: ObservableObject {
 
 		let keyCode = keyCodeForCharacter(keyChar.lowercased())
 		logger.debug(
-			"🔍 Parsed: keyChar='\(keyChar)', keyCode=\(keyCode), modifiers=\(modifiers.rawValue)")
+			"Parsed: keyChar='\(keyChar)', keyCode=\(keyCode), modifiers=\(modifiers.rawValue)")
 		return (modifiers, keyCode)
 	}
 
@@ -324,18 +324,18 @@ class GlobalShortcutManager: ObservableObject {
 	}
 
 	func requestAccessibilityPermissions() {
-		logger.info("🔐 Requesting accessibility permissions...")
+		logger.info("Requesting accessibility permissions...")
 		let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true]
 		let accessEnabled = AXIsProcessTrustedWithOptions(options)
 
 		if accessEnabled {
-			logger.info("✅ Accessibility permissions granted, setting up shortcut")
+			logger.info("Accessibility permissions granted, setting up shortcut")
 			setupShortcut()
 		} else {
-			logger.info("⏳ Waiting for accessibility permissions...")
+			logger.info("Waiting for accessibility permissions...")
 			logger.info(
-				"📱 Please go to System Settings > Privacy & Security > Accessibility and enable Whispera")
-			logger.info("💡 Global shortcuts will NOT work until accessibility permissions are granted")
+				"Please go to System Settings > Privacy & Security > Accessibility and enable Whispera")
+			logger.info("Global shortcuts will NOT work until accessibility permissions are granted")
 
 			// Check again every 3 seconds for up to 30 seconds
 			var checkCount = 0
@@ -345,19 +345,19 @@ class GlobalShortcutManager: ObservableObject {
 				checkCount += 1
 				if AXIsProcessTrusted() {
 					self.logger.info(
-						"✅ Accessibility permissions now granted! Setting up global shortcuts...")
+						"Accessibility permissions now granted! Setting up global shortcuts...")
 					self.setupShortcut()
 				} else if checkCount < maxChecks {
 					self.logger.info(
-						"⏳ Still waiting for accessibility permissions... (\(checkCount)/\(maxChecks))")
+						"Still waiting for accessibility permissions... (\(checkCount)/\(maxChecks))")
 					DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
 						checkPermissions()
 					}
 				} else {
 					self.logger.error(
-						"⚠️ Accessibility permissions still not granted. Global shortcuts disabled.")
+						"Accessibility permissions still not granted. Global shortcuts disabled.")
 					self.logger.error(
-						"💡 You can grant permissions later in System Settings > Privacy & Security > Accessibility"
+						"You can grant permissions later in System Settings > Privacy & Security > Accessibility"
 					)
 				}
 			}
@@ -381,11 +381,11 @@ class GlobalShortcutManager: ObservableObject {
 
 	private func handleFileSelectionHotKey() {
 		Task { @MainActor in
-			logger.info("📁 File selection shortcut activated")
+			logger.info("File selection shortcut activated")
 
 			// Prevent duplicate processing
 			guard !isProcessingFileOperation else {
-				logger.info("⚠️ File operation already in progress, ignoring shortcut")
+				logger.info("File operation already in progress, ignoring shortcut")
 				return
 			}
 
@@ -401,7 +401,7 @@ class GlobalShortcutManager: ObservableObject {
 			// First, try to get selected files from Finder
 			let finderSelection = await getFinderSelectedFiles()
 			if !finderSelection.isEmpty {
-				logger.info("📂 Found \(finderSelection.count) selected files in Finder")
+				logger.info("Found \(finderSelection.count) selected files in Finder")
 				await handleSelectedFiles(finderSelection)
 				return
 			}
@@ -412,7 +412,7 @@ class GlobalShortcutManager: ObservableObject {
 				let url = URL(string: clipboardString),
 				url.scheme == "http" || url.scheme == "https"
 			{
-				logger.info("🔗 Found URL in clipboard: \(clipboardString)")
+				logger.info("Found URL in clipboard: \(clipboardString)")
 				await handleClipboardURL(url)
 			} else {
 				// Open file selection dialog as fallback
@@ -443,13 +443,13 @@ class GlobalShortcutManager: ObservableObject {
 			let errorCode = error["NSAppleScriptErrorNumber"] as? Int ?? 0
 			switch errorCode {
 			case -1751:
-				logger.info("ℹ️ AppleScript: User canceled or no files selected in Finder")
+				logger.info("AppleScript: User canceled or no files selected in Finder")
 			case -1743:
-				logger.error("⚠️ AppleScript: Finder is not running or accessible")
+				logger.error("AppleScript: Finder is not running or accessible")
 			case -1700:
-				logger.error("⚠️ AppleScript: Access denied to Finder")
+				logger.error("AppleScript: Access denied to Finder")
 			default:
-				logger.error("⚠️ AppleScript error: \(error)")
+				logger.error("AppleScript error: \(error)")
 			}
 			return []
 		}
@@ -495,17 +495,17 @@ class GlobalShortcutManager: ObservableObject {
 
 	@MainActor
 	private func handleSelectedFiles(_ urls: [URL]) async {
-		logger.info("🎵 Adding \(urls.count) selected audio files to transcription queue")
+		logger.info("Adding \(urls.count) selected audio files to transcription queue")
 
 		guard let queueManager = queueManager else {
-			logger.error("❌ TranscriptionQueueManager not available, falling back to direct processing")
+			logger.error("TranscriptionQueueManager not available, falling back to direct processing")
 			await handleSelectedFilesDirectly(urls)
 			return
 		}
 
 		// Add all files to the queue
 		queueManager.addFiles(urls)
-		logger.info("✅ Added \(urls.count) files to transcription queue")
+		logger.info("Added \(urls.count) files to transcription queue")
 
 		// Show a notification that files were added to queue
 		let notification = NSUserNotification()
@@ -517,10 +517,10 @@ class GlobalShortcutManager: ObservableObject {
 
 	@MainActor
 	private func handleSelectedFilesDirectly(_ urls: [URL]) async {
-		logger.info("🎵 Processing \(urls.count) selected audio files directly")
+		logger.info("Processing \(urls.count) selected audio files directly")
 
 		guard let fileManager = fileTranscriptionManager else {
-			logger.error("❌ FileTranscriptionManager not available")
+			logger.error("FileTranscriptionManager not available")
 			return
 		}
 
@@ -528,7 +528,7 @@ class GlobalShortcutManager: ObservableObject {
 		guard let firstFile = urls.first else { return }
 
 		do {
-			logger.info("📝 Starting transcription for: \(firstFile.lastPathComponent)")
+			logger.info("Starting transcription for: \(firstFile.lastPathComponent)")
 
 			let result = try await fileManager.transcribeFile(at: firstFile)
 
@@ -536,7 +536,7 @@ class GlobalShortcutManager: ObservableObject {
 			await showTranscriptionResult(for: firstFile.lastPathComponent, result: result)
 
 		} catch {
-			logger.error("❌ Transcription failed: \(error)")
+			logger.error("Transcription failed: \(error)")
 			showTranscriptionError(error)
 		}
 	}
@@ -579,9 +579,9 @@ class GlobalShortcutManager: ObservableObject {
 
 		do {
 			try transcription.write(to: fileURL, atomically: true, encoding: .utf8)
-			logger.info("💾 Transcription saved to: \(fileURL.path)")
+			logger.info("Transcription saved to: \(fileURL.path)")
 		} catch {
-			logger.error("❌ Failed to save transcription to file: \(error.localizedDescription)")
+			logger.error("Failed to save transcription to file: \(error.localizedDescription)")
 		}
 	}
 
@@ -596,7 +596,7 @@ class GlobalShortcutManager: ObservableObject {
 
 	@MainActor
 	private func openFileSelectionDialog() async {
-		logger.info("🗂️ Opening file selection dialog")
+		logger.info("Opening file selection dialog")
 		let openPanel = NSOpenPanel()
 		openPanel.title = "Select Audio or Video Files to Transcribe"
 		openPanel.message = "Choose audio or video files for transcription"
@@ -621,17 +621,17 @@ class GlobalShortcutManager: ObservableObject {
 		if response == .OK {
 			let selectedURLs = openPanel.urls
 			logger.info(
-				"📁 Selected \(selectedURLs.count) file(s): \(selectedURLs.map { $0.lastPathComponent })")
+				"Selected \(selectedURLs.count) file(s): \(selectedURLs.map { $0.lastPathComponent })")
 
 			guard let queueManager = queueManager else {
-				logger.error("❌ TranscriptionQueueManager not available, falling back to direct processing")
+				logger.error("TranscriptionQueueManager not available, falling back to direct processing")
 				await processFilesDirectly(selectedURLs)
 				return
 			}
 
 			// Add files to queue
 			queueManager.addFiles(selectedURLs)
-			logger.info("✅ Added \(selectedURLs.count) files to transcription queue")
+			logger.info("Added \(selectedURLs.count) files to transcription queue")
 
 			// Show notification
 			let notification = NSUserNotification()
@@ -641,14 +641,14 @@ class GlobalShortcutManager: ObservableObject {
 				separator: ", ")
 			NSUserNotificationCenter.default.deliver(notification)
 		} else {
-			logger.info("🚫 File selection cancelled")
+			logger.info("File selection cancelled")
 		}
 	}
 
 	@MainActor
 	private func processFilesDirectly(_ urls: [URL]) async {
 		guard let fileManager = fileTranscriptionManager else {
-			logger.error("❌ FileTranscriptionManager not available")
+			logger.error("FileTranscriptionManager not available")
 			return
 		}
 
@@ -656,45 +656,45 @@ class GlobalShortcutManager: ObservableObject {
 		do {
 			if urls.count == 1 {
 				let result = try await fileManager.transcribeFile(at: urls[0])
-				logger.info("✅ Transcription completed: \(result.prefix(100))...")
+				logger.info("Transcription completed: \(result.prefix(100))...")
 
 				// Copy result to clipboard
 				let pasteboard = NSPasteboard.general
 				pasteboard.clearContents()
 				pasteboard.setString(result, forType: .string)
-				logger.info("📋 Result copied to clipboard")
+				logger.info("Result copied to clipboard")
 			} else {
 				let results = try await fileManager.transcribeFiles(at: urls)
 				let combinedResult = results.enumerated().map { index, result in
 					"File \(index + 1) (\(urls[index].lastPathComponent)):\n\(result)"
 				}.joined(separator: "\n\n")
 
-				logger.info("✅ Batch transcription completed")
+				logger.info("Batch transcription completed")
 
 				// Copy combined results to clipboard
 				let pasteboard = NSPasteboard.general
 				pasteboard.clearContents()
 				pasteboard.setString(combinedResult, forType: .string)
-				logger.info("📋 Combined results copied to clipboard")
+				logger.info("Combined results copied to clipboard")
 			}
 		} catch {
-			logger.error("❌ Transcription failed: \(error.localizedDescription)")
+			logger.error("Transcription failed: \(error.localizedDescription)")
 		}
 	}
 
 	@MainActor
 	private func handleClipboardURL(_ url: URL) async {
-		logger.info("🔗 Adding clipboard URL to transcription queue: \(url.absoluteString)")
+		logger.info("Adding clipboard URL to transcription queue: \(url.absoluteString)")
 
 		guard let queueManager = queueManager else {
-			logger.error("❌ TranscriptionQueueManager not available, falling back to direct processing")
+			logger.error("TranscriptionQueueManager not available, falling back to direct processing")
 			await handleClipboardURLDirectly(url)
 			return
 		}
 
 		// Add URL to queue
 		queueManager.addFile(url)
-		logger.info("✅ Added URL to transcription queue")
+		logger.info("Added URL to transcription queue")
 
 		// Show notification
 		let notification = NSUserNotification()
@@ -705,19 +705,19 @@ class GlobalShortcutManager: ObservableObject {
 	}
 
 	private func handleClipboardURLDirectly(_ url: URL) async {
-		logger.info("🔗 Processing clipboard URL directly: \(url.absoluteString)")
+		logger.info("Processing clipboard URL directly: \(url.absoluteString)")
 
 		guard let fileManager = fileTranscriptionManager,
 			let downloader = networkDownloader
 		else {
-			logger.error("❌ FileTranscriptionManager or NetworkFileDownloader not available")
+			logger.error("FileTranscriptionManager or NetworkFileDownloader not available")
 			return
 		}
 
 		do {
 			// Check if it's a YouTube URL
 			if isYouTubeURL(url) {
-				logger.info("🎬 Detected YouTube URL, using YouTube transcription manager")
+				logger.info("Detected YouTube URL, using YouTube transcription manager")
 				let youtubeManager = await YouTubeTranscriptionManager(
 					fileTranscriptionManager: fileManager,
 					networkDownloader: downloader
@@ -741,10 +741,10 @@ class GlobalShortcutManager: ObservableObject {
 				await showTranscriptionResult(for: filename, result: result)
 			}
 
-			logger.info("✅ URL transcription completed")
+			logger.info("URL transcription completed")
 
 		} catch {
-			logger.error("❌ URL transcription failed: \(error.localizedDescription)")
+			logger.error("URL transcription failed: \(error.localizedDescription)")
 			await showTranscriptionError(error)
 		}
 	}

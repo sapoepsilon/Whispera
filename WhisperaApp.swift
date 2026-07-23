@@ -1,16 +1,19 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @main
 struct WhisperaApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+	private let softwareUpdater = SoftwareUpdater()
 
 	var body: some Scene {
 		Settings {
 			SettingsWithMaterial(
 				permissionManager: appDelegate.permissionManager ?? PermissionManager(),
 				updateManager: appDelegate.updateManager ?? UpdateManager(),
-				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager()
+				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager(),
+				softwareUpdater: softwareUpdater
 			)
 		}
 		.windowStyle(.hiddenTitleBar)
@@ -29,6 +32,9 @@ struct WhisperaApp: App {
 					)
 				}
 			}
+			CommandGroup(after: .appInfo) {
+				CheckForUpdatesView(updater: softwareUpdater.updater)
+			}
 		}
 
 	}
@@ -38,6 +44,7 @@ struct SettingsWithMaterial: View {
 	var permissionManager: PermissionManager
 	var updateManager: UpdateManager
 	var appLibraryManager: AppLibraryManager
+	var softwareUpdater: SoftwareUpdater
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
 
 	private var materialStyle: MaterialStyle {
@@ -49,7 +56,8 @@ struct SettingsWithMaterial: View {
 			SettingsView(
 				permissionManager: permissionManager,
 				updateManager: updateManager,
-				appLibraryManager: appLibraryManager
+				appLibraryManager: appLibraryManager,
+				softwareUpdater: softwareUpdater
 			)
 			.frame(minWidth: 450, minHeight: 520)
 			.containerBackground(materialStyle.material, for: .window)
@@ -57,7 +65,8 @@ struct SettingsWithMaterial: View {
 			SettingsView(
 				permissionManager: permissionManager,
 				updateManager: updateManager,
-				appLibraryManager: appLibraryManager
+				appLibraryManager: appLibraryManager,
+				softwareUpdater: softwareUpdater
 			)
 			.frame(minWidth: 450, minHeight: 520)
 		}
@@ -75,6 +84,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	var updateManager: UpdateManager?
 	var permissionManager: PermissionManager?
 	var appLibraryManager: AppLibraryManager?
+	var softwareUpdater: SoftwareUpdater?
 	@AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
 	@AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
 	private var recordingObserver: NSObjectProtocol?
@@ -88,18 +98,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var listeningWindow: ListeningWindow?
 	private var iconAnimationTask: Task<Void, Never>?
 	private let statusIconConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium, scale: .medium)
+	private var recordingGlowController: RecordingGlowController?
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		if shouldTerminateDuplicateInstances() {
 			AppLogger.shared.general.info(
-				"🚫 Another instance is already running. Activating existing instance and terminating this one."
+				"Another instance is already running. Activating existing instance and terminating this one."
 			)
 			activateExistingInstance()
 			NSApp.terminate(nil)
 			return
 		}
 
-		setupDefaultsIfNeeded()
+		AppDelegate.registerInitialDefaults(in: .standard)
 
 		Task { @MainActor in
 			audioManager = AudioManager()
@@ -126,6 +137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
+			recordingGlowController = RecordingGlowController(audioManager: audioManager)
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
@@ -136,12 +148,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 						let hasUpdate = try await updateManager?.checkForUpdates() ?? false
 						if hasUpdate {
 							AppLogger.shared.general.info(
-								"🆕 Update available: \(self.updateManager?.latestVersion ?? "unknown")")
+								"Update available: \(self.updateManager?.latestVersion ?? "unknown")")
 						} else {
-							AppLogger.shared.general.info("✅ App is up to date")
+							AppLogger.shared.general.info("App is up to date")
 						}
 					} catch {
-						AppLogger.shared.general.info("⚠️ Failed to check for updates: \(error)")
+						AppLogger.shared.general.error("Failed to check for updates: \(error)")
 					}
 				}
 			}
@@ -166,39 +178,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		}
 	}
 
-	private func setupDefaultsIfNeeded() {
-		// Set default values if they don't exist
-		if UserDefaults.standard.object(forKey: "selectedModel") == nil {
-			UserDefaults.standard.set("openai_whisper-small.en", forKey: "selectedModel")
-		}
-
-		if UserDefaults.standard.object(forKey: "globalShortcut") == nil {
-			UserDefaults.standard.set("⌥⌘R", forKey: "globalShortcut")
-		}
-
-		if UserDefaults.standard.object(forKey: "startSound") == nil {
-			UserDefaults.standard.set("Tink", forKey: "startSound")
-		}
-
-		if UserDefaults.standard.object(forKey: "stopSound") == nil {
-			UserDefaults.standard.set("Pop", forKey: "stopSound")
-		}
-
-		if UserDefaults.standard.object(forKey: "launchAtStartup") == nil {
-			UserDefaults.standard.set(false, forKey: "launchAtStartup")
-		}
-
-		if UserDefaults.standard.object(forKey: "soundFeedback") == nil {
-			UserDefaults.standard.set(true, forKey: "soundFeedback")
-		}
-
-		if UserDefaults.standard.object(forKey: "materialStyle") == nil {
-			UserDefaults.standard.set(MaterialStyle.default.rawValue, forKey: "materialStyle")
-		}
-
-		AppLogger.shared.general.info(
-			"🔧 Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")"
-		)
+	nonisolated static func registerInitialDefaults(in defaults: UserDefaults) {
+		defaults.register(defaults: [
+			"selectedModel": "openai_whisper-small.en",
+			"globalShortcut": "⌥⌘R",
+			"startSound": "Tink",
+			"stopSound": "Pop",
+			"launchAtStartup": false,
+			"soundFeedback": true,
+			"enableRecordingGlow": true,
+			"enableStreaming": Constants.enableStreamingDefault,
+			"materialStyle": MaterialStyle.default.rawValue,
+		])
 	}
 
 	func setupMenuBar() {
@@ -289,6 +280,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		) { [weak self] _ in
 			Task { @MainActor in
 				self?.updateStatusIcon()
+				self?.recordingGlowController?.updateVisibility()
 			}
 		}
 
@@ -438,22 +430,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			UserDefaults.standard.string(forKey: "selectedModel") ?? "openai_whisper-small.en"
 
 		guard audioManager.whisperKitTranscriber.isInitialized else {
-			AppLogger.shared.general.info("⚠️ WhisperKit not initialized, cannot switch model")
+			AppLogger.shared.general.info("WhisperKit not initialized, cannot switch model")
 			return
 		}
 
 		guard storedModel != audioManager.whisperKitTranscriber.currentModel else {
-			AppLogger.shared.general.info("📝 Model already matches stored preference: \(storedModel)")
+			AppLogger.shared.general.info("Model already matches stored preference: \(storedModel)")
 			return
 		}
 
-		AppLogger.shared.general.info("🔄 Applying stored model after onboarding: \(storedModel)")
+		AppLogger.shared.general.info("Applying stored model after onboarding: \(storedModel)")
 		Task {
 			do {
 				try await audioManager.whisperKitTranscriber.switchModel(to: storedModel)
-				AppLogger.shared.general.info("✅ Successfully switched to stored model: \(storedModel)")
+				AppLogger.shared.general.info("Successfully switched to stored model: \(storedModel)")
 			} catch {
-				AppLogger.shared.general.info("❌ Failed to switch to stored model: \(error)")
+				AppLogger.shared.general.error("Failed to switch to stored model: \(error)")
 			}
 		}
 	}
@@ -477,7 +469,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			object: nil,
 			queue: .main
 		) { _ in
-			AppLogger.shared.general.info("💤 System will sleep")
+			AppLogger.shared.general.info("System will sleep")
 		}
 
 		wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -485,7 +477,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			object: nil,
 			queue: .main
 		) { _ in
-			AppLogger.shared.general.info("☀️ System did wake")
+			AppLogger.shared.general.info("System did wake")
 		}
 	}
 
@@ -505,7 +497,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				do {
 					try await updateManager?.downloadUpdate()
 				} catch {
-					AppLogger.shared.general.info("❌ Failed to download update: \(error)")
+					AppLogger.shared.general.error("Failed to download update: \(error)")
 				}
 			}
 		case .alertThirdButtonReturn:
