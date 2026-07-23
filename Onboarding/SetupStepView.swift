@@ -14,7 +14,6 @@ struct SetupStepView: View {
 	@State private var showingShortcutCapture = false
 	@State private var fileSelectionShortcut = "⌃F"
 	@State private var showingFileShortcutCapture = false
-	@State private var showSections = [false, false, false]
 
 	var body: some View {
 		ScrollView {
@@ -31,23 +30,16 @@ struct SetupStepView: View {
 				.padding(.bottom, 8)
 
 				modelSection
-					.opacity(showSections[0] ? 1 : 0)
-					.offset(y: showSections[0] ? 0 : 10)
 
 				shortcutsSection
-					.opacity(showSections[1] ? 1 : 0)
-					.offset(y: showSections[1] ? 0 : 10)
 
 				preferencesSection
-					.opacity(showSections[2] ? 1 : 0)
-					.offset(y: showSections[2] ? 0 : 10)
 			}
 			.padding(.horizontal, 40)
 			.padding(.vertical, 24)
 		}
 		.onAppear {
 			loadAvailableModels()
-			animateSectionsIn()
 		}
 		.onChange(of: selectedModel) { _, newModel in
 			downloadModelIfNeeded(newModel)
@@ -115,7 +107,7 @@ struct SetupStepView: View {
 			}
 
 			if audioManager.whisperKitTranscriber.isDownloadingModel {
-				VStack(spacing: 6) {
+				VStack(alignment: .leading, spacing: 6) {
 					HStack(spacing: 8) {
 						ProgressView()
 							.scaleEffect(0.7)
@@ -128,8 +120,6 @@ struct SetupStepView: View {
 					ProgressView(value: audioManager.whisperKitTranscriber.downloadProgress)
 						.frame(height: 4)
 				}
-				.padding(10)
-				.background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
 			}
 
 			Text(
@@ -234,14 +224,6 @@ struct SetupStepView: View {
 			}
 			.buttonStyle(SecondaryButtonStyle())
 			.controlSize(.small)
-		}
-	}
-
-	private func animateSectionsIn() {
-		for i in 0..<3 {
-			withAnimation(.spring(duration: 0.4, bounce: 0.15).delay(Double(i) * 0.1)) {
-				showSections[i] = true
-			}
 		}
 	}
 

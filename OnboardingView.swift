@@ -39,22 +39,23 @@ struct OnboardingView: View {
 
 			ZStack {
 				stepContent
+					.geometryGroup()
 					.id(currentStep)
 					.transition(SlideTransition(direction: direction))
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 			.clipped()
-			.animation(.spring(duration: 0.5, bounce: 0.18), value: currentStep)
 
 			HStack(spacing: 16) {
 				if currentStep > 0 {
 					Button("Back") {
 						direction = -1
-						withAnimation {
+						withAnimation(.spring(duration: 0.5, bounce: 0.18)) {
 							currentStep -= 1
 						}
 					}
 					.buttonStyle(SecondaryButtonStyle())
+					.focusEffectDisabled()
 				}
 
 				Spacer()
@@ -64,6 +65,8 @@ struct OnboardingView: View {
 				}
 				.buttonStyle(PrimaryButtonStyle(isRecording: false))
 				.disabled(!canProceed)
+				.focusEffectDisabled()
+				.id(currentStep)
 			}
 			.padding(.horizontal, 40)
 			.padding(.bottom, 30)
@@ -97,6 +100,7 @@ struct OnboardingView: View {
 				audioManager: audioManager,
 				globalShortcutManager: shortcutManager
 			)
+			.padding(.horizontal, 40)
 		case 2:
 			SetupStepView(
 				selectedModel: $selectedModel,
@@ -161,7 +165,7 @@ struct OnboardingView: View {
 		}
 
 		direction = 1
-		withAnimation {
+		withAnimation(.spring(duration: 0.5, bounce: 0.18)) {
 			currentStep += 1
 		}
 	}

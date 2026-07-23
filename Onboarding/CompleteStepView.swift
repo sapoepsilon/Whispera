@@ -2,8 +2,6 @@ import SwiftUI
 
 struct CompleteStepView: View {
 	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
-	@State private var showContent = false
-	@State private var showCards = [false, false, false]
 	@State private var floatOffset: CGFloat = 0
 
 	private var tips: [(icon: String, title: String, description: String)] {
@@ -18,7 +16,6 @@ struct CompleteStepView: View {
 		ZStack {
 			ConfettiView()
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
-				.opacity(showContent ? 1 : 0)
 
 			VStack(spacing: 24) {
 				Spacer()
@@ -28,8 +25,6 @@ struct CompleteStepView: View {
 					.frame(width: 80, height: 80)
 					.clipShape(RoundedRectangle(cornerRadius: 18))
 					.offset(y: floatOffset)
-					.scaleEffect(showContent ? 1 : 0.5)
-					.opacity(showContent ? 1 : 0)
 
 				VStack(spacing: 8) {
 					Text("You're Ready")
@@ -39,14 +34,10 @@ struct CompleteStepView: View {
 						.font(.body)
 						.foregroundColor(.secondary)
 				}
-				.opacity(showContent ? 1 : 0)
-				.offset(y: showContent ? 0 : 10)
 
 				VStack(spacing: 10) {
-					ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+					ForEach(Array(tips.enumerated()), id: \.offset) { _, tip in
 						tipCard(icon: tip.icon, title: tip.title, description: tip.description)
-							.scaleEffect(showCards[index] ? 1 : 0.9)
-							.opacity(showCards[index] ? 1 : 0)
 					}
 				}
 				.padding(.top, 8)
@@ -55,14 +46,6 @@ struct CompleteStepView: View {
 			}
 		}
 		.onAppear {
-			withAnimation(.spring(duration: 0.6, bounce: 0.25)) {
-				showContent = true
-			}
-			for i in 0..<3 {
-				withAnimation(.spring(duration: 0.5, bounce: 0.2).delay(0.3 + Double(i) * 0.15)) {
-					showCards[i] = true
-				}
-			}
 			withAnimation(
 				.easeInOut(duration: 2.0)
 				.repeatForever(autoreverses: true)

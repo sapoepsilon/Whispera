@@ -7,7 +7,6 @@ struct PermissionsStepView: View {
 	@ObservedObject var globalShortcutManager: GlobalShortcutManager
 
 	@State private var hasMicrophonePermission = false
-	@State private var showRows = [false, false]
 	private let permissionTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
 	var body: some View {
@@ -29,95 +28,65 @@ struct PermissionsStepView: View {
 			}
 
 			VStack(spacing: 16) {
-				Group {
-					PermissionRowView(
-						icon: "key.fill",
-						title: "Accessibility Access",
-						description: "Required for global keyboard shortcuts",
-						isGranted: hasPermissions
-					)
-
-					if !hasPermissions {
-						Button("Grant Accessibility Access") {
-							globalShortcutManager.requestAccessibilityPermissions()
-						}
-						.controlSize(.small)
+				PermissionRowView(
+					icon: "key.fill",
+					title: "Accessibility Access",
+					description: "Required for global keyboard shortcuts",
+					isGranted: hasPermissions,
+					grantAction: {
+						globalShortcutManager.requestAccessibilityPermissions()
 					}
-				}
-				.opacity(showRows[0] ? 1 : 0)
-				.offset(x: showRows[0] ? 0 : 30)
+				)
 
-				Group {
-					PermissionRowView(
-						icon: "mic.fill",
-						title: "Microphone Access",
-						description: "Required for voice recording",
-						isGranted: hasMicrophonePermission
-					)
+				Divider()
 
-					if !hasMicrophonePermission {
-						Button("Grant Microphone Access") {
-							Task { await requestMicrophonePermission() }
-						}
-						.controlSize(.small)
+				PermissionRowView(
+					icon: "mic.fill",
+					title: "Microphone Access",
+					description: "Required for voice recording",
+					isGranted: hasMicrophonePermission,
+					grantAction: {
+						Task { await requestMicrophonePermission() }
 					}
-				}
-				.opacity(showRows[1] ? 1 : 0)
-				.offset(x: showRows[1] ? 0 : 30)
+				)
 			}
+			.padding(16)
+			.background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 
-			if hasPermissions && hasMicrophonePermission {
-				HStack(spacing: 8) {
-					Image(systemName: "checkmark.circle.fill")
-						.foregroundColor(.green)
-					Text("All permissions granted!")
-						.font(.subheadline)
-						.foregroundColor(.green)
-				}
-				.padding()
-				.background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-				.transition(.scale.combined(with: .opacity))
-			} else {
-				VStack(spacing: 8) {
-					if !hasPermissions {
-						Text(
-							"Go to System Settings > Privacy & Security > Accessibility and enable Whispera."
-						)
-						.font(.subheadline)
-						.foregroundColor(.secondary)
-						.multilineTextAlignment(.center)
+			Group {
+				if hasPermissions && hasMicrophonePermission {
+					HStack(spacing: 8) {
+						Image(systemName: "checkmark.circle.fill")
+							.foregroundColor(.green)
+						Text("All permissions granted!")
+							.font(.subheadline)
+							.foregroundColor(.green)
 					}
-					if !hasMicrophonePermission {
-						Text(
-							"Microphone access will be requested when you click the button above."
-						)
-						.font(.subheadline)
-						.foregroundColor(.secondary)
-						.multilineTextAlignment(.center)
-					}
+					.transition(.scale.combined(with: .opacity))
+				} else if !hasPermissions {
+					Text(
+						"Go to System Settings > Privacy & Security > Accessibility and enable Whispera."
+					)
+					.font(.subheadline)
+					.foregroundColor(.secondary)
+					.multilineTextAlignment(.center)
 				}
-				.padding()
-				.background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
 			}
+			.frame(minHeight: 40)
 		}
 		.animation(.spring(duration: 0.4, bounce: 0.15), value: hasPermissions)
 		.animation(.spring(duration: 0.4, bounce: 0.15), value: hasMicrophonePermission)
 		.onAppear {
-			checkAccessibilityPermission()
-			checkMicrophonePermission()
-			animateRowsIn()
+			var transaction = Transaction()
+			transaction.disablesAnimations = true
+			withTransaction(transaction) {
+				checkAccessibilityPermission()
+				checkMicrophonePermission()
+			}
 		}
 		.onReceive(permissionTimer) { _ in
 			checkAccessibilityPermission()
 			checkMicrophonePermission()
-		}
-	}
-
-	private func animateRowsIn() {
-		for i in 0..<2 {
-			withAnimation(.spring(duration: 0.4, bounce: 0.15).delay(Double(i) * 0.1)) {
-				showRows[i] = true
-			}
 		}
 	}
 

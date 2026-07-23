@@ -5,6 +5,7 @@ struct PermissionRowView: View {
 	let title: String
 	let description: String
 	let isGranted: Bool
+	var grantAction: (() -> Void)? = nil
 
 	@State private var checkScale: CGFloat = 1.0
 
@@ -30,12 +31,16 @@ struct PermissionRowView: View {
 
 			Spacer()
 
-			Image(systemName: isGranted ? "checkmark.circle.fill" : "circle")
-				.foregroundColor(isGranted ? .green : .gray)
-				.scaleEffect(checkScale)
+			if isGranted {
+				Image(systemName: "checkmark.circle.fill")
+					.foregroundColor(.green)
+					.scaleEffect(checkScale)
+			} else if let grantAction {
+				Button("Grant", action: grantAction)
+					.buttonStyle(SecondaryButtonStyle())
+					.controlSize(.small)
+			}
 		}
-		.padding()
-		.background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 		.onChange(of: isGranted) { wasGranted, nowGranted in
 			if !wasGranted && nowGranted {
 				checkScale = 0.3
