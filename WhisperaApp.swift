@@ -5,13 +5,12 @@ import SwiftUI
 @main
 struct WhisperaApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-	private let softwareUpdater = SoftwareUpdater()
+	private let softwareUpdater = SoftwareUpdater.shared
 
 	var body: some Scene {
 		Settings {
 			SettingsWithMaterial(
 				permissionManager: appDelegate.permissionManager ?? PermissionManager(),
-				updateManager: appDelegate.updateManager ?? UpdateManager(),
 				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager(),
 				softwareUpdater: softwareUpdater
 			)
@@ -42,7 +41,6 @@ struct WhisperaApp: App {
 
 struct SettingsWithMaterial: View {
 	var permissionManager: PermissionManager
-	var updateManager: UpdateManager
 	var appLibraryManager: AppLibraryManager
 	var softwareUpdater: SoftwareUpdater
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
@@ -55,7 +53,6 @@ struct SettingsWithMaterial: View {
 		if #available(macOS 15.0, *) {
 			SettingsView(
 				permissionManager: permissionManager,
-				updateManager: updateManager,
 				appLibraryManager: appLibraryManager,
 				softwareUpdater: softwareUpdater
 			)
@@ -64,7 +61,6 @@ struct SettingsWithMaterial: View {
 		} else {
 			SettingsView(
 				permissionManager: permissionManager,
-				updateManager: updateManager,
 				appLibraryManager: appLibraryManager,
 				softwareUpdater: softwareUpdater
 			)
@@ -81,16 +77,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	var fileTranscriptionManager: FileTranscriptionManager!
 	var networkDownloader: NetworkFileDownloader!
 	var queueManager: TranscriptionQueueManager!
-	var updateManager: UpdateManager?
 	var permissionManager: PermissionManager?
 	var appLibraryManager: AppLibraryManager?
-	var softwareUpdater: SoftwareUpdater?
 	@AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
 	@AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
 	private var recordingObserver: NSObjectProtocol?
 	private var downloadObserver: NSObjectProtocol?
 	private var modelStateObserver: NSObjectProtocol?
-	private var updateObserver: NSObjectProtocol?
 	private var sleepObserver: NSObjectProtocol?
 	private var wakeObserver: NSObjectProtocol?
 	private var onboardingWindow: NSWindow?
@@ -120,7 +113,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				fileTranscriptionManager: fileTranscriptionManager,
 				networkDownloader: networkDownloader
 			)
-			updateManager = UpdateManager()
 			permissionManager = PermissionManager()
 			appLibraryManager = AppLibraryManager()
 			setupMenuBar()
@@ -131,7 +123,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			shortcutManager.setQueueManager(queueManager)
 			observeRecordingState()
 			observeWindowState()
-			observeUpdateState()
 			observeSleepWakeNotifications()
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
@@ -139,22 +130,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			recordingGlowController = RecordingGlowController(audioManager: audioManager)
 			if !hasCompletedOnboarding {
 				showOnboarding()
-			}
-
-			if updateManager?.autoCheckForUpdates == true {
-				Task {
-					do {
-						let hasUpdate = try await updateManager?.checkForUpdates() ?? false
-						if hasUpdate {
-							AppLogger.shared.general.info(
-								"Update available: \(self.updateManager?.latestVersion ?? "unknown")")
-						} else {
-							AppLogger.shared.general.info("App is up to date")
-						}
-					} catch {
-						AppLogger.shared.general.error("Failed to check for updates: \(error)")
-					}
-				}
 			}
 
 			// Listen for show onboarding requests from settings
@@ -204,7 +179,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			rootView: MenuBarView(
 				audioManager: audioManager,
 				permissionManager: permissionManager ?? PermissionManager(),
-				updateManager: updateManager ?? UpdateManager(),
+				softwareUpdater: SoftwareUpdater.shared,
 				fileTranscriptionManager: fileTranscriptionManager,
 				networkDownloader: networkDownloader,
 				queueManager: queueManager
@@ -611,19 +586,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		}
 	}
 
-	private func observeUpdateState() {
-		// Observe update availability notifications
-		updateObserver = NotificationCenter.default.addObserver(
-			forName: UpdateManager.updateAvailableNotification,
-			object: nil,
-			queue: .main
-		) { [weak self] notification in
-			if let version = notification.userInfo?["version"] as? String {
-				self?.showUpdateAvailableNotification(version: version)
-			}
-		}
-	}
-
 	private func observeSleepWakeNotifications() {
 		sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
 			forName: NSWorkspace.willSleepNotification,
@@ -639,35 +601,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			queue: .main
 		) { _ in
 			AppLogger.shared.general.info("System did wake")
-		}
-	}
-
-	private func showUpdateAvailableNotification(version: String) {
-		let alert = NSAlert()
-		alert.messageText = "Update Available"
-		alert.informativeText = "Whispera \(version) is available. Would you like to download it now?"
-		alert.addButton(withTitle: "Download")
-		alert.addButton(withTitle: "Later")
-		alert.addButton(withTitle: "View Release Notes")
-
-		let response = alert.runModal()
-		switch response {
-		case .alertFirstButtonReturn:
-			// Download update
-			Task {
-				do {
-					try await updateManager?.downloadUpdate()
-				} catch {
-					AppLogger.shared.general.error("Failed to download update: \(error)")
-				}
-			}
-		case .alertThirdButtonReturn:
-			// Open GitHub releases page
-			if let url = URL(string: "https://github.com/\(AppVersion.Constants.githubRepo)/releases") {
-				NSWorkspace.shared.open(url)
-			}
-		default:
-			break
 		}
 	}
 
@@ -733,9 +666,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			NotificationCenter.default.removeObserver(observer)
 		}
 		if let observer = modelStateObserver {
-			NotificationCenter.default.removeObserver(observer)
-		}
-		if let observer = updateObserver {
 			NotificationCenter.default.removeObserver(observer)
 		}
 		if let observer = sleepObserver {
