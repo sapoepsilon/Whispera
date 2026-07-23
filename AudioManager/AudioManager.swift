@@ -113,6 +113,11 @@ final class AudioManager: NSObject {
 	override init() {
 		super.init()
 		whisperKitTranscriber.startInitialization()
+		whisperKitTranscriber.onLiveAudioSamples = { [weak self] samples in
+			// WhisperKit delivers per-buffer chunks; cap the window so level
+			// math stays cheap even if a large backlog arrives at once
+			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
+		}
 	}
 
 	func setupAudio() {
@@ -458,6 +463,7 @@ extension AudioManager {
 		playFeedbackSound(start: false)
 
 		whisperKitTranscriber.stopLiveStream()
+		levelMonitor.reset()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
 		scheduleTimerReset()

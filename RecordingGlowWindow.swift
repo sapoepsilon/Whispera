@@ -31,22 +31,41 @@ enum RecordingGlowColor {
 	}
 }
 
+// fast attack so the glow jumps with speech onset, slow release so it
+// decays smoothly instead of flickering between words
+private final class GlowLevelSmoother {
+	private var value: Float = 0
+	private var lastTime: Float?
+
+	func step(toward target: Float, at time: Float) -> Float {
+		let dt = lastTime.map { max(0, time - $0) } ?? 0
+		lastTime = time
+		let timeConstant: Float = target > value ? 0.03 : 0.2
+		value += (target - value) * (1 - exp(-dt / timeConstant))
+		return value
+	}
+}
+
 struct RecordingGlowView: View {
 	@AppStorage(RecordingGlowColor.key) private var glowColorHex = RecordingGlowColor.defaultHex
+	let levelMonitor: AudioLevelMonitor
 	private let startDate = Date()
+	private let smoother = GlowLevelSmoother()
 
 	var body: some View {
 		// 30fps is indistinguishable for this slow ambient sweep and halves
 		// the GPU frame count on ProMotion displays
 		TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
 			let time = Float(context.date.timeIntervalSince(startDate))
+			let level = smoother.step(toward: levelMonitor.overallLevel, at: time)
 			Rectangle()
 				.colorEffect(
 					ShaderLibrary.recordingGlow(
 						.boundingRect,
 						.color(RecordingGlowColor.color(fromHex: glowColorHex)),
 						.float(time),
-						.float(0.8 + 0.2 * sin(time * 2.0))
+						.float(0.8 + 0.2 * sin(time * 2.0)),
+						.float(level)
 					)
 				)
 		}
@@ -110,7 +129,8 @@ final class RecordingGlowController {
 		panel.ignoresMouseEvents = true
 		panel.hidesOnDeactivate = false
 		panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-		panel.contentView = NSHostingView(rootView: RecordingGlowView())
+		panel.contentView = NSHostingView(
+			rootView: RecordingGlowView(levelMonitor: audioManager.levelMonitor))
 		panel.orderFrontRegardless()
 
 		glowPanel = panel

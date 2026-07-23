@@ -11,9 +11,17 @@ final class AudioLevelMonitor {
 
 	private let bandCount: Int
 	private let silenceThreshold: Float = 0.001
-	private var recentPeaks: [Float] = []
-	private let peakHistorySize = 60
-	private var adaptiveGain: Float = 5.0
+	// dB span mapped onto the 0...1 visual range below the adaptive ceiling
+	private let dynamicRangeDb: Float = 40
+	// the ceiling itself maps below 1.0 so ordinary speech, which hovers near
+	// its own recent peak in the log domain, doesn't pin the meters at max
+	private let headroomDb: Float = 8
+	// Rolling estimate of how loud "loud" is for the current mic, in dB.
+	// Mics differ wildly in sensitivity (AirPods report far hotter RMS than
+	// the built-in mic), so a fixed scale either pins the meters or flatlines
+	// them. The ceiling jumps up as soon as it is exceeded and decays slowly,
+	// and is deliberately NOT reset between recordings so calibration sticks.
+	private var ceilingDb: Float = -25
 
 	init(bandCount: Int = 7) {
 		self.bandCount = bandCount
@@ -22,6 +30,12 @@ final class AudioLevelMonitor {
 
 	var hasAudioActivity: Bool {
 		!isSilent && peakLevel > silenceThreshold
+	}
+
+	// normalized 0...1 loudness suitable for driving visuals; the loudest
+	// band tracks speech far better than the average, which dilutes bursts
+	var overallLevel: Float {
+		levels.max() ?? 0
 	}
 
 	var microphoneStatus: MicrophoneStatus {
@@ -42,7 +56,7 @@ final class AudioLevelMonitor {
 
 		let samplesPerBand = max(1, samples.count / bandCount)
 
-		var newLevels: [Float] = []
+		var bandRms: [Float] = []
 		var maxLevel: Float = 0
 		var sum: Float = 0
 
@@ -51,20 +65,18 @@ final class AudioLevelMonitor {
 			let end = min(start + samplesPerBand, samples.count)
 
 			guard start < samples.count else {
-				newLevels.append(0)
+				bandRms.append(0)
 				continue
 			}
 
 			let band = Array(samples[start..<end])
 			let rms = sqrt(band.map { $0 * $0 }.reduce(0, +) / Float(band.count))
-			let normalizedLevel = min(1.0, rms * adaptiveGain)
 
-			newLevels.append(normalizedLevel)
+			bandRms.append(rms)
 			maxLevel = max(maxLevel, rms)
 			sum += rms
 		}
 
-		levels = newLevels
 		peakLevel = maxLevel
 		averageLevel = sum / Float(bandCount)
 
@@ -74,26 +86,30 @@ final class AudioLevelMonitor {
 		} else {
 			consecutiveSilentFrames = 0
 			isSilent = false
-			updateAdaptiveGain(currentPeak: maxLevel)
+			updateCeiling(peakDb: decibels(maxLevel))
+		}
+
+		levels = bandRms.map(normalizedLevel)
+	}
+
+	private func updateCeiling(peakDb: Float) {
+		if peakDb > ceilingDb {
+			ceilingDb = min(0, ceilingDb + (peakDb - ceilingDb) * 0.5)
+		} else {
+			ceilingDb = max(-45, ceilingDb + (peakDb - ceilingDb) * 0.005)
 		}
 	}
 
-	private func updateAdaptiveGain(currentPeak: Float) {
-		recentPeaks.append(currentPeak)
-		if recentPeaks.count > peakHistorySize {
-			recentPeaks.removeFirst()
-		}
+	private func normalizedLevel(_ rms: Float) -> Float {
+		let floorDb = ceilingDb - dynamicRangeDb
+		let linear = min(1, max(0, (decibels(rms) - floorDb) / (dynamicRangeDb + headroomDb)))
+		// squaring expands the top of the range: speech chunks cluster within
+		// a few dB of each other, and without expansion they all read as max
+		return linear * linear
+	}
 
-		guard recentPeaks.count >= 10 else { return }
-
-		let sortedPeaks = recentPeaks.sorted()
-		let percentile90 = sortedPeaks[Int(Float(sortedPeaks.count) * 0.9)]
-
-		if percentile90 > 0.001 {
-			let targetGain = 0.7 / percentile90
-			let clampedGain = max(2.0, min(20.0, targetGain))
-			adaptiveGain = adaptiveGain * 0.95 + clampedGain * 0.05
-		}
+	private func decibels(_ rms: Float) -> Float {
+		20 * log10(max(rms, 1e-7))
 	}
 
 	func reset() {
@@ -102,8 +118,6 @@ final class AudioLevelMonitor {
 		averageLevel = 0
 		isSilent = true
 		consecutiveSilentFrames = 0
-		recentPeaks.removeAll()
-		adaptiveGain = 5.0
 	}
 
 	private func markSilent() {
