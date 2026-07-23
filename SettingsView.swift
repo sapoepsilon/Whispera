@@ -186,7 +186,6 @@ struct SettingsView: View {
 	@State private var showingToolsSettings = false
 	@State private var showingSafetySettings = false
 	@State private var showingUpdaterError = false
-	@State private var showingNoUpdateAlert = false
 	@State private var showingStorageDetails = false
 	@State private var showingClearAllConfirmation = false
 	@State private var confirmationStep = 0
@@ -1187,14 +1186,6 @@ struct SettingsView: View {
 				"This will permanently delete all application logs. This action cannot be undone."
 			)
 		}
-	}
-
-	private func showNoUpdateAlert() {
-		let alert = NSAlert()
-		alert.messageText = "No Updates Available"
-		alert.informativeText = "You're running the latest version of Whispera."
-		alert.addButton(withTitle: "OK")
-		alert.runModal()
 	}
 
 	private func loadAvailableModels() {

@@ -61,11 +61,6 @@ class AppLibraryManager {
 		return appSupportDirectory?.appendingPathComponent("models/argmaxinc/whisperkit-coreml")
 	}
 
-	/// Downloads directory where updates are stored
-	var downloadsDirectory: URL? {
-		return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-	}
-
 	/// Logs directory
 	var logsDirectory: URL? {
 		return appSupportDirectory?.appendingPathComponent("Logs")
@@ -249,28 +244,6 @@ class AppLibraryManager {
 		}
 	}
 
-	func openDownloadsInFinder() {
-		guard let downloadsDir = downloadsDirectory else {
-			showFinderError("Unable to locate downloads directory")
-			return
-		}
-
-		// Ensure downloads directory exists
-		if !FileManager.default.fileExists(atPath: downloadsDir.path) {
-			do {
-				try FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
-			} catch {
-				showFinderError("Failed to create downloads directory: \(error.localizedDescription)")
-				return
-			}
-		}
-
-		let success = NSWorkspace.shared.open(downloadsDir)
-		if !success {
-			showFinderError("Failed to open downloads in Finder")
-		}
-	}
-
 	func openLogsInFinder() {
 		guard let logsDir = logsDirectory else {
 			showFinderError("Unable to locate logs directory")
@@ -295,35 +268,6 @@ class AppLibraryManager {
 
 	func revealModelInFinder(_ modelInfo: ModelInfo) {
 		NSWorkspace.shared.selectFile(modelInfo.path.path, inFileViewerRootedAtPath: "")
-	}
-
-	// MARK: - Update File Management
-
-	func getDownloadedUpdates() -> [URL] {
-		guard let downloadsDir = downloadsDirectory else { return [] }
-
-		do {
-			let files = try FileManager.default.contentsOfDirectory(
-				at: downloadsDir, includingPropertiesForKeys: nil)
-			return files.filter {
-				$0.pathExtension == "dmg" && $0.lastPathComponent.hasPrefix("Whispera-")
-			}
-		} catch {
-			return []
-		}
-	}
-
-	func removeDownloadedUpdate(at url: URL) throws {
-		try FileManager.default.removeItem(at: url)
-	}
-
-	func getUpdateFileSize(at url: URL) -> Int64 {
-		do {
-			let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-			return attributes[.size] as? Int64 ?? 0
-		} catch {
-			return 0
-		}
 	}
 
 	// MARK: - Storage Utilities
@@ -391,17 +335,6 @@ extension AppLibraryManager {
 			}
 			info.append("")
 			info.append("Total: \(totalStorageFormatted)")
-		}
-
-		let updates = getDownloadedUpdates()
-		if !updates.isEmpty {
-			info.append("")
-			info.append("Downloaded Updates:")
-			for update in updates {
-				let size = getUpdateFileSize(at: update)
-				let sizeFormatted = formatBytes(size)
-				info.append("  • \(update.lastPathComponent): \(sizeFormatted)")
-			}
 		}
 
 		return info
