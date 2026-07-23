@@ -55,7 +55,7 @@ struct SettingRow<Content: View>: View {
 	}
 
 	var body: some View {
-		HStack {
+		HStack(spacing: 12) {
 			VStack(alignment: .leading, spacing: 2) {
 				Text(label)
 					.font(.subheadline)
@@ -63,10 +63,12 @@ struct SettingRow<Content: View>: View {
 					Text(description)
 						.font(.caption)
 						.foregroundColor(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
 				}
 			}
-			Spacer()
+			.frame(maxWidth: .infinity, alignment: .leading)
 			content
+				.layoutPriority(1)
 		}
 	}
 }
@@ -108,6 +110,7 @@ struct InfoBox<Content: View>: View {
 				.foregroundColor(style.color)
 				.imageScale(.medium)
 			content
+				.fixedSize(horizontal: false, vertical: true)
 				.frame(maxWidth: .infinity, alignment: .leading)
 		}
 		.padding(12)
@@ -123,7 +126,7 @@ struct InfoBox<Content: View>: View {
 }
 
 struct SettingsView: View {
-	@AppStorage("globalShortcut") private var globalShortcut = "⌘⌥D"
+	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
 	@AppStorage("selectedModel") private var selectedModel = ""
 	@AppStorage("autoDownloadModel") private var autoDownloadModel = true
 	@AppStorage("soundFeedback") private var soundFeedback = true
@@ -131,13 +134,16 @@ struct SettingsView: View {
 	@AppStorage("stopSound") private var stopSound = "Pop"
 	@AppStorage("launchAtStartup") private var launchAtStartup = false
 	@AppStorage("enableTranslation") private var enableTranslation = false
-	@AppStorage("enableStreaming") private var enableStreaming = false
+	@AppStorage("enableStreaming") private var enableStreaming = Constants.enableStreamingDefault
 	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
 	@AppStorage("autoDetectLanguageFromKeyboard") private var autoDetectLanguageFromKeyboard = true
 	@AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
 	@AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
+	@AppStorage("enableRecordingGlow") private var enableRecordingGlow = true
+	@AppStorage(RecordingGlowColor.key) private var recordingGlowColorHex = RecordingGlowColor
+		.defaultHex
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
 
 	private var materialStyle: MaterialStyle {
@@ -297,6 +303,31 @@ struct SettingsView: View {
 							description: "Trackpad vibration when shortcut is triggered"
 						) {
 							Toggle("", isOn: $shortcutHapticFeedback)
+						}
+
+						SettingRow(
+							"Recording Glow",
+							description: "Glow around the screen edges while recording"
+						) {
+							Toggle("", isOn: $enableRecordingGlow)
+						}
+
+						if enableRecordingGlow {
+							SettingRow("Glow Color") {
+								ColorPicker(
+									"",
+									selection: Binding(
+										get: {
+											RecordingGlowColor.color(fromHex: recordingGlowColorHex)
+										},
+										set: {
+											recordingGlowColorHex = RecordingGlowColor.hex(from: $0)
+										}
+									),
+									supportsOpacity: false
+								)
+								.labelsHidden()
+							}
 						}
 					}
 					Divider()
@@ -476,14 +507,16 @@ struct SettingsView: View {
 					Divider()
 
 					SettingsSection("Performance") {
-						VStack(alignment: .leading, spacing: 8) {
-							Text("Optimized Compute Configuration")
-								.font(.subheadline)
-							Text(
-								"Audio processing uses CPU + GPU, text decoding uses CPU + Neural Engine for optimal performance on Apple Silicon."
-							)
-							.font(.caption)
-							.foregroundColor(.secondary)
+						InfoBox(style: .info) {
+							VStack(alignment: .leading, spacing: 4) {
+								Text("Optimized Compute Configuration")
+									.font(.subheadline)
+								Text(
+									"Audio processing uses CPU + GPU, text decoding uses CPU + Neural Engine for optimal performance on Apple Silicon."
+								)
+								.font(.caption)
+								.foregroundColor(.secondary)
+							}
 						}
 					}
 

@@ -21,6 +21,7 @@ import WhisperKit
 	var currentModel: String?
 	var downloadedModels: Set<String> = []
 	var onConfirmedTextChange: ((String) -> Void)?
+	@ObservationIgnored var onLiveAudioSamples: (@MainActor ([Float]) -> Void)?
 	var shouldShowLiveTranscriptionWindow: Bool = false
 	var isTranscribing: Bool = false
 	var decodingOptions: DecodingOptions?
@@ -571,9 +572,10 @@ import WhisperKit
 
 				await AudioDeviceManager.shared.activateSelectedDevice()
 				let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
-				try? whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) { [weak self] _ in
+				try? whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) { [weak self] samples in
 					Task { @MainActor in
 						self?.shouldShowLiveTranscriptionWindow = true
+						self?.onLiveAudioSamples?(samples)
 					}
 				}
 				realtimeLoop()
@@ -600,7 +602,11 @@ import WhisperKit
 		whisperKit.audioProcessor.pauseRecording()
 
 		do {
-			try whisperKit.audioProcessor.resumeRecordingLive(inputDeviceID: newDeviceID, callback: nil)
+			try whisperKit.audioProcessor.resumeRecordingLive(inputDeviceID: newDeviceID) { [weak self] samples in
+				Task { @MainActor in
+					self?.onLiveAudioSamples?(samples)
+				}
+			}
 			let deviceName = newDeviceID.flatMap { id -> String? in
 				AudioDeviceManager.shared.availableDevices.first(where: { $0.id == id })?.name
 			} ?? "System Default"

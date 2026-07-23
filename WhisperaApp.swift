@@ -96,6 +96,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var onboardingWindow: NSWindow?
 	private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
+	private var recordingGlowController: RecordingGlowController?
 	private var popoverFrame: NSRect?
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
@@ -108,7 +109,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			return
 		}
 
-		setupDefaultsIfNeeded()
+		AppDelegate.registerInitialDefaults(in: .standard)
 
 		Task { @MainActor in
 			audioManager = AudioManager()
@@ -135,6 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
+			recordingGlowController = RecordingGlowController(audioManager: audioManager)
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
@@ -175,39 +177,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		}
 	}
 
-	private func setupDefaultsIfNeeded() {
-		// Set default values if they don't exist
-		if UserDefaults.standard.object(forKey: "selectedModel") == nil {
-			UserDefaults.standard.set("openai_whisper-small.en", forKey: "selectedModel")
-		}
-
-		if UserDefaults.standard.object(forKey: "globalShortcut") == nil {
-			UserDefaults.standard.set("⌥⌘R", forKey: "globalShortcut")
-		}
-
-		if UserDefaults.standard.object(forKey: "startSound") == nil {
-			UserDefaults.standard.set("Tink", forKey: "startSound")
-		}
-
-		if UserDefaults.standard.object(forKey: "stopSound") == nil {
-			UserDefaults.standard.set("Pop", forKey: "stopSound")
-		}
-
-		if UserDefaults.standard.object(forKey: "launchAtStartup") == nil {
-			UserDefaults.standard.set(false, forKey: "launchAtStartup")
-		}
-
-		if UserDefaults.standard.object(forKey: "soundFeedback") == nil {
-			UserDefaults.standard.set(true, forKey: "soundFeedback")
-		}
-
-		if UserDefaults.standard.object(forKey: "materialStyle") == nil {
-			UserDefaults.standard.set(MaterialStyle.default.rawValue, forKey: "materialStyle")
-		}
-
-		AppLogger.shared.general.info(
-			"Setup defaults - Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "none")"
-		)
+	nonisolated static func registerInitialDefaults(in defaults: UserDefaults) {
+		defaults.register(defaults: [
+			"selectedModel": "openai_whisper-small.en",
+			"globalShortcut": "⌥⌘R",
+			"startSound": "Tink",
+			"stopSound": "Pop",
+			"launchAtStartup": false,
+			"soundFeedback": true,
+			"enableRecordingGlow": true,
+			"enableStreaming": Constants.enableStreamingDefault,
+			"materialStyle": MaterialStyle.default.rawValue,
+		])
 	}
 
 	func setupMenuBar() {
@@ -352,6 +333,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		) { [weak self] _ in
 			Task { @MainActor in
 				self?.updateStatusIcon()
+				self?.recordingGlowController?.updateVisibility()
 			}
 		}
 

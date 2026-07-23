@@ -51,9 +51,11 @@ class LiveTranscriptionWindow: NSWindow {
 			Task { @MainActor in
 				guard let self = self else { return }
 
-				let shouldShow =
-					self.whisperKit.shouldShowLiveTranscriptionWindow
-					&& (self.whisperKit.isTranscribing || self.whisperKit.isWaitingForModel)
+				let shouldShow = RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
+					mode: self.audioManager.currentRecordingMode,
+					transcriberWantsWindow: self.whisperKit.shouldShowLiveTranscriptionWindow
+						&& (self.whisperKit.isTranscribing || self.whisperKit.isWaitingForModel)
+				)
 
 				if shouldShow {
 					let newSize = self.calculateDynamicSize()
