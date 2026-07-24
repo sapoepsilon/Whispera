@@ -30,7 +30,7 @@ class YouTubeTranscriptionViewModel {
 		var autoDeleteDownloadedFiles: Bool = true
 	@ObservationIgnored @AppStorage("showTimestamps") var showTimestamps: Bool = true
 	@ObservationIgnored @AppStorage("timestampFormat") private var timestampFormat: String = "MM:SS"
-	@ObservationIgnored @AppStorage("defaultTranscriptionMode") private var defaultTranscriptionMode: String = "plain"
+	@ObservationIgnored @AppStorage("defaultTranscriptionMode") private var defaultTranscriptionMode: String = "timestamps"
 
 	// MARK: - Dependencies
 	private let youtubeTranscriptionManager: YouTubeTranscriptionManager

@@ -32,7 +32,16 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 	// MARK: - FileTranscriptionCapable Methods
 
 	func transcribeFile(at url: URL) async throws -> String {
-		logger.info("Starting file transcription for: \(url.lastPathComponent)")
+		let includeTimestamps = Self.resolveIncludeTimestamps(from: .standard)
+		logger.info("Resolved includeTimestamps: \(includeTimestamps)")
+		return try await transcribeFile(at: url, withTimestamps: includeTimestamps)
+	}
+
+	func transcribeFile(at url: URL, withTimestamps: Bool, timestampFormat: String? = nil)
+		async throws -> String
+	{
+		logger.info(
+			"Starting file transcription for: \(url.lastPathComponent) (timestamps: \(withTimestamps))")
 
 		guard supportsFileType(url) else {
 			throw FileTranscriptionError.unsupportedFormat(url.pathExtension)
@@ -43,20 +52,23 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 		}
 		defer { url.stopAccessingSecurityScopedResource() }
 
-		// Check user setting for timestamps
-		let showTimestamps = UserDefaults.standard.bool(forKey: "showTimestamps")
-		logger.info("User setting showTimestamps: \(showTimestamps)")
-
-		if showTimestamps {
-			// Return timestamped transcription formatted as string
+		if withTimestamps {
 			let segments =
 				try await performSingleTranscription(url: url, withTimestamps: true)
 				as! [TranscriptionSegment]
-			return formatSegmentsAsString(segments)
+			return formatSegmentsAsString(segments, format: timestampFormat)
 		} else {
-			// Return plain text
 			return try await performSingleTranscription(url: url, withTimestamps: false) as! String
 		}
+	}
+
+	// Timestamps are on unless the user turned them off. Reads via object(forKey:)
+	// because bool(forKey:) returns false for absent keys, which silently disabled
+	// timestamps for anyone who never touched the Settings toggle.
+	nonisolated static func resolveIncludeTimestamps(from defaults: UserDefaults) -> Bool {
+		let mode = defaults.string(forKey: "defaultTranscriptionMode") ?? "timestamps"
+		let showTimestamps = defaults.object(forKey: "showTimestamps") as? Bool ?? true
+		return mode == "timestamps" && showTimestamps
 	}
 
 	func transcribeFiles(at urls: [URL]) async throws -> [String] {
@@ -149,8 +161,9 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 
 	// MARK: - Private Helpers
 
-	private func formatSegmentsAsString(_ segments: [TranscriptionSegment]) -> String {
-		let timestampFormat = UserDefaults.standard.string(forKey: "timestampFormat") ?? "MM:SS"
+	func formatSegmentsAsString(_ segments: [TranscriptionSegment], format: String? = nil) -> String {
+		let timestampFormat =
+			format ?? UserDefaults.standard.string(forKey: "timestampFormat") ?? "MM:SS"
 		logger.info("Formatting \(segments.count) segments with timestamp format: \(timestampFormat)")
 
 		let formattedString = segments.map { segment in
