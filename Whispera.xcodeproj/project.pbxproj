@@ -52,9 +52,7 @@
 		D66E6D6F2E185BD100F55A5B /* TestStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D6E2E185BCF00F55A5B /* TestStepView.swift */; };
 		D66E6D712E185BE900F55A5B /* CompleteStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D702E185BE600F55A5B /* CompleteStepView.swift */; };
 		D66E6D732E185C0200F55A5B /* ModelSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D722E185BFF00F55A5B /* ModelSelectionView.swift */; };
-		D698B9022E18EC4A008FE0CF /* UpdateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B9012E18EC4A008FE0CF /* UpdateManager.swift */; };
 		D698B9032E18EC4A008FE0CF /* AppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B9002E18EC4A008FE0CF /* AppVersion.swift */; };
-		D698B9072E18EC70008FE0CF /* UpdateManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B9052E18EC70008FE0CF /* UpdateManagerTests.swift */; };
 		D698B9082E18EC70008FE0CF /* VersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B9062E18EC70008FE0CF /* VersionTests.swift */; };
 		D698B9092E18EC70008FE0CF /* SingleInstanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B9042E18EC70008FE0CF /* SingleInstanceTests.swift */; };
 		D698B91D2E18F3DD008FE0CF /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B91C2E18F3DD008FE0CF /* PermissionManager.swift */; };
@@ -154,9 +152,7 @@
 		D66E6D702E185BE600F55A5B /* CompleteStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompleteStepView.swift; sourceTree = "<group>"; };
 		D66E6D722E185BFF00F55A5B /* ModelSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSelectionView.swift; sourceTree = "<group>"; };
 		D698B9002E18EC4A008FE0CF /* AppVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppVersion.swift; sourceTree = "<group>"; };
-		D698B9012E18EC4A008FE0CF /* UpdateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateManager.swift; sourceTree = "<group>"; };
 		D698B9042E18EC70008FE0CF /* SingleInstanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleInstanceTests.swift; sourceTree = "<group>"; };
-		D698B9052E18EC70008FE0CF /* UpdateManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateManagerTests.swift; sourceTree = "<group>"; };
 		D698B9062E18EC70008FE0CF /* VersionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionTests.swift; sourceTree = "<group>"; };
 		D698B91C2E18F3DD008FE0CF /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
 		D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
@@ -241,7 +237,6 @@
 				71209D193782548443855D7B /* AppLibraryManager.swift */,
 				D698B9002E18EC4A008FE0CF /* AppVersion.swift */,
 				D63A30E62E2EBF1E00BA20B7 /* AccessibilityHelper.swift */,
-				D698B9012E18EC4A008FE0CF /* UpdateManager.swift */,
 				D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */,
 				D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2F /* GlobalShortcutManager.swift */,
@@ -307,7 +302,6 @@
 			isa = PBXGroup;
 			children = (
 				D698B9042E18EC70008FE0CF /* SingleInstanceTests.swift */,
-				D698B9052E18EC70008FE0CF /* UpdateManagerTests.swift */,
 				39D9AAE907AA0588A6404646 /* AppLibraryManagerTests.swift */,
 				D698B9062E18EC70008FE0CF /* VersionTests.swift */,
 				D63850BC2E17907D000FD465 /* ModelSynchronizationTests.swift */,
@@ -599,7 +593,6 @@
 				D6BENCH012F0000000000001 /* BenchmarkResult.swift in Sources */,
 				D6BENCH012F0000000000002 /* BenchmarkRunner.swift in Sources */,
 				D6BENCH012F0000000000003 /* BenchmarkView.swift in Sources */,
-				D698B9022E18EC4A008FE0CF /* UpdateManager.swift in Sources */,
 				D6SOFTUPD2ED700000000005 /* SoftwareUpdater.swift in Sources */,
 				D63900D12E3D77E1005B5623 /* FileDropHandler.swift in Sources */,
 				D698B9032E18EC4A008FE0CF /* AppVersion.swift in Sources */,
@@ -618,7 +611,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D698B9072E18EC70008FE0CF /* UpdateManagerTests.swift in Sources */,
 				CFA1EB0C6BAB117DD9AD45C7 /* AppLibraryManagerTests.swift in Sources */,
 				D698B9082E18EC70008FE0CF /* VersionTests.swift in Sources */,
 				D698B9092E18EC70008FE0CF /* SingleInstanceTests.swift in Sources */,

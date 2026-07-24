@@ -1,5 +1,4 @@
 import AVFoundation
-import MarkdownUI
 import SwiftUI
 import WhisperKit
 
@@ -173,7 +172,6 @@ struct SettingsView: View {
 
 	// MARK: - Injected Dependencies
 	@State var permissionManager: PermissionManager
-	@State var updateManager: UpdateManager
 	@State var appLibraryManager: AppLibraryManager
 	@ObservedObject var softwareUpdater: SoftwareUpdater
 	@State var whisperKit = WhisperKitTranscriber.shared
@@ -188,13 +186,11 @@ struct SettingsView: View {
 	@State private var showingToolsSettings = false
 	@State private var showingSafetySettings = false
 	@State private var showingUpdaterError = false
-	@State private var showingNoUpdateAlert = false
 	@State private var showingStorageDetails = false
 	@State private var showingClearAllConfirmation = false
 	@State private var confirmationStep = 0
 	@State private var removingModelId: String?
 	@State private var liveTranscriptionInfoWindow: NSWindow?
-	@State private var releaseNotesWindow: NSWindow?
 	@State private var logsSize: String = "Calculating..."
 	@State private var showingClearLogsConfirmation = false
 
@@ -670,38 +666,6 @@ struct SettingsView: View {
 							}
 						}
 					}
-					Divider()
-
-					SettingsSection("Update Downloads") {
-						HStack(spacing: 12) {
-							Image(systemName: "arrow.down.circle")
-								.foregroundColor(.green)
-								.imageScale(.large)
-							VStack(alignment: .leading, spacing: 2) {
-								Text("Download Location")
-									.font(.subheadline)
-									.fontWeight(.medium)
-								if let location = updateManager.downloadLocation {
-									Text(
-										"Latest: \(URL(fileURLWithPath: location).lastPathComponent)"
-									)
-									.font(.caption)
-									.foregroundColor(.secondary)
-								} else {
-									Text("No updates downloaded")
-										.font(.caption)
-										.foregroundColor(.secondary)
-								}
-							}
-							Spacer()
-							Button("Open Downloads") {
-								appLibraryManager.openDownloadsInFinder()
-							}
-							.buttonStyle(.bordered)
-							.controlSize(.small)
-						}
-					}
-
 					Divider()
 
 					SettingsSection("Application Logs") {
@@ -1224,14 +1188,6 @@ struct SettingsView: View {
 		}
 	}
 
-	private func showNoUpdateAlert() {
-		let alert = NSAlert()
-		alert.messageText = "No Updates Available"
-		alert.informativeText = "You're running the latest version of Whispera."
-		alert.addButton(withTitle: "OK")
-		alert.runModal()
-	}
-
 	private func loadAvailableModels() {
 		guard whisperKit.isInitialized else { return }
 
@@ -1546,41 +1502,6 @@ struct SettingsView: View {
 
 		// Store reference
 		liveTranscriptionInfoWindow = window
-	}
-
-	private func showReleaseNotes() {
-		guard let latestVersion = updateManager.latestVersion,
-			let releaseNotes = updateManager.releaseNotes
-		else { return }
-
-		// Close existing window if open
-		releaseNotesWindow?.close()
-
-		let contentView = ReleaseNotesView(
-			version: latestVersion,
-			releaseNotes: releaseNotes,
-			onClose: {
-				self.releaseNotesWindow?.close()
-				self.releaseNotesWindow = nil
-			}
-		)
-		let hostingView = NSHostingView(rootView: contentView)
-
-		let window = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
-			styleMask: [.titled, .closable, .miniaturizable, .resizable],
-			backing: .buffered,
-			defer: false
-		)
-
-		window.title = "Release Notes - Whispera \(latestVersion)"
-		window.contentView = hostingView
-		window.center()
-		window.makeKeyAndOrderFront(nil)
-		window.isReleasedWhenClosed = false
-
-		// Store reference
-		releaseNotesWindow = window
 	}
 
 	private func getModelStatusText() -> String {
@@ -1921,51 +1842,3 @@ struct LiveTranscriptionInfoView: View {
 	}
 }
 
-struct ReleaseNotesView: View {
-	let version: String
-	let releaseNotes: String
-	let onClose: () -> Void
-
-	var body: some View {
-		VStack(spacing: 0) {
-			HStack {
-				VStack(alignment: .leading, spacing: 4) {
-					HStack(spacing: 8) {
-						Image(systemName: "arrow.down.circle.fill")
-							.font(.title2)
-							.foregroundColor(.blue)
-						Text("Whispera \(version)")
-							.font(.title2)
-							.fontWeight(.semibold)
-					}
-					Text("Release Notes")
-						.font(.subheadline)
-						.foregroundColor(.secondary)
-				}
-
-				Button {
-					onClose()
-				} label: {
-					Image(systemName: "xmark.circle.fill")
-						.font(.title2)
-						.foregroundColor(.secondary)
-				}
-				.buttonStyle(.plain)
-			}
-			.padding(20)
-
-			Divider()
-
-			ScrollView {
-				VStack(alignment: .leading, spacing: 16) {
-					Markdown(releaseNotes)
-						.font(.system(size: 14))
-				}
-				.padding(20)
-				.frame(maxWidth: .infinity, alignment: .leading)
-			}
-		}
-		.frame(width: 600, height: 700)
-		.background(Color(NSColor.windowBackgroundColor))
-	}
-}

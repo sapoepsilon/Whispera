@@ -13,7 +13,7 @@ struct MenuBarView: View {
 
 	// MARK: - Injected Dependencies
 	@State var permissionManager: PermissionManager
-	@State var updateManager: UpdateManager
+	@ObservedObject var softwareUpdater: SoftwareUpdater
 	@Bindable var fileTranscriptionManager: FileTranscriptionManager
 	@Bindable var networkDownloader: NetworkFileDownloader
 	@Bindable var queueManager: TranscriptionQueueManager
@@ -40,9 +40,7 @@ struct MenuBarView: View {
 			// Main content
 			VStack(spacing: 16) {
 				// Update notification banner (if available)
-				if let latestVersion = updateManager.latestVersion,
-					AppVersion(latestVersion) > AppVersion.current
-				{
+				if let latestVersion = softwareUpdater.availableUpdateVersion {
 					VStack(spacing: 8) {
 						HStack {
 							Image(systemName: "arrow.down.circle.fill")
@@ -59,23 +57,12 @@ struct MenuBarView: View {
 								.font(.caption2)
 								.foregroundColor(.secondary)
 							Spacer()
-							if updateManager.isUpdateDownloaded {
-								Button("Install") {
-									Task {
-										try? await updateManager.installDownloadedUpdate()
-									}
-								}
-								.buttonStyle(.bordered)
-								.controlSize(.mini)
-							} else {
-								Button("Update") {
-									Task {
-										try? await updateManager.downloadUpdate()
-									}
-								}
-								.buttonStyle(.bordered)
-								.controlSize(.mini)
+							Button("Update") {
+								softwareUpdater.checkForUpdates()
 							}
+							.buttonStyle(.bordered)
+							.controlSize(.mini)
+							.disabled(!softwareUpdater.canCheckForUpdates)
 						}
 					}
 					.padding(8)
