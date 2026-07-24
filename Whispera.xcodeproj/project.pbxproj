@@ -51,7 +51,6 @@
 		D66E6D6D2E185BBC00F55A5B /* SettingsRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D6C2E185BB800F55A5B /* SettingsRowView.swift */; };
 		D66E6D6F2E185BD100F55A5B /* TestStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D6E2E185BCF00F55A5B /* TestStepView.swift */; };
 		D66E6D712E185BE900F55A5B /* CompleteStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D702E185BE600F55A5B /* CompleteStepView.swift */; };
-		D66E6D732E185C0200F55A5B /* ModelSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E6D722E185BFF00F55A5B /* ModelSelectionView.swift */; };
 		D698B9032E18EC4A008FE0CF /* AppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B9002E18EC4A008FE0CF /* AppVersion.swift */; };
 		D698B9082E18EC70008FE0CF /* VersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B9062E18EC70008FE0CF /* VersionTests.swift */; };
 		D698B9092E18EC70008FE0CF /* SingleInstanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B9042E18EC70008FE0CF /* SingleInstanceTests.swift */; };
