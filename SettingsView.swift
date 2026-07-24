@@ -167,7 +167,7 @@ struct SettingsView: View {
 	@AppStorage("youtubeQuality") private var youtubeQuality = "medium"
 	@AppStorage("showTimestamps") private var showTimestamps = true
 	@AppStorage("timestampFormat") private var timestampFormat = "MM:SS"
-	@AppStorage("defaultTranscriptionMode") private var defaultTranscriptionMode = "plain"
+	@AppStorage("defaultTranscriptionMode") private var defaultTranscriptionMode = "timestamps"
 	@AppStorage("maxFileSizeMB") private var maxFileSizeMB = 100
 
 	// MARK: - Injected Dependencies

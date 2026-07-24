@@ -162,6 +162,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			"soundFeedback": true,
 			"enableRecordingGlow": true,
 			"enableStreaming": Constants.enableStreamingDefault,
+			"defaultTranscriptionMode": "timestamps",
+			"showTimestamps": true,
+			"timestampFormat": "MM:SS",
 			"materialStyle": MaterialStyle.default.rawValue,
 		])
 	}
