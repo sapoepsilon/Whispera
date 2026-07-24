@@ -152,7 +152,7 @@ struct Constants {
 	public static let defaultLanguageName = "english"
 	// Shared by every @AppStorage("enableStreaming") fallback and the first-launch
 	// defaults: divergent inline copies of this literal caused duplicate recording windows.
-	public static let enableStreamingDefault = true
+	public static let enableStreamingDefault = false
 
 	// Helper to get sorted language names for UI
 	public static var sortedLanguageNames: [String] {
