@@ -148,3 +148,17 @@ struct ShortcutOptionsView: View {
 		return flags.intersection([.command, .option, .control, .shift]).isEmpty ? "" : parts.joined()
 	}
 }
+
+// Low-contrast text-only button style. Formerly defined alongside the menu-bar
+// button styles; rehomed here after the menu-bar redesign removed its popover
+// consumers, leaving this onboarding Cancel action as the sole user.
+struct TertiaryButtonStyle: ButtonStyle {
+	func makeBody(configuration: Configuration) -> some View {
+		configuration.label
+			.font(.system(.caption, design: .rounded))
+			.foregroundColor(.secondary)
+			.opacity(configuration.isPressed ? 0.7 : 1.0)
+			.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+			.animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+	}
+}

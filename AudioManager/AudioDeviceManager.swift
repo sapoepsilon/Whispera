@@ -77,6 +77,11 @@ final class AudioDeviceManager {
 	private(set) var availableDevices: [AudioInputDevice] = []
 	private(set) var selectedDevice: AudioInputDevice?
 
+	// Precomputed device the app is actually recording from (the explicit
+	// selection, or the system default when none is chosen). Recomputed only on
+	// selection/enumeration changes so views avoid an O(n) scan per render.
+	private(set) var activeDevice: AudioInputDevice?
+
 	@ObservationIgnored
 	@AppStorage("selectedAudioInputDeviceUID") var persistedDeviceUID = AudioDeviceManager.systemDefaultUID
 
@@ -206,8 +211,10 @@ final class AudioDeviceManager {
 	private func applyPersistedSelection() {
 		if persistedDeviceUID == AudioDeviceManager.systemDefaultUID {
 			selectedDevice = nil
+			activeDevice = availableDevices.first(where: \.isDefault)
 		} else {
 			selectedDevice = availableDevices.first(where: { $0.uid == persistedDeviceUID })
+			activeDevice = selectedDevice ?? availableDevices.first(where: \.isDefault)
 		}
 	}
 
