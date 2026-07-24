@@ -222,6 +222,10 @@ extension AudioManager {
 		}
 	}
 	fileprivate func beginRecording() {
+		// Auto-clear the previous glance so a new recording never displays a stale
+		// result or error underneath it.
+		lastTranscription = nil
+		transcriptionError = nil
 		if currentRecordingMode == .liveTranscription {
 			startLiveTranscription()
 		} else if useStreamingTranscription {
