@@ -421,6 +421,12 @@ struct SettingsView: View {
 								.foregroundColor(getModelStatusColor())
 								.accessibilityIdentifier("modelStatusText")
 							Spacer()
+							if let diskSize = currentModelDiskSize {
+								Text("Disk: \(diskSize)")
+									.font(.caption)
+									.foregroundColor(.secondary)
+									.accessibilityIdentifier("modelDiskSizeText")
+							}
 							Text("Memory: \(getMemoryUsage()) MB")
 								.font(.caption)
 								.foregroundColor(.secondary)
@@ -1549,6 +1555,15 @@ struct SettingsView: View {
 		} else {
 			return .secondary
 		}
+	}
+
+	// On-disk footprint of the active model, read from the AppLibraryManager scan
+	// (no synchronous disk I/O in the view body). Gives the cut model-size indicator
+	// a real home in Settings, where only RAM was previously shown.
+	private var currentModelDiskSize: String? {
+		let name = whisperKit.currentModel ?? whisperKit.selectedModel ?? selectedModel
+		guard !name.isEmpty else { return nil }
+		return appLibraryManager.downloadedModels.first { $0.name == name }?.sizeFormatted
 	}
 
 	private func getMemoryUsage() -> Int {

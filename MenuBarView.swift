@@ -1,15 +1,17 @@
 import AppKit
+import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MenuBarView: View {
 	@Bindable var audioManager: AudioManager
 	var whisperKit = WhisperKitTranscriber.shared
 	@AppStorage("globalShortcut") private var shortcutKey = "⌥⌘R"
-	@AppStorage("globalCommandShortcut") private var commandShortcutKey = "⌘⌥C"
-	@AppStorage("enableTranslation") private var enableTranslation = false
+	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
 
-	@Environment(\.openSettings) private var openSettings
+	@Environment(\.dynamicTypeSize) private var dynamicTypeSize
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	// MARK: - Injected Dependencies
 	@State var permissionManager: PermissionManager
@@ -19,19 +21,54 @@ struct MenuBarView: View {
 	@Bindable var queueManager: TranscriptionQueueManager
 
 	// MARK: - File Drop Handler
-	@State private var fileDropHandler: FileDropHandler?
+	// Constructed once in the AppDelegate and injected so drag/drop is live from
+	// frame 0 with no per-open reallocation.
+	let fileDropHandler: FileDropHandler
 
-	// MARK: - Error/Success Banners
-	@State private var errorMessage: String?
-	@State private var successMessage: String?
-	@State private var dismissErrorTask: Task<Void, Never>?
-	@State private var dismissSuccessTask: Task<Void, Never>?
+	// MARK: - Status-item menu mirror
+	// The header "…" overflow menu is built from the same ordered command list the
+	// status-item right-click NSMenu uses, so the two surfaces cannot drift.
+	let menuEntries: [StatusMenuEntry]
+	let performMenuAction: @MainActor (StatusMenuAction) -> Void
 
-	// MARK: - Dynamic Height
-	@State private var contentHeight: CGFloat = 550
+	// The SwiftUI Settings-scene open action. Registered with the AppDelegate so
+	// every settings entry point can try the native scene first and fall back to
+	// the retained window when the action silently no-ops.
+	@Environment(\.openSettings) private var openSettings
+	let registerOpenSettings: (@escaping @MainActor () -> Void) -> Void
+
+	// Receives the content's measured height; the AppDelegate turns it into an
+	// animated popover.contentSize change.
+	let presenter: PopoverPresenter
+
+	// MARK: - Toast
+	// The single success/error language for the whole popover. Owns its own state
+	// and dismiss timers (constructed once in the AppDelegate and injected) so a
+	// pending auto-dismiss never invalidates this view's body.
+	let toastCenter: ToastCenter
+
+	// MARK: - Transient view state
+	// Whether the user dismissed the update row this session.
+	@State private var updateRowDismissed = false
 
 	private var materialStyle: MaterialStyle {
 		MaterialStyle(rawValue: materialStyleRaw)
+	}
+
+	// Discrete, derived description of which modules are on screen. Equatable so
+	// the presenter only recomputes height on genuine state changes.
+	private var layout: PopoverLayout {
+		let permissionRows =
+			(permissionManager.microphonePermissionGranted ? 0 : 1)
+			+ (permissionManager.accessibilityPermissionGranted ? 0 : 1)
+		return PopoverLayout(
+			updateVisible: softwareUpdater.availableUpdateVersion != nil && !updateRowDismissed,
+			permissionRows: permissionRows,
+			modelPreparing: !whisperKit.isInitialized || whisperKit.isDownloadingModel,
+			modelDownloading: whisperKit.isDownloadingModel,
+			hasResult: audioManager.transcriptionError == nil && audioManager.lastTranscription != nil,
+			typeScale: PopoverLayout.scale(for: dynamicTypeSize)
+		)
 	}
 
 	var body: some View {
@@ -39,205 +76,118 @@ struct MenuBarView: View {
 
 			// Main content
 			VStack(spacing: 16) {
-				// Update notification banner (if available)
-				if let latestVersion = softwareUpdater.availableUpdateVersion {
-					VStack(spacing: 8) {
-						HStack {
-							Image(systemName: "arrow.down.circle.fill")
-								.foregroundColor(.blue)
-							Text("Update Available")
-								.font(.caption)
-								.fontWeight(.medium)
-								.foregroundColor(.blue)
-							Spacer()
-						}
-
-						HStack {
-							Text("Whispera \(latestVersion)")
-								.font(.caption2)
-								.foregroundColor(.secondary)
-							Spacer()
-							Button("Update") {
-								softwareUpdater.checkForUpdates()
-							}
-							.buttonStyle(.bordered)
-							.controlSize(.mini)
-							.disabled(!softwareUpdater.canCheckForUpdates)
-						}
-					}
-					.padding(8)
-					.background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-					.overlay(
-						RoundedRectangle(cornerRadius: 6)
-							.stroke(.blue.opacity(0.3), lineWidth: 1)
+				if layout.updateVisible {
+					UpdateRow(
+						softwareUpdater: softwareUpdater,
+						onDismiss: { updateRowDismissed = true }
 					)
 				}
 
-				// Status card
-				StatusCardView(
+				HeaderLine(
 					audioManager: audioManager,
 					whisperKit: whisperKit,
 					permissionManager: permissionManager,
 					fileTranscriptionManager: fileTranscriptionManager,
 					networkDownloader: networkDownloader,
-					queueManager: queueManager
+					shortcutKey: shortcutKey,
+					menuEntries: menuEntries,
+					performMenuAction: performMenuAction
 				)
 
-				// Controls
-				VStack(spacing: 12) {
-					Button(action: {
-						audioManager.toggleRecording()
-					}) {
-						HStack(spacing: 8) {
-							Image(systemName: buttonIcon)
-							Text(buttonText)
-								.font(.system(.body, design: .rounded, weight: .medium))
-						}
-						.frame(maxWidth: .infinity)
-						.frame(height: 40)
-					}
-					.buttonStyle(PrimaryButtonStyle(isRecording: isActiveState))
-					.disabled(audioManager.isTranscribing)
-
-					// Shortcut display - design language compliant
-					VStack(spacing: 8) {
-						HStack {
-							Text(enableTranslation ? "Translation" : "Transcription")
-								.font(.caption)
-								.foregroundColor(.secondary)
-							Spacer()
-							Text(shortcutKey)
-								.font(.system(.caption, design: .monospaced))
-								.padding(.horizontal, 8)
-								.padding(.vertical, 4)
-								.background(
-									Color.blue.opacity(0.2), in: RoundedRectangle(cornerRadius: 6)
-								)
-								.foregroundColor(.blue)
-						}
-					}
+				// Blocking conditions stack as 0..n actionable rows in priority order:
+				// missing permissions (deep-linked per pane) then model preparation.
+				if layout.needsPermissions || layout.modelPreparing {
+					FixItStack(
+						permissionManager: permissionManager,
+						whisperKit: whisperKit
+					)
+					.transition(
+						reduceMotion
+							? .opacity
+							: .move(edge: .top).combined(with: .opacity))
 				}
 
-				Divider()
+				DictateLane(
+					audioManager: audioManager,
+					shortcutKey: shortcutKey,
+					selectedLanguage: selectedLanguage,
+					isBlocked: layout.needsPermissions || layout.modelPreparing
+				)
 
-				// Secondary actions
-				VStack(spacing: 8) {
-					if #available(macOS 14.0, *) {
-						Button {
-
-							NSApp.setActivationPolicy(.regular)
-							NSApp.activate(ignoringOtherApps: true)
-
-							openSettings()
-
-							DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-								// TODO: Might become a problem if we add more windows
-								if let settingsWindow = NSApp.windows.first(where: {
-									$0.title.contains("Settings") || $0.title.contains("Preferences")
-										|| $0.title.contains("General")
-										|| $0.title.contains("Storage & Downloads")
-										|| $0.title.contains("File Transcription")
-										|| String(describing: type(of: $0)).contains("Settings")
-								}) {
-									settingsWindow.collectionBehavior.insert(.moveToActiveSpace)
-									settingsWindow.makeKeyAndOrderFront(nil)
-									settingsWindow.orderFrontRegardless()
-									NSApp.activate(ignoringOtherApps: true)
-								}
-							}
-						} label: {
-							Label("Settings", systemImage: "gear")
-								.frame(maxWidth: .infinity)
-						}
-						.buttonStyle(SecondaryButtonStyle())
-					} else {
-						Button {
-
-							// Set app policy to regular to ensure proper window focus
-							NSApp.setActivationPolicy(.regular)
-							NSApp.activate(ignoringOtherApps: true)
-
-							// Use legacy preferences approach
-							NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-
-							// Bring the settings window to front after a brief delay
-							DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-								if let settingsWindow = NSApp.windows.first(where: {
-									$0.title.contains("Settings") || $0.title.contains("Preferences")
-								}) {
-									settingsWindow.makeKeyAndOrderFront(nil)
-									settingsWindow.orderFrontRegardless()
-									NSApp.activate(ignoringOtherApps: true)
-								}
-							}
-						} label: {
-							Label("Settings", systemImage: "gear")
-								.frame(maxWidth: .infinity)
-						}
-						.buttonStyle(SecondaryButtonStyle())
-					}
-
-					Button("Quit Whispera") {
-						NSApplication.shared.terminate(nil)
-					}
-					.buttonStyle(TertiaryButtonStyle())
-				}
+				// Single compact lane for the file journey: Drop (the whole popover is
+				// the target) or Browse (NSOpenPanel), and an active summary that opens
+				// the Activity window. Replaces the transitional queue status card.
+				FileLane(
+					queueManager: queueManager,
+					onOpenActivity: { performMenuAction(.activity) }
+				)
 			}
 			.padding(.horizontal, 20)
+			.padding(.top, 14)
 			.padding(.bottom, 20)
+			// Structural animation only: when a size-affecting module (update row,
+			// Fix-It stack) enters or leaves, ITS transition runs and the sibling
+			// lanes glide to their new positions. Scoped to these two values so
+			// unrelated state (recording, mode, results) never animates this stack.
+			.animation(
+				reduceMotion ? nil : .easeOut(duration: 0.25),
+				value: layout.updateVisible
+			)
+			.animation(
+				reduceMotion ? nil : .easeOut(duration: 0.25),
+				value: layout.needsPermissions || layout.modelPreparing)
 
-			// Transcription result
-			if let error = audioManager.transcriptionError {
-				ErrorBannerView(error: error)
-			} else if let transcription = audioManager.lastTranscription {
-				TranscriptionResultView(text: transcription)
+			// Result glance: only when there is a real transcription (errors route to
+			// the toast, never the glance). The card takes its final layout
+			// immediately and the popover's animated frame growth reveals it -
+			// one animation, so expansion and appearance cannot drift apart. The
+			// short fade blooms the card in as the frame uncovers it.
+			Group {
+				if audioManager.transcriptionError == nil,
+					let transcription = audioManager.lastTranscription
+				{
+					ResultGlance(
+						text: transcription,
+						onDismiss: { audioManager.lastTranscription = nil }
+					)
+					.transition(.opacity)
+				}
 			}
+			.animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: layout.hasResult)
 
 		}
-		.background(
-			GeometryReader { geometry in
-				Color.clear.preference(
-					key: ViewHeightKey.self,
-					value: geometry.size.height
-				)
-			}
-		)
-		.onPreferenceChange(ViewHeightKey.self) { height in
-			contentHeight = min(max(height, 400), 700)
+		.frame(width: PopoverMetrics.width)
+		.onGeometryChange(for: CGFloat.self) { proxy in
+			proxy.size.height
+		} action: { newHeight in
+			presenter.setMeasured(newHeight)
 		}
-		.frame(width: 320, height: contentHeight, alignment: .top)
+		.frame(maxHeight: .infinity, alignment: .top)
 		.background(materialStyle.material)
 		.overlay(dropZoneOverlay)
 		.overlay(alignment: .bottom) {
-			VStack(spacing: 8) {
-				if let errorMessage = errorMessage {
-					NotificationBanner(message: errorMessage, type: .error)
-						.transition(.move(edge: .bottom).combined(with: .opacity))
-				}
-				if let successMessage = successMessage {
-					NotificationBanner(message: successMessage, type: .success)
-						.transition(.move(edge: .bottom).combined(with: .opacity))
-				}
+			ToastOverlay(toastCenter: toastCenter)
+		}
+		.onAppear { registerOpenSettings { openSettings() } }
+		.onChange(of: audioManager.transcriptionError) { _, newValue in
+			if let error = newValue {
+				toastCenter.show(error, type: .error)
 			}
-			.padding(.bottom, 8)
-			.padding(.horizontal, 8)
-			.animation(.spring(response: 0.4, dampingFraction: 0.8), value: errorMessage)
-			.animation(.spring(response: 0.4, dampingFraction: 0.8), value: successMessage)
 		}
 		.onDrop(
 			of: [.fileURL, .url, .text, .plainText],
 			isTargeted: Binding(
-				get: { fileDropHandler?.isDragging ?? false },
+				get: { fileDropHandler.isDragging },
 				set: { isDragging in
 					if isDragging {
-						fileDropHandler?.dragEntered()
+						fileDropHandler.dragEntered()
 					} else {
-						fileDropHandler?.dragExited()
+						fileDropHandler.dragExited()
 					}
 				}
 			)
 		) { providers in
-			guard let dropHandler = fileDropHandler else { return false }
+			let dropHandler = fileDropHandler
 
 			let info = DropInfo(providers: providers)
 			let canAccept = dropHandler.canAccept(info)
@@ -256,44 +206,12 @@ struct MenuBarView: View {
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .fileTranscriptionError)) { notification in
 			guard let message = notification.userInfo?["message"] as? String else { return }
-			showError(message)
+			toastCenter.show(message, type: .error)
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .fileTranscriptionSuccess)) {
 			notification in
 			guard let message = notification.userInfo?["message"] as? String else { return }
-			showSuccess(message)
-		}
-		.onAppear {
-			// Initialize file transcription components with queue manager
-			fileDropHandler = FileDropHandler(
-				fileTranscriptionManager: fileTranscriptionManager,
-				networkDownloader: networkDownloader,
-				queueManager: queueManager
-			)
-
-			// WhisperKit initialization is handled by AudioManager
-		}
-	}
-
-	// MARK: - UI Helpers
-
-	private var isActiveState: Bool {
-		return audioManager.isRecording
-	}
-
-	private var buttonIcon: String {
-		if audioManager.isRecording {
-			return "stop.fill"
-		} else {
-			return "mic.fill"
-		}
-	}
-
-	private var buttonText: String {
-		if audioManager.isRecording {
-			return "Stop Recording (\(audioManager.formattedRecordingDuration()))"
-		} else {
-			return "Start Recording"
+			toastCenter.show(message, type: .success)
 		}
 	}
 
@@ -301,7 +219,8 @@ struct MenuBarView: View {
 
 	@ViewBuilder
 	private var dropZoneOverlay: some View {
-		if let dropHandler = fileDropHandler, dropHandler.isDragging {
+		if fileDropHandler.isDragging {
+			let dropHandler = fileDropHandler
 			RoundedRectangle(cornerRadius: 12)
 				.fill(dropHandler.dropZoneColor)
 				.stroke(dropHandler.isValidDrop ? .green : .red, lineWidth: 2)
@@ -328,714 +247,369 @@ struct MenuBarView: View {
 				.allowsHitTesting(false)
 		}
 	}
-
-	// MARK: - Notification Handling
-
-	private func showError(_ message: String, duration: TimeInterval = 5.0) {
-		dismissErrorTask?.cancel()
-
-		withAnimation {
-			errorMessage = message
-		}
-
-		dismissErrorTask = Task { @MainActor in
-			try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
-
-			guard !Task.isCancelled else { return }
-
-			withAnimation {
-				errorMessage = nil
-			}
-		}
-	}
-
-	private func showSuccess(_ message: String, duration: TimeInterval = 3.0) {
-		dismissSuccessTask?.cancel()
-
-		withAnimation {
-			successMessage = message
-		}
-
-		dismissSuccessTask = Task { @MainActor in
-			try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
-
-			guard !Task.isCancelled else { return }
-
-			withAnimation {
-				successMessage = nil
-			}
-		}
-	}
 }
 
-// MARK: - Status Card
-struct StatusCardView: View {
-	@Bindable var audioManager: AudioManager
-	var whisperKit: WhisperKitTranscriber
-	var permissionManager: PermissionManager
-	@Bindable var fileTranscriptionManager: FileTranscriptionManager
-	@Bindable var networkDownloader: NetworkFileDownloader
+// MARK: - File lane
+// The single compact row for the file journey. Idle: a Browse affordance backed by
+// an NSOpenPanel plus the always-live popover drop target. Active: a "N files · M
+// processing" summary with a 2pt determinate mini-bar that opens the Activity
+// window on tap. A slim rule separates it from the dictation controls above.
+struct FileLane: View {
 	@Bindable var queueManager: TranscriptionQueueManager
-	@AppStorage("selectedModel") private var selectedModel = ""
-	@AppStorage("selectedLanguage") private var selectedLanguage = Constants.defaultLanguageName
+	let onOpenActivity: () -> Void
+
+	private var isActive: Bool { !queueManager.items.isEmpty }
+
+	private var summary: String {
+		let total = queueManager.items.count
+		let processing = queueManager.processingItems.count
+		let fileWord = total == 1 ? "file" : "files"
+		if processing > 0 {
+			return "\(total) \(fileWord) · \(processing) processing"
+		}
+		return "\(total) \(fileWord)"
+	}
 
 	var body: some View {
 		VStack(spacing: 12) {
-			// Main status section
-			HStack(spacing: 12) {
-				// Status icon with design language colors
-				ZStack {
-					Circle()
-						.fill(statusColor.opacity(0.2))
-						.frame(width: 44, height: 44)
+			Divider()
 
-					statusIcon
-						.font(.system(size: 20))
-						.foregroundColor(statusColor)
-				}
-
-				VStack(alignment: .leading, spacing: 4) {
-					Text(statusTitle)
-						.font(.system(.headline, design: .rounded))
-						.foregroundColor(.primary)
-
-					Text(statusSubtitle)
-						.font(.caption)
-						.foregroundColor(.secondary)
-				}
-
-				Spacer()
-			}
-
-			// Permission status section
-			if permissionManager.needsPermissions {
-				HStack {
-					HStack(spacing: 6) {
-						Circle()
-							.fill(.orange)
-							.frame(width: 8, height: 8)
-
-						Text("Permissions")
-							.font(.caption)
-							.foregroundColor(.secondary)
-					}
-
-					Spacer()
-
-					Text(permissionManager.missingPermissionsDescription)
-						.font(.caption)
-						.foregroundColor(.orange)
-				}
-			}
-
-			// AI Model section with current model display
-			VStack(spacing: 8) {
-				HStack {
-					HStack(spacing: 6) {
-						Circle()
-							.fill(whisperKit.isInitialized ? .green : .orange)
-							.frame(width: 8, height: 8)
-
-						Text("Whisper Model")
-							.font(.caption)
-							.foregroundColor(.secondary)
-					}
-
-					Spacer()
-
-					if whisperKit.isInitialized {
-						Text("Ready")
-							.font(.caption)
-							.foregroundColor(.green)
-					} else if whisperKit.isInitializing {
-						VStack(alignment: .trailing, spacing: 2) {
-							HStack(spacing: 4) {
-								ProgressView()
-									.scaleEffect(0.6)
-								Text("Loading...")
-									.font(.caption)
-									.foregroundColor(.orange)
-							}
-
-							// Progress bar
-							ProgressView(value: whisperKit.initializationProgress)
-								.frame(width: 80)
-								.scaleEffect(0.8)
-
-							// Status text
-							Text(whisperKit.initializationStatus)
-								.font(.system(.caption2, design: .rounded))
-								.foregroundColor(.secondary)
-								.lineLimit(1)
-								.truncationMode(.tail)
-						}
-					} else {
-						HStack(spacing: 4) {
-							ProgressView()
-								.scaleEffect(0.6)
-							Text("Starting...")
-								.font(.caption)
-								.foregroundColor(.orange)
-						}
-					}
-				}
-
-				// Current model display or download progress
-				if whisperKit.isDownloadingModel {
-					VStack(spacing: 4) {
-						HStack {
-							HStack(spacing: 4) {
-								ProgressView()
-									.scaleEffect(0.5)
-								Text("Downloading \(whisperKit.downloadingModelName ?? "model")...")
-									.font(.caption)
-									.foregroundColor(.orange)
-							}
-							Spacer()
-						}
-
-						ProgressView(value: whisperKit.downloadProgress)
-							.frame(height: 4)
-					}
-				} else if whisperKit.isInitialized {
-					HStack {
-						Text(currentModelDisplayName)
-							.font(.system(.caption, design: .rounded, weight: .medium))
-							.padding(.horizontal, 8)
-							.padding(.vertical, 4)
-							.background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-							.foregroundColor(.blue)
-
-						Spacer()
-
-						// Translation toggle
-						Button(action: {
-							audioManager.enableTranslation.toggle()
-							AppLogger.shared.ui.debug(
-								"StatusCardView - Translation toggled to: \(audioManager.enableTranslation)"
-							)
-						}) {
-							HStack(spacing: 2) {
-								Image(
-									systemName: audioManager.enableTranslation
-										? "arrow.right" : "doc.text"
-								)
-								.font(.system(size: 8))
-								Text(
-									audioManager.enableTranslation
-										? "\(Constants.languageCode(for: selectedLanguage))" : "TXT"
-								)
-								.font(.system(.caption2, design: .rounded, weight: .medium))
-							}
-							.padding(.horizontal, 6)
-							.padding(.vertical, 2)
-							.background(
-								audioManager.enableTranslation
-									? .orange.opacity(0.2) : .gray.opacity(0.2),
-								in: RoundedRectangle(cornerRadius: 4)
-							)
-							.foregroundColor(audioManager.enableTranslation ? .orange : .secondary)
-						}
-						.buttonStyle(.plain)
-
-						// Model size indicator
-						Text(currentModelSize)
-							.font(.system(.caption, design: .monospaced))
-							.foregroundColor(.secondary)
-					}
-				}
-			}
-
-			// Microphone selection
-			MicrophonePickerSection(audioManager: audioManager)
-
-			// Transcription Queue section - only show if queue has items
-			if !queueManager.items.isEmpty {
-				VStack(spacing: 8) {
-					HStack {
-						HStack(spacing: 6) {
-							Circle()
-								.fill(queueManager.isProcessing ? .blue : .secondary)
-								.frame(width: 8, height: 8)
-								.animation(.easeInOut(duration: 0.3), value: queueManager.isProcessing)
-
-							Text("Transcription Queue")
-								.font(.caption)
-								.foregroundColor(.secondary)
-						}
-
-						Spacer()
-
-						// Collapse button when expanded
-						if queueManager.isExpanded {
-							Button(action: {
-								withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-									queueManager.toggleExpanded()
-								}
-							}) {
-								Image(systemName: "chevron.up")
-									.font(.caption2)
-									.foregroundColor(.secondary)
-									.rotationEffect(.degrees(queueManager.isExpanded ? 0 : 180))
-									.animation(
-										.spring(response: 0.5, dampingFraction: 0.8),
-										value: queueManager.isExpanded)
-							}
-							.buttonStyle(.plain)
-							.help("Collapse queue")
-							.transition(
-								.asymmetric(
-									insertion: .scale(scale: 0.1).combined(with: .opacity),
-									removal: .scale(scale: 0.1).combined(with: .opacity)
-								)
-							)
-							.animation(
-								.spring(response: 0.5, dampingFraction: 0.8),
-								value: queueManager.isExpanded)
-						}
-
-						// Clear all button
-						Button("Clear All") {
-							withAnimation(.easeInOut(duration: 0.3)) {
-								queueManager.clearAll()
-							}
-						}
-						.buttonStyle(.plain)
-						.font(.caption2)
-						.foregroundColor(.red)
-					}
-
-					// Stacked cards view or expanded list with enhanced animations
-					if queueManager.isExpanded {
-						// Expanded view showing all files
-						VStack(spacing: 8) {
-							ForEach(queueManager.items, id: \.id) { item in
-								QueueListItem(item: item, queueManager: queueManager)
-									.transition(
-										.asymmetric(
-											insertion: .move(edge: .top).combined(with: .opacity)
-												.combined(
-													with: .scale(scale: 0.9)),
-											removal: .move(edge: .leading).combined(
-												with: .opacity
-											).combined(
-												with: .scale(scale: 0.9))
-										))
-							}
-						}
-						.padding(8)
-						.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-						.frame(maxHeight: 200)
-						.transition(
-							.asymmetric(
-								insertion: .move(edge: .top).combined(with: .opacity).combined(
-									with: .scale(scale: 0.95, anchor: .top)),
-								removal: .move(edge: .top).combined(with: .opacity).combined(
-									with: .scale(scale: 0.95, anchor: .top))
-							)
-						)
-						.animation(
-							.spring(response: 0.7, dampingFraction: 0.8), value: queueManager.isExpanded)
-					} else {
-						// Collapsed stacked cards
-						Button(action: {
-							withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-								queueManager.toggleExpanded()
-							}
-						}) {
-							ZStack {
-								ForEach(
-									Array(queueManager.items.prefix(3).enumerated().reversed()),
-									id: \.element.id
-								) { index, item in
-									QueueStackCard(item: item, queueManager: queueManager)
-										.offset(x: CGFloat(index) * 2, y: CGFloat(index) * -3)
-										.scaleEffect(1.0 - CGFloat(index) * 0.02)
-										.opacity(1.0 - CGFloat(index) * 0.15)
-										.zIndex(Double(3 - index))
-										.animation(
-											.spring(response: 0.6, dampingFraction: 0.8).delay(
-												Double(index) * 0.02),
-											value: queueManager.items.count)
-								}
-
-								// Count badge if more than 3 items
-								if queueManager.items.count > 3 {
-									VStack {
-										HStack {
-											Spacer()
-											Text("\(queueManager.items.count)")
-												.font(
-													.system(
-														.caption2, design: .rounded,
-														weight: .bold)
-												)
-												.foregroundColor(.white)
-												.padding(.horizontal, 6)
-												.padding(.vertical, 2)
-												.background(.red, in: Capsule())
-												.offset(x: -8, y: 8)
-												.transition(
-													.asymmetric(
-														insertion: .scale(scale: 0.1)
-															.combined(with: .opacity),
-														removal: .scale(scale: 0.1)
-															.combined(with: .opacity)
-													)
-												)
-												.animation(
-													.spring(
-														response: 0.5, dampingFraction: 0.7),
-													value: queueManager.items.count)
-										}
-										Spacer()
-									}
-									.zIndex(10)
-								}
-							}
-							.frame(height: 60)
-						}
-						.buttonStyle(.plain)
-						.help("Click to view all files")
-						.transition(
-							.asymmetric(
-								insertion: .move(edge: .bottom).combined(with: .opacity).combined(
-									with: .scale(scale: 0.95, anchor: .bottom)),
-								removal: .move(edge: .bottom).combined(with: .opacity).combined(
-									with: .scale(scale: 0.95, anchor: .bottom))
-							)
-						)
-						.animation(
-							.spring(response: 0.7, dampingFraction: 0.8), value: queueManager.isExpanded)
-					}
-
-					// Queue controls with smooth animations
-					HStack(spacing: 8) {
-						if queueManager.isProcessing {
-							Button("Cancel All") {
-								withAnimation(.easeInOut(duration: 0.3)) {
-									queueManager.cancelAll()
-								}
-							}
-							.buttonStyle(.bordered)
-							.controlSize(.mini)
-							.foregroundColor(.red)
-							.transition(
-								.asymmetric(
-									insertion: .move(edge: .leading).combined(with: .opacity)
-										.combined(
-											with: .scale(scale: 0.8)),
-									removal: .move(edge: .leading).combined(with: .opacity).combined(
-										with: .scale(scale: 0.8))
-								)
-							)
-							.animation(
-								.spring(response: 0.5, dampingFraction: 0.8),
-								value: queueManager.isProcessing)
-						}
-
-						if !queueManager.completedItems.isEmpty {
-							Button("Clear Completed") {
-								withAnimation(.easeInOut(duration: 0.3)) {
-									queueManager.clearCompleted()
-								}
-							}
-							.buttonStyle(.bordered)
-							.controlSize(.mini)
-							.transition(
-								.asymmetric(
-									insertion: .move(edge: .leading).combined(with: .opacity)
-										.combined(
-											with: .scale(scale: 0.8)),
-									removal: .move(edge: .leading).combined(with: .opacity).combined(
-										with: .scale(scale: 0.8))
-								)
-							)
-							.animation(
-								.spring(response: 0.5, dampingFraction: 0.8),
-								value: queueManager.completedItems.isEmpty)
-						}
-
-						if !queueManager.failedItems.isEmpty {
-							Button("Retry Failed") {
-								withAnimation(.easeInOut(duration: 0.3)) {
-									queueManager.retryFailed()
-								}
-							}
-							.buttonStyle(.bordered)
-							.controlSize(.mini)
-							.transition(
-								.asymmetric(
-									insertion: .move(edge: .leading).combined(with: .opacity)
-										.combined(
-											with: .scale(scale: 0.8)),
-									removal: .move(edge: .leading).combined(with: .opacity).combined(
-										with: .scale(scale: 0.8))
-								)
-							)
-							.animation(
-								.spring(response: 0.5, dampingFraction: 0.8),
-								value: queueManager.failedItems.isEmpty)
-						}
-
-						Spacer()
-					}
-				}
-				.transition(
-					.asymmetric(
-						insertion: .move(edge: .top).combined(with: .opacity).combined(
-							with: .scale(scale: 0.95, anchor: .top)),
-						removal: .move(edge: .top).combined(with: .opacity).combined(
-							with: .scale(scale: 0.95, anchor: .top))
-					)
-				)
-				.animation(.spring(response: 0.7, dampingFraction: 0.8), value: queueManager.items.isEmpty)
-			} else {
-				// Empty queue hint - drag and drop
+			Button(action: primaryAction) {
 				HStack(spacing: 8) {
-					Image(systemName: "arrow.down.doc.fill")
+					Image(systemName: "doc.badge.arrow.up")
 						.font(.system(size: 14))
-						.foregroundColor(.secondary.opacity(0.6))
+						.foregroundStyle(.secondary)
 
-					Text("Drag files or URLs here to transcribe")
-						.font(.caption)
-						.foregroundColor(.secondary)
+					if isActive {
+						Text(summary)
+							.font(.caption)
+							.foregroundStyle(.primary)
+							.lineLimit(1)
+							.truncationMode(.middle)
 
-					Spacer()
+						Spacer(minLength: 8)
+
+						ProgressView(value: queueManager.overallProgress)
+							.frame(width: 48)
+							.frame(height: 2)
+
+						Image(systemName: "chevron.right")
+							.font(.system(size: 11, weight: .semibold))
+							.foregroundStyle(.secondary)
+					} else {
+						Text("Transcribe a file")
+							.font(.caption)
+							.foregroundStyle(.primary)
+
+						Spacer(minLength: 8)
+
+						Text("Drop · Browse")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+					}
 				}
-				.padding(12)
-				.background(Color.blue.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-				.overlay(
-					RoundedRectangle(cornerRadius: 8)
-						.strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-						.foregroundColor(.secondary.opacity(0.2))
+				.contentShape(Rectangle())
+			}
+			.buttonStyle(.plain)
+			.help(isActive ? "Open Transcription Activity" : "Browse for a file to transcribe")
+		}
+	}
+
+	private func primaryAction() {
+		if isActive {
+			onOpenActivity()
+		} else {
+			browse()
+		}
+	}
+
+	private func browse() {
+		let panel = NSOpenPanel()
+		panel.title = "Select Audio or Video Files to Transcribe"
+		panel.message = "Choose audio or video files for transcription"
+		panel.allowsMultipleSelection = true
+		panel.canChooseDirectories = false
+		panel.canChooseFiles = true
+		panel.allowedContentTypes = [.audio, .movie]
+
+		guard panel.runModal() == .OK else { return }
+		let urls = panel.urls
+		guard !urls.isEmpty else { return }
+
+		queueManager.addFiles(urls)
+		onOpenActivity()
+	}
+}
+
+// MARK: - Fix-It stack
+// Blocking conditions render as 0..n actionable cards in priority order. Missing
+// permissions come first, each deep-linking to its own System Settings pane so a
+// both-missing state is fully remediable; model preparation follows as a single
+// folded status with two distinct sub-states: Downloading (network, cancellable,
+// determinate bar) and Loading (non-cancellable, one small indeterminate spinner).
+// At most one indeterminate spinner is mounted across the whole popover.
+struct FixItStack: View {
+	var permissionManager: PermissionManager
+	var whisperKit: WhisperKitTranscriber
+
+	var body: some View {
+		VStack(spacing: 12) {
+			if !permissionManager.microphonePermissionGranted {
+				FixItRow(
+					title: "Microphone access is off",
+					actionTitle: "Open Microphone Settings",
+					action: { permissionManager.openMicrophoneSettings() }
 				)
-				.transition(
-					.asymmetric(
-						insertion: .move(edge: .top).combined(with: .opacity).combined(
-							with: .scale(scale: 0.95, anchor: .top)),
-						removal: .move(edge: .top).combined(with: .opacity).combined(
-							with: .scale(scale: 0.95, anchor: .top))
-					)
+			}
+
+			if !permissionManager.accessibilityPermissionGranted {
+				FixItRow(
+					title: "Accessibility access is off",
+					actionTitle: "Open Accessibility Settings",
+					action: { permissionManager.openAccessibilitySettings() }
 				)
-				.animation(.spring(response: 0.7, dampingFraction: 0.8), value: queueManager.items.isEmpty)
 			}
-		}
-		.padding(16)
-		.background(Color.gray.opacity(0.2).opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-	}
 
-	private var statusColor: Color {
-		return StatusCardView.getStatusColor(
-			isRecording: audioManager.isRecording,
-			isTranscribing: audioManager.isTranscribing || fileTranscriptionManager.isTranscribing,
-			isDownloading: whisperKit.isDownloadingModel || networkDownloader.isDownloading,
-			needsPermissions: permissionManager.needsPermissions
-		)
-	}
-
-	private var statusIcon: Image {
-		return StatusCardView.getStatusIcon(
-			isRecording: audioManager.isRecording,
-			isTranscribing: audioManager.isTranscribing || fileTranscriptionManager.isTranscribing,
-			isDownloading: whisperKit.isDownloadingModel || networkDownloader.isDownloading,
-			needsPermissions: permissionManager.needsPermissions
-		)
-	}
-
-	// MARK: - Reusable Status Functions
-
-	static func getStatusColor(
-		isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false,
-		needsPermissions: Bool = false
-	) -> Color {
-		if needsPermissions {
-			return .orange
-		} else if isDownloading {
-			return .orange
-		} else if isTranscribing {
-			return .blue
-		} else if isRecording {
-			return .red
-		} else {
-			return .green
-		}
-	}
-
-	static func getStatusIcon(
-		isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false,
-		needsPermissions: Bool = false
-	) -> Image {
-		if needsPermissions {
-			return Image(systemName: "exclamationmark.triangle.fill")
-		} else if isDownloading {
-			return Image(systemName: "arrow.down.circle.fill")
-		} else if isTranscribing {
-			return Image(systemName: "waveform")
-		} else if isRecording {
-			return Image(systemName: "mic.fill")
-		} else {
-			return Image(systemName: "checkmark.circle.fill")
-		}
-	}
-
-	static func getStatusTitle(
-		isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false,
-		downloadingModel: String? = nil, enableTranslation: Bool = false, needsPermissions: Bool = false
-	) -> String {
-		if needsPermissions {
-			return "Permissions Required"
-		} else if isDownloading {
-			return "Downloading Model..."
-		} else if isTranscribing {
-			return enableTranslation ? "Translating..." : "Transcribing..."
-		} else if isRecording {
-			return "Recording..."
-		} else {
-			return "Ready"
-		}
-	}
-
-	static func getStatusSubtitle(
-		isRecording: Bool, isTranscribing: Bool, isDownloading: Bool = false,
-		downloadingModel: String? = nil, enableTranslation: Bool = false,
-		needsPermissions: Bool = false, recordingDuration: String = ""
-	) -> String {
-		if needsPermissions {
-			return "Grant required permissions to continue"
-		} else if isDownloading {
-			if let model = downloadingModel {
-				let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
-				return "Installing \(cleanName) model"
-			} else {
-				return "Installing Whisper model"
+			if whisperKit.isDownloadingModel {
+				ModelDownloadingRow(whisperKit: whisperKit)
+			} else if !whisperKit.isInitialized {
+				ModelLoadingRow(whisperKit: whisperKit)
 			}
-		} else if isTranscribing {
-			return enableTranslation ? "Converting speech to English" : "Converting speech to text"
-		} else if isRecording {
-			return "Recording for \(recordingDuration)"
-		} else {
-			return "Press shortcut to start recording"
-		}
-	}
-
-	private var statusTitle: String {
-		// Prioritize file operations if active
-		if networkDownloader.isDownloading {
-			return "Downloading File..."
-		} else if fileTranscriptionManager.isTranscribing {
-			return "Transcribing File..."
-		}
-
-		return StatusCardView.getStatusTitle(
-			isRecording: audioManager.isRecording,
-			isTranscribing: audioManager.isTranscribing,
-			isDownloading: whisperKit.isDownloadingModel,
-			downloadingModel: whisperKit.downloadingModelName,
-			enableTranslation: audioManager.enableTranslation,
-			needsPermissions: permissionManager.needsPermissions
-		)
-	}
-
-	private var statusSubtitle: String {
-		// Prioritize file operations if active
-		if networkDownloader.isDownloading {
-			let progress = Int(networkDownloader.downloadProgress * 100)
-			return "Progress: \(progress)%"
-		} else if fileTranscriptionManager.isTranscribing {
-			if let filename = fileTranscriptionManager.currentFileName {
-				return "Processing: \(filename)"
-			}
-			return "Processing file..."
-		}
-
-		return StatusCardView.getStatusSubtitle(
-			isRecording: audioManager.isRecording,
-			isTranscribing: audioManager.isTranscribing,
-			isDownloading: whisperKit.isDownloadingModel,
-			downloadingModel: whisperKit.downloadingModelName,
-			enableTranslation: audioManager.enableTranslation,
-			needsPermissions: permissionManager.needsPermissions,
-			recordingDuration: audioManager.formattedRecordingDuration()
-		)
-	}
-
-	private var currentModelDisplayName: String {
-		// Always show what WhisperKit is actually using, or fall back to settings
-		let modelName = whisperKit.currentModel ?? selectedModel
-		if modelName.isEmpty {
-			return "No Model"
-		}
-		let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
-
-		switch cleanName {
-		case "tiny.en": return "Tiny (English)"
-		case "tiny": return "Tiny (Multilingual)"
-		case "base.en": return "Base (English)"
-		case "base": return "Base (Multilingual)"
-		case "small.en": return "Small (English)"
-		case "small": return "Small (Multilingual)"
-		case "medium.en": return "Medium (English)"
-		case "medium": return "Medium (Multilingual)"
-		case "large-v2": return "Large v2"
-		case "large-v3": return "Large v3"
-		case "large-v3-turbo": return "Large v3 Turbo"
-		case "distil-large-v2": return "Distil Large v2"
-		case "distil-large-v3": return "Distil Large v3"
-		default: return cleanName.capitalized
-		}
-	}
-
-	private var currentModelSize: String {
-		// Always show what WhisperKit is actually using, or fall back to settings
-		let modelName = whisperKit.currentModel ?? selectedModel
-		if modelName.isEmpty {
-			return "—"
-		}
-		let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
-
-		switch cleanName {
-		case "tiny.en", "tiny": return "39MB"
-		case "base.en", "base": return "74MB"
-		case "small.en", "small": return "244MB"
-		case "medium.en", "medium": return "769MB"
-		case "large-v2", "large-v3": return "1.5GB"
-		case "large-v3-turbo": return "809MB"
-		case "distil-large-v2", "distil-large-v3": return "756MB"
-		default: return "Unknown"
 		}
 	}
 }
 
-// MARK: - Transcription Result
-struct TranscriptionResultView: View {
-	let text: String
+// Actionable card for a single missing permission: a warning line plus a
+// full-width deep-link button into the specific System Settings pane.
+struct FixItRow: View {
+	let title: String
+	let actionTitle: String
+	let action: () -> Void
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
-			HStack {
-				Text("Last Transcription")
-					.font(.caption)
-					.foregroundColor(.secondary)
+			HStack(spacing: 8) {
+				Image(systemName: "exclamationmark.triangle.fill")
+					.foregroundColor(.orange)
+
+				Text(title)
+					.font(.system(.subheadline, design: .rounded, weight: .medium))
+					.foregroundColor(.primary)
+
+				Spacer()
+			}
+
+			Button(action: action) {
+				Text(actionTitle)
+					.frame(maxWidth: .infinity)
+			}
+			.buttonStyle(SecondaryButtonStyle())
+		}
+		.padding(12)
+		.background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+	}
+}
+
+// Downloading sub-state: network transfer with a determinate bar and a Cancel
+// that aborts it. The percent text is the single progress indicator (no ring).
+struct ModelDownloadingRow: View {
+	var whisperKit: WhisperKitTranscriber
+
+	private var modelName: String {
+		whisperKit.downloadingModelName?
+			.replacingOccurrences(of: "openai_whisper-", with: "") ?? "model"
+	}
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 8) {
+			HStack(spacing: 8) {
+				Image(systemName: "arrow.down.circle.fill")
+					.foregroundColor(.orange)
+
+				Text("Downloading model")
+					.font(.system(.subheadline, design: .rounded, weight: .medium))
+					.foregroundColor(.primary)
+
 				Spacer()
 
-				Button {
-					NSPasteboard.general.clearContents()
-					NSPasteboard.general.setString(text, forType: .string)
-				} label: {
-					Image(systemName: "doc.on.clipboard")
+				Text("\(modelName) \(Int((whisperKit.downloadProgress * 100).rounded()))%")
+					.font(.system(.caption, design: .rounded))
+					.foregroundColor(.secondary)
+					.monospacedDigit()
+			}
+
+			HStack(spacing: 8) {
+				ProgressView(value: whisperKit.downloadProgress)
+					.frame(height: 4)
+
+				Button("Cancel") {
+					whisperKit.cancelModelDownload()
+				}
+				.buttonStyle(.bordered)
+				.controlSize(.small)
+			}
+		}
+		.padding(12)
+		.background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+	}
+}
+
+// Loading / prewarming sub-state: non-cancellable, so no Cancel button. This is
+// the only indeterminate spinner mounted anywhere in the popover.
+struct ModelLoadingRow: View {
+	var whisperKit: WhisperKitTranscriber
+
+	var body: some View {
+		HStack(spacing: 10) {
+			ProgressView()
+				.controlSize(.small)
+
+			VStack(alignment: .leading, spacing: 2) {
+				Text("Loading model…")
+					.font(.system(.subheadline, design: .rounded, weight: .medium))
+					.foregroundColor(.primary)
+
+				Text(whisperKit.initializationStatus)
+					.font(.system(.caption2, design: .rounded))
+					.foregroundColor(.secondary)
+					.lineLimit(1)
+					.truncationMode(.tail)
+			}
+
+			Spacer()
+		}
+		.padding(12)
+		.background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+	}
+}
+
+// MARK: - Status model
+// The single resolver for the HeaderLine: color, glyph, title, and subtitle share
+// one priority order (file operations first, then permissions, model, recording)
+// so the accent, icon, and text can never diverge. It deliberately omits the live
+// recording duration; that ticks in an isolated RecordingDurationLabel leaf.
+struct MenuBarStatusModel {
+	let color: Color
+	let systemImage: String
+	let title: String
+	let subtitle: String
+
+	@MainActor
+	init(
+		audioManager: AudioManager,
+		whisperKit: WhisperKitTranscriber,
+		permissionManager: PermissionManager,
+		fileTranscriptionManager: FileTranscriptionManager,
+		networkDownloader: NetworkFileDownloader,
+		shortcutKey: String
+	) {
+		let needsPermissions = permissionManager.needsPermissions
+		let isDownloading = whisperKit.isDownloadingModel || networkDownloader.isDownloading
+		let isTranscribing = audioManager.isTranscribing || fileTranscriptionManager.isTranscribing
+		let isRecording = audioManager.isRecording
+
+		if needsPermissions {
+			color = .orange
+			systemImage = "exclamationmark.triangle.fill"
+		} else if isDownloading {
+			color = .orange
+			systemImage = "arrow.down.circle.fill"
+		} else if isTranscribing {
+			color = .blue
+			systemImage = "waveform"
+		} else if isRecording {
+			color = .red
+			systemImage = "mic.fill"
+		} else {
+			color = .green
+			systemImage = "checkmark.circle.fill"
+		}
+
+		// Title/subtitle layer file operations above the dictation states.
+		if networkDownloader.isDownloading {
+			title = "Downloading File..."
+			subtitle = "Progress: \(Int(networkDownloader.downloadProgress * 100))%"
+		} else if fileTranscriptionManager.isTranscribing {
+			title = "Transcribing File..."
+			if let filename = fileTranscriptionManager.currentFileName {
+				subtitle = "Processing: \(filename)"
+			} else {
+				subtitle = "Processing file..."
+			}
+		} else if needsPermissions {
+			title = "Permissions Required"
+			subtitle = "Grant required permissions to continue"
+		} else if whisperKit.isDownloadingModel {
+			title = "Downloading Model..."
+			if let model = whisperKit.downloadingModelName {
+				let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
+				subtitle = "Installing \(cleanName) model"
+			} else {
+				subtitle = "Installing Whisper model"
+			}
+		} else if audioManager.isTranscribing {
+			let translating = audioManager.enableTranslation
+			title = translating ? "Translating..." : "Transcribing..."
+			subtitle = translating ? "Converting speech to English" : "Converting speech to text"
+		} else if audioManager.isRecording {
+			title = "Recording..."
+			subtitle = "\(shortcutKey) to stop"
+		} else {
+			title = "Ready"
+			subtitle = "Press \(shortcutKey) to dictate"
+		}
+	}
+}
+
+// MARK: - Result Glance
+
+// The last dictation, shown selectable with a Copy affordance that flips to a
+// "Copied" confirmation, an Expand toggle that reveals the full text in a bounded
+// internal ScrollView (so the popover grows once instead of clipping), and a
+// dismiss that clears the result. Auto-clears when the next recording starts
+// (AudioManager clears lastTranscription in beginRecording).
+struct ResultGlance: View {
+	let text: String
+	let onDismiss: () -> Void
+
+	@State private var didCopy = false
+	@State private var copyResetTask: Task<Void, Never>?
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 8) {
+			HStack(spacing: 12) {
+				Text("Last dictation")
+					.font(.caption)
+					.foregroundColor(.secondary)
+
+				Spacer()
+
+				Button(action: copy) {
+					HStack(spacing: 3) {
+						Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+						Text(didCopy ? "Copied" : "Copy")
+					}
+					.font(.caption)
+				}
+				.buttonStyle(.plain)
+				.foregroundColor(didCopy ? .green : .blue)
+				.help("Copy to Clipboard")
+
+				Button(action: onDismiss) {
+					Image(systemName: "xmark")
 						.font(.caption)
 				}
 				.buttonStyle(.plain)
-				.foregroundColor(.blue)
-				.help("Copy to Clipboard")
+				.foregroundColor(.secondary)
+				.help("Dismiss")
 			}
 
 			Text(text)
 				.font(.system(.body, design: .rounded))
 				.foregroundColor(.primary)
-				.lineLimit(4)
+				.lineLimit(3)
 				.multilineTextAlignment(.leading)
+				.textSelection(.enabled)
 		}
 		.padding(12)
 		.background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
@@ -1046,51 +620,77 @@ struct TranscriptionResultView: View {
 		.padding(.horizontal, 20)
 		.padding(.bottom, 12)
 	}
+
+	private func copy() {
+		NSPasteboard.general.clearContents()
+		NSPasteboard.general.setString(text, forType: .string)
+		didCopy = true
+		copyResetTask?.cancel()
+		copyResetTask = Task {
+			try? await Task.sleep(nanoseconds: 1_500_000_000)
+			if !Task.isCancelled {
+				didCopy = false
+			}
+		}
+	}
 }
 
-// MARK: - Error Banner
-struct ErrorBannerView: View {
-	let error: String
+// MARK: - Recording Duration Label
+
+// Isolated leaf: the per-second tick invalidates only this ~20pt label via
+// TimelineView, never the surrounding popover body or the status card.
+struct RecordingDurationLabel: View {
+	let audioManager: AudioManager
 
 	var body: some View {
-		HStack(spacing: 8) {
-			Image(systemName: "exclamationmark.triangle.fill")
-				.foregroundColor(.red)
-
-			Text(error)
-				.font(.caption)
-				.foregroundColor(.red)
-				.lineLimit(2)
-
-			Spacer()
+		TimelineView(.periodic(from: .now, by: 1.0)) { _ in
+			Text(audioManager.formattedRecordingDuration())
+				.font(.system(.body, design: .rounded, weight: .medium))
+				.monospacedDigit()
 		}
-		.padding(12)
-		.background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-		.overlay(
-			RoundedRectangle(cornerRadius: 8)
-				.stroke(.red.opacity(0.3), lineWidth: 1)
-		)
-		.padding(.horizontal, 20)
-		.padding(.bottom, 12)
 	}
 }
 
 // MARK: - Button Styles
+// Semantic color tokens (design-language.md > Color Palette). Mapped to the
+// system colors so they keep adapting to light/dark and increased-contrast.
+extension Color {
+	static let recordingAccent = Color.red
+	static let primaryAction = Color.blue
+}
+
+// Shared button geometry so Primary and Secondary stack without seams.
+private enum ButtonMetrics {
+	static let height: CGFloat = 40
+	static let cornerRadius: CGFloat = 10
+}
+
 struct PrimaryButtonStyle: ButtonStyle {
 	let isRecording: Bool
 
 	func makeBody(configuration: Configuration) -> some View {
-		configuration.label
-			.padding(10)
-			.font(.system(.body, design: .rounded, weight: .medium))
-			.foregroundColor(.white)
-			.background(
-				RoundedRectangle(cornerRadius: 10)
-					.fill(isRecording ? .red : .blue)
-					.opacity(configuration.isPressed ? 0.8 : 1.0)
-					.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-			)
-			.animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+		PrimaryButtonBody(isRecording: isRecording, configuration: configuration)
+	}
+
+	private struct PrimaryButtonBody: View {
+		let isRecording: Bool
+		let configuration: ButtonStyleConfiguration
+		@Environment(\.isEnabled) private var isEnabled
+
+		var body: some View {
+			configuration.label
+				.padding(10)
+				.font(.system(.body, design: .rounded, weight: .medium))
+				.foregroundColor(.white)
+				.background(
+					RoundedRectangle(cornerRadius: ButtonMetrics.cornerRadius)
+						.fill(isRecording ? Color.recordingAccent : Color.primaryAction)
+						.opacity(configuration.isPressed ? 0.8 : 1.0)
+						.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+				)
+				.opacity(isEnabled ? 1.0 : 0.5)
+				.animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+		}
 	}
 }
 
@@ -1100,9 +700,9 @@ struct SecondaryButtonStyle: ButtonStyle {
 			.padding(10)
 			.font(.system(.body, design: .rounded))
 			.foregroundColor(.primary)
-			.frame(height: 36)
+			.frame(height: ButtonMetrics.height)
 			.background(
-				RoundedRectangle(cornerRadius: 8)
+				RoundedRectangle(cornerRadius: ButtonMetrics.cornerRadius)
 					.fill(Color.gray.opacity(0.2))
 					.opacity(configuration.isPressed ? 0.7 : 1.0)
 					.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
@@ -1111,355 +711,276 @@ struct SecondaryButtonStyle: ButtonStyle {
 	}
 }
 
-struct TertiaryButtonStyle: ButtonStyle {
-	func makeBody(configuration: Configuration) -> some View {
-		configuration.label
-			.font(.system(.caption, design: .rounded))
-			.foregroundColor(.secondary)
-			.opacity(configuration.isPressed ? 0.7 : 1.0)
-			.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-			.animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-	}
-}
+// MARK: - Transcription Activity Window
 
-// MARK: - Command Approval View
-struct CommandApprovalView: View {
-	let command: String
-	let userRequest: String
-	let onApprove: () -> Void
-	let onCancel: () -> Void
-
-	var body: some View {
-		VStack(spacing: 12) {
-			// Header
-			HStack(spacing: 8) {
-				Image(systemName: "exclamationmark.triangle.fill")
-					.foregroundColor(.orange)
-				Text("Command Approval Required")
-					.font(.headline)
-					.foregroundColor(.primary)
-				Spacer()
-			}
-
-			// User request
-			if !userRequest.isEmpty {
-				VStack(alignment: .leading, spacing: 4) {
-					Text("Voice Request:")
-						.font(.caption)
-						.foregroundColor(.secondary)
-					Text(userRequest)
-						.font(.body)
-						.padding(8)
-						.background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-				}
-			}
-
-			// Generated command
-			VStack(alignment: .leading, spacing: 4) {
-				Text("Generated Command:")
-					.font(.caption)
-					.foregroundColor(.secondary)
-				Text(command)
-					.font(.system(.body, design: .monospaced))
-					.padding(8)
-					.background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-					.textSelection(.enabled)
-			}
-
-			// Action buttons
-			HStack(spacing: 12) {
-				Button("Execute") {
-					onApprove()
-				}
-				.buttonStyle(PrimaryButtonStyle(isRecording: false))
-
-				Button("Cancel") {
-					onCancel()
-				}
-				.buttonStyle(SecondaryButtonStyle())
-			}
-		}
-		.padding(16)
-		.background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-		.overlay(
-			RoundedRectangle(cornerRadius: 10)
-				.stroke(Color.orange.opacity(0.3), lineWidth: 1)
-		)
-		.padding(.horizontal, 20)
-		.padding(.bottom, 12)
-	}
-}
-
-// MARK: - Clarification View
-struct ClarificationView: View {
-	let question: String
-	let originalRequest: String
-	let onSubmit: (String) -> Void
-	let onCancel: () -> Void
-
-	@State private var response: String = ""
-
-	var body: some View {
-		VStack(spacing: 12) {
-			// Header
-			HStack(spacing: 8) {
-				Image(systemName: "questionmark.circle.fill")
-					.foregroundColor(.blue)
-				Text("Clarification Needed")
-					.font(.headline)
-					.foregroundColor(.primary)
-				Spacer()
-			}
-
-			if !originalRequest.isEmpty {
-				VStack(alignment: .leading, spacing: 4) {
-					Text("Original Request:")
-						.font(.caption)
-						.foregroundColor(.secondary)
-					Text(originalRequest)
-						.font(.body)
-						.padding(8)
-						.background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-				}
-			}
-
-			VStack(alignment: .leading, spacing: 4) {
-				Text("Question:")
-					.font(.caption)
-					.foregroundColor(.secondary)
-				Text(question)
-					.font(.body)
-					.padding(8)
-					.background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-			}
-
-			VStack(alignment: .leading, spacing: 4) {
-				Text("Your Response:")
-					.font(.caption)
-					.foregroundColor(.secondary)
-
-				TextEditor(text: $response)
-					.frame(height: 60)
-					.padding(8)
-					.background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-					.overlay(
-						RoundedRectangle(cornerRadius: 6)
-							.stroke(Color.gray.opacity(0.3), lineWidth: 1)
-					)
-			}
-
-			// Action buttons
-			HStack(spacing: 12) {
-				Button("Submit") {
-					onSubmit(response)
-					response = ""
-				}
-				.buttonStyle(PrimaryButtonStyle(isRecording: false))
-				.disabled(response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-				Button("Cancel") {
-					onCancel()
-					response = ""
-				}
-				.buttonStyle(SecondaryButtonStyle())
-			}
-		}
-		.padding(16)
-		.background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-		.overlay(
-			RoundedRectangle(cornerRadius: 10)
-				.stroke(Color.blue.opacity(0.3), lineWidth: 1)
-		)
-		.padding(.horizontal, 20)
-		.padding(.bottom, 12)
-	}
-}
-
-// MARK: - Queue Stack Card for Status Section
-
-struct QueueStackCard: View {
+// Single parameterized row for the Activity window. Replaces the popover's
+// QueueStackCard/QueueListItem duplication: status badge, percent text (no
+// progress ring), error text, and per-status actions (Copy / Reveal /
+// Retry / split Cancel-Remove) reading the cached fileExists flag.
+struct QueueRow: View, Equatable {
 	@Bindable var item: TranscriptionQueueItem
 	let queueManager: TranscriptionQueueManager
+	@State private var didCopy = false
+	@State private var copyResetTask: Task<Void, Never>?
+
+	// Value-equality over the fields that drive this row's rendering. Paired with
+	// .equatable() at the call site, completed/idle rows skip body re-evaluation
+	// while the reference-type item still invalidates on genuine changes.
+	static func == (lhs: QueueRow, rhs: QueueRow) -> Bool {
+		lhs.item.id == rhs.item.id
+			&& lhs.item.status == rhs.item.status
+			&& lhs.item.progress == rhs.item.progress
+			&& lhs.item.fileExists == rhs.item.fileExists
+			&& lhs.item.displayName == rhs.item.displayName
+			&& lhs.item.error == rhs.item.error
+			&& (lhs.item.result?.isEmpty ?? true) == (rhs.item.result?.isEmpty ?? true)
+	}
+
+	private var isActive: Bool {
+		item.status == QueueItemStatus.pending || item.status == QueueItemStatus.processing
+	}
 
 	var body: some View {
 		HStack(spacing: 12) {
-			// Status indicator
 			ZStack {
 				Circle()
 					.fill(item.status.color.opacity(0.2))
-					.frame(width: 28, height: 28)
+					.frame(width: 24, height: 24)
 
 				Image(systemName: item.status.icon)
 					.font(.system(size: 12, weight: .medium))
-					.foregroundColor(item.status.color)
+					.foregroundStyle(item.status.color)
 			}
 
 			VStack(alignment: .leading, spacing: 2) {
-				// Display name
 				Text(item.displayName)
 					.font(.system(.body, design: .rounded, weight: .medium))
-					.foregroundColor(.primary)
+					.foregroundStyle(.primary)
 					.lineLimit(1)
 					.truncationMode(.middle)
 
 				HStack(spacing: 4) {
 					Text(item.status.displayName)
 						.font(.caption)
-						.foregroundColor(.secondary)
+						.foregroundStyle(.secondary)
 
-					if item.status == .processing {
-						Text("• \(Int(item.progress * 100))%")
+					if item.status == QueueItemStatus.processing {
+						Text("\(Int(item.progress * 100))%")
 							.font(.caption)
-							.foregroundColor(.secondary)
+							.monospacedDigit()
+							.foregroundStyle(.secondary)
 					}
+				}
+
+				if item.status == QueueItemStatus.failed, let error = item.error {
+					Text(error)
+						.font(.caption2)
+						.foregroundStyle(.red)
+						.lineLimit(2)
 				}
 			}
 
 			Spacer()
 
-			// Show in Finder button for completed items (if file was saved)
-			if item.status == .completed,
-				let filePath = item.filePath,
-				FileManager.default.fileExists(atPath: filePath)
-			{
-				Button(action: {
-					NSWorkspace.shared.selectFile(
-						filePath,
-						inFileViewerRootedAtPath: URL(fileURLWithPath: filePath).deletingLastPathComponent()
-							.path)
-				}) {
-					Image(systemName: "folder")
-						.font(.system(size: 16))
-						.foregroundColor(.green)
+			HStack(spacing: 10) {
+				if item.status == QueueItemStatus.completed,
+					let result = item.result, !result.isEmpty
+				{
+					Button(action: copyResult) {
+						Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+							.font(.system(size: 14))
+							.foregroundStyle(didCopy ? .green : .secondary)
+					}
+					.buttonStyle(.plain)
+					.help(didCopy ? "Copied" : "Copy transcription")
 				}
-				.buttonStyle(.plain)
-				.help("Show in Finder")
-			}
 
-			// Cancel/Remove button
-			Button(action: {
-				if item.status == .failed || item.status == .completed {
-					queueManager.removeItem(item)
-				} else if item.status == .processing || item.status == .pending {
-					queueManager.cancelItem(item)
+				if item.status == QueueItemStatus.completed,
+					item.fileExists,
+					let filePath = item.filePath
+				{
+					Button {
+						NSWorkspace.shared.selectFile(
+							filePath,
+							inFileViewerRootedAtPath: URL(fileURLWithPath: filePath)
+								.deletingLastPathComponent().path)
+					} label: {
+						Image(systemName: "folder")
+							.font(.system(size: 14))
+							.foregroundStyle(.green)
+					}
+					.buttonStyle(.plain)
+					.help("Reveal in Finder")
 				}
-			}) {
-				Image(systemName: "xmark.circle.fill")
-					.font(.system(size: 16))
-					.foregroundColor(.secondary)
+
+				if item.status == QueueItemStatus.failed {
+					Button {
+						queueManager.retryItem(item)
+					} label: {
+						Image(systemName: "arrow.clockwise")
+							.font(.system(size: 14))
+							.foregroundStyle(.blue)
+					}
+					.buttonStyle(.plain)
+					.help("Retry")
+				}
+
+				if isActive {
+					Button {
+						queueManager.cancelItem(item)
+					} label: {
+						Image(systemName: "stop.circle")
+							.font(.system(size: 14))
+							.foregroundStyle(.secondary)
+					}
+					.buttonStyle(.plain)
+					.help("Cancel")
+				} else {
+					Button {
+						queueManager.removeItem(item)
+					} label: {
+						Image(systemName: "xmark.circle.fill")
+							.font(.system(size: 14))
+							.foregroundStyle(.secondary)
+					}
+					.buttonStyle(.plain)
+					.help("Remove")
+				}
 			}
-			.buttonStyle(.plain)
-			.help(item.status == .completed || item.status == .failed ? "Remove" : "Cancel")
 		}
-		.padding(.horizontal, 16)
-		.padding(.vertical, 12)
-		.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-		.overlay(
-			RoundedRectangle(cornerRadius: 10)
-				.stroke(Color.secondary.opacity(0.1), lineWidth: 1)
-		)
+		.padding(.horizontal, 12)
+		.padding(.vertical, 10)
+		.background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+	}
+
+	private func copyResult() {
+		guard let result = item.result else { return }
+		let pasteboard = NSPasteboard.general
+		pasteboard.clearContents()
+		pasteboard.setString(result, forType: .string)
+
+		didCopy = true
+		copyResetTask?.cancel()
+		copyResetTask = Task {
+			try? await Task.sleep(nanoseconds: 1_500_000_000)
+			if !Task.isCancelled {
+				didCopy = false
+			}
+		}
 	}
 }
 
-// MARK: - Queue List Item for Expanded View
+struct ActivityView: View {
+	@Bindable var queueManager: TranscriptionQueueManager
+	@State private var showClearAllConfirm = false
 
-struct QueueListItem: View {
-	@Bindable var item: TranscriptionQueueItem
-	let queueManager: TranscriptionQueueManager
+	private var summary: String {
+		let total = queueManager.items.count
+		let processing = queueManager.processingItems.count
+		let fileWord = total == 1 ? "file" : "files"
+		if processing > 0 {
+			return "\(total) \(fileWord) · \(processing) processing"
+		}
+		return "\(total) \(fileWord)"
+	}
 
 	var body: some View {
-		HStack(spacing: 12) {
-			// Status indicator
-			ZStack {
-				Circle()
-					.fill(item.status.color.opacity(0.2))
-					.frame(width: 20, height: 20)
+		VStack(spacing: 0) {
+			HStack {
+				Text("Transcription Activity")
+					.font(.headline)
 
-				Image(systemName: item.status.icon)
-					.font(.system(size: 10, weight: .medium))
-					.foregroundColor(item.status.color)
+				Spacer()
+
+				Text(summary)
+					.font(.subheadline)
+					.foregroundStyle(.secondary)
 			}
+			.padding(.horizontal, 16)
+			.padding(.top, 16)
+			.padding(.bottom, 12)
 
-			VStack(alignment: .leading, spacing: 2) {
-				// Display name (file title)
-				Text(item.displayName)
-					.font(.system(.caption, design: .rounded, weight: .medium))
-					.foregroundColor(.primary)
-					.lineLimit(2)
-					.truncationMode(.middle)
+			HStack(spacing: 8) {
+				Button(role: .destructive) {
+					showClearAllConfirm = true
+				} label: {
+					Label("Clear All", systemImage: "trash")
+				}
+				.disabled(queueManager.items.isEmpty)
 
-				HStack(spacing: 4) {
-					Text(item.status.displayName)
-						.font(.caption2)
-						.foregroundColor(.secondary)
+				Button("Cancel All") {
+					queueManager.cancelAll()
+				}
+				.disabled(!queueManager.isProcessing)
 
-					if item.status == .processing {
-						Text("• \(Int(item.progress * 100))%")
-							.font(.caption2)
-							.foregroundColor(.secondary)
+				Spacer()
+
+				Button("Clear Completed") {
+					queueManager.clearCompleted()
+				}
+				.disabled(queueManager.completedItems.isEmpty)
+
+				Button("Retry Failed") {
+					queueManager.retryFailed()
+				}
+				.disabled(queueManager.failedItems.isEmpty)
+			}
+			.padding(.horizontal, 16)
+			.padding(.bottom, 12)
+
+			Divider()
+
+			if queueManager.items.isEmpty {
+				VStack(spacing: 8) {
+					Image(systemName: "tray.and.arrow.down")
+						.font(.system(size: 28))
+						.foregroundStyle(.secondary)
+					Text("Drop files or URLs here to transcribe")
+						.font(.callout)
+						.foregroundStyle(.secondary)
+				}
+				.frame(maxWidth: .infinity, maxHeight: .infinity)
+			} else {
+				ScrollView {
+					VStack(spacing: 8) {
+						ForEach(queueManager.items, id: \.id) { item in
+							QueueRow(item: item, queueManager: queueManager)
+								.equatable()
+						}
 					}
+					.padding(16)
 				}
 			}
-
-			Spacer()
-
-			// Progress indicator for processing items
-			if item.status == .processing {
-				ZStack {
-					Circle()
-						.stroke(Color.secondary.opacity(0.2), lineWidth: 2)
-						.frame(width: 16, height: 16)
-
-					Circle()
-						.trim(from: 0, to: item.progress)
-						.stroke(.blue, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-						.frame(width: 16, height: 16)
-						.rotationEffect(.degrees(-90))
-						.animation(.easeInOut(duration: 0.3), value: item.progress)
-				}
-			}
-
-			// Show in Finder button for completed items (if file was saved)
-			if item.status == .completed,
-				let filePath = item.filePath,
-				FileManager.default.fileExists(atPath: filePath)
-			{
-				Button(action: {
-					NSWorkspace.shared.selectFile(
-						filePath,
-						inFileViewerRootedAtPath: URL(fileURLWithPath: filePath).deletingLastPathComponent()
-							.path)
-				}) {
-					Image(systemName: "folder")
-						.font(.system(size: 12))
-						.foregroundColor(.green)
-				}
-				.buttonStyle(.plain)
-				.help("Show in Finder")
-			}
-
-			// Cancel/Remove button
-			Button(action: {
-				if item.status == .failed || item.status == .completed {
-					queueManager.removeItem(item)
-				} else if item.status == .processing || item.status == .pending {
-					queueManager.cancelItem(item)
-				}
-			}) {
-				Image(systemName: "xmark.circle.fill")
-					.font(.system(size: 12))
-					.foregroundColor(.secondary.opacity(0.7))
-			}
-			.buttonStyle(.plain)
-			.help(item.status == .completed || item.status == .failed ? "Remove" : "Cancel")
 		}
-		.padding(.horizontal, 8)
-		.padding(.vertical, 6)
-		.background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
-		.overlay(
-			RoundedRectangle(cornerRadius: 6)
-				.stroke(item.status.color.opacity(0.2), lineWidth: 0.5)
+		.frame(minWidth: 480, minHeight: 320)
+		.alert("Clear all transcriptions?", isPresented: $showClearAllConfirm) {
+			Button("Clear All", role: .destructive) {
+				queueManager.clearAll()
+			}
+			Button("Cancel", role: .cancel) {}
+		} message: {
+			Text("This removes every item, including completed and failed transcriptions.")
+		}
+	}
+}
+
+@MainActor
+final class ActivityWindow: NSWindow {
+	init(queueManager: TranscriptionQueueManager) {
+		super.init(
+			contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
+			styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+			backing: .buffered,
+			defer: false
 		)
+
+		self.title = "Transcription Activity"
+		self.titlebarAppearsTransparent = true
+		self.isReleasedWhenClosed = false
+		self.contentViewController = NSHostingController(
+			rootView: ActivityView(queueManager: queueManager))
+		self.setFrameAutosaveName("TranscriptionActivityWindow")
+		self.center()
 	}
 }
 
@@ -1494,6 +1015,7 @@ enum BannerType {
 struct NotificationBanner: View {
 	let message: String
 	let type: BannerType
+	var onDismiss: (() -> Void)? = nil
 
 	var body: some View {
 		HStack(spacing: 10) {
@@ -1508,6 +1030,16 @@ struct NotificationBanner: View {
 				.multilineTextAlignment(.leading)
 
 			Spacer()
+
+			if let onDismiss {
+				Button(action: onDismiss) {
+					Image(systemName: "xmark")
+						.font(.system(size: 11, weight: .semibold))
+						.foregroundColor(.secondary)
+				}
+				.buttonStyle(.plain)
+				.help("Dismiss")
+			}
 		}
 		.padding(12)
 		.background(type.backgroundColor, in: RoundedRectangle(cornerRadius: 10))
@@ -1519,130 +1051,484 @@ struct NotificationBanner: View {
 	}
 }
 
-// MARK: - Microphone Picker
+// MARK: - Toast center
 
-struct MicrophonePickerSection: View {
-	@Bindable var audioManager: AudioManager
-	@State private var deviceManager = AudioDeviceManager.shared
-	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
-	@State private var isExpanded = false
-
-	private func isDeviceSelected(_ device: AudioInputDevice) -> Bool {
-		if selectedUID == AudioDeviceManager.systemDefaultUID {
-			return device.isDefault
-		}
-		return device.uid == selectedUID
+// The single success/error language for the popover. Owns the current toast, its
+// auto-dismiss timer, and the last message (retrievable from the "…" menu after it
+// auto-dismisses). Anything that arrives while the popover is hidden also posts a
+// system notification so the user does not miss it.
+// Mutated only from the main actor (view event handlers and the AppDelegate menu
+// handler); left un-annotated so its default initializer can seed an AppDelegate
+// stored property.
+@Observable
+final class ToastCenter {
+	struct Toast: Equatable {
+		let id = UUID()
+		let message: String
+		let type: BannerType
 	}
 
-	private var activeDeviceIcon: String {
-		if selectedUID == AudioDeviceManager.systemDefaultUID {
-			return deviceManager.availableDevices.first(where: \.isDefault)?.iconName ?? "mic.fill"
+	private(set) var current: Toast?
+	private(set) var lastMessage: Toast?
+
+	// Reports whether the popover is on screen; injected by the AppDelegate. Only
+	// missed-while-closed events get a system notification.
+	@ObservationIgnored var isPopoverVisible: () -> Bool = { false }
+
+	@ObservationIgnored private var dismissTask: Task<Void, Never>?
+
+	private static let successDuration: TimeInterval = 3.0
+	private static let errorDuration: TimeInterval = 8.0
+
+	func show(_ message: String, type: BannerType) {
+		let toast = Toast(message: message, type: type)
+		current = toast
+		lastMessage = toast
+
+		if !isPopoverVisible() {
+			postSystemNotification(toast)
 		}
-		return deviceManager.availableDevices.first(where: { $0.uid == selectedUID })?.iconName ?? "mic.fill"
-	}
 
-	var body: some View {
-		VStack(spacing: 8) {
-			Button {
-				withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-					isExpanded.toggle()
-				}
-			} label: {
-				HStack(spacing: 6) {
-					Image(systemName: "mic.fill")
-						.font(.system(size: 11))
-						.foregroundColor(.secondary)
-
-					Text("Input Device")
-						.font(.system(size: 11, weight: .medium, design: .rounded))
-						.foregroundColor(.secondary)
-
-					Spacer()
-
-					if !isExpanded {
-						Image(systemName: activeDeviceIcon)
-							.font(.system(size: 11))
-							.foregroundColor(.secondary)
-					}
-
-					Image(systemName: "chevron.down")
-						.font(.system(size: 10))
-						.foregroundColor(.secondary)
-						.rotationEffect(.degrees(isExpanded ? -180 : 0))
-				}
-				.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-
-			if isExpanded {
-				VStack(spacing: 2) {
-					deviceRow(
-						icon: "mic.fill",
-						name: "System Default",
-						isSelected: selectedUID == AudioDeviceManager.systemDefaultUID
-					) {
-						Task {
-							await audioManager.switchInputDevice(to: AudioDeviceManager.systemDefaultUID)
-						}
-					}
-
-					ForEach(deviceManager.availableDevices) { device in
-						deviceRow(
-							icon: device.iconName,
-							name: device.name,
-							isSelected: isDeviceSelected(device)
-						) {
-							Task {
-								await audioManager.switchInputDevice(to: device.uid)
-							}
-						}
-					}
-				}
-				.clipShape(RoundedRectangle(cornerRadius: 8))
-			.transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
-			}
+		let duration = type == .error ? ToastCenter.errorDuration : ToastCenter.successDuration
+		dismissTask?.cancel()
+		dismissTask = Task { @MainActor [weak self] in
+			try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+			guard !Task.isCancelled else { return }
+			self?.current = nil
 		}
 	}
 
-	private func deviceRow(icon: String, name: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-		Button(action: action) {
-			HStack(spacing: 8) {
-				Image(systemName: icon)
-					.font(.system(size: 12))
-					.frame(width: 20)
-					.foregroundColor(isSelected ? .blue : .secondary)
+	func dismiss() {
+		dismissTask?.cancel()
+		current = nil
+	}
 
-				Text(name)
-					.font(.system(size: 12, design: .rounded))
-					.foregroundColor(Color(nsColor: NSColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)))
-					.lineLimit(1)
+	// Reopens the most recent message; a cheap safety valve when a toast
+	// auto-dismisses before it can be read.
+	func showLastMessage() {
+		guard let last = lastMessage else { return }
+		show(last.message, type: last.type)
+	}
 
-				Spacer()
-
-				if isSelected {
-					Image(systemName: "checkmark.circle.fill")
-						.font(.system(size: 14))
-						.foregroundColor(.blue)
-				}
-			}
-			.padding(.horizontal, 10)
-			.padding(.vertical, 8)
-			.background(
-				RoundedRectangle(cornerRadius: 8)
-					.fill(isSelected ? Color.blue.opacity(0.1) : Color.clear)
-			)
-			.contentShape(Rectangle())
-		}
-		.buttonStyle(.plain)
+	private func postSystemNotification(_ toast: Toast) {
+		let notification = NSUserNotification()
+		notification.title = "Whispera"
+		notification.subtitle = toast.type == .error ? "Error" : ""
+		notification.informativeText = toast.message
+		NSUserNotificationCenter.default.deliver(notification)
 	}
 }
 
-// MARK: - Preference Key for Dynamic Height
+// Bottom overlay for the single toast. Observes only the ToastCenter and drives a
+// single combined-value animation so success and error share one motion language.
+struct ToastOverlay: View {
+	let toastCenter: ToastCenter
 
-struct ViewHeightKey: PreferenceKey {
-	static var defaultValue: CGFloat = 550
+	var body: some View {
+		VStack(spacing: 0) {
+			if let toast = toastCenter.current {
+				NotificationBanner(
+					message: toast.message,
+					type: toast.type,
+					onDismiss: { toastCenter.dismiss() }
+				)
+				.transition(.move(edge: .bottom).combined(with: .opacity))
+			}
+		}
+		.padding(.bottom, 8)
+		.padding(.horizontal, 8)
+		.animation(.spring(response: 0.4, dampingFraction: 0.8), value: toastCenter.current)
+	}
+}
 
-	static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-		value = nextValue()
+// MARK: - Microphone Menu
+
+// Native pull-down so opening the picker changes no popover height. The label
+// shows the precomputed active device (no O(n) scan per render); the inline
+// Picker draws a checkmark on the current selection. Locked during capture.
+struct MicMenu: View {
+	@Bindable var audioManager: AudioManager
+	@State private var deviceManager = AudioDeviceManager.shared
+	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
+
+	private var activeName: String {
+		if selectedUID == AudioDeviceManager.systemDefaultUID {
+			return "System Default"
+		}
+		return deviceManager.activeDevice?.name ?? "System Default"
+	}
+
+	private var activeIcon: String {
+		deviceManager.activeDevice?.iconName ?? "mic.fill"
+	}
+
+	private var selectionBinding: Binding<String> {
+		Binding(
+			get: { selectedUID },
+			set: { audioManager.switchInputDevice(to: $0) }
+		)
+	}
+
+	var body: some View {
+		Menu {
+			Picker("Input Device", selection: selectionBinding) {
+				Label("System Default", systemImage: "mic.fill")
+					.tag(AudioDeviceManager.systemDefaultUID)
+
+				ForEach(deviceManager.availableDevices) { device in
+					Label(device.name, systemImage: device.iconName)
+						.tag(device.uid)
+				}
+			}
+			.pickerStyle(.inline)
+
+			if deviceManager.availableDevices.isEmpty {
+				Divider()
+				Text("No input devices found")
+			}
+		} label: {
+			HStack(spacing: 4) {
+				Image(systemName: activeIcon)
+					.font(.system(size: 12))
+				Text(activeName)
+					.font(.system(size: 12, design: .rounded))
+					.lineLimit(1)
+					.truncationMode(.middle)
+			}
+			.foregroundStyle(.primary)
+		}
+		.menuStyle(.borderlessButton)
+		// Borderless menus render as NSPopUpButton and size to intrinsic width;
+		// without a hard cap a long device name pushes past the popover edge.
+		.frame(maxWidth: 150, alignment: .trailing)
+		.disabled(audioManager.isRecording)
+	}
+}
+
+// MARK: - Scoped composition subviews
+
+// Slim, dismissible single-row update prompt. Sparkle owns the download and
+// install flow; this row only surfaces availability and hands off to it.
+struct UpdateRow: View {
+	@ObservedObject var softwareUpdater: SoftwareUpdater
+	let onDismiss: () -> Void
+
+	var body: some View {
+		if let latestVersion = softwareUpdater.availableUpdateVersion {
+			HStack(spacing: 8) {
+				Image(systemName: "arrow.up.circle.fill")
+					.foregroundColor(.blue)
+
+				Text("Update \(latestVersion) available")
+					.font(.caption)
+					.foregroundColor(.primary)
+					.lineLimit(1)
+
+				Spacer(minLength: 4)
+
+				Button("Update") {
+					softwareUpdater.checkForUpdates()
+				}
+				.buttonStyle(.bordered)
+				.controlSize(.mini)
+				.disabled(!softwareUpdater.canCheckForUpdates)
+
+				Button(action: onDismiss) {
+					Image(systemName: "xmark")
+						.font(.system(size: 10, weight: .semibold))
+						.foregroundColor(.secondary)
+				}
+				.buttonStyle(.plain)
+				.help("Dismiss")
+			}
+			.padding(.horizontal, 10)
+			.padding(.vertical, 8)
+			.background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+			.overlay(
+				RoundedRectangle(cornerRadius: 8)
+					.stroke(.blue.opacity(0.3), lineWidth: 1)
+			)
+		}
+	}
+}
+
+struct HeaderLine: View {
+	@Bindable var audioManager: AudioManager
+	var whisperKit: WhisperKitTranscriber
+	var permissionManager: PermissionManager
+	@Bindable var fileTranscriptionManager: FileTranscriptionManager
+	@Bindable var networkDownloader: NetworkFileDownloader
+	let shortcutKey: String
+	let menuEntries: [StatusMenuEntry]
+	let performMenuAction: @MainActor (StatusMenuAction) -> Void
+
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	private var status: MenuBarStatusModel {
+		MenuBarStatusModel(
+			audioManager: audioManager,
+			whisperKit: whisperKit,
+			permissionManager: permissionManager,
+			fileTranscriptionManager: fileTranscriptionManager,
+			networkDownloader: networkDownloader,
+			shortcutKey: shortcutKey
+		)
+	}
+
+	var body: some View {
+		let status = status
+		HStack(spacing: 12) {
+			HeaderGlyph(
+				systemImage: status.systemImage,
+				color: status.color,
+				isRecording: audioManager.isRecording,
+				reduceMotion: reduceMotion
+			)
+
+			VStack(alignment: .leading, spacing: 2) {
+				HStack(spacing: 6) {
+					Text(status.title)
+						.font(.system(.headline, design: .rounded))
+						.foregroundColor(.primary)
+
+					if audioManager.isRecording {
+						RecordingDurationLabel(audioManager: audioManager)
+							.foregroundColor(.primary)
+					}
+				}
+
+				Text(status.subtitle)
+					.font(.caption)
+					.foregroundColor(.secondary)
+					.lineLimit(1)
+					.truncationMode(.middle)
+			}
+
+			Spacer()
+
+			Button {
+				performMenuAction(.settings)
+			} label: {
+				Image(systemName: "gearshape")
+					.font(.system(size: 15))
+					.foregroundColor(.secondary)
+			}
+			.buttonStyle(.plain)
+			.help("Settings")
+
+			Menu {
+				ForEach(Array(menuEntries.enumerated()), id: \.offset) { _, entry in
+					if let action = entry.action {
+						Button(entry.title) { performMenuAction(action) }
+							.disabled(!entry.isEnabled)
+					} else {
+						Divider()
+					}
+				}
+			} label: {
+				Image(systemName: "ellipsis")
+					.font(.system(size: 15))
+					.foregroundColor(.secondary)
+			}
+			.menuStyle(.borderlessButton)
+			.menuIndicator(.hidden)
+			.fixedSize()
+			.help("More")
+		}
+	}
+}
+
+// Isolated glyph leaf: crossfades its SF Symbol on state change and pulses while
+// recording, both gated on Reduce Motion.
+struct HeaderGlyph: View {
+	let systemImage: String
+	let color: Color
+	let isRecording: Bool
+	let reduceMotion: Bool
+
+	var body: some View {
+		ZStack {
+			Circle()
+				.fill(color.opacity(0.2))
+				.frame(width: 36, height: 36)
+
+			// Same state-change treatment as the onboarding steps: the outgoing
+			// glyph scales and fades out while the incoming one scales in.
+			glyph
+				.id(systemImage)
+				.transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+		}
+		.animation(reduceMotion ? nil : .spring(duration: 0.3), value: systemImage)
+		.animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: color)
+		// Fence the glyph's local animations off from ancestor layout shifts:
+		// when a Fix-It row collapses in the same beat as a state change, the
+		// circle must jump with the layout, not slide in from its old position.
+		.geometryGroup()
+	}
+
+	private var glyph: some View {
+		Image(systemName: systemImage)
+			.font(.system(size: 16, weight: .medium))
+			.foregroundColor(color)
+			.symbolEffect(.pulse, options: .repeating, isActive: isRecording && !reduceMotion)
+	}
+}
+
+// MARK: - Dictate lane
+
+// Record button, segmented mode control, native mic menu, and the shortcut
+// reminder. Observes only AudioManager so record/mode changes never re-evaluate
+// the header or the status card.
+struct DictateLane: View {
+	@Bindable var audioManager: AudioManager
+	let shortcutKey: String
+	let selectedLanguage: String
+	let isBlocked: Bool
+
+	var body: some View {
+		VStack(spacing: 12) {
+			RecordButton(audioManager: audioManager, isBlocked: isBlocked)
+
+			HStack(spacing: 12) {
+				ModeControl(audioManager: audioManager, selectedLanguage: selectedLanguage)
+					.layoutPriority(1)
+				Spacer(minLength: 8)
+				MicMenu(audioManager: audioManager)
+			}
+
+			ShortcutReminder(audioManager: audioManager, shortcutKey: shortcutKey)
+		}
+	}
+}
+
+struct RecordButton: View {
+	@Bindable var audioManager: AudioManager
+	let isBlocked: Bool
+
+	var body: some View {
+		Button {
+			audioManager.toggleRecording()
+		} label: {
+			HStack(spacing: 8) {
+				if audioManager.isTranscribing {
+					ProgressView()
+						.controlSize(.small)
+						.tint(.white)
+					Text("Transcribing…")
+						.font(.system(.body, design: .rounded, weight: .medium))
+				} else {
+					Image(systemName: audioManager.isRecording ? "stop.fill" : "mic.fill")
+					Text(audioManager.isRecording ? "Stop Recording" : "Start Recording")
+						.font(.system(.body, design: .rounded, weight: .medium))
+				}
+			}
+			.frame(maxWidth: .infinity)
+			.frame(height: 40)
+		}
+		.buttonStyle(PrimaryButtonStyle(isRecording: audioManager.isRecording))
+		.disabled(audioManager.isTranscribing || isBlocked)
+	}
+}
+
+// Segmented Text | Translate bound to the single enableTranslation source. Shows
+// the source language code while translating so that datum is not lost.
+struct ModeControl: View {
+	@Bindable var audioManager: AudioManager
+	let selectedLanguage: String
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 4) {
+			Picker("Mode", selection: $audioManager.enableTranslation) {
+				Text("Text").tag(false)
+					.help("Transcribe speech as text")
+				Text("Translate").tag(true)
+					.help("Translate speech to English")
+			}
+			.pickerStyle(.segmented)
+			.labelsHidden()
+			.fixedSize()
+
+			if audioManager.enableTranslation {
+				Text("\(Constants.languageCode(for: selectedLanguage).uppercased()) → EN")
+					.font(.system(.caption2, design: .rounded, weight: .medium))
+					.foregroundColor(.secondary)
+			}
+		}
+	}
+}
+
+// Plain, honest caption sharing the single enableTranslation source with the
+// mode control and header so the label can never desync.
+struct ShortcutReminder: View {
+	@Bindable var audioManager: AudioManager
+	let shortcutKey: String
+
+	var body: some View {
+		HStack(spacing: 6) {
+			Text(audioManager.enableTranslation ? "Translate" : "Text")
+			Text("·")
+			Text(shortcutKey)
+				.font(.system(.caption, design: .monospaced))
+			Spacer()
+		}
+		.font(.caption)
+		.foregroundColor(.secondary)
+	}
+}
+
+// MARK: - Popover sizing
+
+// Discrete, Equatable description of which popover modules are on screen. Height
+// is derived from a per-module table rather than measured, so there is no
+// measure -> set-frame -> remeasure feedback loop.
+struct PopoverLayout: Equatable {
+	var updateVisible: Bool
+	var permissionRows: Int
+	var modelPreparing: Bool
+	var modelDownloading: Bool
+	var hasResult: Bool
+	var typeScale: CGFloat
+
+	var needsPermissions: Bool { permissionRows > 0 }
+
+	// Dynamic-Type scale factor applied to the whole module table so larger text
+	// sizes grow the popover instead of clipping.
+	static func scale(for size: DynamicTypeSize) -> CGFloat {
+		switch size {
+		case .xSmall, .small, .medium, .large:
+			return 1.0
+		case .xLarge:
+			return 1.06
+		case .xxLarge:
+			return 1.12
+		case .xxxLarge:
+			return 1.18
+		default:
+			return 1.3
+		}
+	}
+}
+
+// Fixed popover width; height follows the measured content.
+enum PopoverMetrics {
+	static let width: CGFloat = 344
+	static let minHeight: CGFloat = 160
+	static let maxHeight: CGFloat = 700
+}
+
+// SwiftUI -> AppKit sizing bridge. The content reports its natural laid-out
+// height; the AppDelegate assigns it to popover.contentSize explicitly because
+// NSPopover animates explicit contentSize changes while shown - the passive
+// preferredContentSize tracking path snaps in a single frame.
+@Observable
+final class PopoverPresenter {
+	private(set) var height: CGFloat = 380
+
+	func setMeasured(_ measured: CGFloat) {
+		let clamped = min(max(measured.rounded(), PopoverMetrics.minHeight), PopoverMetrics.maxHeight)
+		// Sub-point layout jitter must not re-trigger the AppKit resize.
+		if abs(clamped - height) > 1 {
+			height = clamped
+		}
 	}
 }
