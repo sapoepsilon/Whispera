@@ -76,12 +76,6 @@ extension AppVersion {
 		/// Minimum supported macOS version
 		static let minimumMacOS = "13.0"
 
-		/// GitHub repository for updates
-		static let githubRepo = "sapoepsilon/Whispera"
-
-		/// Update check URL
-		static let updateURL = "https://api.github.com/repos/\(githubRepo)/releases/latest"
-
 		/// Current app version string (dynamically retrieved)
 		static var currentVersionString: String {
 			return AppVersion.current.versionString
