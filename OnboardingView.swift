@@ -4,9 +4,11 @@ import SwiftUI
 struct OnboardingView: View {
 	@Bindable var audioManager: AudioManager
 	@ObservedObject var shortcutManager: GlobalShortcutManager
+	let magnetController: OnboardingMagnetController?
 
 	@State private var currentStep = 0
 	@State private var direction: Int = 1
+	@State private var isDissolving = false
 	@State private var selectedModel = ""
 	@State private var customShortcut = ""
 	@State private var hasPermissions = false
@@ -25,6 +27,7 @@ struct OnboardingView: View {
 	}
 
 	private let steps = ["Welcome", "Permissions", "Setup", "Try It", "Complete"]
+	private static let tryItStep = 3
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -82,10 +85,29 @@ struct OnboardingView: View {
 			.allowsHitTesting(false)
 		)
 		.frame(width: 600, height: 750)
+		// the window's own alpha is animated by the magnet controller; this only
+		// makes the content read as being pulled apart rather than switched off
+		.scaleEffect(isDissolving ? 0.9 : 1)
+		.blur(radius: isDissolving ? 8 : 0)
+		.opacity(isDissolving ? 0 : 1)
 		.onAppear {
 			checkPermissions()
 			customShortcut = globalShortcut
 			launchAtLogin = storedLaunchAtLogin
+			magnetController?.isArmed = currentStep == Self.tryItStep
+		}
+		.onDisappear {
+			magnetController?.detach()
+		}
+		.onChange(of: currentStep) { _, step in
+			magnetController?.isArmed = step == Self.tryItStep
+		}
+		.onReceive(NotificationCenter.default.publisher(for: .onboardingMagnetDissolve)) {
+			notification in
+			let dissolving = notification.object as? Bool ?? false
+			withAnimation(.easeInOut(duration: 0.2)) {
+				isDissolving = dissolving
+			}
 		}
 	}
 
