@@ -42,3 +42,5 @@ Open a [GitHub issue](https://github.com/sapoepsilon/Whispera/issues) with:
 ## Questions
 
 If something is unclear, open an issue and ask. We're happy to help.
+
+<!-- whispera-agent E2E test line -->
