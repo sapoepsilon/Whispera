@@ -13,6 +13,7 @@ import ClerkKitUI
 struct AccountSettingsView: View {
 	@State private var auth = AuthManager.shared
 	@AppStorage("whisperaServerURL") private var serverURL = WhisperaSettings.defaultServerURL
+	@AppStorage("whisperaClerkPublishableKey") private var clerkPublishableKey = ""
 	@State private var token = ""
 
 	var body: some View {
@@ -28,6 +29,19 @@ struct AccountSettingsView: View {
 						Text("Used for Subscription and BYOK recipe execution. Local mode needs no server.")
 							.font(.caption)
 							.foregroundColor(.secondary)
+
+						Divider()
+
+						Text("Clerk publishable key")
+							.font(.subheadline)
+						TextField("pk_test_…", text: $clerkPublishableKey)
+							.textFieldStyle(.roundedBorder)
+							.autocorrectionDisabled()
+						Text(
+							"Needed to sign in with Clerk. Installed builds inherit no environment, so the key is stored here unless CLERK_PUBLISHABLE_KEY is set. Takes effect after a restart."
+						)
+						.font(.caption)
+						.foregroundColor(.secondary)
 					}
 				}
 

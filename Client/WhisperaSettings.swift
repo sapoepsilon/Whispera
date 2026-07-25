@@ -20,12 +20,25 @@ enum WhisperaSettings {
 		URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines))
 	}
 
-	/// Clerk publishable key is deployment config, not a secret. For now this is
-	/// read from the app process environment so local/test builds can point at the
-	/// developer's Clerk instance without committing project-specific values.
+	private static let clerkPublishableKeyKey = "whisperaClerkPublishableKey"
+
+	/// Clerk publishable key is deployment config, not a secret, so it lives here
+	/// rather than the Keychain. The process environment wins so an Xcode scheme
+	/// can override per-run, but a stored value is required for installed builds:
+	/// a double-clicked .app inherits no environment, so an env-only key would
+	/// leave Clerk silently unconfigured. See WHI-45.
 	static var clerkPublishableKey: String? {
-		ProcessInfo.processInfo.environment["CLERK_PUBLISHABLE_KEY"]?
-			.trimmingCharacters(in: .whitespacesAndNewlines)
+		get {
+			let env = ProcessInfo.processInfo.environment["CLERK_PUBLISHABLE_KEY"]?
+				.trimmingCharacters(in: .whitespacesAndNewlines)
+			if let env, !env.isEmpty { return env }
+
+			let stored = defaults.string(forKey: clerkPublishableKeyKey)?
+				.trimmingCharacters(in: .whitespacesAndNewlines)
+			guard let stored, !stored.isEmpty else { return nil }
+			return stored
+		}
+		set { defaults.set(newValue, forKey: clerkPublishableKeyKey) }
 	}
 
 	private static let defaultCommandIdKey = "whisperaDefaultCommandId"
