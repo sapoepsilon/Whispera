@@ -64,8 +64,7 @@ struct TestStepView: View {
 				}
 
 				if audioManager.isRecording {
-					AudioMeterView(levels: audioManager.audioLevels, fixedHeight: 20)
-						.frame(width: 160)
+					LiveMeter(audioManager: audioManager)
 						.transition(.opacity)
 				}
 
@@ -115,5 +114,16 @@ struct TestStepView: View {
 		}
 		.animation(.spring(duration: 0.4, bounce: 0.15), value: audioManager.isRecording)
 		.animation(.spring(duration: 0.4, bounce: 0.15), value: audioManager.lastTranscription)
+	}
+}
+
+private struct LiveMeter: View {
+	// reading audioLevels here keeps the audio-rate invalidation inside this leaf
+	// instead of rebuilding the whole step, 100-row language Picker included
+	let audioManager: AudioManager
+
+	var body: some View {
+		AudioMeterView(levels: audioManager.audioLevels, fixedHeight: 20)
+			.frame(width: 160)
 	}
 }

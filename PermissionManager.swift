@@ -31,9 +31,18 @@ class PermissionManager {
 		let newMicrophonePermission = checkMicrophonePermission()
 		let newAccessibilityPermission = checkAccessibilityPermission()
 
-		microphonePermissionGranted = newMicrophonePermission
-		accessibilityPermissionGranted = newAccessibilityPermission
-		needsPermissions = !newMicrophonePermission || !newAccessibilityPermission
+		// @Observable setters do not equality-check; writing unchanged values
+		// invalidates every observer of this manager
+		if microphonePermissionGranted != newMicrophonePermission {
+			microphonePermissionGranted = newMicrophonePermission
+		}
+		if accessibilityPermissionGranted != newAccessibilityPermission {
+			accessibilityPermissionGranted = newAccessibilityPermission
+		}
+		let needs = !newMicrophonePermission || !newAccessibilityPermission
+		if needsPermissions != needs {
+			needsPermissions = needs
+		}
 	}
 
 	/// Requests microphone permission

@@ -155,9 +155,9 @@ struct Constants {
 	public static let enableStreamingDefault = false
 
 	// Helper to get sorted language names for UI
-	public static var sortedLanguageNames: [String] {
-		return Array(languages.keys).sorted()
-	}
+	// languages is a let with unique keys, so this sort is invariant; computing it
+	// per access re-sorted ~100 strings on every body pass that read it
+	public static let sortedLanguageNames: [String] = Array(languages.keys).sorted()
 
 	// Helper to get language code from name
 	public static func languageCode(for languageName: String) -> String {
