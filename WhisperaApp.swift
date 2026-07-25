@@ -142,6 +142,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	private var settingsWindow: NSWindow?
 	private var swiftUIOpenSettings: (@MainActor () -> Void)?
 	let popoverPresenter = PopoverPresenter()
+	private var onboardingMagnet: OnboardingMagnetController?
+	private var dictationMagnet: DictationMagnetController?
 	private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
 	private static let alphaPulseKey = "whispera.statusItem.alphaPulse"
@@ -226,7 +228,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
+			dictationMagnet = DictationMagnetController()
+			if let listeningWindow {
+				// the field flies out of wherever the listening window stood
+				dictationMagnet?.attach(sourceWindow: listeningWindow)
+			}
 			recordingGlowController = RecordingGlowController(audioManager: audioManager)
+			onboardingMagnet = OnboardingMagnetController()
 
 			startAutostartDictationIfRequested()
 			if !hasCompletedOnboarding {
@@ -731,7 +739,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		}
 		let onboardingView = OnboardingView(
 			audioManager: audioManager,
-			shortcutManager: shortcutManager
+			shortcutManager: shortcutManager,
+			magnetController: onboardingMagnet
 		)
 
 		let hostingController = NSHostingController(rootView: onboardingView)
@@ -760,6 +769,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			window.setFrameOrigin(OnboardingWindowSize.origin(for: window.frame.size, in: visible))
 		}
 		onboardingWindow?.makeKeyAndOrderFront(nil)
+		if let onboardingWindow {
+			MainActor.assumeIsolated { onboardingMagnet?.attach(to: onboardingWindow) }
+		}
 
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
@@ -770,6 +782,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			queue: .main
 		) { [weak self] _ in
 			NSApp.setActivationPolicy(.accessory)
+			MainActor.assumeIsolated { self?.onboardingMagnet?.detach() }
 			Task { @MainActor in
 				guard let self else { return }
 				self.onboardingWindow?.close()
@@ -789,6 +802,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			Task { @MainActor in
 				self?.updateStatusIcon()
 				self?.recordingGlowController?.updateVisibility()
+				if let state = self?.audioManager.currentState {
+					self?.onboardingMagnet?.handle(state: state)
+				}
 			}
 		}
 
