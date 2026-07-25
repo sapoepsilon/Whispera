@@ -32,6 +32,12 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Whispera connects to local AI servers (e.g. ollama or a self-hosted Whisper endpoint) on your machine or network for Local-mode transcription and recipe execution.</string>
+	<!-- Clerk publishable keys are public by design (they ship in every Clerk
+	     web bundle); the secret key lives only on the backend. Shipping it here
+	     is what makes sign-in work in an installed .app, which inherits no
+	     process environment. Override at runtime with CLERK_PUBLISHABLE_KEY. -->
+	<key>ClerkPublishableKey</key>
+	<string>pk_test_c2F2aW5nLW1hY2F3LTc4LmNsZXJrLmFjY291bnRzLmRldiQ</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Whispera needs accessibility access to monitor global keyboard shortcuts.</string>
 	<key>NSMicrophoneUsageDescription</key>

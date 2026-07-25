@@ -20,25 +20,20 @@ enum WhisperaSettings {
 		URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines))
 	}
 
-	private static let clerkPublishableKeyKey = "whisperaClerkPublishableKey"
-
-	/// Clerk publishable key is deployment config, not a secret, so it lives here
-	/// rather than the Keychain. The process environment wins so an Xcode scheme
-	/// can override per-run, but a stored value is required for installed builds:
-	/// a double-clicked .app inherits no environment, so an env-only key would
-	/// leave Clerk silently unconfigured. See WHI-45.
+	/// Clerk publishable key: deployment config, not a secret, and not something
+	/// a user should ever be asked for. It ships in Info.plist so installed
+	/// builds work — a double-clicked .app inherits no process environment, so
+	/// an env-only key left Clerk silently unconfigured. The environment still
+	/// wins so a dev build can point at another Clerk instance. See WHI-45.
 	static var clerkPublishableKey: String? {
-		get {
-			let env = ProcessInfo.processInfo.environment["CLERK_PUBLISHABLE_KEY"]?
-				.trimmingCharacters(in: .whitespacesAndNewlines)
-			if let env, !env.isEmpty { return env }
+		let env = ProcessInfo.processInfo.environment["CLERK_PUBLISHABLE_KEY"]?
+			.trimmingCharacters(in: .whitespacesAndNewlines)
+		if let env, !env.isEmpty { return env }
 
-			let stored = defaults.string(forKey: clerkPublishableKeyKey)?
-				.trimmingCharacters(in: .whitespacesAndNewlines)
-			guard let stored, !stored.isEmpty else { return nil }
-			return stored
-		}
-		set { defaults.set(newValue, forKey: clerkPublishableKeyKey) }
+		let bundled = (Bundle.main.object(forInfoDictionaryKey: "ClerkPublishableKey") as? String)?
+			.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard let bundled, !bundled.isEmpty else { return nil }
+		return bundled
 	}
 
 	private static let defaultCommandIdKey = "whisperaDefaultCommandId"
