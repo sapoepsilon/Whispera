@@ -9,33 +9,25 @@ struct OnboardingProgressView: View {
 	private static let shimmerPeriod: TimeInterval = 2.0
 
 	var body: some View {
-		// A repeatForever animation on a gradient's UnitPoint is not something
-		// CoreAnimation can drive, so SwiftUI re-evaluated the fill on every
-		// display frame — 120/s on ProMotion — for the whole time onboarding was
-		// open, on every step. Driving it from a capped schedule instead keeps the
-		// sweep identical while cutting the redraws by 4x.
-		TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-			content(
-				shimmerOffset: Self.shimmerOffset(at: timeline.date))
-		}
-	}
-
-	private static func shimmerOffset(at date: Date) -> CGFloat {
-		let phase = date.timeIntervalSinceReferenceDate
-			.truncatingRemainder(dividingBy: shimmerPeriod) / shimmerPeriod
-		// same -1 ... 2 sweep the animation used
-		return -1 + CGFloat(phase) * 3
-	}
-
-	private func content(shimmerOffset: CGFloat) -> some View {
+		// The sweep is a capped schedule rather than a repeatForever on the
+		// gradient's UnitPoint, which CoreAnimation cannot drive. Scoping the
+		// schedule to the one shimmering segment keeps the other four, the label
+		// and the containing VStack out of the per-tick invalidation.
 		VStack(spacing: 6) {
-			GeometryReader { _ in
-				HStack(spacing: 3) {
-					ForEach(0..<totalSteps, id: \.self) { step in
+			HStack(spacing: 3) {
+				ForEach(0..<totalSteps, id: \.self) { step in
+					TimelineView(
+						.animation(minimumInterval: 1.0 / 30.0, paused: step != currentStep)
+					) { timeline in
 						RoundedRectangle(cornerRadius: 3)
-							.fill(segmentFill(for: step, shimmerOffset: shimmerOffset))
+							.fill(
+								segmentFill(
+									for: step,
+									shimmerOffset: Self.shimmerOffset(at: timeline.date))
+							)
 							.frame(height: 6)
 					}
+					.frame(maxWidth: .infinity)
 				}
 			}
 			.frame(height: 6)
@@ -50,23 +42,31 @@ struct OnboardingProgressView: View {
 		}
 	}
 
-	private func segmentFill(for step: Int, shimmerOffset: CGFloat) -> some ShapeStyle {
+	private static func shimmerOffset(at date: Date) -> CGFloat {
+		let phase = date.timeIntervalSinceReferenceDate
+			.truncatingRemainder(dividingBy: shimmerPeriod) / shimmerPeriod
+		// same -1 ... 2 sweep the animation used
+		return -1 + CGFloat(phase) * 3
+	}
+
+	// hoisted: Color resolves at draw time, so these still track light/dark
+	private static let completedFill = AnyShapeStyle(Color.blue)
+	private static let upcomingFill = AnyShapeStyle(Color.gray.opacity(0.15))
+	private static let shimmerColors: [Color] = [.blue, .blue.opacity(0.6), .blue]
+
+	private func segmentFill(for step: Int, shimmerOffset: CGFloat) -> AnyShapeStyle {
 		if step < currentStep {
-			return AnyShapeStyle(Color.blue)
+			return Self.completedFill
 		} else if step == currentStep {
 			return AnyShapeStyle(
 				LinearGradient(
-					colors: [
-						Color.blue,
-						Color.blue.opacity(0.6),
-						Color.blue,
-					],
+					colors: Self.shimmerColors,
 					startPoint: UnitPoint(x: shimmerOffset, y: 0.5),
 					endPoint: UnitPoint(x: shimmerOffset + 0.5, y: 0.5)
 				)
 			)
 		} else {
-			return AnyShapeStyle(Color.gray.opacity(0.15))
+			return Self.upcomingFill
 		}
 	}
 }

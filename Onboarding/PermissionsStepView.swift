@@ -91,7 +91,12 @@ struct PermissionsStepView: View {
 	}
 
 	private func checkMicrophonePermission() {
-		hasMicrophonePermission = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+		// @State does not equality-check, so writing the same value every 0.5s
+		// re-evaluated this whole step twice a second
+		let granted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+		if granted != hasMicrophonePermission {
+			hasMicrophonePermission = granted
+		}
 	}
 
 	private func checkAccessibilityPermission() {
