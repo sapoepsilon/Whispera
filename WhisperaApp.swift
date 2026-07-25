@@ -399,6 +399,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	// retained window hosting the same settings view.
 	@MainActor
 	private func showSettingsWindow() {
+		// the popover is not modal and does not dismiss itself when another
+		// window takes focus, so it would sit over the settings window it just
+		// opened - and keep rendering behind it
+		if popover.isShown {
+			popover.performClose(nil)
+		}
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
 		if let action = swiftUIOpenSettings {
