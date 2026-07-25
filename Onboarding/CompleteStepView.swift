@@ -2,7 +2,11 @@ import SwiftUI
 
 struct CompleteStepView: View {
 	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
-	@State private var floatOffset: CGFloat = 0
+	@State private var floatStart = Date()
+
+	private static let floatDistance: CGFloat = -6
+	private static let floatLeg: TimeInterval = 2.0
+	private static let floatDelay: TimeInterval = 0.5
 
 	private var tips: [(icon: String, title: String, description: String)] {
 		[
@@ -20,11 +24,20 @@ struct CompleteStepView: View {
 			VStack(spacing: 24) {
 				Spacer()
 
-				Image(nsImage: NSApp.applicationIconImage)
-					.resizable()
-					.frame(width: 80, height: 80)
-					.clipShape(RoundedRectangle(cornerRadius: 18))
-					.offset(y: floatOffset)
+				// a repeatForever offset holds SwiftUI's update loop at full display
+				// refresh for as long as this step is open; the 12pt round trip
+				// over 4s moves under a third of a pixel per 30Hz tick, so a
+				// capped schedule is the same motion at a quarter of the ticks
+				TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+					Image(nsImage: NSApp.applicationIconImage)
+						.resizable()
+						.frame(width: 80, height: 80)
+						.clipShape(RoundedRectangle(cornerRadius: 18))
+						.offset(
+							y: Self.floatOffset(
+								at: timeline.date.timeIntervalSince(floatStart)))
+				}
+				.frame(width: 80, height: 80)
 
 				VStack(spacing: 8) {
 					Text("You're Ready")
@@ -45,15 +58,15 @@ struct CompleteStepView: View {
 				Spacer()
 			}
 		}
-		.onAppear {
-			withAnimation(
-				.easeInOut(duration: 2.0)
-				.repeatForever(autoreverses: true)
-				.delay(0.5)
-			) {
-				floatOffset = -6
-			}
-		}
+	}
+
+	// UnitCurve.easeInOut is the same cubic bezier Animation.easeInOut uses and is
+	// symmetric, so the autoreversing leg needs no special case.
+	private static func floatOffset(at elapsed: TimeInterval) -> CGFloat {
+		let t = max(0, elapsed - floatDelay)
+		let cycle = (t / floatLeg).truncatingRemainder(dividingBy: 2)
+		let leg = cycle <= 1 ? cycle : 2 - cycle
+		return floatDistance * CGFloat(UnitCurve.easeInOut.value(at: leg))
 	}
 
 	private func tipCard(icon: String, title: String, description: String) -> some View {
