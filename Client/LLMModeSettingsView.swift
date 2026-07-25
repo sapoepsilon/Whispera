@@ -75,6 +75,26 @@ private struct LocalModeConfig: View {
 	@AppStorage("whisperaLocalServerURL") private var serverURL = WhisperaSettings.defaultLocalServerURL
 	@AppStorage("whisperaLocalModel") private var model = ""
 	@State private var testResult: String?
+	@State private var availableModels: [String] = []
+	@State private var isLoadingModels = false
+
+	/// Servers that implement the OpenAI `GET /models` endpoint get a picker;
+	/// everything else falls back to typing the model id.
+	@ViewBuilder private var modelField: some View {
+		if availableModels.isEmpty {
+			TextField("Model (e.g. llama3.2)", text: $model)
+				.textFieldStyle(.roundedBorder)
+				.autocorrectionDisabled()
+		} else {
+			Picker("Model", selection: $model) {
+				if model.isEmpty || !availableModels.contains(model) {
+					Text(model.isEmpty ? "Select a model" : model).tag(model)
+				}
+				ForEach(availableModels, id: \.self) { Text($0).tag($0) }
+			}
+			.labelsHidden()
+		}
+	}
 
 	var body: some View {
 		SettingsSection("Local Server") {
@@ -87,11 +107,13 @@ private struct LocalModeConfig: View {
 				TextField("http://localhost:11434/v1", text: $serverURL)
 					.textFieldStyle(.roundedBorder)
 					.autocorrectionDisabled()
-				TextField("Model (e.g. llama3.2)", text: $model)
-					.textFieldStyle(.roundedBorder)
-					.autocorrectionDisabled()
+
+				modelField
+
 				HStack {
 					AsyncButton("Test") { await runTest() }
+					AsyncButton(isLoadingModels ? "Loading…" : "Reload models") { await loadModels() }
+						.disabled(isLoadingModels)
 					if let testResult {
 						Text(testResult)
 							.font(.caption)
@@ -100,7 +122,16 @@ private struct LocalModeConfig: View {
 					}
 				}
 			}
+			// Re-query whenever the server URL changes, so pointing at a new
+			// endpoint repopulates the picker without a manual reload.
+			.task(id: serverURL) { await loadModels() }
 		}
+	}
+
+	private func loadModels() async {
+		isLoadingModels = true
+		defer { isLoadingModels = false }
+		availableModels = (try? await LocalLLMExecutor().listModels()) ?? []
 	}
 
 	private func runTest() async {

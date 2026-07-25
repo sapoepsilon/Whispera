@@ -116,9 +116,42 @@ struct LocalLLMExecutor {
 		return content
 	}
 
+	/// Model ids the configured server advertises via the OpenAI-compatible
+	/// `GET /models` endpoint. Servers that don't implement it just leave the
+	/// picker empty and the user types a model id by hand.
+	func listModels() async throws -> [String] {
+		guard let base = serverURLProvider() else { throw LocalLLMError.unavailable }
+
+		var request = URLRequest(url: base.appendingPathComponent("models"))
+		request.httpMethod = "GET"
+
+		let data: Data
+		let response: URLResponse
+		do {
+			(data, response) = try await session.data(for: request)
+		} catch {
+			throw LocalLLMError.unavailable
+		}
+
+		guard let http = response as? HTTPURLResponse else { throw LocalLLMError.empty }
+		guard (200..<300).contains(http.statusCode) else {
+			throw LocalLLMError.http(status: http.statusCode, body: String(data: data, encoding: .utf8) ?? "")
+		}
+
+		return Self.parseModelIDs(data)
+	}
+
 	private func nonEmpty(_ s: String) -> String? { s.isEmpty ? nil : s }
 
 	// MARK: - Helpers
+
+	static func parseModelIDs(_ data: Data) -> [String] {
+		guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+			let models = object["data"] as? [[String: Any]]
+		else { return [] }
+		let ids = models.compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
+		return Array(Set(ids)).sorted()
+	}
 
 	static func parseContent(_ data: Data) -> String? {
 		guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

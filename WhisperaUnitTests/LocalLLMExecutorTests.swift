@@ -24,6 +24,20 @@ struct LocalLLMInterpolationTests {
 	@Test func parseReturnsNilForGarbage() {
 		#expect(LocalLLMExecutor.parseContent(Data("not json".utf8)) == nil)
 	}
+
+	@Test func parsesModelIDsSortedAndDeduped() {
+		let json = #"{"object":"list","data":[{"id":"gpt-5.5"},{"id":"claude-opus-5"},{"id":"gpt-5.5"}]}"#
+		#expect(LocalLLMExecutor.parseModelIDs(Data(json.utf8)) == ["claude-opus-5", "gpt-5.5"])
+	}
+
+	@Test func parseModelIDsSkipsMalformedEntries() {
+		let json = #"{"data":[{"id":"good"},{"name":"no-id"},{"id":""}]}"#
+		#expect(LocalLLMExecutor.parseModelIDs(Data(json.utf8)) == ["good"])
+	}
+
+	@Test func parseModelIDsReturnsEmptyForGarbage() {
+		#expect(LocalLLMExecutor.parseModelIDs(Data("not json".utf8)).isEmpty)
+	}
 }
 
 struct LocalLLMExecutorChatTests {
