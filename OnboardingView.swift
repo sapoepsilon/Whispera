@@ -86,9 +86,11 @@ struct OnboardingView: View {
 		)
 		.frame(width: 600, height: 750)
 		// the window's own alpha is animated by the magnet controller; this only
-		// makes the content read as being pulled apart rather than switched off
+		// makes the content read as being pulled apart rather than switched off.
+		// Deliberately no .blur: SwiftUI keeps an offscreen render pass alive for
+		// it even at radius 0, which redraws this whole Material-backed window
+		// every frame for the entire time onboarding is open.
 		.scaleEffect(isDissolving ? 0.9 : 1)
-		.blur(radius: isDissolving ? 8 : 0)
 		.opacity(isDissolving ? 0 : 1)
 		.onAppear {
 			checkPermissions()
