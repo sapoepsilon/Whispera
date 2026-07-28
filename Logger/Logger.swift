@@ -13,28 +13,47 @@ struct ExtendedLogger {
 	let category: String
 
 	func log(_ message: String) {
+		let message = LogRedactor.redact(message)
 		logger.log("\(message)")
 		LogManager.shared.writeLog(category: category, level: .default, message: message)
 	}
 
 	func info(_ message: String) {
+		let message = LogRedactor.redact(message)
 		logger.info("\(message)")
 		LogManager.shared.writeLog(category: category, level: .info, message: message)
 	}
 
 	func debug(_ message: String) {
+		let message = LogRedactor.redact(message)
 		logger.debug("\(message)")
 		LogManager.shared.writeLog(category: category, level: .debug, message: message)
 	}
 
 	func error(_ message: String) {
+		let message = LogRedactor.redact(message)
 		logger.error("\(message)")
 		LogManager.shared.writeLog(category: category, level: .error, message: message)
 	}
 
 	func fault(_ message: String) {
+		let message = LogRedactor.redact(message)
 		logger.fault("\(message)")
 		LogManager.shared.writeLog(category: category, level: .fault, message: message)
+	}
+}
+
+/// Defensively scrubs provider API keys from anything we log. A BYOK key should
+/// never reach a log file, but a careless string interpolation elsewhere
+/// shouldn't be able to leak one either. See WHI-40.
+enum LogRedactor {
+	private static let pattern = try? NSRegularExpression(pattern: "sk-[A-Za-z0-9-_]{20,}")
+
+	static func redact(_ message: String) -> String {
+		guard let pattern else { return message }
+		let range = NSRange(message.startIndex..., in: message)
+		return pattern.stringByReplacingMatches(
+			in: message, range: range, withTemplate: "sk-***REDACTED***")
 	}
 }
 
