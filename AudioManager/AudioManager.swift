@@ -560,10 +560,30 @@ extension AudioManager {
 		NSSound(named: soundName)?.play()
 	}
 	fileprivate func pasteToFocusedApp(_ text: String) {
+		// read before the paste moves the caret; observers use it as the
+		// destination for the dictation particle flight
+		let caret = MagnetField.caretRect()
+		NotificationCenter.default.post(
+			name: .dictationWillPaste, object: caret.map { NSValue(rect: $0) })
+
 		let pasteboard = NSPasteboard.general
 		pasteboard.clearContents()
 		pasteboard.setString(text, forType: .string)
 
+		// the particle field is already in flight; landing the text as it arrives
+		// reads as one motion, where pasting immediately puts the text on screen
+		// well before the animation catches up
+		let lead = MagnetField.pasteLeadTime(caret: caret)
+		if lead > 0 {
+			DispatchQueue.main.asyncAfter(deadline: .now() + lead) {
+				AudioManager.sendPasteKeystroke()
+			}
+		} else {
+			AudioManager.sendPasteKeystroke()
+		}
+	}
+
+	fileprivate static func sendPasteKeystroke() {
 		let source = CGEventSource(stateID: .combinedSessionState)
 		let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
 		let keyUpEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)

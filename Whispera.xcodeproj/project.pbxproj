@@ -60,6 +60,11 @@
 		D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */; };
 		D6C10A012F20000000000002 /* RecordingGlowWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C10A012F20000000000001 /* RecordingGlowWindow.swift */; };
 		D6C10A022F20000000000002 /* RecordingGlow.metal in Sources */ = {isa = PBXBuildFile; fileRef = D6C10A022F20000000000001 /* RecordingGlow.metal */; };
+		D6MAGNET12F0000000000001 /* EdgeMagnetRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MAGNET22F0000000000001 /* EdgeMagnetRenderer.swift */; };
+		D6MAGNET12F0000000000002 /* OnboardingMagnetTransition.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MAGNET22F0000000000002 /* OnboardingMagnetTransition.swift */; };
+		D6MAGNET12F0000000000003 /* EdgeMagnet.metal in Sources */ = {isa = PBXBuildFile; fileRef = D6MAGNET22F0000000000003 /* EdgeMagnet.metal */; };
+		D6MAGNET12F0000000000004 /* MagnetField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MAGNET22F0000000000005 /* MagnetField.swift */; };
+		D6MAGNET12F0000000000005 /* DictationMagnetTransition.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MAGNET22F0000000000006 /* DictationMagnetTransition.swift */; };
 		D6BENCH012F0000000000001 /* BenchmarkResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6BENCH022F0000000000001 /* BenchmarkResult.swift */; };
 		D6BENCH012F0000000000002 /* BenchmarkRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6BENCH022F0000000000002 /* BenchmarkRunner.swift */; };
 		D6BENCH012F0000000000003 /* BenchmarkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6BENCH022F0000000000003 /* BenchmarkView.swift */; };
@@ -156,6 +161,12 @@
 		D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
 		D6C10A012F20000000000001 /* RecordingGlowWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingGlowWindow.swift; sourceTree = "<group>"; };
 		D6C10A022F20000000000001 /* RecordingGlow.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = RecordingGlow.metal; sourceTree = "<group>"; };
+		D6MAGNET22F0000000000001 /* EdgeMagnetRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeMagnetRenderer.swift; sourceTree = "<group>"; };
+		D6MAGNET22F0000000000002 /* OnboardingMagnetTransition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingMagnetTransition.swift; sourceTree = "<group>"; };
+		D6MAGNET22F0000000000003 /* EdgeMagnet.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = EdgeMagnet.metal; sourceTree = "<group>"; };
+		D6MAGNET22F0000000000005 /* MagnetField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagnetField.swift; sourceTree = "<group>"; };
+		D6MAGNET22F0000000000006 /* DictationMagnetTransition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationMagnetTransition.swift; sourceTree = "<group>"; };
+		D6MAGNET22F0000000000004 /* GlowGeometry.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GlowGeometry.h; sourceTree = "<group>"; };
 		D6BENCH022F0000000000001 /* BenchmarkResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkResult.swift; sourceTree = "<group>"; };
 		D6BENCH022F0000000000002 /* BenchmarkRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkRunner.swift; sourceTree = "<group>"; };
 		D6BENCH022F0000000000003 /* BenchmarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkView.swift; sourceTree = "<group>"; };
@@ -227,6 +238,10 @@
 				D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */,
 				D6C10A012F20000000000001 /* RecordingGlowWindow.swift */,
 				D6C10A022F20000000000001 /* RecordingGlow.metal */,
+				D6MAGNET22F0000000000003 /* EdgeMagnet.metal */,
+				D6MAGNET22F0000000000005 /* MagnetField.swift */,
+				D6MAGNET22F0000000000006 /* DictationMagnetTransition.swift */,
+				D6MAGNET22F0000000000004 /* GlowGeometry.h */,
 				2A2A2A2A2A2A2A2A2A2A2A2B /* MenuBarView.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2C /* SettingsView.swift */,
 				B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */,
@@ -338,6 +353,8 @@
 				D66E6D6A2E185B8A00F55A5B /* ShortcutOptionsView.swift */,
 				D60NBOARD22F0000000000002 /* ConfettiView.swift */,
 				D60NBOARD22F0000000000003 /* OnboardingTransition.swift */,
+				D6MAGNET22F0000000000001 /* EdgeMagnetRenderer.swift */,
+				D6MAGNET22F0000000000002 /* OnboardingMagnetTransition.swift */,
 				D66E6D642E185B0100F55A5B /* OnboardingProgressView.swift */,
 				D66E6D622E185AE100F55A5B /* PermissionRowView.swift */,
 				D66E6D5E2E185A5400F55A5B /* PermissionsStepView.swift */,
@@ -553,6 +570,11 @@
 				D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */,
 				D6C10A012F20000000000002 /* RecordingGlowWindow.swift in Sources */,
 				D6C10A022F20000000000002 /* RecordingGlow.metal in Sources */,
+				D6MAGNET12F0000000000003 /* EdgeMagnet.metal in Sources */,
+				D6MAGNET12F0000000000004 /* MagnetField.swift in Sources */,
+				D6MAGNET12F0000000000005 /* DictationMagnetTransition.swift in Sources */,
+				D6MAGNET12F0000000000001 /* EdgeMagnetRenderer.swift in Sources */,
+				D6MAGNET12F0000000000002 /* OnboardingMagnetTransition.swift in Sources */,
 				D698B91D2E18F3DD008FE0CF /* PermissionManager.swift in Sources */,
 				D63900D62E3D77EF005B5623 /* FileTranscriptionProtocols.swift in Sources */,
 				D63900D72E3D77EF005B5623 /* YouTubeTranscriptionManager.swift in Sources */,
