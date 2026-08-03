@@ -176,6 +176,9 @@ final class AudioManager: NSObject {
 					AppLogger.shared.audioManager.error("Failed to switch device: \(error)")
 					isRecording = false
 					timer.stop()
+					// This aborts the recording without reaching any stop path, so
+					// without this the user's music would stay paused for good.
+					MediaPlaybackCoordinator.shared.resumeAfterDictation()
 				}
 			} else {
 				deviceManager.restoreSystemDefault()
@@ -232,6 +235,9 @@ extension AudioManager {
 		// result or error underneath it.
 		lastTranscription = nil
 		transcriptionError = nil
+		// Hooked here rather than in startRecording() so a denied mic permission
+		// never pauses the user's music for a recording that won't happen.
+		MediaPlaybackCoordinator.shared.pauseForDictation()
 		if currentRecordingMode == .liveTranscription {
 			startLiveTranscription()
 		} else if useStreamingTranscription {
@@ -310,6 +316,8 @@ extension AudioManager {
 			Task {
 				await transcribeAudio(fileURL: audioFileURL, enableTranslation: enableTranslation)
 			}
+		} else {
+			MediaPlaybackCoordinator.shared.resumeAfterDictation()
 		}
 
 		scheduleTimerReset()
@@ -385,6 +393,7 @@ extension AudioManager {
 			}
 		} else {
 			AppLogger.shared.audioManager.info("No audio captured")
+			MediaPlaybackCoordinator.shared.resumeAfterDictation()
 		}
 
 		scheduleTimerReset()
@@ -474,6 +483,7 @@ extension AudioManager {
 
 		whisperKitTranscriber.stopLiveStream()
 		levelMonitor.reset()
+		MediaPlaybackCoordinator.shared.resumeAfterDictation()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
 		scheduleTimerReset()
@@ -495,6 +505,7 @@ extension AudioManager {
 				transcriptionError = error.localizedDescription
 				lastTranscription = "Transcription failed: \(error.localizedDescription)"
 				isTranscribing = false
+				MediaPlaybackCoordinator.shared.resumeAfterDictation()
 			}
 		}
 	}
@@ -511,6 +522,7 @@ extension AudioManager {
 				transcriptionError = error.localizedDescription
 				lastTranscription = "Transcription failed: \(error.localizedDescription)"
 				isTranscribing = false
+				MediaPlaybackCoordinator.shared.resumeAfterDictation()
 			}
 		}
 
@@ -534,6 +546,8 @@ extension AudioManager {
 		if mode == .text, let toPaste {
 			pasteToFocusedApp(toPaste)
 		}
+		// After the paste, so the resume never races the ⌘V we just posted.
+		MediaPlaybackCoordinator.shared.resumeAfterDictation()
 	}
 }
 
