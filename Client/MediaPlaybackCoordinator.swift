@@ -64,8 +64,13 @@ enum MediaTarget: String, CaseIterable, Sendable {
 struct MediaPauseScan: Equatable, Sendable {
 	var paused: [MediaTarget] = []
 	var blocked: [MediaTarget] = []
+	/// What the player was playing when we paused it, so resume can refuse to
+	/// start something the user swapped in mid-dictation. Browsers tag the
+	/// elements they paused instead, so their scripts omit this segment.
+	var identity: String?
 
-	/// A pause script returns `"<paused tokens>|<blocked tokens>"`.
+	/// A player pause script returns `"<paused>|<blocked>|<track identity>"`; a
+	/// browser one returns just `"<paused>|<blocked>"`.
 	static func parse(_ output: String?) -> MediaPauseScan {
 		guard let output else { return MediaPauseScan() }
 		let segments = output.split(separator: "|", omittingEmptySubsequences: false)
@@ -74,7 +79,12 @@ struct MediaPauseScan: Equatable, Sendable {
 			let tokens = Set(segments[index].split(whereSeparator: \.isWhitespace).map(String.init))
 			return MediaTarget.allCases.filter { tokens.contains($0.token) }
 		}
-		return MediaPauseScan(paused: targets(at: 0), blocked: targets(at: 1))
+		let identity =
+			segments.indices.contains(2)
+			? segments[2].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+		return MediaPauseScan(
+			paused: targets(at: 0), blocked: targets(at: 1),
+			identity: identity.isEmpty ? nil : identity)
 	}
 }
 
@@ -82,6 +92,17 @@ struct MediaPauseScan: Equatable, Sendable {
 struct MediaPauseSession: Equatable, Sendable {
 	let targets: [MediaTarget]
 	let startedAt: Date
+	/// Per-player proof of what was paused. A target missing from here is never
+	/// resumed: we cannot show that what is loaded now is what we stopped.
+	let identities: [MediaTarget: String]
+
+	init(
+		targets: [MediaTarget], startedAt: Date, identities: [MediaTarget: String] = [:]
+	) {
+		self.targets = targets
+		self.startedAt = startedAt
+		self.identities = identities
+	}
 
 	/// Past this gap the user has moved on — silently restarting their music
 	/// would be a surprise, not a courtesy.
@@ -89,8 +110,12 @@ struct MediaPauseSession: Equatable, Sendable {
 
 	/// A blocked browser is not a session: nothing was paused, so there is
 	/// nothing to resume and nothing worth remembering.
-	static func started(from scan: MediaPauseScan, at date: Date) -> MediaPauseSession? {
-		scan.paused.isEmpty ? nil : MediaPauseSession(targets: scan.paused, startedAt: date)
+	static func started(
+		from scan: MediaPauseScan, at date: Date, identities: [MediaTarget: String] = [:]
+	) -> MediaPauseSession? {
+		scan.paused.isEmpty
+			? nil
+			: MediaPauseSession(targets: scan.paused, startedAt: date, identities: identities)
 	}
 
 	func shouldResume(at date: Date) -> Bool {
@@ -102,10 +127,13 @@ struct MediaPauseSession: Equatable, Sendable {
 /// puts it back afterwards.
 ///
 /// Everything is state-checked before it is touched: Music/Spotify through
-/// `player state`, browser tabs through in-page JavaScript that pauses only
-/// elements that are actually playing and tags them so resume can find exactly
-/// those elements again. No blind system media key, ever — a toggle sent
-/// without established playback can just as easily start something.
+/// `player state` plus the identity of the track we paused, browser tabs
+/// through in-page JavaScript that pauses only elements that are actually
+/// playing and tags them so resume can find exactly those elements again. A
+/// browser that refuses that JavaScript gets its audio muted instead
+/// (`BrowserAudioMuter`). No blind system media key, ever — a toggle sent
+/// without established playback can just as easily start something, while a
+/// mute can only ever take sound away.
 ///
 /// Every Apple Event runs out of process; the recording path only ever enqueues
 /// work and returns. See WHI-W2.
@@ -129,6 +157,8 @@ final class MediaPlaybackCoordinator {
 	private let playersEnabled: @Sendable () -> Bool
 	private let browsersEnabled: @Sendable () -> Bool
 	private let runScript: @Sendable (String) -> String?
+	private let muteBlocked: @Sendable ([MediaTarget]) -> ([MediaTarget], [MediaTarget])
+	private let unmuteBlocked: @Sendable () -> Void
 	private let now: @Sendable () -> Date
 
 	init(
@@ -139,11 +169,18 @@ final class MediaPlaybackCoordinator {
 		// A closure literal rather than a bare function reference: an unapplied
 		// declaration reference isn't inferred `@Sendable`.
 		runScript: @escaping @Sendable (String) -> String? = { MediaPlaybackCoordinator.runOsascript($0) },
+		muteBlocked: @escaping @Sendable ([MediaTarget]) -> ([MediaTarget], [MediaTarget]) = { targets in
+			let outcome = BrowserAudioMuter.shared.muteAudiblyPlaying(targets)
+			return (outcome.muted, outcome.audibleButUnmutable)
+		},
+		unmuteBlocked: @escaping @Sendable () -> Void = { BrowserAudioMuter.shared.unmuteAll() },
 		now: @escaping @Sendable () -> Date = { Date() }
 	) {
 		self.playersEnabled = playersEnabled
 		self.browsersEnabled = browsersEnabled
 		self.runScript = runScript
+		self.muteBlocked = muteBlocked
+		self.unmuteBlocked = unmuteBlocked
 		self.now = now
 	}
 
@@ -188,26 +225,37 @@ final class MediaPlaybackCoordinator {
 		guard !targets.isEmpty else { return }
 
 		var scan = MediaPauseScan()
+		var identities: [MediaTarget: String] = [:]
 		for target in targets {
 			// Each script may only report about its own target; anything else in
 			// the output is discarded.
 			let sub = MediaPauseScan.parse(await detached(Self.pauseScript(for: target)))
-			if sub.paused.contains(target) { scan.paused.append(target) }
+			if sub.paused.contains(target) {
+				scan.paused.append(target)
+				if !target.isBrowser, let identity = sub.identity { identities[target] = identity }
+			}
 			if sub.blocked.contains(target) { scan.blocked.append(target) }
 		}
 
-		// A blocked browser is left exactly as it was. Without in-page JavaScript
-		// there is no way to establish that a tab was playing, and every
-		// permission-free fallback (media key, play command) can just as easily
-		// START playback the user never began — so the only safe response is to
-		// tell them how to grant the permission.
-		if !scan.blocked.isEmpty {
+		// A blocked browser gets muted instead of paused. Without in-page
+		// JavaScript there is no way to pause a tab, and every permission-free
+		// playback command (media key, play) can just as easily START something
+		// the user never began — but a CoreAudio mute tap can only take sound
+		// away, so it is safe on a browser whose state we cannot read. Only a
+		// browser we proved is audible and still could not silence is worth
+		// interrupting the user for.
+		let (muted, unmutable) = await detachedMute(scan.blocked)
+		if !muted.isEmpty {
 			AppLogger.shared.audioManager.info(
-				"Browsers refused tab scripting — enable \"Allow JavaScript from Apple Events\": \(scan.blocked.map(\.rawValue).joined(separator: ", "))")
-			announceNewlyBlocked(scan.blocked)
+				"Muted browsers that refused tab scripting: \(muted.map(\.rawValue).joined(separator: ", "))")
+		}
+		if !unmutable.isEmpty {
+			AppLogger.shared.audioManager.info(
+				"Browsers still audible — enable \"Allow JavaScript from Apple Events\": \(unmutable.map(\.rawValue).joined(separator: ", "))")
+			announceNewlyBlocked(unmutable)
 		}
 
-		session = MediaPauseSession.started(from: scan, at: now())
+		session = MediaPauseSession.started(from: scan, at: now(), identities: identities)
 		if let session {
 			AppLogger.shared.audioManager.info(
 				"Paused media for dictation: \(session.targets.map(\.rawValue).joined(separator: ", "))")
@@ -249,6 +297,12 @@ final class MediaPlaybackCoordinator {
 	}
 
 	private func performResume() async {
+		// Unconditionally first: a mute can exist without a session (a blocked
+		// browser was the only thing playing), it outlives the resume window
+		// because leaving the user silenced is never acceptable, and lifting it
+		// can only reveal silence — never start playback.
+		await detachedUnmute()
+
 		guard let session else { return }
 		self.session = nil
 
@@ -257,19 +311,43 @@ final class MediaPlaybackCoordinator {
 			return
 		}
 
-		// Player scripts re-read `player state` and browser scripts only touch
-		// elements tagged during the pause, so anything the user restarted
-		// themselves mid-dictation keeps their own choice.
+		// Player scripts re-read `player state` and the track we captured, and
+		// browser scripts only touch elements tagged during the pause, so
+		// anything the user changed mid-dictation keeps their own choice.
+		var resumed: [MediaTarget] = []
 		for target in session.targets {
-			_ = await detached(Self.resumeScript(for: target))
+			if target.isBrowser {
+				_ = await detached(Self.resumeScript(for: target, identity: ""))
+			} else {
+				guard let identity = session.identities[target] else {
+					AppLogger.shared.audioManager.info(
+						"Declining \(target.rawValue) resume — the paused track was never identified")
+					continue
+				}
+				_ = await detached(Self.resumeScript(for: target, identity: identity))
+			}
+			resumed.append(target)
 		}
+		guard !resumed.isEmpty else { return }
 		AppLogger.shared.audioManager.info(
-			"Resumed media after dictation: \(session.targets.map(\.rawValue).joined(separator: ", "))")
+			"Resumed media after dictation: \(resumed.map(\.rawValue).joined(separator: ", "))")
 	}
 
 	private func detached(_ source: String) async -> String? {
 		let run = runScript
 		return await Task.detached { run(source) }.value
+	}
+
+	/// CoreAudio property reads and tap creation are synchronous IPC to
+	/// coreaudiod, so they go off the main actor exactly like the scripts do.
+	private func detachedMute(_ targets: [MediaTarget]) async -> ([MediaTarget], [MediaTarget]) {
+		let mute = muteBlocked
+		return await Task.detached { mute(targets) }.value
+	}
+
+	private func detachedUnmute() async {
+		let unmute = unmuteBlocked
+		await Task.detached { unmute() }.value
 	}
 
 	// MARK: - Scripts
@@ -300,25 +378,43 @@ final class MediaPlaybackCoordinator {
 	/// compile time: a machine without, say, Brave would fail the compile for
 	/// everything sharing its script, and only loses Brave's sweep this way.
 	/// Guarded by `is running` so a stopped app is never launched just to be
-	/// asked whether it is playing. Returns `"<paused tokens>|<blocked tokens>"`.
+	/// asked whether it is playing. Players return
+	/// `"<paused tokens>|<blocked tokens>|<track identity>"`, browsers
+	/// `"<paused tokens>|<blocked tokens>"`.
 	nonisolated static func pauseScript(for target: MediaTarget) -> String {
-		"""
-		set pausedList to ""
-		set blockedList to ""
-		\(target.isBrowser ? browserPauseFragment(target) : playerPauseFragment(target))
-		return pausedList & "|" & blockedList
-		"""
+		guard !target.isBrowser else {
+			return """
+				set pausedList to ""
+				set blockedList to ""
+				\(browserPauseFragment(target))
+				return pausedList & "|" & blockedList
+				"""
+		}
+		return """
+			set pausedList to ""
+			set blockedList to ""
+			set trackIdentity to ""
+			\(playerPauseFragment(target))
+			return pausedList & "|" & blockedList & "|" & trackIdentity
+			"""
 	}
 
-	nonisolated static func resumeScript(for target: MediaTarget) -> String {
-		target.isBrowser ? browserResumeFragment(target) : playerResumeFragment(target)
+	/// `identity` is the track the pause sweep captured; browsers ignore it,
+	/// because their resume is already scoped to the elements it tagged.
+	nonisolated static func resumeScript(for target: MediaTarget, identity: String) -> String {
+		target.isBrowser ? browserResumeFragment(target) : playerResumeFragment(target, identity)
 	}
 
+	/// The identity read is wrapped so a player with no current track still
+	/// pauses — it just becomes one we will not resume.
 	private nonisolated static func playerPauseFragment(_ target: MediaTarget) -> String {
 		"""
 		if application "\(target.rawValue)" is running then
 			tell application "\(target.rawValue)"
 				if player state is playing then
+					try
+						set trackIdentity to \(trackIdentityExpression(target))
+					end try
 					pause
 					set pausedList to pausedList & "\(target.token) "
 				end if
@@ -352,15 +448,43 @@ final class MediaPlaybackCoordinator {
 
 	/// Only `paused` resumes: a stopped player is either one the user deliberately
 	/// stopped mid-dictation or a fresh launch, and `is not playing` would start
-	/// both of them.
-	private nonisolated static func playerResumeFragment(_ target: MediaTarget) -> String {
+	/// both of them. The identity check adds the other half: a user who queued a
+	/// different track mid-dictation gets left alone, because playing it would be
+	/// starting something we never stopped.
+	private nonisolated static func playerResumeFragment(_ target: MediaTarget, _ identity: String)
+		-> String
+	{
 		"""
 		if application "\(target.rawValue)" is running then
 			tell application "\(target.rawValue)"
-				if player state is paused then play
+				if player state is paused then
+					set currentIdentity to ""
+					try
+						set currentIdentity to \(trackIdentityExpression(target))
+					end try
+					if currentIdentity is \(quoted(identity)) then play
+				end if
 			end tell
 		end if
 		"""
+	}
+
+	/// Music identifies a track by its library-persistent ID, Spotify by its
+	/// track URI; both are stable for as long as one item stays loaded.
+	private nonisolated static func trackIdentityExpression(_ target: MediaTarget) -> String {
+		target == .spotify
+			? "((id of current track) as text)" : "((persistent ID of current track) as text)"
+	}
+
+	/// The identity round-trips through AppleScript source, so it has to survive
+	/// being pasted into a string literal even though players only ever hand back
+	/// hex IDs and URIs.
+	private nonisolated static func quoted(_ value: String) -> String {
+		let escaped =
+			value
+			.replacingOccurrences(of: "\\", with: "\\\\")
+			.replacingOccurrences(of: "\"", with: "\\\"")
+		return "\"\(escaped)\""
 	}
 
 	private nonisolated static func browserResumeFragment(_ target: MediaTarget) -> String {
