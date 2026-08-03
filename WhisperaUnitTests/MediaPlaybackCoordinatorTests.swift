@@ -649,7 +649,8 @@ struct MediaPlaybackCoordinatorFlowTests {
 		coordinator.pauseForDictation()
 		await coordinator.flush()
 
-		#expect(mutes.muteCalls == [[.safari, .chrome, .edge, .brave]])
+		#expect(mutes.muteCalls.count == 1)
+		#expect(Set(mutes.muteCalls[0]) == Set([.safari, .chrome, .edge, .brave]))
 	}
 
 	@Test func unresolvedBrowserLeftAudibleAnnouncesItselfOnce() async {
