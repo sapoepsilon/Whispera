@@ -36,28 +36,18 @@ struct LLMModeSettingsView: View {
 	}
 }
 
-/// Toggles for pausing the user's music during a dictation. Lives here because
+/// Toggle for pausing the user's music during a dictation. Lives here because
 /// this is the pane the dictation pipeline's other behaviour settings share.
 private struct MediaPauseConfig: View {
 	@AppStorage("whisperaPauseMediaWhileDictating") private var pauseMedia = true
-	@AppStorage("whisperaPauseBrowserMediaWhileDictating") private var pauseBrowserMedia = true
 
 	var body: some View {
 		SettingsSection("Media") {
 			VStack(alignment: .leading, spacing: 8) {
 				Toggle("Pause media while dictating", isOn: $pauseMedia)
-				Text("Pauses supported players when recording starts and resumes only what Whispera paused. Whispera never sends a blind media-key toggle that could start idle playback.")
+				Text("Uses the system play/pause key, so it reaches whatever macOS is currently playing — music, video, a browser tab — and needs no permission. Whispera only sends it when something is actually playing, and only resumes what it paused.")
 					.font(.caption)
 					.foregroundColor(.secondary)
-
-				Toggle("Include browser tabs", isOn: $pauseBrowserMedia)
-					.disabled(!pauseMedia)
-					.padding(.top, 4)
-				Text(
-					"Pauses video and audio playing in Safari, Chrome, Edge, and Brave, and resumes only what Whispera paused. The browser must allow JavaScript from Apple Events (Safari: Develop menu; Chrome-based: View > Developer)."
-				)
-				.font(.caption)
-				.foregroundColor(.secondary)
 			}
 		}
 	}
