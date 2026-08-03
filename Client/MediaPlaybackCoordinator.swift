@@ -201,6 +201,20 @@ final class MediaPlaybackCoordinator {
 		enqueue { await self.performPause() }
 	}
 
+	/// Recording-start hook. Unlike the fire-and-forget compatibility hook above,
+	/// this does not return until the bounded pause sweep has finished, so media
+	/// cannot leak into the beginning (or all) of a short dictation.
+	func pauseBeforeDictation() async {
+		guard playersEnabled() || browsersEnabled() else { return }
+		let previous = work
+		let current = Task { @MainActor in
+			await previous?.value
+			await self.performPause()
+		}
+		work = current
+		await current.value
+	}
+
 	/// Fire-and-forget. Safe to call from every stop/cancel path — the second and
 	/// later calls for one dictation are no-ops.
 	func resumeAfterDictation() {
@@ -239,8 +253,19 @@ final class MediaPlaybackCoordinator {
 		// dictionary that would not load, a subprocess that died — is not
 		// "nothing playing"; it is a browser whose state we never learned.
 		var unresolved: [MediaTarget] = []
-		for target in targets {
-			let output = await detached(Self.pauseScript(for: target))
+		// Every target is independent. Running the scripts concurrently bounds the
+		// whole preflight to one transport deadline instead of six consecutive ones.
+		let results = await withTaskGroup(of: (MediaTarget, String?).self) { group in
+			for target in targets {
+				group.addTask { [runScript] in
+					(target, runScript(Self.pauseScript(for: target)))
+				}
+			}
+			var collected: [(MediaTarget, String?)] = []
+			for await result in group { collected.append(result) }
+			return collected
+		}
+		for (target, output) in results {
 			if output == nil, target.isBrowser { unresolved.append(target) }
 			// Each script may only report about its own target; anything else in
 			// the output is discarded.
@@ -253,7 +278,7 @@ final class MediaPlaybackCoordinator {
 		}
 
 		// A browser we could not pause gets muted instead. Without in-page
-		// JavaScript there is no way to pause a tab, and every permission-free
+		// JavaScript there is no way to pause a tab, and every blind playback
 		// playback command (media key, play) can just as easily START something
 		// the user never began — but a CoreAudio mute tap can only take sound
 		// away, so it is safe even on a browser whose state we never read. Only
@@ -272,13 +297,12 @@ final class MediaPlaybackCoordinator {
 		}
 
 		// Everything else that is still making sound — Firefox, VLC, a podcast
-		// app, any browser variant we have no dictionary for — gets the same
-		// mute. It is the only thing we can do for media we cannot address by
-		// name, and it is safe for exactly the same reason.
+		// app, or browser variant we recognize as media gets the same mute. A
+		// positive allowlist deliberately leaves unknown audio clients untouched.
 		//
 		// This pass still runs when browser handling is opted out: bundle ids let
-		// it skip browsers while continuing to silence VLC, Podcasts, IINA, and
-		// every other audible non-browser process.
+		// it skip browsers while continuing to silence known players such as VLC,
+		// Podcasts, and IINA.
 		if playersEnabled() || browsersEnabled() {
 			let (genericMuted, genericUnmutable) = await detachedMuteRemaining(
 				excludingBrowsers: !browsersEnabled())

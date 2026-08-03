@@ -35,7 +35,7 @@
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Whispera pauses your music while you dictate and resumes it after.</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Whispera briefly mutes browser audio while you dictate so the microphone hears only you.</string>
+	<string>Whispera needs system audio access to silence playing browser and media audio while you dictate.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Whispera needs access to your microphone to transcribe audio.</string>
 	<key>SUFeedURL</key>

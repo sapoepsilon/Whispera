@@ -104,22 +104,26 @@ struct MediaSweepTargetTests {
 
 struct RemainingAudioSafetyTests {
 
-	@Test func protectsCallsAccessibilityAndSystemAlerts() {
+	@Test func callsAccessibilityAndSystemAlertsAreNotTreatedAsMedia() {
 		for bundleID in [
 			"us.zoom.xos", "com.microsoft.teams2", "com.apple.FaceTime",
 			"com.apple.VoiceOver", "com.apple.notificationcenterui",
 		] {
-			#expect(BrowserAudioMuter.isProtectedAudioApplication(bundleID))
+			#expect(!BrowserAudioMuter.isKnownMediaApplication(bundleID))
 		}
 	}
 
-	@Test func unknownBrowsersAndPlayersAreEligibleForSafeMuting() {
+	@Test func knownBrowsersAndPlayersAreEligibleForSafeMuting() {
 		for bundleID in [
-			"org.example.brandnewbrowser.Renderer", "org.example.musicplayer",
-			"com.google.Chrome", "org.videolan.vlc",
+			"org.mozilla.firefox", "com.google.Chrome", "org.videolan.vlc",
+			"com.apple.QuickTimePlayerX",
 		] {
-			#expect(!BrowserAudioMuter.isProtectedAudioApplication(bundleID))
+			#expect(BrowserAudioMuter.isKnownMediaApplication(bundleID))
 		}
+	}
+
+	@Test func unknownAudioProducerIsNotMuted() {
+		#expect(!BrowserAudioMuter.isKnownMediaApplication("org.example.unknown-audio-client"))
 	}
 }
 

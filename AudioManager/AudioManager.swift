@@ -128,6 +128,8 @@ final class AudioManager: NSObject {
 	private var meteringTimer: Timer?
 	@ObservationIgnored
 	private var deviceActivationTask: Task<Void, Never>?
+	@ObservationIgnored
+	private var recordingPreparationTask: Task<Void, Never>?
 	/// True from the moment a start path is entered until capture is established
 	/// (or the attempt aborts). A device switch arriving in this window must not
 	/// cancel the task that is bringing capture up.
@@ -170,6 +172,13 @@ final class AudioManager: NSObject {
 			// Keep the mode the session started with: re-reading enableStreaming here
 			// would route stop to the wrong path if the setting changed mid-recording.
 			stopRecording()
+		} else if isMicrophoneInitializing, let recordingPreparationTask {
+			// A second shortcut press during the bounded media preflight is cancel,
+			// not another recording start.
+			recordingPreparationTask.cancel()
+			self.recordingPreparationTask = nil
+			isMicrophoneInitializing = false
+			MediaPlaybackCoordinator.shared.resumeAfterDictation()
 		} else {
 			currentRecordingMode = enableStreaming ? .liveTranscription : .text
 			startRecording()
@@ -312,13 +321,18 @@ extension AudioManager {
 		transcriptionError = nil
 		// Hooked here rather than in startRecording() so a denied mic permission
 		// never pauses the user's music for a recording that won't happen.
-		MediaPlaybackCoordinator.shared.pauseForDictation()
-		if currentRecordingMode == .liveTranscription {
-			startLiveTranscription()
-		} else if useStreamingTranscription {
-			startStreamingRecording()
-		} else {
-			startFileBasedRecording()
+		isMicrophoneInitializing = true
+		recordingPreparationTask = Task { @MainActor in
+			await MediaPlaybackCoordinator.shared.pauseBeforeDictation()
+			guard !Task.isCancelled else { return }
+			recordingPreparationTask = nil
+			if currentRecordingMode == .liveTranscription {
+				startLiveTranscription()
+			} else if useStreamingTranscription {
+				startStreamingRecording()
+			} else {
+				startFileBasedRecording()
+			}
 		}
 	}
 	fileprivate func stopRecording() {

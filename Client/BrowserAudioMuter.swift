@@ -10,11 +10,12 @@ import Foundation
 /// — for the duration of one dictation, by attaching a muting CoreAudio process
 /// tap to every one of its processes that is currently feeding the hardware.
 ///
-/// This is the only permission-free intervention that is safe by construction:
-/// a tap can just remove sound, so it can never start playback the user did not
-/// begin — unlike a media key or a `play` command. Nothing is tapped unless the
-/// process is sending audio right now, so an app that is idle or already paused
-/// is never touched.
+/// When macOS grants system-audio access, this intervention is safe by
+/// construction: a tap can only remove sound, so it can never start playback the
+/// user did not begin — unlike a media key or a `play` command. Nothing is tapped
+/// unless the process is sending audio right now, so an idle or paused app is
+/// never touched. If access is absent, tap creation fails and the coordinator
+/// reports the unresolved browser rather than using a blind toggle.
 ///
 /// Every tap here is one this object created, and `unmuteAll` destroys exactly
 /// those: by construction it can never lift a mute that belongs to anything
@@ -82,10 +83,10 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		return (muted, unmutable)
 	}
 
-	/// Mutes remaining audible applications after deterministic player/browser
-	/// pausing. Communication, accessibility, alarm, and system UI processes are
-	/// protected explicitly; every other third-party renderer is eligible. This
-	/// catches new browsers and players without requiring an ever-stale allowlist.
+	/// Mutes known media applications after deterministic player/browser pausing.
+	/// This is deliberately a positive allowlist: an unknown CoreAudio client may
+	/// be a call, assistive tool, alarm, or monitor and must not be silenced merely
+	/// because it has an output stream.
 	/// Whatever the deterministic sweep paused has already
 	/// stopped feeding the hardware by now, so it excludes itself here.
 	///
@@ -107,7 +108,7 @@ final class BrowserAudioMuter: @unchecked Sendable {
 			// A process whose pid we cannot read might be Whispera itself, and
 			// muting our own output would take the dictation's own feedback away.
 			guard let pid = process.pid, pid != ownPID else { continue }
-			guard !Self.isProtectedAudioApplication(process.bundleID) else { continue }
+			guard Self.isKnownMediaApplication(process.bundleID) else { continue }
 			guard !excludingBrowsers || !Self.isBrowser(process.bundleID) else { continue }
 			guard !isTapped(process.objectID) else { continue }
 
@@ -201,21 +202,16 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		}
 	}
 
-	/// Audio that must remain available during dictation. The list is deliberately
-	/// category-based and conservative: calls, assistive speech, alarms, and OS UI
-	/// are protected, while unknown third-party audio is treated as media.
-	private static let protectedAudioBundleIDPrefixes = [
-		"com.apple.FaceTime", "com.apple.MobileSMS", "com.apple.TelephonyUtilities",
-		"com.apple.VoiceOver", "com.apple.Accessibility", "com.apple.SpeechSynthesis",
-		"com.apple.clock", "com.apple.notificationcenterui", "com.apple.controlcenter",
-		"com.apple.systemuiserver", "com.apple.loginwindow", "com.apple.Siri",
-		"us.zoom.", "com.microsoft.teams", "com.microsoft.teams2", "com.cisco.webex",
-		"com.tinyspeck.slackmacgap", "com.hnc.Discord", "com.skype.skype",
-		"com.google.Chrome.app.Meet",
+	private static let knownMediaBundleIDPrefixes = [
+		"org.mozilla.firefox", "company.thebrowser.Browser",
+		"com.operasoftware.Opera", "com.vivaldi.Vivaldi",
+		"org.videolan.vlc", "com.colliderli.iina",
+		"com.apple.podcasts", "com.apple.TV", "com.apple.QuickTimePlayerX",
+		"com.plexapp.plex", "com.spotify.client", "com.apple.Music",
 	]
 
-	static func isProtectedAudioApplication(_ bundleID: String) -> Bool {
-		protectedAudioBundleIDPrefixes.contains { bundleID.hasPrefix($0) }
+	static func isKnownMediaApplication(_ bundleID: String) -> Bool {
+		knownMediaBundleIDPrefixes.contains { bundleID.hasPrefix($0) } || isBrowser(bundleID)
 	}
 
 	/// Used only when the user explicitly opted browser tabs out while leaving
