@@ -22,4 +22,10 @@ struct SettingsRoutingTests {
 	@Test func openSettingsRequestedNameIsStable() {
 		#expect(Notification.Name.openSettingsRequested.rawValue == "OpenSettingsRequested")
 	}
+
+	@Test func recipesDestinationRoundTrips() {
+		let info = SettingsRouting.userInfo(destination: .recipes)
+		#expect(SettingsRouting.destination(in: info) == .recipes)
+		#expect(SettingsRouting.destination(in: nil) == nil)
+	}
 }

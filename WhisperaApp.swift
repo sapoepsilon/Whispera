@@ -77,6 +77,29 @@ extension Notification.Name {
 	static let openSettingsRequested = Notification.Name("OpenSettingsRequested")
 }
 
+/// Settings panes another surface can open Settings on.
+typealias SettingsDestination = SettingsPane
+
+enum SettingsRouting {
+	static let destinationKey = "destination"
+	static let selectedTabDefaultsKey = "whisperaSelectedSettingsTab"
+
+	static func userInfo(destination: SettingsDestination) -> [String: Any] {
+		[destinationKey: destination.rawValue]
+	}
+
+	static func destination(in userInfo: [AnyHashable: Any]?) -> SettingsDestination? {
+		(userInfo?[destinationKey] as? String).flatMap(SettingsDestination.init(rawValue:))
+	}
+
+	/// The pane requested before Settings was on screen, consumed once by the sidebar.
+	static func takeRequestedDestination(defaults: UserDefaults = .standard) -> SettingsDestination? {
+		guard let raw = defaults.string(forKey: selectedTabDefaultsKey) else { return nil }
+		defaults.removeObject(forKey: selectedTabDefaultsKey)
+		return SettingsDestination(rawValue: raw)
+	}
+}
+
 enum StatusMenuAction: String {
 	case settings
 	case activity
@@ -207,9 +230,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 				forName: .openSettingsRequested,
 				object: nil,
 				queue: .main
-			) { [weak self] _ in
+			) { [weak self] notification in
 				Task { @MainActor in
-					AppLogger.shared.general.info("Settings open requested via notification")
+					if let destination = SettingsRouting.destination(in: notification.userInfo) {
+						UserDefaults.standard.set(
+							destination.rawValue, forKey: SettingsRouting.selectedTabDefaultsKey)
+					}
+					AppLogger.shared.general.info(
+						"Settings open requested via notification, destination: \(SettingsRouting.destination(in: notification.userInfo)?.rawValue ?? "current")")
 					self?.perform(.settings)
 				}
 			}

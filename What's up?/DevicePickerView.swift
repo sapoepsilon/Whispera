@@ -412,7 +412,10 @@ struct PillControlsView: View {
 	private func openCommandSettings() {
 		AppLogger.shared.general.info("Pill controls: Add your own tapped, requesting Settings")
 		NotificationCenter.default.post(name: .pillControlsDismissed, object: nil)
-		NotificationCenter.default.post(name: .openSettingsRequested, object: nil)
+		NotificationCenter.default.post(
+			name: .openSettingsRequested,
+			object: nil,
+			userInfo: SettingsRouting.userInfo(destination: .recipes))
 	}
 
 	private func addYourOwnRow(tap: @escaping () -> Void) -> some View {
