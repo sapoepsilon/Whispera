@@ -102,6 +102,27 @@ struct MediaSweepTargetTests {
 	}
 }
 
+struct RemainingAudioSafetyTests {
+
+	@Test func protectsCallsAccessibilityAndSystemAlerts() {
+		for bundleID in [
+			"us.zoom.xos", "com.microsoft.teams2", "com.apple.FaceTime",
+			"com.apple.VoiceOver", "com.apple.notificationcenterui",
+		] {
+			#expect(BrowserAudioMuter.isProtectedAudioApplication(bundleID))
+		}
+	}
+
+	@Test func unknownBrowsersAndPlayersAreEligibleForSafeMuting() {
+		for bundleID in [
+			"org.example.brandnewbrowser.Renderer", "org.example.musicplayer",
+			"com.google.Chrome", "org.videolan.vlc",
+		] {
+			#expect(!BrowserAudioMuter.isProtectedAudioApplication(bundleID))
+		}
+	}
+}
+
 struct MediaPauseScriptTests {
 
 	@Test(arguments: MediaTarget.allCases)

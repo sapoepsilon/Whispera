@@ -558,8 +558,9 @@ final class MediaPlaybackCoordinator {
 
 	// MARK: - Transport
 
-	/// Runs AppleScript out of process, so a first-run TCC prompt or a wedged
-	/// media app blocks a throwaway subprocess instead of Whispera.
+	/// Runs AppleScript out of process with a hard deadline. A wedged browser or
+	/// first-run TCC interaction must not hold the serial pause queue forever and
+	/// thereby prevent the safe CoreAudio fallback or the eventual unmute.
 	nonisolated static func runOsascript(_ source: String) -> String? {
 		let process = Process()
 		process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -573,8 +574,23 @@ final class MediaPlaybackCoordinator {
 		} catch {
 			return nil
 		}
+
+		let deadline = Date().addingTimeInterval(2)
+		while process.isRunning && Date() < deadline {
+			Thread.sleep(forTimeInterval: 0.01)
+		}
+		if process.isRunning {
+			process.terminate()
+			// terminate() is asynchronous. Bound this grace period too; closing the
+			// read handle below makes the call return even if the child ignores TERM.
+			let terminationDeadline = Date().addingTimeInterval(0.25)
+			while process.isRunning && Date() < terminationDeadline {
+				Thread.sleep(forTimeInterval: 0.01)
+			}
+			pipe.fileHandleForReading.closeFile()
+			return nil
+		}
 		let data = pipe.fileHandleForReading.readDataToEndOfFile()
-		process.waitUntilExit()
 		guard process.terminationStatus == 0 else { return nil }
 		return String(data: data, encoding: .utf8)
 	}

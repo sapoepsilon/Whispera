@@ -172,7 +172,16 @@ final class AudioDeviceManager {
 			Self.setSystemDefaultInputDeviceSync(targetDeviceID)
 		}.value
 
-		let newDefault = getSystemDefaultInputDeviceID()
+		// CoreAudio can acknowledge the property set before the new default is
+		// visible to a subsequent property read. Give propagation a short bounded
+		// window before declaring failure; otherwise a successful picker choice is
+		// immediately healed back to System Default on slower devices.
+		var newDefault = getSystemDefaultInputDeviceID()
+		for _ in 0..<20 where newDefault != targetDeviceID {
+			try? await Task.sleep(for: .milliseconds(25))
+			guard !Task.isCancelled else { return false }
+			newDefault = getSystemDefaultInputDeviceID()
+		}
 		let newDefaultName = newDefault.flatMap { getDeviceName(for: $0) } ?? "unknown"
 		if newDefault == targetDeviceID {
 			AppLogger.shared.deviceManager.info("activateSelectedDevice: verified system default changed to \(newDefaultName)")

@@ -82,10 +82,10 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		return (muted, unmutable)
 	}
 
-	/// Mutes known media players that are still audible — Firefox, VLC, IINA,
-	/// Podcasts, and browser variants we have no AppleScript dictionary for.
-	/// Communication, alerting, and arbitrary audio-producing apps are excluded:
-	/// dictation must never silence a call merely because it has an output stream.
+	/// Mutes remaining audible applications after deterministic player/browser
+	/// pausing. Communication, accessibility, alarm, and system UI processes are
+	/// protected explicitly; every other third-party renderer is eligible. This
+	/// catches new browsers and players without requiring an ever-stale allowlist.
 	/// Whatever the deterministic sweep paused has already
 	/// stopped feeding the hardware by now, so it excludes itself here.
 	///
@@ -107,7 +107,7 @@ final class BrowserAudioMuter: @unchecked Sendable {
 			// A process whose pid we cannot read might be Whispera itself, and
 			// muting our own output would take the dictation's own feedback away.
 			guard let pid = process.pid, pid != ownPID else { continue }
-			guard Self.isKnownMediaApplication(process.bundleID) else { continue }
+			guard !Self.isProtectedAudioApplication(process.bundleID) else { continue }
 			guard !excludingBrowsers || !Self.isBrowser(process.bundleID) else { continue }
 			guard !isTapped(process.objectID) else { continue }
 
@@ -201,20 +201,21 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		}
 	}
 
-	/// Positive allowlist for the general pass. This is intentionally narrower
-	/// than "every CoreAudio client": conferencing, screen readers, alarms, and
-	/// notification processes must keep speaking during dictation.
-	private static let knownMediaBundleIDPrefixes = [
-		"org.mozilla.firefox", "company.thebrowser.Browser",
-		"com.operasoftware.Opera", "com.vivaldi.Vivaldi",
-		"org.videolan.vlc", "com.colliderli.iina",
-		"com.apple.podcasts", "com.apple.TV", "com.apple.QuickTimePlayerX",
-		"com.plexapp.plex", "com.spotify.client", "com.apple.Music",
+	/// Audio that must remain available during dictation. The list is deliberately
+	/// category-based and conservative: calls, assistive speech, alarms, and OS UI
+	/// are protected, while unknown third-party audio is treated as media.
+	private static let protectedAudioBundleIDPrefixes = [
+		"com.apple.FaceTime", "com.apple.MobileSMS", "com.apple.TelephonyUtilities",
+		"com.apple.VoiceOver", "com.apple.Accessibility", "com.apple.SpeechSynthesis",
+		"com.apple.clock", "com.apple.notificationcenterui", "com.apple.controlcenter",
+		"com.apple.systemuiserver", "com.apple.loginwindow", "com.apple.Siri",
+		"us.zoom.", "com.microsoft.teams", "com.microsoft.teams2", "com.cisco.webex",
+		"com.tinyspeck.slackmacgap", "com.hnc.Discord", "com.skype.skype",
+		"com.google.Chrome.app.Meet",
 	]
 
-	private static func isKnownMediaApplication(_ bundleID: String) -> Bool {
-		knownMediaBundleIDPrefixes.contains { bundleID.hasPrefix($0) }
-			|| isBrowser(bundleID)
+	static func isProtectedAudioApplication(_ bundleID: String) -> Bool {
+		protectedAudioBundleIDPrefixes.contains { bundleID.hasPrefix($0) }
 	}
 
 	/// Used only when the user explicitly opted browser tabs out while leaving
