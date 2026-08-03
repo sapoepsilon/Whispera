@@ -128,7 +128,12 @@ final class AudioDeviceManager {
 		}
 
 		guard let device = availableDevices.first(where: { $0.uid == persistedDeviceUID }) else {
-			AppLogger.shared.deviceManager.error("activateSelectedDevice: device \(persistedDeviceUID) not found in \(availableDevices.map { "\($0.name):\($0.uid)" })")
+			// A device that was unplugged or re-paired leaves a UID behind that will
+			// never resolve again. Left alone it silently captures nothing and every
+			// dictation comes back empty, so heal the selection instead of retrying
+			// it on every recording.
+			AppLogger.shared.deviceManager.info("activateSelectedDevice: device \(persistedDeviceUID) no longer available, falling back to system default")
+			healStalePersistedSelection()
 			restoreSystemDefault()
 			return
 		}
@@ -214,8 +219,22 @@ final class AudioDeviceManager {
 			activeDevice = availableDevices.first(where: \.isDefault)
 		} else {
 			selectedDevice = availableDevices.first(where: { $0.uid == persistedDeviceUID })
+			if selectedDevice == nil { healStalePersistedSelection() }
 			activeDevice = selectedDevice ?? availableDevices.first(where: \.isDefault)
 		}
+	}
+
+	/// Drops a persisted UID that no longer matches any input device, so the app
+	/// records from the system default rather than from nothing. Only runs when
+	/// the enumeration actually returned devices - an empty list mid-replug is a
+	/// transient state, not a reason to discard the user's choice.
+	private func healStalePersistedSelection() {
+		guard !availableDevices.isEmpty else { return }
+		guard persistedDeviceUID != AudioDeviceManager.systemDefaultUID else { return }
+		AppLogger.shared.deviceManager.info(
+			"Healing stale device selection \(persistedDeviceUID) -> system default")
+		persistedDeviceUID = AudioDeviceManager.systemDefaultUID
+		selectedDevice = nil
 	}
 
 	private func enumerateInputDevices(defaultDeviceID: AudioDeviceID?) -> [AudioInputDevice] {
