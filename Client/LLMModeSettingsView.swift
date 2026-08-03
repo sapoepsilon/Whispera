@@ -3,70 +3,61 @@
 
 import SwiftUI
 
-/// Settings tab to pick where recipe LLM steps run (Local / Subscription / BYOK)
-/// and configure each mode. See WHI-39.
+/// Settings tab to pick where recipe LLM steps run (Local / BYOK) and configure
+/// each mode. See WHI-39.
 struct LLMModeSettingsView: View {
 	@AppStorage("whisperaLLMMode") private var modeRaw = LLMMode.local.rawValue
-	@State private var auth = AuthManager.shared
 
 	private var mode: LLMMode { LLMMode(rawValue: modeRaw) ?? .local }
 
 	var body: some View {
 		ScrollView {
 			VStack(spacing: 24) {
-				SettingsSection("AI Mode") {
-					Picker("Run recipe steps using", selection: $modeRaw) {
-						ForEach(LLMMode.allCases, id: \.rawValue) { mode in
-							Text(mode.displayName).tag(mode.rawValue)
-						}
+				Picker("Run recipe steps using", selection: $modeRaw) {
+					ForEach(LLMMode.allCases, id: \.rawValue) { mode in
+						Text(mode.displayName).tag(mode.rawValue)
 					}
-					.pickerStyle(.segmented)
 				}
+				.pickerStyle(.segmented)
+				.frame(maxWidth: .infinity, alignment: .leading)
 
 				switch mode {
 				case .local: LocalModeConfig()
-				case .subscription: SubscriptionModeConfig(isSignedIn: auth.isSignedIn, name: auth.displayName)
 				case .byok: ByokModeConfig()
 				}
 
-				TranscriptionEngineConfig()
+				MediaPauseConfig()
 			}
 			.padding(20)
 		}
-		.task { await auth.refresh() }
+		// A raw value the picker no longer offers would leave it with nothing
+		// selected, so rewrite it to the fallback the router already uses.
+		.onAppear { if LLMMode(rawValue: modeRaw) == nil { modeRaw = LLMMode.local.rawValue } }
 	}
 }
 
-private struct TranscriptionEngineConfig: View {
-	@AppStorage("whisperaTranscriptionEngine") private var engineRaw = TranscriptionEngine.whisperKit.rawValue
-
-	private var engine: TranscriptionEngine { TranscriptionEngine(rawValue: engineRaw) ?? .whisperKit }
+/// Toggles for pausing the user's music during a dictation. Lives here because
+/// this is the pane the dictation pipeline's other behaviour settings share.
+private struct MediaPauseConfig: View {
+	@AppStorage("whisperaPauseMediaWhileDictating") private var pauseMedia = true
+	@AppStorage("whisperaPauseMediaUsesMediaKey") private var useMediaKey = false
 
 	var body: some View {
-		SettingsSection("Transcription Engine") {
+		SettingsSection("Media") {
 			VStack(alignment: .leading, spacing: 8) {
-				Picker("Speech-to-text", selection: $engineRaw) {
-					ForEach(TranscriptionEngine.allCases, id: \.rawValue) { engine in
-						Text(engine.displayName).tag(engine.rawValue)
-					}
-				}
-				.pickerStyle(.menu)
-
-				Text(note(for: engine))
+				Toggle("Pause media while dictating", isOn: $pauseMedia)
+				Text("Pauses Music and Spotify when recording starts and resumes only what Whispera paused.")
 					.font(.caption)
 					.foregroundColor(.secondary)
-			}
-		}
-	}
 
-	private func note(for engine: TranscriptionEngine) -> String {
-		switch engine {
-		case .whisperKit:
-			return "On-device, private, no network. Default."
-		case .whisperViaWhispera:
-			return "Audio is uploaded to Whispera and transcribed with OpenAI Whisper. Requires sign-in."
-		case .whisperViaBYOK:
-			return "Audio is uploaded directly to OpenAI using your saved key. Requires a BYOK OpenAI key."
+				Toggle("Also send the system play/pause key", isOn: $useMediaKey)
+					.padding(.top, 4)
+				Text(
+					"For players Whispera can't control directly (browsers, other apps). This is a blind toggle, so it only fires when Music and Spotify weren't playing."
+				)
+				.font(.caption)
+				.foregroundColor(.secondary)
+			}
 		}
 	}
 }
@@ -74,6 +65,9 @@ private struct TranscriptionEngineConfig: View {
 private struct LocalModeConfig: View {
 	@AppStorage("whisperaLocalServerURL") private var serverURL = WhisperaSettings.defaultLocalServerURL
 	@AppStorage("whisperaLocalModel") private var model = ""
+	@State private var apiKey = ""
+	@State private var hasSavedKey = false
+	@State private var keyStatus: String?
 	@State private var testResult: String?
 	@State private var testing = false
 
@@ -91,6 +85,12 @@ private struct LocalModeConfig: View {
 				TextField("Model (e.g. llama3.2)", text: $model)
 					.textFieldStyle(.roundedBorder)
 					.autocorrectionDisabled()
+
+				apiKeyRow
+				if let keyStatus {
+					Text(keyStatus).font(.caption).foregroundColor(.secondary)
+				}
+
 				HStack {
 					Button("Test") { runTest() }
 						.disabled(testing)
@@ -102,6 +102,40 @@ private struct LocalModeConfig: View {
 							.lineLimit(2)
 					}
 				}
+			}
+		}
+		.onAppear { hasSavedKey = ByokKeyStore.shared.hasLocalServerKey() }
+	}
+
+	/// Optional bearer token — many local servers need none, proxies usually do.
+	/// Stored in the Keychain, never in UserDefaults.
+	private var apiKeyRow: some View {
+		HStack {
+			Text("API key").frame(width: 80, alignment: .leading)
+			if hasSavedKey {
+				Text("Saved").foregroundColor(.green).font(.caption)
+				Spacer()
+				Button("Remove") {
+					try? ByokKeyStore.shared.deleteLocalServerKey()
+					hasSavedKey = false
+					keyStatus = "Local server key removed."
+				}
+			} else {
+				SecureField("Optional", text: $apiKey)
+					.textFieldStyle(.roundedBorder)
+				Button("Save") {
+					let value = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+					guard !value.isEmpty else { return }
+					do {
+						try ByokKeyStore.shared.saveLocalServerKey(value)
+						hasSavedKey = true
+						apiKey = ""
+						keyStatus = "Local server key saved to Keychain."
+					} catch {
+						keyStatus = error.localizedDescription
+					}
+				}
+				.disabled(apiKey.isEmpty)
 			}
 		}
 	}
@@ -122,32 +156,8 @@ private struct LocalModeConfig: View {
 	}
 }
 
-private struct SubscriptionModeConfig: View {
-	let isSignedIn: Bool
-	let name: String
-
-	var body: some View {
-		SettingsSection("Subscription") {
-			VStack(alignment: .leading, spacing: 6) {
-				if isSignedIn {
-					Label("Signed in as \(name)", systemImage: "checkmark.seal.fill")
-						.foregroundColor(.green)
-				} else {
-					Label("Not signed in", systemImage: "exclamationmark.triangle.fill")
-						.foregroundColor(.orange)
-					Text("Sign in from the Account tab to use Subscription mode.")
-						.font(.caption)
-						.foregroundColor(.secondary)
-				}
-				Text("Recipe steps run on Whispera's servers using our provider keys.")
-					.font(.caption)
-					.foregroundColor(.secondary)
-			}
-		}
-	}
-}
-
 private struct ByokModeConfig: View {
+	@AppStorage("whisperaByokModel") private var model = ""
 	@State private var openaiKey = ""
 	@State private var anthropicKey = ""
 	@State private var savedProviders: Set<ProviderId> = []
@@ -157,13 +167,17 @@ private struct ByokModeConfig: View {
 		SettingsSection("Bring Your Own Key") {
 			VStack(alignment: .leading, spacing: 12) {
 				Text(
-					"Your provider keys stay in the macOS Keychain and are sent only as the X-Provider-Key header on recipe execution. Requires a (free) signed-in account for the backend pass-through."
+					"Your provider keys stay in the macOS Keychain and are sent straight to the provider when a recipe runs. No account, no Whispera server."
 				)
 				.font(.caption)
 				.foregroundColor(.secondary)
 
 				keyRow(provider: .openai, placeholder: "sk-...", text: $openaiKey)
 				keyRow(provider: .anthropic, placeholder: "sk-ant-...", text: $anthropicKey)
+
+				TextField("Model (default \(WhisperaSettings.defaultByokModel))", text: $model)
+					.textFieldStyle(.roundedBorder)
+					.autocorrectionDisabled()
 
 				if let status {
 					Text(status).font(.caption).foregroundColor(.secondary)

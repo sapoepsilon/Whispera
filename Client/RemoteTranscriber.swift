@@ -7,13 +7,11 @@ import Foundation
 /// network). See WHI-42.
 enum TranscriptionEngine: String, CaseIterable, Sendable {
 	case whisperKit
-	case whisperViaWhispera
 	case whisperViaBYOK
 
 	var displayName: String {
 		switch self {
 		case .whisperKit: return "WhisperKit (on-device)"
-		case .whisperViaWhispera: return "OpenAI Whisper via Whispera"
 		case .whisperViaBYOK: return "OpenAI Whisper via your key"
 		}
 	}
@@ -22,8 +20,12 @@ enum TranscriptionEngine: String, CaseIterable, Sendable {
 extension WhisperaSettings {
 	private static let engineKey = "whisperaTranscriptionEngine"
 
+	/// Hard-pinned while the engine picker is parked and the app ships
+	/// WhisperKit-only: any persisted value — including a still-valid
+	/// "whisperViaBYOK" — degrades on-device. Restore the stored lookup below
+	/// alongside the picker.
 	static var transcriptionEngine: TranscriptionEngine {
-		get { TranscriptionEngine(rawValue: UserDefaults.standard.string(forKey: engineKey) ?? "") ?? .whisperKit }
+		get { .whisperKit }
 		set { UserDefaults.standard.set(newValue.rawValue, forKey: engineKey) }
 	}
 }
@@ -82,6 +84,8 @@ struct RemoteTranscriber {
 	}
 
 	/// POSTs multipart audio to the Whispera backend `/transcribe` (Bearer auth).
+	/// Parked with the account path — no engine selects it while the app ships
+	/// without accounts.
 	func transcribeViaWhispera(audio: Data, filename: String, mimetype: String, language: String?)
 		async throws -> String
 	{

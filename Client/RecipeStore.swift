@@ -6,9 +6,10 @@ import SwiftUI
 
 /// Single source of truth for the user's recipes ("Commands").
 ///
-/// Recipes always persist to a local JSON cache so the trigger matcher and
-/// Local mode work offline. When signed in (Subscription/BYOK), CRUD goes to
-/// the backend and the result replaces the cache. See WHI-30 / WHI-41.
+/// Recipes persist to a local JSON cache so the trigger matcher and Local mode
+/// work offline. The shipping app has no account, so that cache is the only
+/// path — the backend CRUD below stays parked behind `usesBackend`. See
+/// WHI-30 / WHI-41.
 @MainActor
 @Observable
 final class RecipeStore {
@@ -33,7 +34,10 @@ final class RecipeStore {
 		load()
 	}
 
-	private var usesBackend: Bool { auth.isSignedIn }
+	/// Hard-off while the app ships without accounts: every branch below stays on
+	/// the local cache and no `api` call is ever made. Flip back to
+	/// `auth.isSignedIn` to restore backend sync.
+	private var usesBackend: Bool { false }
 
 	// MARK: - Local persistence
 

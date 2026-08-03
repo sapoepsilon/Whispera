@@ -613,22 +613,16 @@ struct SettingsView: View {
 				Label("General", systemImage: "gear")
 			}
 
-			// MARK: - Account Tab
-			AccountSettingsView()
-				.tabItem {
-					Label("Account", systemImage: "person.crop.circle")
-				}
-
 			// MARK: - AI Mode Tab
 			LLMModeSettingsView()
 				.tabItem {
 					Label("AI Mode", systemImage: "brain")
 				}
 
-			// MARK: - Commands Tab
+			// MARK: - Recipes Tab
 			RecipesView()
 				.tabItem {
-					Label("Commands", systemImage: "wand.and.stars")
+					Label("Recipes", systemImage: "wand.and.stars")
 				}
 
 			// MARK: - Storage & Downloads Tab

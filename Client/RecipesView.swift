@@ -3,7 +3,7 @@
 
 import SwiftUI
 
-/// Settings tab for managing recipes ("Commands"). Create / edit / delete, and
+/// Settings tab for managing recipes. Create / edit / delete, and
 /// load the starter set. See WHI-30.
 struct RecipesView: View {
 	@State private var store = RecipeStore.shared
@@ -64,7 +64,7 @@ struct RecipesView: View {
 
 	private var header: some View {
 		HStack {
-			Text("Commands")
+			Text("Recipes")
 				.font(.headline)
 			if store.isSyncing { ProgressView().scaleEffect(0.6) }
 			Spacer()
@@ -101,9 +101,9 @@ struct RecipesView: View {
 			Image(systemName: "wand.and.stars")
 				.font(.largeTitle)
 				.foregroundColor(.secondary)
-			Text("No commands yet")
+			Text("No recipes yet")
 				.font(.headline)
-			Text("A command runs an AI step on your dictation when you say its trigger phrase.")
+			Text("A recipe runs an AI step on your dictation when you say its trigger phrase.")
 				.font(.caption)
 				.foregroundColor(.secondary)
 				.multilineTextAlignment(.center)
@@ -166,7 +166,7 @@ private struct RecipeEditor: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 16) {
-			Text(draft.name.isEmpty ? "New Command" : "Edit Command")
+			Text(draft.name.isEmpty ? "New Recipe" : "Edit Recipe")
 				.font(.title3.weight(.semibold))
 
 			Form {

@@ -6,13 +6,11 @@ import Foundation
 /// Where recipe LLM steps run. Mutually exclusive at the app-global level. WHI-39.
 enum LLMMode: String, CaseIterable, Sendable {
 	case local
-	case subscription
 	case byok
 
 	var displayName: String {
 		switch self {
 		case .local: return "Local"
-		case .subscription: return "Subscription"
 		case .byok: return "Bring Your Own Key"
 		}
 	}
@@ -20,10 +18,24 @@ enum LLMMode: String, CaseIterable, Sendable {
 
 extension WhisperaSettings {
 	private static let llmModeKey = "whisperaLLMMode"
+	private static let byokModelKey = "whisperaByokModel"
 
+	/// Unknown raw values fall back to Local, so a persisted "subscription" from
+	/// an older build silently degrades instead of trapping.
 	static var llmMode: LLMMode {
 		get { LLMMode(rawValue: UserDefaults.standard.string(forKey: llmModeKey) ?? "") ?? .local }
 		set { UserDefaults.standard.set(newValue.rawValue, forKey: llmModeKey) }
+	}
+
+	static let defaultByokModel = "gpt-4o-mini"
+
+	/// Model used for BYOK steps that don't name one themselves.
+	static var byokModel: String {
+		get {
+			let stored = UserDefaults.standard.string(forKey: byokModelKey) ?? ""
+			return stored.isEmpty ? defaultByokModel : stored
+		}
+		set { UserDefaults.standard.set(newValue, forKey: byokModelKey) }
 	}
 }
 
@@ -50,8 +62,9 @@ protocol RecipeExecuting: Sendable {
 
 extension LocalLLMExecutor: RecipeExecuting {}
 
-/// Runs a recipe through the backend execute endpoint. Used for both
-/// Subscription (Bearer only) and BYOK (Bearer + X-Provider-Key) modes.
+/// Runs a recipe through the backend execute endpoint. Parked: the shipping app
+/// has no account, so nothing constructs this today. Kept so the backend path
+/// can be restored without rewriting it.
 struct BackendExecutor: RecipeExecuting {
 	let providerKey: String?
 	private let api: WhisperaAPIClient
@@ -75,6 +88,8 @@ struct BackendExecutor: RecipeExecuting {
 struct RecipeRouter {
 	static let shared = RecipeRouter()
 
+	/// Parked with the backend path — no mode consults it while the app ships
+	/// without accounts.
 	private let auth: AuthManager
 	private let keyStore: ByokKeyStore
 	private let modeProvider: () -> LLMMode
@@ -99,24 +114,33 @@ struct RecipeRouter {
 		switch modeProvider() {
 		case .local:
 			return LocalLLMExecutor()
-		case .subscription:
-			guard auth.isSignedIn else { throw RecipeRouterError.notSignedIn }
-			return BackendExecutor(providerKey: nil)
 		case .byok:
-			// BYOK still routes through the backend execute endpoint (pass-through),
-			// which requires Bearer auth — the user's key just replaces platform
-			// credits via X-Provider-Key. So a signed-in account is still needed.
-			guard auth.isSignedIn else { throw RecipeRouterError.notSignedIn }
 			let provider = Self.provider(for: recipe)
 			guard let key = try keyStore.load(provider: provider), !key.isEmpty else {
 				throw RecipeRouterError.missingProviderKey(provider)
 			}
-			return BackendExecutor(providerKey: key)
+			return LocalLLMExecutor(
+				serverURLProvider: { Self.baseURL(for: provider) },
+				defaultModelProvider: { WhisperaSettings.byokModel },
+				apiKeyProvider: { key })
 		}
 	}
 
 	static func provider(for recipe: Recipe) -> ProviderId {
 		let raw = recipe.steps.first?.config.provider?.lowercased()
 		return raw == "claude" || raw == "anthropic" ? .anthropic : .openai
+	}
+
+	/// BYOK talks to the provider directly, so the key never reaches any server
+	/// but the user's own provider. Anthropic is reached through its
+	/// OpenAI-compatible `chat/completions` endpoint.
+	///
+	/// `nonisolated` because the executor's URL provider is `@Sendable` and so
+	/// cannot inherit this type's main-actor isolation; the lookup is pure.
+	nonisolated static func baseURL(for provider: ProviderId) -> URL? {
+		switch provider {
+		case .openai: return URL(string: "https://api.openai.com/v1")
+		case .anthropic: return URL(string: "https://api.anthropic.com/v1")
+		}
 	}
 }
