@@ -23,8 +23,9 @@ extension WhisperaSettings {
 }
 
 extension Notification.Name {
-	/// A browser refused the tab pause script. Carries a ready-made recovery
-	/// message so the UI layer never has to know about AppleScript.
+	/// A browser we could not pause is still audible, and muting it failed too.
+	/// Carries a ready-made recovery message so the UI layer never has to know
+	/// about AppleScript.
 	static let browserMediaPauseBlocked = Notification.Name("BrowserMediaPauseBlocked")
 }
 
@@ -129,11 +130,12 @@ struct MediaPauseSession: Equatable, Sendable {
 /// Everything is state-checked before it is touched: Music/Spotify through
 /// `player state` plus the identity of the track we paused, browser tabs
 /// through in-page JavaScript that pauses only elements that are actually
-/// playing and tags them so resume can find exactly those elements again. A
-/// browser that refuses that JavaScript gets its audio muted instead
-/// (`BrowserAudioMuter`). No blind system media key, ever — a toggle sent
-/// without established playback can just as easily start something, while a
-/// mute can only ever take sound away.
+/// playing and tags them so resume can find exactly those elements again.
+/// Whatever is left over — a browser that refused that JavaScript or never
+/// answered at all, and every app we have no dictionary for — is muted instead
+/// (`BrowserAudioMuter`), so a dictation is quiet whatever is playing. No blind
+/// system media key, ever: a toggle sent without established playback can just
+/// as easily start something, while a mute can only ever take sound away.
 ///
 /// Every Apple Event runs out of process; the recording path only ever enqueues
 /// work and returns. See WHI-W2.
@@ -158,7 +160,8 @@ final class MediaPlaybackCoordinator {
 	private let browsersEnabled: @Sendable () -> Bool
 	private let runScript: @Sendable (String) -> String?
 	private let muteBlocked: @Sendable ([MediaTarget]) -> ([MediaTarget], [MediaTarget])
-	private let unmuteBlocked: @Sendable () -> Void
+	private let muteRemaining: @Sendable (Bool) -> ([String], [String])
+	private let unmuteAll: @Sendable () -> Void
 	private let now: @Sendable () -> Date
 
 	init(
@@ -173,14 +176,20 @@ final class MediaPlaybackCoordinator {
 			let outcome = BrowserAudioMuter.shared.muteAudiblyPlaying(targets)
 			return (outcome.muted, outcome.audibleButUnmutable)
 		},
-		unmuteBlocked: @escaping @Sendable () -> Void = { BrowserAudioMuter.shared.unmuteAll() },
+		muteRemaining: @escaping @Sendable (Bool) -> ([String], [String]) = { excludingBrowsers in
+			let outcome = BrowserAudioMuter.shared.muteRemainingAudibleProcesses(
+				excludingBrowsers: excludingBrowsers)
+			return (outcome.muted, outcome.unmutable)
+		},
+		unmuteAll: @escaping @Sendable () -> Void = { BrowserAudioMuter.shared.unmuteAll() },
 		now: @escaping @Sendable () -> Date = { Date() }
 	) {
 		self.playersEnabled = playersEnabled
 		self.browsersEnabled = browsersEnabled
 		self.runScript = runScript
 		self.muteBlocked = muteBlocked
-		self.unmuteBlocked = unmuteBlocked
+		self.muteRemaining = muteRemaining
+		self.unmuteAll = unmuteAll
 		self.now = now
 	}
 
@@ -226,10 +235,16 @@ final class MediaPlaybackCoordinator {
 
 		var scan = MediaPauseScan()
 		var identities: [MediaTarget: String] = [:]
+		// A browser whose script produced nothing at all — Automation denied, a
+		// dictionary that would not load, a subprocess that died — is not
+		// "nothing playing"; it is a browser whose state we never learned.
+		var unresolved: [MediaTarget] = []
 		for target in targets {
+			let output = await detached(Self.pauseScript(for: target))
+			if output == nil, target.isBrowser { unresolved.append(target) }
 			// Each script may only report about its own target; anything else in
 			// the output is discarded.
-			let sub = MediaPauseScan.parse(await detached(Self.pauseScript(for: target)))
+			let sub = MediaPauseScan.parse(output)
 			if sub.paused.contains(target) {
 				scan.paused.append(target)
 				if !target.isBrowser, let identity = sub.identity { identities[target] = identity }
@@ -237,22 +252,46 @@ final class MediaPlaybackCoordinator {
 			if sub.blocked.contains(target) { scan.blocked.append(target) }
 		}
 
-		// A blocked browser gets muted instead of paused. Without in-page
+		// A browser we could not pause gets muted instead. Without in-page
 		// JavaScript there is no way to pause a tab, and every permission-free
 		// playback command (media key, play) can just as easily START something
 		// the user never began — but a CoreAudio mute tap can only take sound
-		// away, so it is safe on a browser whose state we cannot read. Only a
-		// browser we proved is audible and still could not silence is worth
+		// away, so it is safe even on a browser whose state we never read. Only
+		// one we proved is audible and still could not silence is worth
 		// interrupting the user for.
-		let (muted, unmutable) = await detachedMute(scan.blocked)
+		let mutable = scan.blocked + unresolved.filter { !scan.blocked.contains($0) }
+		let (muted, unmutable) = await detachedMute(mutable)
 		if !muted.isEmpty {
 			AppLogger.shared.audioManager.info(
-				"Muted browsers that refused tab scripting: \(muted.map(\.rawValue).joined(separator: ", "))")
+				"Muted browsers we could not pause: \(muted.map(\.rawValue).joined(separator: ", "))")
 		}
 		if !unmutable.isEmpty {
 			AppLogger.shared.audioManager.info(
-				"Browsers still audible — enable \"Allow JavaScript from Apple Events\": \(unmutable.map(\.rawValue).joined(separator: ", "))")
+				"Browsers still audible after the mute attempt: \(unmutable.map(\.rawValue).joined(separator: ", "))")
 			announceNewlyBlocked(unmutable)
+		}
+
+		// Everything else that is still making sound — Firefox, VLC, a podcast
+		// app, any browser variant we have no dictionary for — gets the same
+		// mute. It is the only thing we can do for media we cannot address by
+		// name, and it is safe for exactly the same reason.
+		//
+		// This pass still runs when browser handling is opted out: bundle ids let
+		// it skip browsers while continuing to silence VLC, Podcasts, IINA, and
+		// every other audible non-browser process.
+		if playersEnabled() || browsersEnabled() {
+			let (genericMuted, genericUnmutable) = await detachedMuteRemaining(
+				excludingBrowsers: !browsersEnabled())
+			if !genericMuted.isEmpty {
+				AppLogger.shared.audioManager.info(
+					"Muted other audible apps: \(genericMuted.joined(separator: ", "))")
+			}
+			if !genericUnmutable.isEmpty {
+				// Logged, never announced: there is no setting the user could change
+				// for an app we can only name by bundle id.
+				AppLogger.shared.audioManager.info(
+					"Could not mute audible apps: \(genericUnmutable.joined(separator: ", "))")
+			}
 		}
 
 		session = MediaPauseSession.started(from: scan, at: now(), identities: identities)
@@ -276,11 +315,13 @@ final class MediaPlaybackCoordinator {
 			name: .browserMediaPauseBlocked, object: self, userInfo: userInfo)
 	}
 
-	/// Names the browsers that refused and the exact menu path that fixes them.
+	/// Names the browsers we could not pause and every permission that can be the
+	/// reason: the browser's own JavaScript-from-Apple-Events switch, or macOS
+	/// Automation access, which fails the script outright.
 	nonisolated static func blockedRecoveryMessage(for targets: [MediaTarget]) -> String {
 		guard !targets.isEmpty else { return "" }
 		let names = targets.map(\.rawValue).joined(separator: ", ")
-		let opening = "Whispera could not pause media in \(names) because JavaScript from Apple Events is turned off."
+		let opening = "Whispera could not pause media in \(names) because it was refused the permissions it needs."
 
 		var steps: [String] = []
 		if targets.contains(.safari) {
@@ -292,7 +333,8 @@ final class MediaPlaybackCoordinator {
 			steps.append(
 				"in \(chromium.map(\.rawValue).joined(separator: ", ")) enable View > Developer > Allow JavaScript from Apple Events")
 		}
-		guard !steps.isEmpty else { return opening }
+		steps.append(
+			"and allow Whispera to control them under System Settings > Privacy & Security > Automation")
 		return opening + " To fix it, " + steps.joined(separator: "; ") + "."
 	}
 
@@ -345,8 +387,13 @@ final class MediaPlaybackCoordinator {
 		return await Task.detached { mute(targets) }.value
 	}
 
+	private func detachedMuteRemaining(excludingBrowsers: Bool) async -> ([String], [String]) {
+		let mute = muteRemaining
+		return await Task.detached { mute(excludingBrowsers) }.value
+	}
+
 	private func detachedUnmute() async {
-		let unmute = unmuteBlocked
+		let unmute = unmuteAll
 		await Task.detached { unmute() }.value
 	}
 

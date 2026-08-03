@@ -228,6 +228,14 @@ struct MediaBlockedRecoveryMessageTests {
 	@Test func noBlockedBrowsersMeansNoMessage() {
 		#expect(MediaPlaybackCoordinator.blockedRecoveryMessage(for: []).isEmpty)
 	}
+
+	/// A script that never ran at all is an Automation refusal, not a JavaScript
+	/// one, and the same message covers both browsers.
+	@Test(arguments: MediaTarget.allCases.filter(\.isBrowser))
+	func everyRecoveryAlsoCoversAutomationAccess(target: MediaTarget) {
+		let message = MediaPlaybackCoordinator.blockedRecoveryMessage(for: [target])
+		#expect(message.contains("System Settings > Privacy & Security > Automation"))
+	}
 }
 
 /// Captures scripts across the coordinator's detached tasks. File-scoped so it
@@ -258,18 +266,27 @@ private final class ScriptRecorder: @unchecked Sendable {
 }
 
 /// Stands in for the CoreAudio muter. By default it silences nothing, so every
-/// blocked browser handed to it comes back as audible-but-unmutable — the
-/// behaviour of a machine that cannot tap at all.
+/// target handed to it comes back as audible-but-unmutable — the behaviour of a
+/// machine that cannot tap at all.
 private final class MuteRecorder: @unchecked Sendable {
 	private let lock = NSLock()
 	private var _muteCalls: [[MediaTarget]] = []
+	private var _remainingCalls = 0
+	private var _remainingExclusions: [Bool] = []
 	private var _unmuteCalls = 0
 	private var _mutable: Set<MediaTarget> = []
+	private var _remaining: ([String], [String]) = ([], [])
 
 	var muteCalls: [[MediaTarget]] { lock.withLock { _muteCalls } }
+	var remainingCalls: Int { lock.withLock { _remainingCalls } }
+	var remainingExclusions: [Bool] { lock.withLock { _remainingExclusions } }
 	var unmuteCalls: Int { lock.withLock { _unmuteCalls } }
 
 	func allowMuting(_ targets: Set<MediaTarget>) { lock.withLock { _mutable = targets } }
+
+	func stubRemaining(muted: [String], unmutable: [String]) {
+		lock.withLock { _remaining = (muted, unmutable) }
+	}
 
 	func mute(_ targets: [MediaTarget]) -> ([MediaTarget], [MediaTarget]) {
 		lock.withLock { () -> ([MediaTarget], [MediaTarget]) in
@@ -278,6 +295,14 @@ private final class MuteRecorder: @unchecked Sendable {
 				targets.filter { _mutable.contains($0) },
 				targets.filter { !_mutable.contains($0) }
 			)
+		}
+	}
+
+	func muteRemaining(excludingBrowsers: Bool) -> ([String], [String]) {
+		lock.withLock { () -> ([String], [String]) in
+			_remainingCalls += 1
+			_remainingExclusions.append(excludingBrowsers)
+			return _remaining
 		}
 	}
 
@@ -311,7 +336,8 @@ struct MediaPlaybackCoordinatorFlowTests {
 			browsersEnabled: { browsersEnabled },
 			runScript: { recorder.run($0) },
 			muteBlocked: { mutes.mute($0) },
-			unmuteBlocked: { mutes.unmute() },
+			muteRemaining: { mutes.muteRemaining(excludingBrowsers: $0) },
+			unmuteAll: { mutes.unmute() },
 			now: { recorder.now }
 		)
 		return (coordinator, recorder)
@@ -581,5 +607,96 @@ struct MediaPlaybackCoordinatorFlowTests {
 		await coordinator.flush()
 
 		#expect(mutes.unmuteCalls == 1)
+	}
+
+	/// A script that returns nothing leaves the browser's state unknown, which is
+	/// not the same as "silent" — it goes down the mute path with the browsers
+	/// that refused outright.
+	@Test func browsersWithNoScriptOutputAreMutedToo() async {
+		let mutes = MuteRecorder()
+		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
+		recorder.output = nil
+
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		#expect(mutes.muteCalls == [[.safari, .chrome, .edge, .brave]])
+	}
+
+	@Test func unresolvedBrowserLeftAudibleAnnouncesItselfOnce() async {
+		let mutes = MuteRecorder()
+		let (coordinator, recorder) = makeCoordinator(playersEnabled: false, mutes: mutes)
+		let posts = BlockedNotificationRecorder()
+		let observer = observeBlocked(coordinator, posts)
+		defer { NotificationCenter.default.removeObserver(observer) }
+		recorder.output = nil
+
+		coordinator.pauseForDictation()
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		#expect(posts.payloads == [["Safari", "Google Chrome", "Microsoft Edge", "Brave Browser"]])
+	}
+
+	@Test func mutedUnresolvedBrowserIsNotAnnounced() async {
+		let mutes = MuteRecorder()
+		mutes.allowMuting(Set(MediaTarget.allCases))
+		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
+		let posts = BlockedNotificationRecorder()
+		let observer = observeBlocked(coordinator, posts)
+		defer { NotificationCenter.default.removeObserver(observer) }
+		recorder.output = nil
+
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		#expect(posts.payloads.isEmpty)
+	}
+
+	@Test func everyPauseSweepsTheAppsItCannotName() async {
+		let mutes = MuteRecorder()
+		mutes.stubRemaining(muted: ["org.mozilla.firefox"], unmutable: ["org.videolan.vlc"])
+		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
+		let posts = BlockedNotificationRecorder()
+		let observer = observeBlocked(coordinator, posts)
+		defer { NotificationCenter.default.removeObserver(observer) }
+		recorder.output = "|"
+
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		#expect(mutes.remainingCalls == 1)
+		// Unnameable apps are logged, never put in front of the user, and muting
+		// is not an AppleScript.
+		#expect(posts.payloads.isEmpty)
+		#expect(recorder.scripts.count == sweepCount)
+	}
+
+	/// Browser opt-out excludes browser bundle ids without suppressing the
+	/// general sweep that catches non-browser media.
+	@Test func generalMutePassRespectsTheBrowserOptOut() async {
+		let mutes = MuteRecorder()
+		let (coordinator, recorder) = makeCoordinator(browsersEnabled: false, mutes: mutes)
+		recorder.output = "|"
+
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		#expect(mutes.remainingCalls == 1)
+		#expect(mutes.remainingExclusions == [true])
+	}
+
+	@Test func resumeAfterOnlyGeneralMutesStillLiftsThem() async {
+		let mutes = MuteRecorder()
+		mutes.stubRemaining(muted: ["org.mozilla.firefox"], unmutable: [])
+		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
+		recorder.output = "|"
+
+		coordinator.pauseForDictation()
+		coordinator.resumeAfterDictation()
+		await coordinator.flush()
+
+		#expect(mutes.unmuteCalls == 1)
+		#expect(recorder.scripts.count == sweepCount)
 	}
 }

@@ -4,15 +4,21 @@
 import CoreAudio
 import Foundation
 
-/// Silences browsers that refused tab scripting, for the duration of one
-/// dictation, by attaching a muting CoreAudio process tap to every one of their
-/// processes that is currently sending audio to the hardware.
+/// Silences whatever is audibly playing that we could not pause
+/// deterministically — a browser that refused tab scripting, a browser whose
+/// script we could not run at all, an app we have no AppleScript dictionary for
+/// — for the duration of one dictation, by attaching a muting CoreAudio process
+/// tap to every one of its processes that is currently feeding the hardware.
 ///
-/// This is the only permission-free fallback that is safe by construction: a
-/// tap can just remove sound, so it can never start playback the user did not
+/// This is the only permission-free intervention that is safe by construction:
+/// a tap can just remove sound, so it can never start playback the user did not
 /// begin — unlike a media key or a `play` command. Nothing is tapped unless the
-/// process is audibly playing right now, and nothing at all happens to a
-/// browser that is silent.
+/// process is sending audio right now, so an app that is idle or already paused
+/// is never touched.
+///
+/// Every tap here is one this object created, and `unmuteAll` destroys exactly
+/// those: by construction it can never lift a mute that belongs to anything
+/// else.
 ///
 /// Called from the coordinator's detached tasks, so all state lives behind a
 /// lock.
@@ -21,14 +27,22 @@ final class BrowserAudioMuter: @unchecked Sendable {
 
 	private struct AudibleProcess {
 		let objectID: AudioObjectID
+		let pid: pid_t?
 		let bundleID: String
+	}
+	private struct TapRecord {
+		let tapID: AudioObjectID
+		let processID: AudioObjectID
 	}
 
 	private let lock = NSLock()
-	private var taps: [AudioObjectID] = []
+	private var taps: [TapRecord] = []
+	/// Process objects this session already tapped, so nothing is ever tapped
+	/// twice and a second pass can tell "already muted" apart from "cannot mute".
+	private var tappedProcesses: Set<AudioObjectID> = []
 	private var loggedUnsupportedSystem = false
 
-	/// Mutes every target that is audibly playing and can be tapped.
+	/// Mutes every named target that is audibly playing and can be tapped.
 	///
 	/// - Returns: `muted` — targets now silenced; `audibleButUnmutable` — targets
 	///   we proved are playing but could not silence (no system-audio permission,
@@ -48,7 +62,6 @@ final class BrowserAudioMuter: @unchecked Sendable {
 
 		var muted: [MediaTarget] = []
 		var unmutable: [MediaTarget] = []
-		var created: [AudioObjectID] = []
 
 		for target in targets {
 			let prefixes = Self.bundleIDPrefixes(for: target)
@@ -57,41 +70,107 @@ final class BrowserAudioMuter: @unchecked Sendable {
 			}
 			guard !matches.isEmpty else { continue }
 
-			let tapIDs = matches.compactMap { Self.createMuteTap(for: $0.objectID, target: target) }
-			if tapIDs.isEmpty {
-				unmutable.append(target)
-			} else {
-				created.append(contentsOf: tapIDs)
+			let outcomes = matches.map { mute(process: $0.objectID, label: target.rawValue) }
+			if outcomes.allSatisfy({ $0 }) {
 				muted.append(target)
+			} else {
+				// Even one surviving renderer can keep the tab audible. Report the
+				// whole browser as unresolved instead of overstating partial success.
+				unmutable.append(target)
 			}
-		}
-
-		if !created.isEmpty {
-			lock.withLock { taps.append(contentsOf: created) }
 		}
 		return (muted, unmutable)
 	}
 
-	/// Destroys every tap this muter created. Idempotent, and safe to call when
-	/// nothing was ever muted.
+	/// Mutes everything else that is still audible — apps we cannot address by
+	/// name at all: Firefox, VLC, IINA, Podcasts, a browser variant we have no
+	/// dictionary for. Whatever the deterministic sweep paused has already
+	/// stopped feeding the hardware by now, so it excludes itself here.
+	///
+	/// - Returns: bundle ids, for logging only. There is no recovery to offer for
+	///   an app we cannot name, so nothing here is ever put in front of the user.
+	func muteRemainingAudibleProcesses(excludingBrowsers: Bool = false) -> (
+		muted: [String], unmutable: [String]
+	) {
+		guard #available(macOS 14.4, *) else {
+			logUnsupportedSystemOnce()
+			return ([], [])
+		}
+
+		let ownPID = ProcessInfo.processInfo.processIdentifier
+		var muted: [String] = []
+		var unmutable: [String] = []
+
+		for process in Self.audibleProcesses() {
+			// A process whose pid we cannot read might be Whispera itself, and
+			// muting our own output would take the dictation's own feedback away.
+			guard let pid = process.pid, pid != ownPID else { continue }
+			guard !Self.isProtectedFromMuting(process.bundleID) else { continue }
+			guard !excludingBrowsers || !Self.isBrowser(process.bundleID) else { continue }
+			guard !isTapped(process.objectID) else { continue }
+
+			if mute(process: process.objectID, label: process.bundleID) {
+				muted.append(process.bundleID)
+			} else {
+				unmutable.append(process.bundleID)
+			}
+		}
+		return (Self.unique(muted), Self.unique(unmutable))
+	}
+
+	/// Destroys every tap this muter created, and only those. Idempotent, and
+	/// safe to call when nothing was ever muted.
 	func unmuteAll() {
-		let pending: [AudioObjectID] = lock.withLock {
+		let pending: [TapRecord] = lock.withLock {
 			let current = taps
 			taps = []
+			tappedProcesses = []
 			return current
 		}
 		guard !pending.isEmpty else { return }
 		// A tap can only exist on a system that was able to create one.
 		guard #available(macOS 14.4, *) else { return }
 
-		for tap in pending {
-			let status = AudioHardwareDestroyProcessTap(tap)
+		var failed: [TapRecord] = []
+		for record in pending {
+			let status = AudioHardwareDestroyProcessTap(record.tapID)
 			if status != noErr {
 				AppLogger.shared.audioManager.error(
-					"Failed to destroy browser mute tap \(tap): OSStatus \(status)")
+					"Failed to destroy mute tap \(record.tapID): OSStatus \(status)")
+				failed.append(record)
 			}
 		}
-		AppLogger.shared.audioManager.info("Unmuted \(pending.count) browser process tap(s)")
+		if !failed.isEmpty {
+			// A failed destruction means the process may still be muted. Retain
+			// ownership so the next idempotent resume/cleanup call retries it.
+			lock.withLock {
+				taps.append(contentsOf: failed)
+				tappedProcesses.formUnion(failed.map(\.processID))
+			}
+		}
+		AppLogger.shared.audioManager.info(
+			"Unmuted \(pending.count - failed.count) process tap(s); \(failed.count) pending retry")
+	}
+
+	/// - Returns: true when the process ends up muted, either by this call or by
+	///   an earlier one in the same dictation.
+	@available(macOS 14.4, *)
+	private func mute(process: AudioObjectID, label: String) -> Bool {
+		let claimed = lock.withLock { tappedProcesses.insert(process).inserted }
+		guard claimed else { return true }
+
+		guard let tap = Self.createMuteTap(for: process, label: label) else {
+			// Released again so the next dictation retries instead of treating a
+			// one-off failure as a standing mute.
+			lock.withLock { _ = tappedProcesses.remove(process) }
+			return false
+		}
+		lock.withLock { taps.append(TapRecord(tapID: tap, processID: process)) }
+		return true
+	}
+
+	private func isTapped(_ process: AudioObjectID) -> Bool {
+		lock.withLock { tappedProcesses.contains(process) }
 	}
 
 	private func logUnsupportedSystemOnce() {
@@ -102,7 +181,7 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		}
 		guard shouldLog else { return }
 		AppLogger.shared.audioManager.info(
-			"Browser audio muting needs macOS 14.4 or later — blocked browsers keep playing")
+			"Audio muting needs macOS 14.4 or later — media we could not pause keeps playing")
 	}
 
 	// MARK: - Matching
@@ -120,13 +199,45 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		}
 	}
 
+	/// Off limits to the general pass: the audio plumbing itself, and anything
+	/// that speaks to the user. Silencing a screen reader for the length of a
+	/// dictation would take away the very feedback the user runs it by.
+	private static let protectedBundleIDPrefixes = [
+		"com.apple.audio",
+		"com.apple.speech",
+		"com.apple.VoiceOver",
+		"com.apple.accessibility",
+	]
+
+	private static func isProtectedFromMuting(_ bundleID: String) -> Bool {
+		protectedBundleIDPrefixes.contains { bundleID.hasPrefix($0) }
+	}
+
+	/// Used only when the user explicitly opted browser tabs out while leaving
+	/// general media pausing on. The default path includes browsers.
+	private static let browserBundleIDPrefixes = [
+		"com.apple.Safari", "com.apple.WebKit", "com.google.Chrome",
+		"com.microsoft.edgemac", "com.brave.Browser", "org.mozilla.firefox",
+		"company.thebrowser.Browser", "com.operasoftware.Opera", "com.vivaldi.Vivaldi",
+	]
+
+	private static func isBrowser(_ bundleID: String) -> Bool {
+		browserBundleIDPrefixes.contains { bundleID.hasPrefix($0) }
+	}
+
+	/// One app can own several audible processes; the log wants the app once.
+	private static func unique(_ bundleIDs: [String]) -> [String] {
+		var seen: Set<String> = []
+		return bundleIDs.filter { seen.insert($0).inserted }
+	}
+
 	// MARK: - CoreAudio
 
 	@available(macOS 14.4, *)
 	private static func audibleProcesses() -> [AudibleProcess] {
 		processObjectIDs().compactMap { objectID in
 			guard isRunningOutput(objectID), let bundleID = bundleID(of: objectID) else { return nil }
-			return AudibleProcess(objectID: objectID, bundleID: bundleID)
+			return AudibleProcess(objectID: objectID, pid: pid(of: objectID), bundleID: bundleID)
 		}
 	}
 
@@ -172,6 +283,19 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		return value != 0
 	}
 
+	private static func pid(of objectID: AudioObjectID) -> pid_t? {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioProcessPropertyPID,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain)
+
+		var value: pid_t = -1
+		var size = UInt32(MemoryLayout<pid_t>.size)
+		let status = AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &value)
+		guard status == noErr else { return nil }
+		return value
+	}
+
 	private static func bundleID(of objectID: AudioObjectID) -> String? {
 		var address = AudioObjectPropertyAddress(
 			mSelector: kAudioProcessPropertyBundleID,
@@ -190,7 +314,7 @@ final class BrowserAudioMuter: @unchecked Sendable {
 	}
 
 	@available(macOS 14.4, *)
-	private static func createMuteTap(for process: AudioObjectID, target: MediaTarget) -> AudioObjectID? {
+	private static func createMuteTap(for process: AudioObjectID, label: String) -> AudioObjectID? {
 		let description = CATapDescription(stereoMixdownOfProcesses: [process])
 		description.name = "Whispera dictation mute"
 		description.isPrivate = true
@@ -203,7 +327,7 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		let status = AudioHardwareCreateProcessTap(description, &tapID)
 		guard status == noErr, tapID != AudioObjectID(kAudioObjectUnknown) else {
 			AppLogger.shared.audioManager.error(
-				"Failed to mute \(target.rawValue) process \(process): OSStatus \(status)")
+				"Failed to mute \(label) process \(process): OSStatus \(status)")
 			return nil
 		}
 		return tapID
