@@ -828,8 +828,6 @@ struct SettingsView: View {
 				}
 				.padding(20)
 			}
-		case .account:
-			AccountSettingsView()
 		case .aiMode:
 			LLMModeSettingsView()
 		case .recipes:

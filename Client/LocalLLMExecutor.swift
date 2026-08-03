@@ -35,9 +35,9 @@ enum LocalLLMError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .unavailable:
-			return "Local mode unavailable — start a local model server or switch to Subscription or BYOK."
+			return "Local mode unavailable — start a local model server or switch to BYOK."
 		case .noModel:
-			return "No local model set. Choose a model in Settings or set one on the command."
+			return "No local model set. Choose a model in Settings or set one on the recipe."
 		case .http(let status, let body):
 			return "Local model error (HTTP \(status))\(body.isEmpty ? "" : ": \(body)")"
 		case .empty:
@@ -46,7 +46,9 @@ enum LocalLLMError: LocalizedError {
 	}
 }
 
-/// Runs a recipe's `llm` steps against a local OpenAI-compatible server.
+/// Runs a recipe's `llm` steps against any OpenAI-compatible chat endpoint —
+/// the user's local server by default, or a hosted provider when an API key is
+/// supplied (the BYOK path).
 ///
 /// ponytail: this is the "local" path until on-device Apple Foundation Models
 /// (`SystemLanguageModel` / `LanguageModelSession`) is wired in — deferred for
@@ -54,17 +56,24 @@ enum LocalLLMError: LocalizedError {
 /// runtime (ollama / llama-server / vLLM / LM Studio) works today. WHI-38.
 struct LocalLLMExecutor {
 	private let session: URLSession
-	private let serverURLProvider: () -> URL?
-	private let defaultModelProvider: () -> String
+	private let serverURLProvider: @Sendable () -> URL?
+	private let defaultModelProvider: @Sendable () -> String
+	private let apiKeyProvider: @Sendable () -> String?
 
 	init(
 		session: URLSession = .shared,
-		serverURLProvider: @escaping () -> URL? = { WhisperaSettings.localServerURL },
-		defaultModelProvider: @escaping () -> String = { WhisperaSettings.localModel }
+		serverURLProvider: @escaping @Sendable () -> URL? = { WhisperaSettings.localServerURL },
+		defaultModelProvider: @escaping @Sendable () -> String = { WhisperaSettings.localModel },
+		// Local servers and the proxies in front of them often want a bearer token;
+		// empty/absent means no Authorization header, exactly as before.
+		apiKeyProvider: @escaping @Sendable () -> String? = {
+			(try? ByokKeyStore.shared.loadLocalServerKey()) ?? nil
+		}
 	) {
 		self.session = session
 		self.serverURLProvider = serverURLProvider
 		self.defaultModelProvider = defaultModelProvider
+		self.apiKeyProvider = apiKeyProvider
 	}
 
 	/// Runs each step in order, feeding each step's output into the next.
@@ -97,6 +106,9 @@ struct LocalLLMExecutor {
 		var request = URLRequest(url: base.appendingPathComponent("chat/completions"))
 		request.httpMethod = "POST"
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+		if let key = apiKeyProvider(), !key.isEmpty {
+			request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+		}
 		request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
 		let data: Data

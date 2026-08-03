@@ -45,17 +45,53 @@ struct ByokKeyStore {
 		self.service = service
 	}
 
+	/// Keychain account for the optional Local-mode server bearer key. Deliberately
+	/// not a `ProviderId` so it can never surface as a BYOK provider.
+	private static let localServerAccount = "local-server"
+
 	func save(provider: ProviderId, key: String) throws {
+		try save(account: provider.rawValue, key: key)
+	}
+
+	func load(provider: ProviderId) throws -> String? {
+		try load(account: provider.rawValue)
+	}
+
+	func delete(provider: ProviderId) throws {
+		try delete(account: provider.rawValue)
+	}
+
+	// MARK: - Local server key
+
+	func saveLocalServerKey(_ key: String) throws {
+		try save(account: Self.localServerAccount, key: key)
+	}
+
+	func loadLocalServerKey() throws -> String? {
+		try load(account: Self.localServerAccount)
+	}
+
+	func deleteLocalServerKey() throws {
+		try delete(account: Self.localServerAccount)
+	}
+
+	func hasLocalServerKey() -> Bool {
+		((try? loadLocalServerKey()) ?? nil)?.isEmpty == false
+	}
+
+	// MARK: - Keychain primitives
+
+	private func save(account: String, key: String) throws {
 		let data = Data(key.utf8)
 
 		// SecItemUpdate can't change kSecAttrAccessible, so delete-then-add keeps
 		// the accessibility flag authoritative on every write.
-		try? delete(provider: provider)
+		try? delete(account: account)
 
 		let query: [String: Any] = [
 			kSecClass as String: kSecClassGenericPassword,
 			kSecAttrService as String: service,
-			kSecAttrAccount as String: provider.rawValue,
+			kSecAttrAccount as String: account,
 			kSecValueData as String: data,
 			kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
 		]
@@ -64,11 +100,11 @@ struct ByokKeyStore {
 		guard status == errSecSuccess else { throw ByokKeyStoreError.unexpectedStatus(status) }
 	}
 
-	func load(provider: ProviderId) throws -> String? {
+	private func load(account: String) throws -> String? {
 		let query: [String: Any] = [
 			kSecClass as String: kSecClassGenericPassword,
 			kSecAttrService as String: service,
-			kSecAttrAccount as String: provider.rawValue,
+			kSecAttrAccount as String: account,
 			kSecReturnData as String: true,
 			kSecMatchLimit as String: kSecMatchLimitOne,
 		]
@@ -83,11 +119,11 @@ struct ByokKeyStore {
 		return key
 	}
 
-	func delete(provider: ProviderId) throws {
+	private func delete(account: String) throws {
 		let query: [String: Any] = [
 			kSecClass as String: kSecClassGenericPassword,
 			kSecAttrService as String: service,
-			kSecAttrAccount as String: provider.rawValue,
+			kSecAttrAccount as String: account,
 		]
 		let status = SecItemDelete(query as CFDictionary)
 		guard status == errSecSuccess || status == errSecItemNotFound else {

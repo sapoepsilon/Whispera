@@ -18,11 +18,6 @@ struct RecipeRouterTests {
 		#expect(try router.executor(for: recipe()) is LocalLLMExecutor)
 	}
 
-	@Test func subscriptionModeRequiresSignIn() {
-		let router = RecipeRouter(auth: AuthManager(), modeProvider: { .subscription })
-		#expect(throws: RecipeRouterError.self) { _ = try router.executor(for: recipe()) }
-	}
-
 	@Test func byokModeRequiresSignIn() {
 		let router = RecipeRouter(auth: AuthManager(), modeProvider: { .byok })
 		#expect(throws: RecipeRouterError.self) { _ = try router.executor(for: recipe()) }
