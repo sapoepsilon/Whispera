@@ -172,18 +172,31 @@ final class AudioManager: NSObject {
 			// Keep the mode the session started with: re-reading enableStreaming here
 			// would route stop to the wrong path if the setting changed mid-recording.
 			stopRecording()
-		} else if isMicrophoneInitializing, let recordingPreparationTask {
-			// A second shortcut press during the bounded media preflight is cancel,
-			// not another recording start.
-			recordingPreparationTask.cancel()
-			self.recordingPreparationTask = nil
-			isMicrophoneInitializing = false
-			isStartingCapture = false
-			MediaPlaybackCoordinator.shared.resumeAfterDictation()
+		} else if isMicrophoneInitializing || isStartingCapture {
+			// Startup has two owners in sequence: recordingPreparationTask runs the
+			// bounded media preflight, then deviceActivationTask brings capture up.
+			// A second shortcut press cancels whichever phase is active so it can
+			// never fall through and create an overlapping recorder/engine.
+			cancelCaptureStartup()
 		} else {
 			currentRecordingMode = enableStreaming ? .liveTranscription : .text
 			startRecording()
 		}
+	}
+
+	private func cancelCaptureStartup() {
+		recordingPreparationTask?.cancel()
+		recordingPreparationTask = nil
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+		audioRecorder?.stop()
+		audioRecorder = nil
+		engineController.cleanup()
+		discardRecordingSegments()
+		isMicrophoneInitializing = false
+		isStartingCapture = false
+		MediaPlaybackCoordinator.shared.resumeAfterDictation()
+		AppLogger.shared.audioManager.info("Cancelled capture startup")
 	}
 
 	nonisolated static func deviceSwitchRoute(
@@ -618,15 +631,17 @@ extension AudioManager {
 		isStartingCapture = true
 
 		deviceActivationTask = Task {
-			let activationUID = deviceManager.persistedDeviceUID
+			var activationUID = deviceManager.persistedDeviceUID
 			do {
-				await deviceManager.activateSelectedDevice()
+				let activated = await deviceManager.activateSelectedDevice()
 				guard !Task.isCancelled else {
 					isStartingCapture = false
 					isMicrophoneInitializing = false
 					MediaPlaybackCoordinator.shared.resumeAfterDictation()
 					return
 				}
+				activationUID = healSelectionIfActivationFailed(
+					activated: activated, activationUID: activationUID)
 				let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
 				try engineController.installTap { [weak self] buffer, format in
 					self?.processAudioBuffer(buffer, originalFormat: format)
@@ -639,6 +654,11 @@ extension AudioManager {
 				isStartingCapture = false
 				applySelectionMadeDuringStartup(activationUID: activationUID)
 			} catch {
+				guard !Task.isCancelled else {
+					isMicrophoneInitializing = false
+					isStartingCapture = false
+					return
+				}
 				isMicrophoneInitializing = false
 				isStartingCapture = false
 				AppLogger.shared.audioManager.error("Failed to start streaming: \(error)")
