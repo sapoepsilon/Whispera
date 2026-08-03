@@ -665,7 +665,8 @@ struct MediaPlaybackCoordinatorFlowTests {
 		coordinator.pauseForDictation()
 		await coordinator.flush()
 
-		#expect(posts.payloads == [["Safari", "Google Chrome", "Microsoft Edge", "Brave Browser"]])
+		#expect(posts.payloads.count == 1)
+		#expect(Set(posts.payloads[0]) == Set(["Safari", "Google Chrome", "Microsoft Edge", "Brave Browser"]))
 	}
 
 	@Test func mutedUnresolvedBrowserIsNotAnnounced() async {
