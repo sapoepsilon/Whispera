@@ -114,17 +114,34 @@ final class AudioDeviceManager {
 	}
 
 	func selectDevice(uid: String) {
+		// Re-enumerate before resolving: the picker row the user tapped may be
+		// seconds old, and a selection checked against a stale list would either
+		// mis-heal a device that just plugged in or keep one that just vanished.
+		refreshDevices()
 		persistedDeviceUID = uid
 		applyPersistedSelection()
 		NotificationCenter.default.post(name: .audioInputDeviceChanged, object: nil)
-		AppLogger.shared.deviceManager.info("Selected device: \(uid)")
+		let resolved = activeDevice.map { "\($0.name) (ID: \($0.id))" } ?? "system default"
+		AppLogger.shared.deviceManager.info("Selected device: \(uid) → active: \(resolved)")
 	}
 
-	func activateSelectedDevice() async {
+	/// Makes the persisted selection the device the app will actually capture
+	/// from. Returns true when the resulting input matches what the selection
+	/// dictates (including a healed selection falling back to the system
+	/// default), false when the CoreAudio switch failed or the selection could
+	/// not be resolved against an empty device list.
+	@discardableResult
+	func activateSelectedDevice() async -> Bool {
+		// AudioDeviceIDs are not stable across unplug/replug; re-enumerate so the
+		// persisted UID resolves to the device's current ID before touching the
+		// system default. This also heals a selection that went stale since it
+		// was made.
+		refreshDevices()
+
 		guard persistedDeviceUID != AudioDeviceManager.systemDefaultUID else {
 			AppLogger.shared.deviceManager.debug("activateSelectedDevice: system default selected, skipping")
 			restoreSystemDefault()
-			return
+			return true
 		}
 
 		guard let device = availableDevices.first(where: { $0.uid == persistedDeviceUID }) else {
@@ -135,7 +152,7 @@ final class AudioDeviceManager {
 			AppLogger.shared.deviceManager.info("activateSelectedDevice: device \(persistedDeviceUID) no longer available, falling back to system default")
 			healStalePersistedSelection()
 			restoreSystemDefault()
-			return
+			return false
 		}
 
 		let currentDefault = getSystemDefaultInputDeviceID()
@@ -156,13 +173,18 @@ final class AudioDeviceManager {
 		let newDefaultName = newDefault.flatMap { getDeviceName(for: $0) } ?? "unknown"
 		if newDefault == targetDeviceID {
 			AppLogger.shared.deviceManager.info("activateSelectedDevice: verified system default changed to \(newDefaultName)")
+			return true
 		} else {
 			AppLogger.shared.deviceManager.error("activateSelectedDevice: FAILED - system default is still \(newDefaultName) (ID: \(newDefault ?? 0)), expected \(targetDeviceName) (ID: \(targetDeviceID))")
+			return false
 		}
 	}
 
 	func restoreSystemDefault() {
-		guard let original = savedSystemDefaultDeviceID else { return }
+		guard let original = savedSystemDefaultDeviceID else {
+			AppLogger.shared.deviceManager.debug("restoreSystemDefault: nothing to restore")
+			return
+		}
 		setSystemDefaultInputDevice(original)
 		let name = getDeviceName(for: original) ?? "unknown"
 		AppLogger.shared.deviceManager.info("Restored original system default: \(name) (ID: \(original))")
@@ -235,6 +257,10 @@ final class AudioDeviceManager {
 			"Healing stale device selection \(persistedDeviceUID) -> system default")
 		persistedDeviceUID = AudioDeviceManager.systemDefaultUID
 		selectedDevice = nil
+		activeDevice = availableDevices.first(where: \.isDefault)
+		// The selection just changed underneath the UI; announce it the same way
+		// an explicit selectDevice() does so every mirror re-reads the healed state.
+		NotificationCenter.default.post(name: .audioInputDeviceChanged, object: nil)
 	}
 
 	private func enumerateInputDevices(defaultDeviceID: AudioDeviceID?) -> [AudioInputDevice] {

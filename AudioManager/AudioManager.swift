@@ -144,11 +144,17 @@ final class AudioManager: NSObject {
 	}
 
 	func switchInputDevice(to uid: String) {
+		AppLogger.shared.audioManager.info(
+			"switchInputDevice(to: \(uid)) state=\(currentState) mode=\(currentRecordingMode)")
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
 		deviceManager.selectDevice(uid: uid)
 
-		guard isRecording || isMicrophoneInitializing else { return }
+		guard isRecording || isMicrophoneInitializing else {
+			AppLogger.shared.audioManager.info(
+				"switchInputDevice: not capturing, activation deferred to next recording start")
+			return
+		}
 
 		isMicrophoneInitializing = true
 		deviceActivationTask = Task {
@@ -161,7 +167,7 @@ final class AudioManager: NSObject {
 				engineController.cleanup()
 
 				do {
-					await deviceManager.activateSelectedDevice()
+					let activated = await deviceManager.activateSelectedDevice()
 					guard !Task.isCancelled else { return }
 					let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
 					try engineController.installTap { [weak self] buffer, format in
@@ -169,7 +175,8 @@ final class AudioManager: NSObject {
 					}
 					audioBuffer = savedBuffer
 					isMicrophoneInitializing = false
-					AppLogger.shared.audioManager.info("Switched input device while recording")
+					AppLogger.shared.audioManager.info(
+						"Switched input device while recording; capturing from \(deviceManager.activeDevice?.name ?? "system default") (activated=\(activated))")
 				} catch {
 					guard !Task.isCancelled else { return }
 					isMicrophoneInitializing = false
@@ -181,10 +188,16 @@ final class AudioManager: NSObject {
 					MediaPlaybackCoordinator.shared.resumeAfterDictation()
 				}
 			} else {
-				deviceManager.restoreSystemDefault()
-				await deviceManager.activateSelectedDevice()
+				// The AVAudioRecorder follows the system default input, and
+				// activateSelectedDevice already handles both directions: it restores
+				// the saved default when switching back to "System Default" and
+				// saves-once/sets otherwise. Restoring here first would bounce the
+				// live recorder through the old default on every A -> B switch.
+				let activated = await deviceManager.activateSelectedDevice()
 				guard !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
+				AppLogger.shared.audioManager.info(
+					"Switched system default input for file recorder; capturing from \(deviceManager.activeDevice?.name ?? "system default") (activated=\(activated))")
 			}
 			deviceActivationTask = nil
 		}

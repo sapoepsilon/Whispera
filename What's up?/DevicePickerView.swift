@@ -124,7 +124,30 @@ extension Notification.Name {
 	static let pillControlsDismissed = Notification.Name("PillControlsDismissed")
 }
 
-private enum PillPage { case root, input, action }
+/// String-backed so a page can travel as a notification userInfo hint (WHI-50).
+enum PillPage: String { case root, input, action }
+
+/// One wire format for `.pillControlsToggled` payloads, shared by every poster
+/// (pill controls button, device icon) and the window that hosts the panel, so
+/// an unknown or missing page hint always degrades to the root page.
+enum PillControlsRouting {
+	static let showKey = "show"
+	static let pageKey = "page"
+
+	static func userInfo(show: Bool, page: PillPage? = nil) -> [String: Any] {
+		var info: [String: Any] = [showKey: show]
+		if let page { info[pageKey] = page.rawValue }
+		return info
+	}
+
+	static func show(in userInfo: [AnyHashable: Any]?) -> Bool {
+		userInfo?[showKey] as? Bool ?? false
+	}
+
+	static func page(in userInfo: [AnyHashable: Any]?) -> PillPage {
+		(userInfo?[pageKey] as? String).flatMap(PillPage.init(rawValue:)) ?? .root
+	}
+}
 
 private struct PillPageHeights: PreferenceKey {
 	static let defaultValue: [PillPage: CGFloat] = [:]
@@ -170,8 +193,18 @@ struct PillControlsView: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
 	@AppStorage("whisperaDefaultCommandId") private var defaultCommandId = ""
-	@State private var page: PillPage = .root
+	@State private var page: PillPage
 	@State private var heights: [PillPage: CGFloat] = [:]
+
+	init(
+		audioManager: AudioManager,
+		presenter: PillSizePresenter? = nil,
+		initialPage: PillPage = .root
+	) {
+		self.audioManager = audioManager
+		self.presenter = presenter
+		_page = State(initialValue: initialPage)
+	}
 
 	private let selectedBlue = Color(nsColor: NSColor(red: 0.45, green: 0.72, blue: 1.0, alpha: 1.0))
 	private let unselectedGray = Color(nsColor: NSColor(red: 0.78, green: 0.78, blue: 0.8, alpha: 1.0))
@@ -369,28 +402,17 @@ struct PillControlsView: View {
 		}
 	}
 
-	/// Opens Settings through the same AppDelegate command handler the menu bar
-	/// uses, so both surfaces get the identical two-tier open (native Settings
-	/// scene, retained-window fallback). The panel dismisses first so it is not
-	/// left floating over the window that just came forward.
-	///
-	/// The app runs as an accessory and this panel is a borderless floating window
-	/// that never becomes key, so the app can still be inactive when the tap
-	/// lands; `openSettings()` silently no-ops in that state. Promoting the
-	/// activation policy and activating first is what the status-item path gets
-	/// for free by virtue of the menu bar having activated the app already.
+	/// Routes to the same AppDelegate settings opener the menu bar uses (native
+	/// Settings scene with a retained-window fallback, plus the accessory-app
+	/// activation promotion) via a notification rather than an `NSApp.delegate`
+	/// cast: with `@NSApplicationDelegateAdaptor`, the installed delegate can be
+	/// SwiftUI's own wrapper, and the cast silently failing would make this
+	/// button do nothing. The panel dismisses first so it is not left floating
+	/// over the window that comes forward.
 	private func openCommandSettings() {
+		AppLogger.shared.general.info("Pill controls: Add your own tapped, requesting Settings")
 		NotificationCenter.default.post(name: .pillControlsDismissed, object: nil)
-
-		guard let delegate = NSApp.delegate as? AppDelegate else {
-			AppLogger.shared.general.error(
-				"Pill controls: could not reach AppDelegate to open Settings")
-			return
-		}
-
-		NSApp.setActivationPolicy(.regular)
-		NSApp.activate(ignoringOtherApps: true)
-		delegate.perform(StatusMenuAction.settings)
+		NotificationCenter.default.post(name: .openSettingsRequested, object: nil)
 	}
 
 	private func addYourOwnRow(tap: @escaping () -> Void) -> some View {

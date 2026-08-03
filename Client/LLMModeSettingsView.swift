@@ -40,7 +40,7 @@ struct LLMModeSettingsView: View {
 /// this is the pane the dictation pipeline's other behaviour settings share.
 private struct MediaPauseConfig: View {
 	@AppStorage("whisperaPauseMediaWhileDictating") private var pauseMedia = true
-	@AppStorage("whisperaPauseMediaUsesMediaKey") private var useMediaKey = false
+	@AppStorage("whisperaPauseBrowserMediaWhileDictating") private var pauseBrowserMedia = true
 
 	var body: some View {
 		SettingsSection("Media") {
@@ -50,10 +50,11 @@ private struct MediaPauseConfig: View {
 					.font(.caption)
 					.foregroundColor(.secondary)
 
-				Toggle("Also send the system play/pause key", isOn: $useMediaKey)
+				Toggle("Include browser tabs", isOn: $pauseBrowserMedia)
+					.disabled(!pauseMedia)
 					.padding(.top, 4)
 				Text(
-					"For players Whispera can't control directly (browsers, other apps). This is a blind toggle, so it only fires when Music and Spotify weren't playing."
+					"Pauses video and audio playing in Safari, Chrome, Edge, and Brave, and resumes only what Whispera paused. The browser must allow JavaScript from Apple Events (Safari: Develop menu; Chrome-based: View > Developer)."
 				)
 				.font(.caption)
 				.foregroundColor(.secondary)

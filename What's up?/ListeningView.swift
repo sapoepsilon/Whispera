@@ -179,17 +179,30 @@ struct ListeningView: View {
 	/// Which microphone is live. Uses the id + transition swap that the menu bar
 	/// status glyph uses (MenuBarView StatusGlyph) rather than
 	/// `.contentTransition(.symbolEffect(.replace))`, which never fired here.
+	/// Tapping it opens the controls panel straight on the input-device page;
+	/// the controls button next to it keeps its root-page toggle.
 	private var deviceIcon: some View {
-		ZStack {
-			Image(systemName: layout.deviceIcon)
-				.font(.system(size: 11))
-				.foregroundColor(.secondary)
-				.id(layout.deviceIcon)
-				.transition(
-					reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+		Button {
+			showControls = true
+			NotificationCenter.default.post(
+				name: .pillControlsToggled,
+				object: nil,
+				userInfo: PillControlsRouting.userInfo(show: true, page: .input)
+			)
+		} label: {
+			ZStack {
+				Image(systemName: layout.deviceIcon)
+					.font(.system(size: 11))
+					.foregroundColor(.secondary)
+					.id(layout.deviceIcon)
+					.transition(
+						reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+			}
+			.animation(reduceMotion ? nil : Motion.iconMorph, value: layout.deviceIcon)
+			.contentShape(Rectangle())
 		}
-		.animation(reduceMotion ? nil : Motion.iconMorph, value: layout.deviceIcon)
-		.help("Input device - \(activeDeviceName)")
+		.buttonStyle(.plain)
+		.help("Input device - \(activeDeviceName). Click to switch.")
 	}
 
 	/// The post-dictation action, running inside the pill. It takes its final
@@ -219,7 +232,7 @@ struct ListeningView: View {
 			NotificationCenter.default.post(
 				name: .pillControlsToggled,
 				object: nil,
-				userInfo: ["show": showControls]
+				userInfo: PillControlsRouting.userInfo(show: showControls)
 			)
 		} label: {
 			HStack(spacing: 3) {

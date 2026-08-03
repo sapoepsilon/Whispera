@@ -263,10 +263,14 @@ class ListeningWindow: NSWindow {
 		) { [weak self] notification in
 			Task { @MainActor in
 				guard let self else { return }
-				let show = (notification.userInfo?["show"] as? Bool) ?? false
-				if show {
+				if PillControlsRouting.show(in: notification.userInfo) {
+					// The page hint lets the device icon open straight onto the input
+					// list while the controls button keeps landing on the root page.
 					self.showPickerWindow(
-						PillControlsView(audioManager: self.audioManager, presenter: self.controlsPresenter))
+						PillControlsView(
+							audioManager: self.audioManager,
+							presenter: self.controlsPresenter,
+							initialPage: PillControlsRouting.page(in: notification.userInfo)))
 				} else {
 					self.hidePickerWindow()
 				}

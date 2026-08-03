@@ -1,43 +1,105 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025-2026 Ismatulla Mansurov
 
-import AppKit
 import Foundation
 
 extension WhisperaSettings {
 	private static let pauseMediaKey = "whisperaPauseMediaWhileDictating"
-	private static let mediaKeyFallbackKey = "whisperaPauseMediaUsesMediaKey"
+	private static let pauseBrowserMediaKey = "whisperaPauseBrowserMediaWhileDictating"
 
-	/// Tier 1: pause Music/Spotify through Apple Events. Default ON.
+	/// Pause Music/Spotify through Apple Events. Default ON.
 	static var pauseMediaWhileDictating: Bool {
 		// `bool(forKey:)` can't express "absent means true", so read the object.
 		get { UserDefaults.standard.object(forKey: pauseMediaKey) as? Bool ?? true }
 		set { UserDefaults.standard.set(newValue, forKey: pauseMediaKey) }
 	}
 
-	/// Tier 2: blind system play/pause key for players we can't script. Default OFF.
-	static var pauseMediaUsesMediaKey: Bool {
-		get { UserDefaults.standard.bool(forKey: mediaKeyFallbackKey) }
-		set { UserDefaults.standard.set(newValue, forKey: mediaKeyFallbackKey) }
+	/// Also pause playing tabs in the major browsers. Default ON; only takes
+	/// effect while the master toggle above is on.
+	static var pauseBrowserMediaWhileDictating: Bool {
+		get { UserDefaults.standard.object(forKey: pauseBrowserMediaKey) as? Bool ?? true }
+		set { UserDefaults.standard.set(newValue, forKey: pauseBrowserMediaKey) }
 	}
 }
 
-/// A media app Whispera can script. Raw value is the AppleScript application name.
-enum MediaApp: String, CaseIterable, Sendable {
+/// A media source Whispera can pause deterministically — by reading real player
+/// state, never by guessing. Raw value is the AppleScript application name.
+enum MediaTarget: String, CaseIterable, Sendable {
 	case music = "Music"
 	case spotify = "Spotify"
+	case safari = "Safari"
+	case chrome = "Google Chrome"
+	case edge = "Microsoft Edge"
+	case brave = "Brave Browser"
 
 	/// Token the pause script echoes back so we know exactly what we paused.
-	var token: String { rawValue.lowercased() }
+	var token: String {
+		switch self {
+		case .music: return "music"
+		case .spotify: return "spotify"
+		case .safari: return "safari"
+		case .chrome: return "chrome"
+		case .edge: return "edge"
+		case .brave: return "brave"
+		}
+	}
+
+	var isBrowser: Bool {
+		switch self {
+		case .music, .spotify: return false
+		case .safari, .chrome, .edge, .brave: return true
+		}
+	}
+}
+
+/// What one pause sweep established: targets that were verifiably playing and
+/// are now paused, and running browsers that refused tab scripting (their
+/// "Allow JavaScript from Apple Events" preference is off).
+struct MediaPauseScan: Equatable, Sendable {
+	var paused: [MediaTarget] = []
+	var blocked: [MediaTarget] = []
+
+	/// A pause script returns `"<paused tokens>|<blocked tokens>"`.
+	static func parse(_ output: String?) -> MediaPauseScan {
+		guard let output else { return MediaPauseScan() }
+		let segments = output.split(separator: "|", omittingEmptySubsequences: false)
+		func targets(at index: Int) -> [MediaTarget] {
+			guard segments.indices.contains(index) else { return [] }
+			let tokens = Set(segments[index].split(whereSeparator: \.isWhitespace).map(String.init))
+			return MediaTarget.allCases.filter { tokens.contains($0.token) }
+		}
+		return MediaPauseScan(paused: targets(at: 0), blocked: targets(at: 1))
+	}
+}
+
+/// One dictation's worth of paused media, and the rules for putting it back.
+struct MediaPauseSession: Equatable, Sendable {
+	let targets: [MediaTarget]
+	let startedAt: Date
+
+	/// Past this gap the user has moved on — silently restarting their music
+	/// would be a surprise, not a courtesy.
+	static let maxResumeGap: TimeInterval = 600
+
+	/// A blocked browser is not a session: nothing was paused, so there is
+	/// nothing to resume and nothing worth remembering.
+	static func started(from scan: MediaPauseScan, at date: Date) -> MediaPauseSession? {
+		scan.paused.isEmpty ? nil : MediaPauseSession(targets: scan.paused, startedAt: date)
+	}
+
+	func shouldResume(at date: Date) -> Bool {
+		date.timeIntervalSince(startedAt) <= Self.maxResumeGap
+	}
 }
 
 /// Pauses whatever the user is listening to for the duration of a dictation and
 /// puts it back afterwards.
 ///
-/// Two tiers, never both in the same moment:
-///   1. Apple Events to Music/Spotify — precise, resumes only what we paused.
-///   2. The system play/pause key — blind, so it is opt-in and only fires when
-///      tier 1 found nothing to pause (otherwise it would undo tier 1's work).
+/// Everything is state-checked before it is touched: Music/Spotify through
+/// `player state`, browser tabs through in-page JavaScript that pauses only
+/// elements that are actually playing and tags them so resume can find exactly
+/// those elements again. No blind system media key, ever — a toggle sent
+/// without established playback can just as easily start something.
 ///
 /// Every Apple Event runs out of process; the recording path only ever enqueues
 /// work and returns. See WHI-W2.
@@ -45,37 +107,28 @@ enum MediaApp: String, CaseIterable, Sendable {
 final class MediaPlaybackCoordinator {
 	static let shared = MediaPlaybackCoordinator()
 
-	/// Past this gap the user has moved on — silently restarting their music
-	/// would be a surprise, not a courtesy.
-	static let maxResumeGap: TimeInterval = 600
-
-	private var pausedApps: [MediaApp] = []
-	private var pausedAt: Date?
-	private var usedMediaKey = false
+	private var session: MediaPauseSession?
 	/// Serializes pause/resume so a resume can never overtake its own pause.
 	private var work: Task<Void, Never>?
 
-	private let tier1Enabled: @Sendable () -> Bool
-	private let tier2Enabled: @Sendable () -> Bool
+	private let playersEnabled: @Sendable () -> Bool
+	private let browsersEnabled: @Sendable () -> Bool
 	private let runScript: @Sendable (String) -> String?
-	// MainActor-isolated so assigning the AppKit-touching default below never
-	// drops an isolation the compiler is tracking.
-	private let sendMediaKey: @MainActor () -> Void
 	private let now: @Sendable () -> Date
 
 	init(
-		tier1Enabled: @escaping @Sendable () -> Bool = { WhisperaSettings.pauseMediaWhileDictating },
-		tier2Enabled: @escaping @Sendable () -> Bool = { WhisperaSettings.pauseMediaUsesMediaKey },
-		// Closure literals rather than bare function references: an unapplied
+		playersEnabled: @escaping @Sendable () -> Bool = { WhisperaSettings.pauseMediaWhileDictating },
+		browsersEnabled: @escaping @Sendable () -> Bool = {
+			WhisperaSettings.pauseMediaWhileDictating && WhisperaSettings.pauseBrowserMediaWhileDictating
+		},
+		// A closure literal rather than a bare function reference: an unapplied
 		// declaration reference isn't inferred `@Sendable`.
 		runScript: @escaping @Sendable (String) -> String? = { MediaPlaybackCoordinator.runOsascript($0) },
-		sendMediaKey: @escaping @MainActor () -> Void = { MediaPlaybackCoordinator.postSystemPlayPause() },
 		now: @escaping @Sendable () -> Date = { Date() }
 	) {
-		self.tier1Enabled = tier1Enabled
-		self.tier2Enabled = tier2Enabled
+		self.playersEnabled = playersEnabled
+		self.browsersEnabled = browsersEnabled
 		self.runScript = runScript
-		self.sendMediaKey = sendMediaKey
 		self.now = now
 	}
 
@@ -83,7 +136,7 @@ final class MediaPlaybackCoordinator {
 
 	/// Fire-and-forget: returns immediately, scripts run off the main actor.
 	func pauseForDictation() {
-		guard tier1Enabled() || tier2Enabled() else { return }
+		guard playersEnabled() || browsersEnabled() else { return }
 		enqueue { await self.performPause() }
 	}
 
@@ -91,6 +144,11 @@ final class MediaPlaybackCoordinator {
 	/// later calls for one dictation are no-ops.
 	func resumeAfterDictation() {
 		enqueue { await self.performResume() }
+	}
+
+	/// Awaits all queued pause/resume work; exists for tests.
+	func flush() async {
+		await work?.value
 	}
 
 	private func enqueue(_ operation: @escaping @Sendable @MainActor () async -> Void) {
@@ -103,55 +161,53 @@ final class MediaPlaybackCoordinator {
 
 	// MARK: - Pause / resume
 
+	static func sweepTargets(players: Bool, browsers: Bool) -> [MediaTarget] {
+		MediaTarget.allCases.filter { $0.isBrowser ? browsers : players }
+	}
+
 	private func performPause() async {
-		pausedApps = []
-		usedMediaKey = false
-		pausedAt = now()
+		session = nil
+		let targets = Self.sweepTargets(players: playersEnabled(), browsers: browsersEnabled())
+		guard !targets.isEmpty else { return }
 
-		if tier1Enabled() {
-			pausedApps = Self.pausedApps(in: await detached(Self.pauseScript))
-			if !pausedApps.isEmpty {
-				AppLogger.shared.audioManager.info(
-					"Paused media for dictation: \(pausedApps.map(\.rawValue).joined(separator: ", "))")
-			}
+		var scan = MediaPauseScan()
+		for target in targets {
+			// Each script may only report about its own target; anything else in
+			// the output is discarded.
+			let sub = MediaPauseScan.parse(await detached(Self.pauseScript(for: target)))
+			if sub.paused.contains(target) { scan.paused.append(target) }
+			if sub.blocked.contains(target) { scan.blocked.append(target) }
 		}
 
-		// Tier 2 is a blind toggle: firing it after tier 1 just paused something
-		// would immediately resume that same player.
-		if pausedApps.isEmpty, tier2Enabled() {
-			sendMediaKey()
-			usedMediaKey = true
-			AppLogger.shared.audioManager.info("Sent system play/pause for dictation")
+		if !scan.blocked.isEmpty {
+			AppLogger.shared.audioManager.info(
+				"Browsers refused tab scripting — enable \"Allow JavaScript from Apple Events\": \(scan.blocked.map(\.rawValue).joined(separator: ", "))")
 		}
 
-		if pausedApps.isEmpty, !usedMediaKey { pausedAt = nil }
+		session = MediaPauseSession.started(from: scan, at: now())
+		if let session {
+			AppLogger.shared.audioManager.info(
+				"Paused media for dictation: \(session.targets.map(\.rawValue).joined(separator: ", "))")
+		}
 	}
 
 	private func performResume() async {
-		let apps = pausedApps
-		let viaMediaKey = usedMediaKey
-		let startedAt = pausedAt
-		pausedApps = []
-		usedMediaKey = false
-		pausedAt = nil
+		guard let session else { return }
+		self.session = nil
 
-		guard !apps.isEmpty || viaMediaKey, let startedAt else { return }
-
-		guard now().timeIntervalSince(startedAt) <= Self.maxResumeGap else {
+		guard session.shouldResume(at: now()) else {
 			AppLogger.shared.audioManager.info("Skipping media resume — dictation outran the resume window")
 			return
 		}
 
-		if viaMediaKey {
-			sendMediaKey()
-			return
+		// Player scripts re-read `player state` and browser scripts only touch
+		// elements tagged during the pause, so anything the user restarted
+		// themselves mid-dictation keeps their own choice.
+		for target in session.targets {
+			_ = await detached(Self.resumeScript(for: target))
 		}
-
-		// The script re-reads `player state` and leaves anything already playing
-		// alone, so a user who hit play mid-dictation keeps their own choice.
-		_ = await detached(Self.resumeScript(for: apps))
 		AppLogger.shared.audioManager.info(
-			"Resumed media after dictation: \(apps.map(\.rawValue).joined(separator: ", "))")
+			"Resumed media after dictation: \(session.targets.map(\.rawValue).joined(separator: ", "))")
 	}
 
 	private func detached(_ source: String) async -> String? {
@@ -161,48 +217,111 @@ final class MediaPlaybackCoordinator {
 
 	// MARK: - Scripts
 
-	/// Guarded by `is running` so a stopped player is never launched just to be
-	/// asked whether it is playing.
-	static let pauseScript = """
-		set pausedList to ""
-		if application "Music" is running then
-			tell application "Music"
-				if player state is playing then
-					pause
-					set pausedList to pausedList & "music "
-				end if
-			end tell
-		end if
-		if application "Spotify" is running then
-			tell application "Spotify"
-				if player state is playing then
-					pause
-					set pausedList to pausedList & "spotify "
-				end if
-			end tell
-		end if
-		return pausedList
+	/// In-page JS for the pause sweep: pause only elements that are actually
+	/// playing and tag them so the resume sweep can find exactly these elements.
+	/// Single-quoted throughout so it embeds in an AppleScript string literal.
+	static let pauseTabScript =
+		"(function(){var n=0;var l=document.querySelectorAll('video,audio');"
+		+ "for(var i=0;i<l.length;i++){var m=l[i];"
+		+ "if(!m.paused&&!m.ended){m.pause();m.dataset.whisperaPaused='1';n++;}}"
+		+ "return n;})();"
+
+	/// In-page JS for the resume sweep: replay only tagged elements that are
+	/// still paused, and clear the tag either way.
+	static let resumeTabScript =
+		"(function(){var n=0;"
+		+ "var l=document.querySelectorAll('video[data-whispera-paused],audio[data-whispera-paused]');"
+		+ "for(var i=0;i<l.length;i++){var m=l[i];delete m.dataset.whisperaPaused;"
+		+ "if(m.paused){m.play();n++;}}"
+		+ "return n;})();"
+
+	/// One script per target, because AppleScript resolves app terminology at
+	/// compile time: a machine without, say, Brave would fail the compile for
+	/// everything sharing its script, and only loses Brave's sweep this way.
+	/// Guarded by `is running` so a stopped app is never launched just to be
+	/// asked whether it is playing. Returns `"<paused tokens>|<blocked tokens>"`.
+	static func pauseScript(for target: MediaTarget) -> String {
 		"""
-
-	static func resumeScript(for apps: [MediaApp]) -> String {
-		apps.map { app in
-			"""
-			if application "\(app.rawValue)" is running then
-				tell application "\(app.rawValue)"
-					if player state is not playing then play
-				end tell
-			end if
-			"""
-		}.joined(separator: "\n")
+		set pausedList to ""
+		set blockedList to ""
+		\(target.isBrowser ? browserPauseFragment(target) : playerPauseFragment(target))
+		return pausedList & "|" & blockedList
+		"""
 	}
 
-	static func pausedApps(in output: String?) -> [MediaApp] {
-		guard let output else { return [] }
-		let tokens = Set(output.split(whereSeparator: \.isWhitespace).map(String.init))
-		return MediaApp.allCases.filter { tokens.contains($0.token) }
+	static func resumeScript(for target: MediaTarget) -> String {
+		target.isBrowser ? browserResumeFragment(target) : playerResumeFragment(target)
 	}
 
-	// MARK: - Transports
+	private static func playerPauseFragment(_ target: MediaTarget) -> String {
+		"""
+		if application "\(target.rawValue)" is running then
+			tell application "\(target.rawValue)"
+				if player state is playing then
+					pause
+					set pausedList to pausedList & "\(target.token) "
+				end if
+			end tell
+		end if
+		"""
+	}
+
+	/// A tab whose `try` fails (JavaScript from Apple Events turned off, or a
+	/// page that rejects injection) is reported as blocked and left untouched —
+	/// the failure never escalates into a blind fallback.
+	private static func browserPauseFragment(_ target: MediaTarget) -> String {
+		"""
+		if application "\(target.rawValue)" is running then
+			tell application "\(target.rawValue)"
+				set tabCount to 0
+				repeat with w in windows
+					repeat with t in tabs of w
+						try
+							set tabCount to tabCount + (\(tabJS(target, Self.pauseTabScript)))
+						on error
+							set blockedList to blockedList & "\(target.token) "
+						end try
+					end repeat
+				end repeat
+				if tabCount > 0 then set pausedList to pausedList & "\(target.token) "
+			end tell
+		end if
+		"""
+	}
+
+	private static func playerResumeFragment(_ target: MediaTarget) -> String {
+		"""
+		if application "\(target.rawValue)" is running then
+			tell application "\(target.rawValue)"
+				if player state is not playing then play
+			end tell
+		end if
+		"""
+	}
+
+	private static func browserResumeFragment(_ target: MediaTarget) -> String {
+		"""
+		if application "\(target.rawValue)" is running then
+			tell application "\(target.rawValue)"
+				repeat with w in windows
+					repeat with t in tabs of w
+						try
+							\(tabJS(target, Self.resumeTabScript))
+						end try
+					end repeat
+				end repeat
+			end tell
+		end if
+		"""
+	}
+
+	/// Safari and the Chromium family expose the same capability under
+	/// different AppleScript commands.
+	private static func tabJS(_ target: MediaTarget, _ js: String) -> String {
+		target == .safari ? "do JavaScript \"\(js)\" in t" : "execute t javascript \"\(js)\""
+	}
+
+	// MARK: - Transport
 
 	/// Runs AppleScript out of process, so a first-run TCC prompt or a wedged
 	/// media app blocks a throwaway subprocess instead of Whispera.
@@ -223,26 +342,5 @@ final class MediaPlaybackCoordinator {
 		process.waitUntilExit()
 		guard process.terminationStatus == 0 else { return nil }
 		return String(data: data, encoding: .utf8)
-	}
-
-	/// NX_KEYTYPE_PLAY through a system-defined event — the same thing the
-	/// keyboard's play/pause key posts, so every media app honours it.
-	static func postSystemPlayPause() {
-		let playKey = 16
-		for keyState in [0xa00, 0xb00] {
-			guard
-				let event = NSEvent.otherEvent(
-					with: .systemDefined,
-					location: .zero,
-					modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(keyState)),
-					timestamp: 0,
-					windowNumber: 0,
-					context: nil,
-					subtype: 8,
-					data1: (playKey << 16) | keyState,
-					data2: -1)
-			else { continue }
-			event.cgEvent?.post(tap: .cghidEventTap)
-		}
 	}
 }
