@@ -33,8 +33,7 @@ struct DictationView: View {
 	var body: some View {
 		VStack(spacing: 0) {
 			if let overlayError = coordinator.overlayError {
-				DictationNotice(message: overlayError)
-					.transition(.opacity.combined(with: .scale(scale: 0.95)))
+				errorIndicator(overlayError)
 			} else if whisperKit.isWaitingForModel {
 				HStack(spacing: 8) {
 					ProgressView()
@@ -108,68 +107,25 @@ struct DictationView: View {
 		.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
 		.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
 	}
-}
 
-/// The HUD's error / notice line. Recipe errors are a few words; the
-/// blocked-browser notice is a couple of sentences, so the message wraps to a
-/// bounded width instead of running off into a clipped single-line strip. Its own
-/// type because `LiveTranscriptionWindow` measures this exact view to size the
-/// window — a character-count estimate cannot see where the text wraps.
-struct DictationNotice: View {
-	let message: String
-
-	/// Wrapping width for the message alone. Icon, spacing and padding put the
-	/// laid-out overlay a little under 420pt.
-	static let maxTextWidth: CGFloat = 360
-	private static let font: Font = .system(.caption, design: .rounded)
-
-	var body: some View {
-		HStack(alignment: .firstTextBaseline, spacing: 8) {
+	private func errorIndicator(_ message: String) -> some View {
+		HStack(spacing: 6) {
 			Image(systemName: "exclamationmark.triangle.fill")
 				.foregroundColor(.orange)
 				.imageScale(.small)
 			Text(message)
-				.font(Self.font)
+				.font(.system(.caption, design: .rounded))
 				.foregroundColor(.primary)
-				.multilineTextAlignment(.leading)
-				.frame(width: Self.textWidth(for: message), alignment: .leading)
-				.fixedSize(horizontal: false, vertical: true)
+				.lineLimit(2)
 		}
 		.padding(.horizontal, 14)
 		.padding(.vertical, 10)
+		.transition(.opacity.combined(with: .scale(scale: 0.95)))
 	}
-
-	/// The message's one-line width, capped. Deliberately a *definite* width rather
-	/// than `.frame(maxWidth:)`: with a cap SwiftUI derives the ideal height from
-	/// the unclamped text, so a wrapped notice reports one line too few and the
-	/// enclosing `.fixedSize()` hands the window a height that clips it. With a
-	/// definite width the ideal, the laid-out and the window's measured size all
-	/// agree, and short recipe errors still shrink to one line.
-	@MainActor static func textWidth(for message: String) -> CGFloat {
-		if let cached = widthCache[message] { return cached }
-		let measured = NSHostingController(rootView: Text(message).font(font).fixedSize())
-			.view.fittingSize.width
-		let width = min(maxTextWidth, ceil(measured))
-		// The HUD sees a handful of distinct messages; the bound is only so a long
-		// session of varied recipe errors cannot grow this without limit.
-		if widthCache.count > 16 { widthCache.removeAll() }
-		widthCache[message] = width
-		return width
-	}
-
-	@MainActor private static var widthCache: [String: CGFloat] = [:]
 }
 
 #Preview {
 	DictationView(audioManager: AudioManager())
 		.frame(width: 300)
 		.padding()
-}
-
-#Preview("Notice") {
-	DictationNotice(
-		message:
-			"To pause and resume your browser's video while you dictate, Whispera needs permission: in Brave, enable View > Developer > Allow JavaScript from Apple Events."
-	)
-	.padding()
 }

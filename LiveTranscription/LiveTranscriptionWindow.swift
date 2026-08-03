@@ -162,32 +162,11 @@ class LiveTranscriptionWindow: NSWindow {
 	/// How far below its resting place the error starts its rise.
 	private static let errorRiseDistance: CGFloat = 24
 
-	/// Last measured notice, keyed by its message. The observation timer asks for
-	/// the window size three times a second and measuring builds a hosting
-	/// controller, so a message is only ever laid out once.
-	private var measuredNotice: (message: String, size: NSSize)?
-
-	/// Asks the notice view itself how tall it wants to be at its bounded width.
-	/// Character-count arithmetic cannot see where the text wraps, and a two-line
-	/// notice measured that way came out as a clipped one-line strip.
-	private func noticeSize(for message: String) -> NSSize {
-		if let measuredNotice, measuredNotice.message == message { return measuredNotice.size }
-
-		let fitted = NSHostingController(rootView: DictationNotice(message: message))
-			.view.fittingSize
-		// The floor keeps a short recipe error looking exactly as it did before the
-		// notice learned to wrap.
-		let size = NSSize(
-			width: max(200, ceil(fitted.width)),
-			height: max(44, ceil(fitted.height)))
-		measuredNotice = (message, size)
-		return size
-	}
-
 	private func calculateDynamicSize() -> NSSize {
-		// The recipe error and the blocked-browser notice share this overlay.
+		// The recipe error gets its own comfortable width.
 		if let overlayError = coordinator.overlayError {
-			return noticeSize(for: overlayError)
+			let width = min(480, max(200, CGFloat(overlayError.count) * 7 + 60))
+			return NSSize(width: width, height: 44)
 		}
 
 		let pendingText =

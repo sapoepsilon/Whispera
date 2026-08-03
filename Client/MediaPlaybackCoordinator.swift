@@ -6,6 +6,7 @@ import Foundation
 extension WhisperaSettings {
 	private static let pauseMediaKey = "whisperaPauseMediaWhileDictating"
 	private static let pauseBrowserMediaKey = "whisperaPauseBrowserMediaWhileDictating"
+	private static let suppressBlockedAlertKey = "whisperaSuppressBlockedBrowserMediaAlert"
 
 	/// Pause Music/Spotify through Apple Events. Default ON.
 	static var pauseMediaWhileDictating: Bool {
@@ -19,6 +20,13 @@ extension WhisperaSettings {
 	static var pauseBrowserMediaWhileDictating: Bool {
 		get { UserDefaults.standard.object(forKey: pauseBrowserMediaKey) as? Bool ?? true }
 		set { UserDefaults.standard.set(newValue, forKey: pauseBrowserMediaKey) }
+	}
+
+	/// Set by the alert's "Don't Show Again" button. Survives relaunches, unlike
+	/// the coordinator's once-per-browser-per-run throttle.
+	static var suppressBlockedBrowserMediaAlert: Bool {
+		get { UserDefaults.standard.bool(forKey: suppressBlockedAlertKey) }
+		set { UserDefaults.standard.set(newValue, forKey: suppressBlockedAlertKey) }
 	}
 }
 
@@ -55,19 +63,6 @@ enum MediaTarget: String, CaseIterable, Sendable {
 		switch self {
 		case .music, .spotify: return false
 		case .safari, .chrome, .edge, .brave: return true
-		}
-	}
-
-	/// What the user calls it. The raw value is the process name, which reads like
-	/// a product listing mid-sentence ("in Brave Browser and Google Chrome").
-	var displayName: String {
-		switch self {
-		case .music: return "Music"
-		case .spotify: return "Spotify"
-		case .safari: return "Safari"
-		case .chrome: return "Chrome"
-		case .edge: return "Edge"
-		case .brave: return "Brave"
 		}
 	}
 }
@@ -158,9 +153,6 @@ final class MediaPlaybackCoordinator {
 	/// [String] values only — the payload crosses NotificationCenter.
 	nonisolated static let blockedMessageKey = "recoveryMessage"
 	nonisolated static let blockedBrowsersKey = "blockedBrowsers"
-	/// The one-line variant, for surfaces that get a couple of seconds and two
-	/// lines rather than an alert.
-	nonisolated static let blockedToastKey = "toastMessage"
 
 	private var session: MediaPauseSession?
 	/// One recovery notification per browser per app run: the permission is a
@@ -301,61 +293,50 @@ final class MediaPlaybackCoordinator {
 
 		let userInfo: [AnyHashable: Any] = [
 			Self.blockedMessageKey: Self.blockedRecoveryMessage(for: fresh),
-			Self.blockedToastKey: Self.blockedToastMessage(for: fresh),
 			Self.blockedBrowsersKey: fresh.map(\.rawValue),
 		]
 		NotificationCenter.default.post(
 			name: .browserMediaPauseBlocked, object: self, userInfo: userInfo)
 	}
 
-	/// Names the browsers we could not pause and every permission that can be the
-	/// reason: the browser's own JavaScript-from-Apple-Events switch, or macOS
-	/// Automation access, which fails the script outright.
+	/// The alert's body. Leads with what the permission buys the user and only then
+	/// asks for it: an instruction on its own reads as a demand out of nowhere,
+	/// since nobody asked Whispera to touch their browser.
+	///
+	/// One step per browser, each on its own line, naming the browser exactly as
+	/// its own menu bar does — the user is about to go looking for that menu. The
+	/// closing line covers the other permission that produces an identical
+	/// failure: a blocked sweep cannot tell the browser's JavaScript switch from
+	/// macOS Automation access, which fails the script before it ever runs.
 	nonisolated static func blockedRecoveryMessage(for targets: [MediaTarget]) -> String {
-		guard !targets.isEmpty else { return "" }
-		let names = targets.map(\.rawValue).joined(separator: ", ")
-		let opening = "Whispera could not pause media in \(names) because it was refused the permissions it needs."
-
-		var steps: [String] = []
-		if targets.contains(.safari) {
-			steps.append(
-				"in Safari turn on the Develop menu in Settings > Advanced, then enable Develop > Allow JavaScript from Apple Events")
-		}
-		let chromium = targets.filter { $0.isBrowser && $0 != .safari }
-		if !chromium.isEmpty {
-			steps.append(
-				"in \(chromium.map(\.rawValue).joined(separator: ", ")) enable View > Developer > Allow JavaScript from Apple Events")
-		}
-		steps.append(
-			"and allow Whispera to control them under System Settings > Privacy & Security > Automation")
-		return opening + " To fix it, " + steps.joined(separator: "; ") + "."
-	}
-
-	/// The HUD variant. Leads with what the permission buys the user and only then
-	/// asks for it — an instruction on its own reads as a demand out of nowhere,
-	/// since nobody asked Whispera to touch their browser. Safari and the Chromium
-	/// family file the switch under different menus, so a mixed sweep spells out
-	/// both paths rather than generalising to "the developer menu".
-	nonisolated static func blockedToastMessage(for targets: [MediaTarget]) -> String {
 		let browsers = targets.filter(\.isBrowser)
 		guard !browsers.isEmpty else { return "" }
 
-		var steps: [String] = []
-		if browsers.contains(.safari) {
-			steps.append("in Safari, enable Develop > Allow JavaScript from Apple Events")
-		}
-		let chromium = browsers.filter { $0 != .safari }
-		if !chromium.isEmpty {
-			steps.append(
-				"in \(naturalList(chromium.map(\.displayName))), enable View > Developer > Allow JavaScript from Apple Events"
-			)
-		}
-		return
-			"To pause and resume your browser's video while you dictate, Whispera needs permission: "
-			+ steps.joined(separator: "; ") + "."
+		let reason =
+			"Whispera pauses videos and music while you dictate and resumes them after. "
+			+ "\(naturalList(browsers.map(\.rawValue))) blocked this."
+		let steps = browsers.map(blockedRecoveryStep).joined(separator: "\n")
+		let automation =
+			"If \(browsers.count > 1 ? "those are" : "that is") already on, allow Whispera to "
+			+ "control your \(browsers.count > 1 ? "browsers" : "browser") in "
+			+ "System Settings > Privacy & Security > Automation."
+
+		return reason + "\n\nTo allow it:\n" + steps + "\n\n" + automation
 	}
 
-	/// "Brave", "Brave and Chrome", "Chrome, Edge and Brave".
+	/// Safari files the switch under its own Develop menu, which is itself off by
+	/// default; the Chromium family keeps it under View > Developer.
+	private nonisolated static func blockedRecoveryStep(for target: MediaTarget) -> String {
+		guard target != .safari else {
+			return
+				"In Safari, turn on the Develop menu in Settings > Advanced, then choose "
+				+ "Develop > Allow JavaScript from Apple Events."
+		}
+		return
+			"In \(target.rawValue), choose View > Developer > Allow JavaScript from Apple Events."
+	}
+
+	/// "Brave Browser", "Safari and Brave Browser", "Safari, Microsoft Edge and Brave Browser".
 	private nonisolated static func naturalList(_ items: [String]) -> String {
 		guard let last = items.last else { return "" }
 		guard items.count > 1 else { return last }
