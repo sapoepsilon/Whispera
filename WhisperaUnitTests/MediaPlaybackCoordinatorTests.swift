@@ -104,27 +104,31 @@ struct MediaSweepTargetTests {
 
 struct RemainingAudioSafetyTests {
 
-	@Test func callsAccessibilityAndSystemAlertsAreNotTreatedAsMedia() {
+	@Test func everyExternalAudibleProcessIsEligibleForSafeMuting() {
 		for bundleID in [
 			"us.zoom.xos", "com.microsoft.teams2", "com.apple.FaceTime",
 			"com.apple.VoiceOver", "com.apple.notificationcenterui",
 		] {
-			#expect(!BrowserAudioMuter.isKnownMediaApplication(bundleID))
+			#expect(
+				BrowserAudioMuter.shouldMute(
+					bundleID: bundleID, pid: 42, ownPID: 7, excludingBrowsers: false))
 		}
 	}
 
-	@Test func knownBrowsersAndPlayersAreEligibleForSafeMuting() {
-		for bundleID in [
-			"org.mozilla.firefox", "com.google.Chrome", "org.videolan.vlc",
-			"com.apple.QuickTimePlayerX",
-		] {
-			#expect(BrowserAudioMuter.isKnownMediaApplication(bundleID))
-		}
+	@Test func ownAndUnidentifiedProcessesAreNeverMuted() {
+		#expect(!BrowserAudioMuter.shouldMute(
+			bundleID: "com.whispera", pid: 7, ownPID: 7, excludingBrowsers: false))
+		#expect(!BrowserAudioMuter.shouldMute(
+			bundleID: "unknown", pid: nil, ownPID: 7, excludingBrowsers: false))
 	}
 
-	@Test func unknownAudioProducerIsNotMuted() {
-		#expect(!BrowserAudioMuter.isKnownMediaApplication("org.example.unknown-audio-client"))
+	@Test func browserOptOutOnlyExcludesBrowsers() {
+		#expect(!BrowserAudioMuter.shouldMute(
+			bundleID: "com.google.Chrome.helper", pid: 42, ownPID: 7, excludingBrowsers: true))
+		#expect(BrowserAudioMuter.shouldMute(
+			bundleID: "org.example.player", pid: 42, ownPID: 7, excludingBrowsers: true))
 	}
+
 }
 
 struct MediaPauseScriptTests {

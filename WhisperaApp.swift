@@ -78,6 +78,23 @@ extension Notification.Name {
 	static let openSettingsRequested = Notification.Name("OpenSettingsRequested")
 }
 
+enum SettingsDestination: String {
+	case general, aiMode, recipes, storage, liveTranscription, fileTranscription, benchmark
+}
+
+enum SettingsRouting {
+	static let destinationKey = "destination"
+	static let selectedTabDefaultsKey = "whisperaSelectedSettingsTab"
+
+	static func userInfo(destination: SettingsDestination) -> [String: Any] {
+		[destinationKey: destination.rawValue]
+	}
+
+	static func destination(in userInfo: [AnyHashable: Any]?) -> SettingsDestination? {
+		(userInfo?[destinationKey] as? String).flatMap(SettingsDestination.init(rawValue:))
+	}
+}
+
 enum StatusMenuAction: String {
 	case settings
 	case activity
@@ -185,9 +202,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				forName: .openSettingsRequested,
 				object: nil,
 				queue: .main
-			) { [weak self] _ in
+			) { [weak self] notification in
 				Task { @MainActor in
-					AppLogger.shared.general.info("Settings open requested via notification")
+					if let destination = SettingsRouting.destination(in: notification.userInfo) {
+						UserDefaults.standard.set(
+							destination.rawValue, forKey: SettingsRouting.selectedTabDefaultsKey)
+					}
+					AppLogger.shared.general.info(
+						"Settings open requested via notification, destination: \(SettingsRouting.destination(in: notification.userInfo)?.rawValue ?? "current")")
 					self?.perform(.settings)
 				}
 			}

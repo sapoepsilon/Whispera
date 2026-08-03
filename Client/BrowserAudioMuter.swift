@@ -83,10 +83,10 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		return (muted, unmutable)
 	}
 
-	/// Mutes known media applications after deterministic player/browser pausing.
-	/// This is deliberately a positive allowlist: an unknown CoreAudio client may
-	/// be a call, assistive tool, alarm, or monitor and must not be silenced merely
-	/// because it has an output stream.
+	/// Mutes every remaining audible process after deterministic player/browser
+	/// pausing. CoreAudio proves each candidate is currently producing output, and
+	/// a process tap can only silence it; this is the safe catch-all that fulfills
+	/// "pause any media" without a blind play/pause command that could start audio.
 	/// Whatever the deterministic sweep paused has already
 	/// stopped feeding the hardware by now, so it excludes itself here.
 	///
@@ -107,9 +107,10 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		for process in Self.audibleProcesses() {
 			// A process whose pid we cannot read might be Whispera itself, and
 			// muting our own output would take the dictation's own feedback away.
-			guard let pid = process.pid, pid != ownPID else { continue }
-			guard Self.isKnownMediaApplication(process.bundleID) else { continue }
-			guard !excludingBrowsers || !Self.isBrowser(process.bundleID) else { continue }
+			guard Self.shouldMute(
+				bundleID: process.bundleID, pid: process.pid, ownPID: ownPID,
+				excludingBrowsers: excludingBrowsers)
+			else { continue }
 			guard !isTapped(process.objectID) else { continue }
 
 			if mute(process: process.objectID, label: process.bundleID) {
@@ -202,18 +203,6 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		}
 	}
 
-	private static let knownMediaBundleIDPrefixes = [
-		"org.mozilla.firefox", "company.thebrowser.Browser",
-		"com.operasoftware.Opera", "com.vivaldi.Vivaldi",
-		"org.videolan.vlc", "com.colliderli.iina",
-		"com.apple.podcasts", "com.apple.TV", "com.apple.QuickTimePlayerX",
-		"com.plexapp.plex", "com.spotify.client", "com.apple.Music",
-	]
-
-	static func isKnownMediaApplication(_ bundleID: String) -> Bool {
-		knownMediaBundleIDPrefixes.contains { bundleID.hasPrefix($0) } || isBrowser(bundleID)
-	}
-
 	/// Used only when the user explicitly opted browser tabs out while leaving
 	/// general media pausing on. The default path includes browsers.
 	private static let browserBundleIDPrefixes = [
@@ -224,6 +213,13 @@ final class BrowserAudioMuter: @unchecked Sendable {
 
 	private static func isBrowser(_ bundleID: String) -> Bool {
 		browserBundleIDPrefixes.contains { bundleID.hasPrefix($0) }
+	}
+
+	static func shouldMute(
+		bundleID: String, pid: pid_t?, ownPID: pid_t, excludingBrowsers: Bool
+	) -> Bool {
+		guard let pid, pid != ownPID else { return false }
+		return !excludingBrowsers || !isBrowser(bundleID)
 	}
 
 	/// One app can own several audible processes; the log wants the app once.

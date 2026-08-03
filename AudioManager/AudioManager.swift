@@ -178,6 +178,7 @@ final class AudioManager: NSObject {
 			recordingPreparationTask.cancel()
 			self.recordingPreparationTask = nil
 			isMicrophoneInitializing = false
+			isStartingCapture = false
 			MediaPlaybackCoordinator.shared.resumeAfterDictation()
 		} else {
 			currentRecordingMode = enableStreaming ? .liveTranscription : .text
@@ -322,9 +323,16 @@ extension AudioManager {
 		// Hooked here rather than in startRecording() so a denied mic permission
 		// never pauses the user's music for a recording that won't happen.
 		isMicrophoneInitializing = true
+		// The media sweep is part of capture startup. A picker selection during
+		// this bounded preflight must be persisted for replay after startup, not
+		// mistaken for an established recorder that should be restarted now.
+		isStartingCapture = true
 		recordingPreparationTask = Task { @MainActor in
 			await MediaPlaybackCoordinator.shared.pauseBeforeDictation()
-			guard !Task.isCancelled else { return }
+			guard !Task.isCancelled else {
+				isStartingCapture = false
+				return
+			}
 			recordingPreparationTask = nil
 			if currentRecordingMode == .liveTranscription {
 				startLiveTranscription()

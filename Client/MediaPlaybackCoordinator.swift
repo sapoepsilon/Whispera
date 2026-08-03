@@ -296,9 +296,9 @@ final class MediaPlaybackCoordinator {
 			announceNewlyBlocked(unmutable)
 		}
 
-		// Everything else that is still making sound — Firefox, VLC, a podcast
-		// app, or browser variant we recognize as media gets the same mute. A
-		// positive allowlist deliberately leaves unknown audio clients untouched.
+		// Everything else that is still making sound gets the same one-way mute.
+		// This covers unlisted browsers and players without ever issuing a blind
+		// playback toggle that could start an idle application.
 		//
 		// This pass still runs when browser handling is opted out: bundle ids let
 		// it skip browsers while continuing to silence known players such as VLC,
