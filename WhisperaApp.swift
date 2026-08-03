@@ -69,6 +69,14 @@ struct SettingsWithMaterial: View {
 	}
 }
 
+extension Notification.Name {
+	/// Ask the app to open Settings. Surfaces that cannot reach the AppDelegate
+	/// reliably (the pill's floating panels, where `NSApp.delegate` may be
+	/// SwiftUI's adaptor wrapper rather than our class) post this instead of
+	/// casting.
+	static let openSettingsRequested = Notification.Name("OpenSettingsRequested")
+}
+
 enum StatusMenuAction: String {
 	case settings
 	case activity
@@ -193,6 +201,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 				queue: .main
 			) { [weak self] _ in
 				self?.showOnboarding()
+			}
+
+			NotificationCenter.default.addObserver(
+				forName: .openSettingsRequested,
+				object: nil,
+				queue: .main
+			) { [weak self] _ in
+				Task { @MainActor in
+					AppLogger.shared.general.info("Settings open requested via notification")
+					self?.perform(.settings)
+				}
 			}
 
 			// Listen for activation requests from other instances
@@ -548,8 +567,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	@MainActor
 	private func settingsSceneWindow() -> NSWindow? {
 		NSApp.windows.first {
-			$0.identifier?.rawValue.hasPrefix("com_apple_SwiftUI_Settings") == true
+			AppDelegate.isSettingsSceneIdentifier($0.identifier?.rawValue)
 		}
+	}
+
+	nonisolated static func isSettingsSceneIdentifier(_ rawIdentifier: String?) -> Bool {
+		rawIdentifier?.hasPrefix("com_apple_SwiftUI_Settings") == true
 	}
 
 	@MainActor
@@ -558,6 +581,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			reveal(window)
 			return
 		}
+		AppLogger.shared.general.info("Creating retained settings window")
 		let hosting = NSHostingController(
 			rootView: SettingsWithMaterial(
 				permissionManager: permissionManager ?? PermissionManager(),
