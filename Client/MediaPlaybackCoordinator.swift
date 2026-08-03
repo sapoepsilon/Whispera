@@ -161,7 +161,9 @@ final class MediaPlaybackCoordinator {
 
 	// MARK: - Pause / resume
 
-	static func sweepTargets(players: Bool, browsers: Bool) -> [MediaTarget] {
+	// Pure function of its arguments; nonisolated so synchronous test code and
+	// off-main callers don't need a main-actor hop for what is just a filter.
+	nonisolated static func sweepTargets(players: Bool, browsers: Bool) -> [MediaTarget] {
 		MediaTarget.allCases.filter { $0.isBrowser ? browsers : players }
 	}
 
@@ -217,10 +219,14 @@ final class MediaPlaybackCoordinator {
 
 	// MARK: - Scripts
 
+	// The whole script section is nonisolated: every member is a pure string
+	// builder over immutable data, and the class's @MainActor isolation would
+	// otherwise force a hop just to assemble AppleScript source.
+
 	/// In-page JS for the pause sweep: pause only elements that are actually
 	/// playing and tag them so the resume sweep can find exactly these elements.
 	/// Single-quoted throughout so it embeds in an AppleScript string literal.
-	static let pauseTabScript =
+	nonisolated static let pauseTabScript =
 		"(function(){var n=0;var l=document.querySelectorAll('video,audio');"
 		+ "for(var i=0;i<l.length;i++){var m=l[i];"
 		+ "if(!m.paused&&!m.ended){m.pause();m.dataset.whisperaPaused='1';n++;}}"
@@ -228,7 +234,7 @@ final class MediaPlaybackCoordinator {
 
 	/// In-page JS for the resume sweep: replay only tagged elements that are
 	/// still paused, and clear the tag either way.
-	static let resumeTabScript =
+	nonisolated static let resumeTabScript =
 		"(function(){var n=0;"
 		+ "var l=document.querySelectorAll('video[data-whispera-paused],audio[data-whispera-paused]');"
 		+ "for(var i=0;i<l.length;i++){var m=l[i];delete m.dataset.whisperaPaused;"
@@ -240,7 +246,7 @@ final class MediaPlaybackCoordinator {
 	/// everything sharing its script, and only loses Brave's sweep this way.
 	/// Guarded by `is running` so a stopped app is never launched just to be
 	/// asked whether it is playing. Returns `"<paused tokens>|<blocked tokens>"`.
-	static func pauseScript(for target: MediaTarget) -> String {
+	nonisolated static func pauseScript(for target: MediaTarget) -> String {
 		"""
 		set pausedList to ""
 		set blockedList to ""
@@ -249,11 +255,11 @@ final class MediaPlaybackCoordinator {
 		"""
 	}
 
-	static func resumeScript(for target: MediaTarget) -> String {
+	nonisolated static func resumeScript(for target: MediaTarget) -> String {
 		target.isBrowser ? browserResumeFragment(target) : playerResumeFragment(target)
 	}
 
-	private static func playerPauseFragment(_ target: MediaTarget) -> String {
+	private nonisolated static func playerPauseFragment(_ target: MediaTarget) -> String {
 		"""
 		if application "\(target.rawValue)" is running then
 			tell application "\(target.rawValue)"
@@ -269,7 +275,7 @@ final class MediaPlaybackCoordinator {
 	/// A tab whose `try` fails (JavaScript from Apple Events turned off, or a
 	/// page that rejects injection) is reported as blocked and left untouched —
 	/// the failure never escalates into a blind fallback.
-	private static func browserPauseFragment(_ target: MediaTarget) -> String {
+	private nonisolated static func browserPauseFragment(_ target: MediaTarget) -> String {
 		"""
 		if application "\(target.rawValue)" is running then
 			tell application "\(target.rawValue)"
@@ -289,7 +295,7 @@ final class MediaPlaybackCoordinator {
 		"""
 	}
 
-	private static func playerResumeFragment(_ target: MediaTarget) -> String {
+	private nonisolated static func playerResumeFragment(_ target: MediaTarget) -> String {
 		"""
 		if application "\(target.rawValue)" is running then
 			tell application "\(target.rawValue)"
@@ -299,7 +305,7 @@ final class MediaPlaybackCoordinator {
 		"""
 	}
 
-	private static func browserResumeFragment(_ target: MediaTarget) -> String {
+	private nonisolated static func browserResumeFragment(_ target: MediaTarget) -> String {
 		"""
 		if application "\(target.rawValue)" is running then
 			tell application "\(target.rawValue)"
@@ -317,7 +323,7 @@ final class MediaPlaybackCoordinator {
 
 	/// Safari and the Chromium family expose the same capability under
 	/// different AppleScript commands.
-	private static func tabJS(_ target: MediaTarget, _ js: String) -> String {
+	private nonisolated static func tabJS(_ target: MediaTarget, _ js: String) -> String {
 		target == .safari ? "do JavaScript \"\(js)\" in t" : "execute t javascript \"\(js)\""
 	}
 

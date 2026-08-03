@@ -4,6 +4,16 @@ import Testing
 
 @testable import Whispera
 
+/// Raised from the @Sendable notification observer block, which can neither
+/// mutate a captured local var nor touch main-actor state. File-scoped so it
+/// does not inherit the suite's @MainActor isolation.
+private final class Flag: @unchecked Sendable {
+	private let lock = NSLock()
+	private var raised = false
+	var isRaised: Bool { lock.withLock { raised } }
+	func raise() { lock.withLock { raised = true } }
+}
+
 /// Selection/activation/heal state of AudioDeviceManager against the real
 /// CoreAudio device list. Serialized because the persisted selection lives in
 /// shared UserDefaults. Tests that would change the machine's default input
@@ -14,7 +24,7 @@ struct AudioDeviceSelectionTests {
 
 	private static let persistenceKey = "selectedAudioInputDeviceUID"
 
-	private func withRestoredSelection(_ body: (AudioDeviceManager) async throws -> Void) async rethrows {
+	private func withRestoredSelection(_ body: @MainActor (AudioDeviceManager) async throws -> Void) async rethrows {
 		let previous = UserDefaults.standard.string(forKey: Self.persistenceKey)
 		defer {
 			if let previous {
@@ -93,19 +103,19 @@ struct AudioDeviceSelectionTests {
 
 	@Test func selectionPostsDeviceChangedNotification() async {
 		await withRestoredSelection { manager in
-			var received = false
+			let received = Flag()
 			let observer = NotificationCenter.default.addObserver(
 				forName: .audioInputDeviceChanged,
 				object: nil,
 				queue: nil
 			) { _ in
-				received = true
+				received.raise()
 			}
 			defer { NotificationCenter.default.removeObserver(observer) }
 
 			manager.selectDevice(uid: AudioDeviceManager.systemDefaultUID)
 
-			#expect(received, "selectDevice posts synchronously so mirrors update on the same turn")
+			#expect(received.isRaised, "selectDevice posts synchronously so mirrors update on the same turn")
 		}
 	}
 
@@ -114,19 +124,19 @@ struct AudioDeviceSelectionTests {
 			guard !manager.availableDevices.isEmpty else { return }
 			manager.persistedDeviceUID = "stale-uid-that-never-resolves"
 
-			var received = false
+			let received = Flag()
 			let observer = NotificationCenter.default.addObserver(
 				forName: .audioInputDeviceChanged,
 				object: nil,
 				queue: nil
 			) { _ in
-				received = true
+				received.raise()
 			}
 			defer { NotificationCenter.default.removeObserver(observer) }
 
 			await manager.activateSelectedDevice()
 
-			#expect(received, "A healed selection announces itself like an explicit one")
+			#expect(received.isRaised, "A healed selection announces itself like an explicit one")
 		}
 	}
 }

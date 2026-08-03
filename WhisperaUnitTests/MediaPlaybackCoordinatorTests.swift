@@ -155,33 +155,35 @@ struct MediaPauseScriptTests {
 	}
 }
 
-@MainActor
-struct MediaPlaybackCoordinatorFlowTests {
+/// Captures scripts across the coordinator's detached tasks. File-scoped so it
+/// stays nonisolated: nested inside the @MainActor suite it would inherit that
+/// isolation, and the coordinator's @Sendable closures call it off-main.
+private final class ScriptRecorder: @unchecked Sendable {
+	private let lock = NSLock()
+	private var _scripts: [String] = []
+	private var _output: String?
+	private var _now = Date(timeIntervalSinceReferenceDate: 0)
 
-	/// Captures scripts across the coordinator's detached tasks.
-	final class ScriptRecorder: @unchecked Sendable {
-		private let lock = NSLock()
-		private var _scripts: [String] = []
-		private var _output: String?
-		private var _now = Date(timeIntervalSinceReferenceDate: 0)
+	var scripts: [String] { lock.withLock { _scripts } }
+	var output: String? {
+		get { lock.withLock { _output } }
+		set { lock.withLock { _output = newValue } }
+	}
+	var now: Date {
+		get { lock.withLock { _now } }
+		set { lock.withLock { _now = newValue } }
+	}
 
-		var scripts: [String] { lock.withLock { _scripts } }
-		var output: String? {
-			get { lock.withLock { _output } }
-			set { lock.withLock { _output = newValue } }
-		}
-		var now: Date {
-			get { lock.withLock { _now } }
-			set { lock.withLock { _now = newValue } }
-		}
-
-		func run(_ script: String) -> String? {
-			lock.withLock {
-				_scripts.append(script)
-				return _output
-			}
+	func run(_ script: String) -> String? {
+		lock.withLock {
+			_scripts.append(script)
+			return _output
 		}
 	}
+}
+
+@MainActor
+struct MediaPlaybackCoordinatorFlowTests {
 
 	private func makeCoordinator(
 		playersEnabled: Bool = true,
