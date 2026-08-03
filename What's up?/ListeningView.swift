@@ -255,18 +255,27 @@ struct ListeningView: View {
 	/// The panel's state read as a switch: flipped on while it is presented, off
 	/// while it is hidden. Driven by `layout.controlsOpen` — the same state the
 	/// panel itself follows, including the `.pillControlsDismissed` reset — so the
-	/// glyph cannot say "on" over a closed panel. Uses the id + transition swap the
-	/// device icon uses; `.contentTransition(.symbolEffect(.replace))` never fired
-	/// in this pill.
+	/// glyph cannot say "on" over a closed panel.
+	///
+	/// Both glyphs stay in the hierarchy and cross-fade. The id + transition swap
+	/// the device icon uses removes one view and inserts another, and the removal
+	/// runs slightly ahead of the insertion, so the switch visibly blinked out
+	/// before it came back. The fixed frame keeps the button's hit area and the
+	/// pill's width identical across the flip.
 	private var controlsSwitch: some View {
 		ZStack {
-			Image(systemName: layout.controlsOpen ? "lightswitch.on" : "lightswitch.off")
-				.font(.system(size: 11))
-				.id(layout.controlsOpen)
-				.transition(
-					reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+			switchGlyph("lightswitch.off", shown: !layout.controlsOpen)
+			switchGlyph("lightswitch.on", shown: layout.controlsOpen)
 		}
+		.frame(width: 14, height: 14)
 		.animation(reduceMotion ? nil : Motion.iconMorph, value: layout.controlsOpen)
+	}
+
+	private func switchGlyph(_ name: String, shown: Bool) -> some View {
+		Image(systemName: name)
+			.font(.system(size: 11))
+			.opacity(shown ? 1 : 0)
+			.scaleEffect(reduceMotion ? 1 : (shown ? 1 : 0.9))
 	}
 
 	private var pillContent: some View {
