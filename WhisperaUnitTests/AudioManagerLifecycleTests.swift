@@ -120,6 +120,38 @@ struct DeviceSwitchRouteTests {
 	}
 }
 
+/// Whether a failed device activation gets mirrored back into the selection, so
+/// the file recorder and the device the UI shows never disagree.
+struct FailedActivationHealingTests {
+
+	@Test func successfulActivationNeverHeals() {
+		#expect(
+			AudioManager.shouldHealSelectionAfterFailedActivation(
+				activated: true, activationUID: "usb-mic", persistedUID: "usb-mic") == false
+		)
+		#expect(
+			AudioManager.shouldHealSelectionAfterFailedActivation(
+				activated: true, activationUID: "usb-mic", persistedUID: "headset") == false
+		)
+	}
+
+	@Test func failedActivationHealsTheUnchangedSelection() {
+		#expect(
+			AudioManager.shouldHealSelectionAfterFailedActivation(
+				activated: false, activationUID: "usb-mic", persistedUID: "usb-mic"),
+			"The recorder follows the system default, so a selection that could not become the default has to be corrected"
+		)
+	}
+
+	@Test func failedActivationLeavesANewerSelectionAlone() {
+		#expect(
+			AudioManager.shouldHealSelectionAfterFailedActivation(
+				activated: false, activationUID: "usb-mic", persistedUID: "headset") == false,
+			"A pick made while activation was in flight is applied on its own and must survive the failure of the previous one"
+		)
+	}
+}
+
 private enum SegmentFixtureError: Error {
 	case bufferAllocationFailed
 	case missingChannelData

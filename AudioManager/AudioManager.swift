@@ -192,6 +192,20 @@ final class AudioManager: NSObject {
 		return useStreaming ? .engineRestart : .fileRecorderRestart
 	}
 
+	/// Whether a failed activation should be mirrored back into the selection. The
+	/// persisted UID moving away from the one that was activated means either the
+	/// user re-picked while activation was in flight - that newer choice is applied
+	/// separately and must not be overwritten - or activateSelectedDevice already
+	/// healed a vanished device itself.
+	nonisolated static func shouldHealSelectionAfterFailedActivation(
+		activated: Bool,
+		activationUID: String,
+		persistedUID: String
+	) -> Bool {
+		guard !activated else { return false }
+		return persistedUID == activationUID
+	}
+
 	func switchInputDevice(to uid: String) {
 		AppLogger.shared.audioManager.info(
 			"switchInputDevice(to: \(uid)) state=\(currentState) mode=\(currentRecordingMode)")
@@ -321,6 +335,32 @@ extension AudioManager {
 // MARK: - File-Based Recording
 
 extension AudioManager {
+	/// Keeps the selection mirror honest when the requested input could not be made
+	/// the system default. AVAudioRecorder captures from whatever the system default
+	/// is, so after a failed activation the recorder is on a different device than
+	/// `activeDevice` - and the pill icon - claims. Re-selecting the system default
+	/// makes `activeDevice` describe what is really being captured: when activation
+	/// failed because the persisted device vanished, activateSelectedDevice healed
+	/// the selection itself and this is an idempotent no-op; when it failed because
+	/// the CoreAudio set/verify did not take, this is what makes the UI honest.
+	/// Returns the UID the caller should treat as activated, so a startup replay does
+	/// not restart a recorder that is already on the healed input.
+	@discardableResult
+	fileprivate func healSelectionIfActivationFailed(activated: Bool, activationUID: String) -> String {
+		guard
+			Self.shouldHealSelectionAfterFailedActivation(
+				activated: activated,
+				activationUID: activationUID,
+				persistedUID: deviceManager.persistedDeviceUID
+			)
+		else { return activationUID }
+
+		AppLogger.shared.audioManager.error(
+			"Input device activation failed for \(activationUID); recording continues from the actual system default")
+		deviceManager.selectDevice(uid: AudioDeviceManager.systemDefaultUID)
+		return AudioDeviceManager.systemDefaultUID
+	}
+
 	fileprivate func startFileBasedRecording() {
 		isMicrophoneInitializing = true
 		isStartingCapture = true
@@ -328,14 +368,16 @@ extension AudioManager {
 		audioFileURL = nil
 
 		deviceActivationTask = Task {
-			let activationUID = deviceManager.persistedDeviceUID
-			await deviceManager.activateSelectedDevice()
+			var activationUID = deviceManager.persistedDeviceUID
+			let activated = await deviceManager.activateSelectedDevice()
 			guard !Task.isCancelled else {
 				isStartingCapture = false
 				isMicrophoneInitializing = false
 				MediaPlaybackCoordinator.shared.resumeAfterDictation()
 				return
 			}
+			activationUID = healSelectionIfActivationFailed(
+				activated: activated, activationUID: activationUID)
 
 			do {
 				let segmentURL = try makeRecordingSegmentURL()
@@ -372,8 +414,10 @@ extension AudioManager {
 		}
 		audioFileURL = nil
 
+		let activationUID = deviceManager.persistedDeviceUID
 		let activated = await deviceManager.activateSelectedDevice()
 		guard !Task.isCancelled else { return }
+		healSelectionIfActivationFailed(activated: activated, activationUID: activationUID)
 
 		do {
 			let segmentURL = try makeRecordingSegmentURL()
@@ -382,7 +426,7 @@ extension AudioManager {
 			audioFileURL = segmentURL
 			isMicrophoneInitializing = false
 			AppLogger.shared.audioManager.info(
-				"Restarted file recorder on new input; capturing from \(deviceManager.activeDevice?.name ?? "system default") (activated=\(activated))")
+				"Restarted file recorder; capturing from \(deviceManager.activeDevice?.name ?? "system default")")
 		} catch {
 			isMicrophoneInitializing = false
 			AppLogger.shared.audioManager.error(
