@@ -238,10 +238,7 @@ struct ListeningView: View {
 			HStack(spacing: 3) {
 				Image(systemName: "switch.2")
 					.font(.system(size: 11))
-				Image(systemName: layout.controlsOpen ? "chevron.up" : "chevron.down")
-					.font(.system(size: 8, weight: .semibold))
-					.contentTransition(.symbolEffect(.replace))
-					.animation(reduceMotion ? nil : Motion.structural, value: layout.controlsOpen)
+				controlsSwitch
 			}
 			.padding(.horizontal, 5)
 			.padding(.vertical, 3)
@@ -253,6 +250,23 @@ struct ListeningView: View {
 		}
 		.buttonStyle(.plain)
 		.help("Input device & post-dictation action — \(ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes))")
+	}
+
+	/// The panel's state read as a switch: flipped on while it is presented, off
+	/// while it is hidden. Driven by `layout.controlsOpen` — the same state the
+	/// panel itself follows, including the `.pillControlsDismissed` reset — so the
+	/// glyph cannot say "on" over a closed panel. Uses the id + transition swap the
+	/// device icon uses; `.contentTransition(.symbolEffect(.replace))` never fired
+	/// in this pill.
+	private var controlsSwitch: some View {
+		ZStack {
+			Image(systemName: layout.controlsOpen ? "lightswitch.on" : "lightswitch.off")
+				.font(.system(size: 11))
+				.id(layout.controlsOpen)
+				.transition(
+					reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+		}
+		.animation(reduceMotion ? nil : Motion.iconMorph, value: layout.controlsOpen)
 	}
 
 	private var pillContent: some View {
