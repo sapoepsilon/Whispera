@@ -192,6 +192,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				}
 			}
 
+			NotificationCenter.default.addObserver(
+				forName: .browserMediaPauseBlocked,
+				object: nil,
+				queue: .main
+			) { [weak self] notification in
+				let message =
+					notification.userInfo?[MediaPlaybackCoordinator.blockedMessageKey] as? String
+				Task { @MainActor in
+					guard let message else { return }
+					self?.toastCenter.show(message, type: .error)
+				}
+			}
+
 			// Listen for activation requests from other instances
 			DistributedNotificationCenter.default().addObserver(
 				forName: NSNotification.Name("ActivateApp"),

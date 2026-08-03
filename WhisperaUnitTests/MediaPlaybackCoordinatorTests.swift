@@ -145,13 +145,53 @@ struct MediaPauseScriptTests {
 
 	@Test func playerResumeScriptRechecksPlayerState() {
 		let script = MediaPlaybackCoordinator.resumeScript(for: .music)
-		#expect(script.contains("if player state is not playing then play"))
+		#expect(script.contains("if player state is paused then play"))
+	}
+
+	@Test func playerResumeScriptNeverStartsAStoppedPlayer() {
+		let script = MediaPlaybackCoordinator.resumeScript(for: .spotify)
+		#expect(!script.contains("is not playing"))
+		#expect(script.contains("is running"))
 	}
 
 	@Test func browserResumeScriptReplaysOnlyTaggedElements() {
 		let script = MediaPlaybackCoordinator.resumeScript(for: .edge)
 		#expect(script.contains("data-whispera-paused"))
 		#expect(!script.contains("player state"))
+	}
+}
+
+struct MediaBlockedRecoveryMessageTests {
+
+	@Test func namesEveryBlockedBrowser() {
+		let message = MediaPlaybackCoordinator.blockedRecoveryMessage(for: [.safari, .chrome, .brave])
+		#expect(message.contains("Safari"))
+		#expect(message.contains("Google Chrome"))
+		#expect(message.contains("Brave Browser"))
+	}
+
+	@Test func safariGetsTheDevelopMenuRecovery() {
+		let message = MediaPlaybackCoordinator.blockedRecoveryMessage(for: [.safari])
+		#expect(message.contains("Develop > Allow JavaScript from Apple Events"))
+		#expect(message.contains("Settings > Advanced"))
+		#expect(!message.contains("View > Developer"))
+	}
+
+	@Test(arguments: [MediaTarget.chrome, .edge, .brave])
+	func chromiumGetsTheViewDeveloperRecovery(target: MediaTarget) {
+		let message = MediaPlaybackCoordinator.blockedRecoveryMessage(for: [target])
+		#expect(message.contains("View > Developer > Allow JavaScript from Apple Events"))
+		#expect(!message.contains("Settings > Advanced"))
+	}
+
+	@Test func bothFamiliesGetTheirOwnStep() {
+		let message = MediaPlaybackCoordinator.blockedRecoveryMessage(for: [.safari, .edge])
+		#expect(message.contains("Develop > Allow JavaScript from Apple Events"))
+		#expect(message.contains("View > Developer > Allow JavaScript from Apple Events"))
+	}
+
+	@Test func noBlockedBrowsersMeansNoMessage() {
+		#expect(MediaPlaybackCoordinator.blockedRecoveryMessage(for: []).isEmpty)
 	}
 }
 
@@ -182,6 +222,17 @@ private final class ScriptRecorder: @unchecked Sendable {
 	}
 }
 
+/// Collects `.browserMediaPauseBlocked` payloads from the @Sendable observer
+/// block, which can neither mutate a captured local nor touch main-actor state.
+private final class BlockedNotificationRecorder: @unchecked Sendable {
+	private let lock = NSLock()
+	private var _payloads: [[String]] = []
+
+	var payloads: [[String]] { lock.withLock { _payloads } }
+
+	func record(_ browsers: [String]) { lock.withLock { _payloads.append(browsers) } }
+}
+
 @MainActor
 struct MediaPlaybackCoordinatorFlowTests {
 
@@ -197,6 +248,21 @@ struct MediaPlaybackCoordinatorFlowTests {
 			now: { recorder.now }
 		)
 		return (coordinator, recorder)
+	}
+
+	/// Scoped to one coordinator: suites run in parallel and other tests drive
+	/// blocked sweeps through the same default center.
+	private func observeBlocked(
+		_ coordinator: MediaPlaybackCoordinator,
+		_ posts: BlockedNotificationRecorder
+	) -> NSObjectProtocol {
+		NotificationCenter.default.addObserver(
+			forName: .browserMediaPauseBlocked,
+			object: coordinator,
+			queue: nil
+		) { notification in
+			posts.record(notification.userInfo?[MediaPlaybackCoordinator.blockedBrowsersKey] as? [String] ?? [])
+		}
 	}
 
 	private let sweepCount = MediaTarget.allCases.count
@@ -292,6 +358,76 @@ struct MediaPlaybackCoordinatorFlowTests {
 		await coordinator.flush()
 
 		#expect(recorder.scripts.isEmpty)
+	}
+
+	@Test func blockedBrowserAnnouncesItselfOnce() async {
+		let (coordinator, recorder) = makeCoordinator()
+		let posts = BlockedNotificationRecorder()
+		let observer = observeBlocked(coordinator, posts)
+		defer { NotificationCenter.default.removeObserver(observer) }
+		recorder.output = "|safari "
+
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		#expect(posts.payloads == [["Safari"]])
+
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		#expect(posts.payloads == [["Safari"]])
+	}
+
+	@Test func aBrowserBlockedLaterGetsItsOwnAnnouncement() async {
+		let (coordinator, recorder) = makeCoordinator()
+		let posts = BlockedNotificationRecorder()
+		let observer = observeBlocked(coordinator, posts)
+		defer { NotificationCenter.default.removeObserver(observer) }
+
+		recorder.output = "|safari "
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		recorder.output = "|chrome "
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		#expect(posts.payloads == [["Safari"], ["Google Chrome"]])
+	}
+
+	@Test func nothingBlockedAnnouncesNothing() async {
+		let (coordinator, recorder) = makeCoordinator()
+		let posts = BlockedNotificationRecorder()
+		let observer = observeBlocked(coordinator, posts)
+		defer { NotificationCenter.default.removeObserver(observer) }
+		recorder.output = "music |"
+
+		coordinator.pauseForDictation()
+		coordinator.resumeAfterDictation()
+		await coordinator.flush()
+
+		#expect(posts.payloads.isEmpty)
+	}
+
+	@Test func blockedAnnouncementCarriesTheRecoveryMessage() async {
+		let (coordinator, recorder) = makeCoordinator()
+		let messages = BlockedNotificationRecorder()
+		let observer = NotificationCenter.default.addObserver(
+			forName: .browserMediaPauseBlocked,
+			object: coordinator,
+			queue: nil
+		) { notification in
+			messages.record([notification.userInfo?[MediaPlaybackCoordinator.blockedMessageKey] as? String ?? ""])
+		}
+		defer { NotificationCenter.default.removeObserver(observer) }
+		recorder.output = "|safari "
+
+		coordinator.pauseForDictation()
+		await coordinator.flush()
+
+		#expect(
+			messages.payloads.first?.first
+				== MediaPlaybackCoordinator.blockedRecoveryMessage(for: [.safari]))
 	}
 
 	@Test func browsersOnlyModeSweepsOnlyBrowsers() async {

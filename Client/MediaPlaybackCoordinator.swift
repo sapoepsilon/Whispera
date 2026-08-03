@@ -22,6 +22,12 @@ extension WhisperaSettings {
 	}
 }
 
+extension Notification.Name {
+	/// A browser refused the tab pause script. Carries a ready-made recovery
+	/// message so the UI layer never has to know about AppleScript.
+	static let browserMediaPauseBlocked = Notification.Name("BrowserMediaPauseBlocked")
+}
+
 /// A media source Whispera can pause deterministically — by reading real player
 /// state, never by guessing. Raw value is the AppleScript application name.
 enum MediaTarget: String, CaseIterable, Sendable {
@@ -107,7 +113,16 @@ struct MediaPauseSession: Equatable, Sendable {
 final class MediaPlaybackCoordinator {
 	static let shared = MediaPlaybackCoordinator()
 
+	/// Keys of the `.browserMediaPauseBlocked` userInfo payload. Plain String and
+	/// [String] values only — the payload crosses NotificationCenter.
+	nonisolated static let blockedMessageKey = "recoveryMessage"
+	nonisolated static let blockedBrowsersKey = "blockedBrowsers"
+
 	private var session: MediaPauseSession?
+	/// One recovery notification per browser per app run: the permission is a
+	/// manual, persistent setting, so repeating the nudge every dictation would
+	/// be noise.
+	private var notifiedBlockedTargets: Set<MediaTarget> = []
 	/// Serializes pause/resume so a resume can never overtake its own pause.
 	private var work: Task<Void, Never>?
 
@@ -181,9 +196,15 @@ final class MediaPlaybackCoordinator {
 			if sub.blocked.contains(target) { scan.blocked.append(target) }
 		}
 
+		// A blocked browser is left exactly as it was. Without in-page JavaScript
+		// there is no way to establish that a tab was playing, and every
+		// permission-free fallback (media key, play command) can just as easily
+		// START playback the user never began — so the only safe response is to
+		// tell them how to grant the permission.
 		if !scan.blocked.isEmpty {
 			AppLogger.shared.audioManager.info(
 				"Browsers refused tab scripting — enable \"Allow JavaScript from Apple Events\": \(scan.blocked.map(\.rawValue).joined(separator: ", "))")
+			announceNewlyBlocked(scan.blocked)
 		}
 
 		session = MediaPauseSession.started(from: scan, at: now())
@@ -191,6 +212,40 @@ final class MediaPlaybackCoordinator {
 			AppLogger.shared.audioManager.info(
 				"Paused media for dictation: \(session.targets.map(\.rawValue).joined(separator: ", "))")
 		}
+	}
+
+	// Posted with `object: self` so observers can scope to one coordinator.
+	private func announceNewlyBlocked(_ blocked: [MediaTarget]) {
+		let fresh = blocked.filter { !notifiedBlockedTargets.contains($0) }
+		guard !fresh.isEmpty else { return }
+		notifiedBlockedTargets.formUnion(fresh)
+
+		let userInfo: [AnyHashable: Any] = [
+			Self.blockedMessageKey: Self.blockedRecoveryMessage(for: fresh),
+			Self.blockedBrowsersKey: fresh.map(\.rawValue),
+		]
+		NotificationCenter.default.post(
+			name: .browserMediaPauseBlocked, object: self, userInfo: userInfo)
+	}
+
+	/// Names the browsers that refused and the exact menu path that fixes them.
+	nonisolated static func blockedRecoveryMessage(for targets: [MediaTarget]) -> String {
+		guard !targets.isEmpty else { return "" }
+		let names = targets.map(\.rawValue).joined(separator: ", ")
+		let opening = "Whispera could not pause media in \(names) because JavaScript from Apple Events is turned off."
+
+		var steps: [String] = []
+		if targets.contains(.safari) {
+			steps.append(
+				"in Safari turn on the Develop menu in Settings > Advanced, then enable Develop > Allow JavaScript from Apple Events")
+		}
+		let chromium = targets.filter { $0.isBrowser && $0 != .safari }
+		if !chromium.isEmpty {
+			steps.append(
+				"in \(chromium.map(\.rawValue).joined(separator: ", ")) enable View > Developer > Allow JavaScript from Apple Events")
+		}
+		guard !steps.isEmpty else { return opening }
+		return opening + " To fix it, " + steps.joined(separator: "; ") + "."
 	}
 
 	private func performResume() async {
@@ -295,11 +350,14 @@ final class MediaPlaybackCoordinator {
 		"""
 	}
 
+	/// Only `paused` resumes: a stopped player is either one the user deliberately
+	/// stopped mid-dictation or a fresh launch, and `is not playing` would start
+	/// both of them.
 	private nonisolated static func playerResumeFragment(_ target: MediaTarget) -> String {
 		"""
 		if application "\(target.rawValue)" is running then
 			tell application "\(target.rawValue)"
-				if player state is not playing then play
+				if player state is paused then play
 			end tell
 		end if
 		"""
