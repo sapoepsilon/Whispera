@@ -82,9 +82,11 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		return (muted, unmutable)
 	}
 
-	/// Mutes everything else that is still audible — apps we cannot address by
-	/// name at all: Firefox, VLC, IINA, Podcasts, a browser variant we have no
-	/// dictionary for. Whatever the deterministic sweep paused has already
+	/// Mutes known media players that are still audible — Firefox, VLC, IINA,
+	/// Podcasts, and browser variants we have no AppleScript dictionary for.
+	/// Communication, alerting, and arbitrary audio-producing apps are excluded:
+	/// dictation must never silence a call merely because it has an output stream.
+	/// Whatever the deterministic sweep paused has already
 	/// stopped feeding the hardware by now, so it excludes itself here.
 	///
 	/// - Returns: bundle ids, for logging only. There is no recovery to offer for
@@ -105,7 +107,7 @@ final class BrowserAudioMuter: @unchecked Sendable {
 			// A process whose pid we cannot read might be Whispera itself, and
 			// muting our own output would take the dictation's own feedback away.
 			guard let pid = process.pid, pid != ownPID else { continue }
-			guard !Self.isProtectedFromMuting(process.bundleID) else { continue }
+			guard Self.isKnownMediaApplication(process.bundleID) else { continue }
 			guard !excludingBrowsers || !Self.isBrowser(process.bundleID) else { continue }
 			guard !isTapped(process.objectID) else { continue }
 
@@ -199,18 +201,20 @@ final class BrowserAudioMuter: @unchecked Sendable {
 		}
 	}
 
-	/// Off limits to the general pass: the audio plumbing itself, and anything
-	/// that speaks to the user. Silencing a screen reader for the length of a
-	/// dictation would take away the very feedback the user runs it by.
-	private static let protectedBundleIDPrefixes = [
-		"com.apple.audio",
-		"com.apple.speech",
-		"com.apple.VoiceOver",
-		"com.apple.accessibility",
+	/// Positive allowlist for the general pass. This is intentionally narrower
+	/// than "every CoreAudio client": conferencing, screen readers, alarms, and
+	/// notification processes must keep speaking during dictation.
+	private static let knownMediaBundleIDPrefixes = [
+		"org.mozilla.firefox", "company.thebrowser.Browser",
+		"com.operasoftware.Opera", "com.vivaldi.Vivaldi",
+		"org.videolan.vlc", "com.colliderli.iina",
+		"com.apple.podcasts", "com.apple.TV", "com.apple.QuickTimePlayerX",
+		"com.plexapp.plex", "com.spotify.client", "com.apple.Music",
 	]
 
-	private static func isProtectedFromMuting(_ bundleID: String) -> Bool {
-		protectedBundleIDPrefixes.contains { bundleID.hasPrefix($0) }
+	private static func isKnownMediaApplication(_ bundleID: String) -> Bool {
+		knownMediaBundleIDPrefixes.contains { bundleID.hasPrefix($0) }
+			|| isBrowser(bundleID)
 	}
 
 	/// Used only when the user explicitly opted browser tabs out while leaving

@@ -152,7 +152,10 @@ final class AudioDeviceManager {
 			AppLogger.shared.deviceManager.info("activateSelectedDevice: device \(persistedDeviceUID) no longer available, falling back to system default")
 			healStalePersistedSelection()
 			restoreSystemDefault()
-			return false
+			// The requested device vanished, but healing established the selection's
+			// new contract (system default) successfully. Callers must not heal a
+			// second time or report a failed capture when the fallback is usable.
+			return persistedDeviceUID == AudioDeviceManager.systemDefaultUID
 		}
 
 		let currentDefault = getSystemDefaultInputDeviceID()
