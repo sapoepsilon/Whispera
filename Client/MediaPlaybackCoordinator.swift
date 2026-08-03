@@ -57,6 +57,19 @@ enum MediaTarget: String, CaseIterable, Sendable {
 		case .safari, .chrome, .edge, .brave: return true
 		}
 	}
+
+	/// What the user calls it. The raw value is the process name, which reads like
+	/// a product listing mid-sentence ("in Brave Browser and Google Chrome").
+	var displayName: String {
+		switch self {
+		case .music: return "Music"
+		case .spotify: return "Spotify"
+		case .safari: return "Safari"
+		case .chrome: return "Chrome"
+		case .edge: return "Edge"
+		case .brave: return "Brave"
+		}
+	}
 }
 
 /// What one pause sweep established: targets that were verifiably playing and
@@ -318,21 +331,35 @@ final class MediaPlaybackCoordinator {
 		return opening + " To fix it, " + steps.joined(separator: "; ") + "."
 	}
 
-	/// The same fact in one line: what stayed audible and the single switch that
-	/// fixes it. Safari and the Chromium family file that switch under different
-	/// menus, so a mixed sweep names the setting without pretending to one path.
+	/// The HUD variant. Leads with what the permission buys the user and only then
+	/// asks for it — an instruction on its own reads as a demand out of nowhere,
+	/// since nobody asked Whispera to touch their browser. Safari and the Chromium
+	/// family file the switch under different menus, so a mixed sweep spells out
+	/// both paths rather than generalising to "the developer menu".
 	nonisolated static func blockedToastMessage(for targets: [MediaTarget]) -> String {
-		guard !targets.isEmpty else { return "" }
-		let names = targets.map(\.rawValue).joined(separator: ", ")
-		let hasSafari = targets.contains(.safari)
-		let hasChromium = targets.contains { $0.isBrowser && $0 != .safari }
-		let path: String
-		switch (hasSafari, hasChromium) {
-		case (true, false): path = "Develop > Allow JavaScript from Apple Events"
-		case (false, true): path = "View > Developer > Allow JavaScript from Apple Events"
-		default: path = "Allow JavaScript from Apple Events in each browser's developer menu"
+		let browsers = targets.filter(\.isBrowser)
+		guard !browsers.isEmpty else { return "" }
+
+		var steps: [String] = []
+		if browsers.contains(.safari) {
+			steps.append("in Safari, enable Develop > Allow JavaScript from Apple Events")
 		}
-		return "Couldn't pause \(names): enable \(path)"
+		let chromium = browsers.filter { $0 != .safari }
+		if !chromium.isEmpty {
+			steps.append(
+				"in \(naturalList(chromium.map(\.displayName))), enable View > Developer > Allow JavaScript from Apple Events"
+			)
+		}
+		return
+			"To pause and resume your browser's video while you dictate, Whispera needs permission: "
+			+ steps.joined(separator: "; ") + "."
+	}
+
+	/// "Brave", "Brave and Chrome", "Chrome, Edge and Brave".
+	private nonisolated static func naturalList(_ items: [String]) -> String {
+		guard let last = items.last else { return "" }
+		guard items.count > 1 else { return last }
+		return items.dropLast().joined(separator: ", ") + " and " + last
 	}
 
 	private func performResume() async {
