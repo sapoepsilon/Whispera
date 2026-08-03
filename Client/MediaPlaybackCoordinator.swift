@@ -145,6 +145,9 @@ final class MediaPlaybackCoordinator {
 	/// [String] values only — the payload crosses NotificationCenter.
 	nonisolated static let blockedMessageKey = "recoveryMessage"
 	nonisolated static let blockedBrowsersKey = "blockedBrowsers"
+	/// The one-line variant, for surfaces that get a couple of seconds and two
+	/// lines rather than an alert.
+	nonisolated static let blockedToastKey = "toastMessage"
 
 	private var session: MediaPauseSession?
 	/// One recovery notification per browser per app run: the permission is a
@@ -285,6 +288,7 @@ final class MediaPlaybackCoordinator {
 
 		let userInfo: [AnyHashable: Any] = [
 			Self.blockedMessageKey: Self.blockedRecoveryMessage(for: fresh),
+			Self.blockedToastKey: Self.blockedToastMessage(for: fresh),
 			Self.blockedBrowsersKey: fresh.map(\.rawValue),
 		]
 		NotificationCenter.default.post(
@@ -312,6 +316,23 @@ final class MediaPlaybackCoordinator {
 		steps.append(
 			"and allow Whispera to control them under System Settings > Privacy & Security > Automation")
 		return opening + " To fix it, " + steps.joined(separator: "; ") + "."
+	}
+
+	/// The same fact in one line: what stayed audible and the single switch that
+	/// fixes it. Safari and the Chromium family file that switch under different
+	/// menus, so a mixed sweep names the setting without pretending to one path.
+	nonisolated static func blockedToastMessage(for targets: [MediaTarget]) -> String {
+		guard !targets.isEmpty else { return "" }
+		let names = targets.map(\.rawValue).joined(separator: ", ")
+		let hasSafari = targets.contains(.safari)
+		let hasChromium = targets.contains { $0.isBrowser && $0 != .safari }
+		let path: String
+		switch (hasSafari, hasChromium) {
+		case (true, false): path = "Develop > Allow JavaScript from Apple Events"
+		case (false, true): path = "View > Developer > Allow JavaScript from Apple Events"
+		default: path = "Allow JavaScript from Apple Events in each browser's developer menu"
+		}
+		return "Couldn't pause \(names): enable \(path)"
 	}
 
 	private func performResume() async {

@@ -4,6 +4,21 @@
 import Foundation
 import SwiftUI
 
+/// Unregisters its observer when it is released. An actor-isolated class cannot
+/// read its own stored properties from `deinit`, so the teardown lives in an
+/// object whose lifetime already matches the observer's.
+private final class ObserverToken {
+	private let token: NSObjectProtocol
+
+	init(_ token: NSObjectProtocol) {
+		self.token = token
+	}
+
+	deinit {
+		NotificationCenter.default.removeObserver(token)
+	}
+}
+
 /// Glue between transcription and the recipe engine. Given transcribed text, it
 /// runs the matching recipe (if any) and returns what should be pasted. With no
 /// match, the raw transcription is returned unchanged. See WHI-41.
@@ -22,13 +37,21 @@ final class DictationCoordinator {
 	private let store: RecipeStore
 	private let run: (Recipe, String) async throws -> String
 	private let errorDisplaySeconds: Double
+	private let noticeDisplaySeconds: Double
 	private let defaultCommandId: () -> String
 	private var currentTask: Task<String?, Never>?
 	private var clearErrorTask: Task<Void, Never>?
+	/// A browser Whispera could not pause, held until the dictation that hit it is
+	/// over: the recovery step is useless mid-recording and the HUD is busy showing
+	/// words. Stays pending until it is actually displayed, so a dictation that
+	/// ends on a real error doesn't consume the one notification we get per browser.
+	private var pendingMediaNotice: String?
+	private var blockedMediaObserver: ObserverToken?
 
 	init(
 		store: RecipeStore = .shared,
 		errorDisplaySeconds: Double = 3,
+		noticeDisplaySeconds: Double = 6,
 		defaultCommandId: @escaping () -> String = { WhisperaSettings.defaultCommandId },
 		run: @escaping (Recipe, String) async throws -> String = { recipe, input in
 			try await RecipeRouter.shared.run(recipe: recipe, input: input)
@@ -36,8 +59,27 @@ final class DictationCoordinator {
 	) {
 		self.store = store
 		self.errorDisplaySeconds = errorDisplaySeconds
+		self.noticeDisplaySeconds = noticeDisplaySeconds
 		self.defaultCommandId = defaultCommandId
 		self.run = run
+		observeBlockedMedia()
+	}
+
+	/// MediaPlaybackCoordinator only posts once per browser per app run, so this
+	/// is the whole throttle: the pill can never nag on every dictation.
+	private func observeBlockedMedia() {
+		let token = NotificationCenter.default.addObserver(
+			forName: .browserMediaPauseBlocked,
+			object: nil,
+			queue: .main
+		) { [weak self] notification in
+			let message = notification.userInfo?[MediaPlaybackCoordinator.blockedToastKey] as? String
+			Task { @MainActor in
+				guard let message, !message.isEmpty else { return }
+				self?.pendingMediaNotice = message
+			}
+		}
+		blockedMediaObserver = ObserverToken(token)
 	}
 
 	/// The configured default command, if it still exists in the store. Runs on
@@ -51,6 +93,10 @@ final class DictationCoordinator {
 	/// Returns the text to paste, or `nil` if nothing should be pasted (recipe
 	/// produced an empty result). A new call cancels any in-flight recipe.
 	func process(_ transcription: String) async -> String? {
+		// Runs after every other exit path, including the empty-dictation and
+		// no-recipe returns: the pause failure belongs to the recording that just
+		// ended, not to whatever the recipe engine did or didn't do.
+		defer { flushBlockedMediaNotice() }
 		currentTask?.cancel()
 
 		// Empty/whitespace dictation: do nothing — never spend a model call.
@@ -113,9 +159,23 @@ final class DictationCoordinator {
 	/// Sets `lastError` and a self-clearing `overlayError` for the HUD.
 	private func flashError(_ message: String) {
 		lastError = message
+		flash(message, seconds: errorDisplaySeconds)
+	}
+
+	/// Shows the held "could not pause this browser" line now that the HUD is
+	/// free. A recipe error owns the overlay, so the notice waits for a quieter
+	/// dictation instead of replacing it.
+	private func flushBlockedMediaNotice() {
+		guard let message = pendingMediaNotice, overlayError == nil else { return }
+		pendingMediaNotice = nil
+		AppLogger.shared.audioManager.info("Surfacing the blocked browser pause notice in the dictation HUD")
+		flash(message, seconds: noticeDisplaySeconds)
+	}
+
+	/// Puts a message in the HUD overlay and takes it away again.
+	private func flash(_ message: String, seconds: Double) {
 		overlayError = message
 		clearErrorTask?.cancel()
-		let seconds = errorDisplaySeconds
 		clearErrorTask = Task { [weak self] in
 			try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
 			guard !Task.isCancelled else { return }
