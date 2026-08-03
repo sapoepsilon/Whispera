@@ -133,20 +133,44 @@ private struct PillPageHeights: PreferenceKey {
 	}
 }
 
+/// Fixed geometry of the controls panel. The width never changes, so the panel's
+/// target size is fully determined by the measured height of the current page -
+/// no per-frame chase needed to size the window that hosts it.
+private enum PillControlsMetrics {
+	static let width: CGFloat = 250
+	static let padding: CGFloat = 8
+
+	// Content reveal as the panel unrolls: each row rises a few points and fades
+	// in, lightly staggered. Capped so a long device list still finishes with the
+	// frame instead of dealing itself out row by row.
+	static let revealRise: CGFloat = 6
+	static let revealStagger: Double = 0.035
+	static let revealStaggerCap: Double = 0.14
+
+	static func revealDelay(for index: Int) -> Double {
+		min(Double(index) * revealStagger, revealStaggerCap)
+	}
+
+	static func size(forPageHeight height: CGFloat) -> CGSize {
+		CGSize(width: width + padding * 2, height: height + padding * 2)
+	}
+}
+
 /// Control-Center-style dropdown: a root list (Input Device / Post-dictation
 /// Action) that drills into each option list with a back button + slide
 /// transitions, then returns to root on select. See WHI-50.
 struct PillControlsView: View {
 	let audioManager: AudioManager
-	/// Reports the panel's *live* (animating) size so the hosting window can
-	/// follow it smoothly instead of snapping to the ideal size. WHI-50.
-	var onSize: ((CGSize) -> Void)? = nil
+	/// Reports the panel's *target* size - the size it is animating towards, not
+	/// its live per-frame size - so the hosting window animates alongside the
+	/// SwiftUI height change on the same curve instead of chasing it. WHI-50.
+	var presenter: PillSizePresenter? = nil
 	@State private var deviceManager = AudioDeviceManager.shared
 	@State private var recipeStore = RecipeStore.shared
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
 	@AppStorage("whisperaDefaultCommandId") private var defaultCommandId = ""
 	@State private var page: PillPage = .root
-	@State private var forward = true
 	@State private var heights: [PillPage: CGFloat] = [:]
 
 	private let selectedBlue = Color(nsColor: NSColor(red: 0.45, green: 0.72, blue: 1.0, alpha: 1.0))
@@ -155,25 +179,34 @@ struct PillControlsView: View {
 	private let dividerGray = Color(nsColor: NSColor(red: 0.25, green: 0.25, blue: 0.28, alpha: 1.0))
 	private let selectedFill = Color(nsColor: NSColor(red: 0.2, green: 0.45, blue: 0.9, alpha: 0.25))
 
-	// Grow/shrink + slide between pages. Tune here: lower `response` = faster,
-	// higher = slower; lower `dampingFraction` = more bounce.
-	private let pageAnimation: Animation = .spring(response: 0.42, dampingFraction: 0.78)
+	// Grow/shrink + slide between pages. The window that hosts this panel animates
+	// its frame on the same constant, so the two stay in lockstep.
+	private var pageAnimation: Animation? {
+		reduceMotion ? nil : Motion.structural
+	}
 
 	private func go(_ destination: PillPage) {
-		forward = true
 		withAnimation(pageAnimation) { page = destination }
 	}
 
 	private func back() {
-		forward = false
 		withAnimation(pageAnimation) { page = .root }
 	}
 
+	// Pages replace in place: the outgoing one fades out and the incoming one's
+	// rows stagger in, while the panel height glides. No horizontal travel.
 	private var pageTransition: AnyTransition {
-		.asymmetric(
-			insertion: .move(edge: forward ? .trailing : .leading),
-			removal: .move(edge: forward ? .leading : .trailing)
-		)
+		reduceMotion ? .identity : .asymmetric(insertion: .identity, removal: .opacity)
+	}
+
+	/// The size the panel is heading for. Every page is measured up-front, so this
+	/// is known on the same runloop turn the page changes - which is what lets the
+	/// window animate to it instead of following the animation frame by frame.
+	/// `nil` until the current page has actually been measured, so the window is
+	/// never sized from a placeholder height.
+	private var targetSize: CGSize? {
+		guard let height = heights[page], height > 1 else { return nil }
+		return PillControlsMetrics.size(forPageHeight: height)
 	}
 
 	private var currentDevice: AudioInputDevice? {
@@ -196,16 +229,32 @@ struct PillControlsView: View {
 	}
 
 	var body: some View {
+		// Pinned to the bottom of its window, which sits on the pill's top edge.
+		// The panel takes its final layout immediately and the window's animated
+		// frame growth is what reveals it, expanding upward out of the pill - the
+		// window frame is the clip. Same pattern as the menu bar result glance.
+		panel
+			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+			.onAppear {
+				if let targetSize { presenter?.setMeasured(targetSize) }
+			}
+			.onChange(of: targetSize) { _, newValue in
+				guard let newValue else { return }
+				presenter?.setMeasured(newValue)
+			}
+	}
+
+	private var panel: some View {
 		ZStack(alignment: .top) {
 			pageView(page)
 				.id(page)
 				.transition(pageTransition)
 		}
-		.frame(width: 250, height: heights[page], alignment: .top)
+		.frame(width: PillControlsMetrics.width, height: heights[page], alignment: .top)
 		.clipped()
 		.background(measurementLayer)
 		.onPreferenceChange(PillPageHeights.self) { heights = $0 }
-		.padding(8)
+		.padding(PillControlsMetrics.padding)
 		.background(
 			RoundedRectangle(cornerRadius: 12)
 				.fill(Color(nsColor: NSColor(red: 0.15, green: 0.15, blue: 0.17, alpha: 0.95)))
@@ -215,13 +264,11 @@ struct PillControlsView: View {
 				)
 		)
 		.shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
-		.background(
-			GeometryReader { proxy in
-				Color.clear
-					.onAppear { onSize?(proxy.size) }
-					.onChange(of: proxy.size) { onSize?($1) }
-			}
-		)
+	}
+
+	/// Wraps a row so it rises and fades in behind the panel's growing frame.
+	private func revealRow(_ index: Int, @ViewBuilder _ content: () -> some View) -> some View {
+		RevealRow(index: index, reduceMotion: reduceMotion, content: content())
 	}
 
 	@ViewBuilder private func pageView(_ target: PillPage) -> some View {
@@ -258,29 +305,37 @@ struct PillControlsView: View {
 
 	private var rootPage: some View {
 		VStack(alignment: .leading, spacing: 4) {
-			header(icon: "switch.2", title: "Controls", showBack: false)
+			revealRow(0) { header(icon: "switch.2", title: "Controls", showBack: false) }
 			Rectangle().fill(dividerGray).frame(height: 1)
-			moduleRow(
-				icon: currentDevice?.iconName ?? "mic.fill",
-				title: "Input Device",
-				subtitle: currentDevice?.name ?? "System Default"
-			) { go(.input) }
-			moduleRow(icon: "list.clipboard", title: "Post-dictation Action", subtitle: currentActionName) { go(.action) }
+			revealRow(1) {
+				moduleRow(
+					icon: currentDevice?.iconName ?? "mic.fill",
+					title: "Input Device",
+					subtitle: currentDevice?.name ?? "System Default"
+				) { go(.input) }
+			}
+			revealRow(2) {
+				moduleRow(icon: "list.clipboard", title: "Post-dictation Action", subtitle: currentActionName) { go(.action) }
+			}
 		}
 	}
 
 	private var inputPage: some View {
 		VStack(alignment: .leading, spacing: 2) {
-			header(icon: "mic.fill", title: "Input Device", showBack: true)
+			revealRow(0) { header(icon: "mic.fill", title: "Input Device", showBack: true) }
 			Rectangle().fill(dividerGray).frame(height: 1)
-			optionRow(icon: "mic.fill", title: "System Default", selected: selectedUID == AudioDeviceManager.systemDefaultUID) {
-				back()
-				Task { await audioManager.switchInputDevice(to: AudioDeviceManager.systemDefaultUID) }
-			}
-			ForEach(deviceManager.availableDevices) { device in
-				optionRow(icon: device.iconName, title: device.name, selected: isDeviceSelected(device)) {
+			revealRow(1) {
+				optionRow(icon: "mic.fill", title: "System Default", selected: selectedUID == AudioDeviceManager.systemDefaultUID) {
 					back()
-					Task { await audioManager.switchInputDevice(to: device.uid) }
+					Task { await audioManager.switchInputDevice(to: AudioDeviceManager.systemDefaultUID) }
+				}
+			}
+			ForEach(Array(deviceManager.availableDevices.enumerated()), id: \.element.id) { index, device in
+				revealRow(index + 2) {
+					optionRow(icon: device.iconName, title: device.name, selected: isDeviceSelected(device)) {
+						back()
+						Task { await audioManager.switchInputDevice(to: device.uid) }
+					}
 				}
 			}
 		}
@@ -288,22 +343,69 @@ struct PillControlsView: View {
 
 	private var actionPage: some View {
 		VStack(alignment: .leading, spacing: 2) {
-			header(icon: "list.clipboard", title: "Post-dictation Action", showBack: true)
+			revealRow(0) { header(icon: "list.clipboard", title: "Post-dictation Action", showBack: true) }
 			Rectangle().fill(dividerGray).frame(height: 1)
-			noneRow(selected: defaultCommandId.isEmpty) {
-				defaultCommandId = ""
-				back()
+			revealRow(1) {
+				noneRow(selected: defaultCommandId.isEmpty) {
+					defaultCommandId = ""
+					back()
+				}
 			}
 			if !recipeStore.recipes.isEmpty {
 				Rectangle().fill(dividerGray.opacity(0.5)).frame(height: 1).padding(.vertical, 2)
 			}
-			ForEach(recipeStore.recipes) { recipe in
-				optionRow(icon: "list.clipboard", title: recipe.name.isEmpty ? "Untitled" : recipe.name, selected: defaultCommandId == recipe.id) {
-					defaultCommandId = recipe.id
-					back()
+			ForEach(Array(recipeStore.recipes.enumerated()), id: \.element.id) { index, recipe in
+				revealRow(index + 2) {
+					optionRow(icon: "list.clipboard", title: recipe.name.isEmpty ? "Untitled" : recipe.name, selected: defaultCommandId == recipe.id) {
+						defaultCommandId = recipe.id
+						back()
+					}
 				}
 			}
+			Rectangle().fill(dividerGray.opacity(0.5)).frame(height: 1).padding(.vertical, 2)
+			revealRow(recipeStore.recipes.count + 2) {
+				addYourOwnRow { openCommandSettings() }
+			}
 		}
+	}
+
+	/// Opens Settings through the same AppDelegate command handler the menu bar
+	/// uses, so both surfaces get the identical two-tier open (native Settings
+	/// scene, retained-window fallback). The panel dismisses first so it is not
+	/// left floating over the window that just came forward.
+	///
+	/// The app runs as an accessory and this panel is a borderless floating window
+	/// that never becomes key, so the app can still be inactive when the tap
+	/// lands; `openSettings()` silently no-ops in that state. Promoting the
+	/// activation policy and activating first is what the status-item path gets
+	/// for free by virtue of the menu bar having activated the app already.
+	private func openCommandSettings() {
+		NotificationCenter.default.post(name: .pillControlsDismissed, object: nil)
+
+		guard let delegate = NSApp.delegate as? AppDelegate else {
+			AppLogger.shared.general.error(
+				"Pill controls: could not reach AppDelegate to open Settings")
+			return
+		}
+
+		NSApp.setActivationPolicy(.regular)
+		NSApp.activate(ignoringOtherApps: true)
+		delegate.perform(StatusMenuAction.settings)
+	}
+
+	private func addYourOwnRow(tap: @escaping () -> Void) -> some View {
+		Button(action: tap) {
+			HStack(spacing: 8) {
+				Image(systemName: "plus.circle").font(.system(size: 12)).frame(width: 20).foregroundColor(selectedBlue)
+				Text("Add your own…").font(.system(size: 13, design: .rounded)).foregroundColor(selectedBlue)
+				Spacer()
+			}
+			.padding(.horizontal, 8)
+			.padding(.vertical, 5)
+			.contentShape(Rectangle())
+		}
+		.buttonStyle(.plain)
+		.help("Create a post-dictation action in Settings > Recipes")
 	}
 
 	private func header(icon: String, title: String, showBack: Bool) -> some View {
@@ -376,5 +478,30 @@ struct PillControlsView: View {
 			.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain)
+	}
+}
+
+/// A row that reveals itself as it appears. Self-driven rather than keyed off a
+/// shared flag: a page flip rebuilds these rows, so the stagger re-runs for the
+/// incoming page with no state to reset.
+private struct RevealRow<Content: View>: View {
+	let index: Int
+	let reduceMotion: Bool
+	let content: Content
+	@State private var shown = false
+
+	var body: some View {
+		content
+			.opacity(shown ? 1 : 0)
+			.offset(y: shown ? 0 : PillControlsMetrics.revealRise)
+			.onAppear {
+				withAnimation(
+					reduceMotion
+						? nil
+						: Motion.reveal.delay(PillControlsMetrics.revealDelay(for: index))
+				) {
+					shown = true
+				}
+			}
 	}
 }
