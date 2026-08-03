@@ -102,35 +102,6 @@ struct MediaSweepTargetTests {
 	}
 }
 
-struct RemainingAudioSafetyTests {
-
-	@Test func everyExternalAudibleProcessIsEligibleForSafeMuting() {
-		for bundleID in [
-			"us.zoom.xos", "com.microsoft.teams2", "com.apple.FaceTime",
-			"com.apple.VoiceOver", "com.apple.notificationcenterui",
-		] {
-			#expect(
-				BrowserAudioMuter.shouldMute(
-					bundleID: bundleID, pid: 42, ownPID: 7, excludingBrowsers: false))
-		}
-	}
-
-	@Test func ownAndUnidentifiedProcessesAreNeverMuted() {
-		#expect(!BrowserAudioMuter.shouldMute(
-			bundleID: "com.whispera", pid: 7, ownPID: 7, excludingBrowsers: false))
-		#expect(!BrowserAudioMuter.shouldMute(
-			bundleID: "unknown", pid: nil, ownPID: 7, excludingBrowsers: false))
-	}
-
-	@Test func browserOptOutOnlyExcludesBrowsers() {
-		#expect(!BrowserAudioMuter.shouldMute(
-			bundleID: "com.google.Chrome.helper", pid: 42, ownPID: 7, excludingBrowsers: true))
-		#expect(BrowserAudioMuter.shouldMute(
-			bundleID: "org.example.player", pid: 42, ownPID: 7, excludingBrowsers: true))
-	}
-
-}
-
 struct MediaPauseScriptTests {
 
 	@Test(arguments: MediaTarget.allCases)
@@ -294,50 +265,6 @@ private final class ScriptRecorder: @unchecked Sendable {
 	}
 }
 
-/// Stands in for the CoreAudio muter. By default it silences nothing, so every
-/// target handed to it comes back as audible-but-unmutable — the behaviour of a
-/// machine that cannot tap at all.
-private final class MuteRecorder: @unchecked Sendable {
-	private let lock = NSLock()
-	private var _muteCalls: [[MediaTarget]] = []
-	private var _remainingCalls = 0
-	private var _remainingExclusions: [Bool] = []
-	private var _unmuteCalls = 0
-	private var _mutable: Set<MediaTarget> = []
-	private var _remaining: ([String], [String]) = ([], [])
-
-	var muteCalls: [[MediaTarget]] { lock.withLock { _muteCalls } }
-	var remainingCalls: Int { lock.withLock { _remainingCalls } }
-	var remainingExclusions: [Bool] { lock.withLock { _remainingExclusions } }
-	var unmuteCalls: Int { lock.withLock { _unmuteCalls } }
-
-	func allowMuting(_ targets: Set<MediaTarget>) { lock.withLock { _mutable = targets } }
-
-	func stubRemaining(muted: [String], unmutable: [String]) {
-		lock.withLock { _remaining = (muted, unmutable) }
-	}
-
-	func mute(_ targets: [MediaTarget]) -> ([MediaTarget], [MediaTarget]) {
-		lock.withLock { () -> ([MediaTarget], [MediaTarget]) in
-			_muteCalls.append(targets)
-			return (
-				targets.filter { _mutable.contains($0) },
-				targets.filter { !_mutable.contains($0) }
-			)
-		}
-	}
-
-	func muteRemaining(excludingBrowsers: Bool) -> ([String], [String]) {
-		lock.withLock { () -> ([String], [String]) in
-			_remainingCalls += 1
-			_remainingExclusions.append(excludingBrowsers)
-			return _remaining
-		}
-	}
-
-	func unmute() { lock.withLock { _unmuteCalls += 1 } }
-}
-
 /// Collects `.browserMediaPauseBlocked` payloads from the @Sendable observer
 /// block, which can neither mutate a captured local nor touch main-actor state.
 private final class BlockedNotificationRecorder: @unchecked Sendable {
@@ -352,21 +279,15 @@ private final class BlockedNotificationRecorder: @unchecked Sendable {
 @MainActor
 struct MediaPlaybackCoordinatorFlowTests {
 
-	/// `mutes` defaults to a throwaway recorder so no test ever reaches the real
-	/// CoreAudio muter; tests that assert on muting pass in their own.
 	private func makeCoordinator(
 		playersEnabled: Bool = true,
-		browsersEnabled: Bool = true,
-		mutes: MuteRecorder = MuteRecorder()
+		browsersEnabled: Bool = true
 	) -> (MediaPlaybackCoordinator, ScriptRecorder) {
 		let recorder = ScriptRecorder()
 		let coordinator = MediaPlaybackCoordinator(
 			playersEnabled: { playersEnabled },
 			browsersEnabled: { browsersEnabled },
 			runScript: { recorder.run($0) },
-			muteBlocked: { mutes.mute($0) },
-			muteRemaining: { mutes.muteRemaining(excludingBrowsers: $0) },
-			unmuteAll: { mutes.unmute() },
 			now: { recorder.now }
 		)
 		return (coordinator, recorder)
@@ -590,32 +511,8 @@ struct MediaPlaybackCoordinatorFlowTests {
 		#expect(recorder.scripts.last?.contains("\"ABC\"") == true)
 	}
 
-	@Test func mutedBrowserReplacesTheRecoveryNotification() async {
-		let mutes = MuteRecorder()
-		mutes.allowMuting([.safari])
-		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
-		let posts = BlockedNotificationRecorder()
-		let observer = observeBlocked(coordinator, posts)
-		defer { NotificationCenter.default.removeObserver(observer) }
-		recorder.output = "|safari "
-
-		coordinator.pauseForDictation()
-		await coordinator.flush()
-
-		#expect(mutes.muteCalls == [[.safari]])
-		#expect(posts.payloads.isEmpty)
-
-		coordinator.resumeAfterDictation()
-		await coordinator.flush()
-
-		#expect(mutes.unmuteCalls == 1)
-		// Muting and unmuting are CoreAudio, not AppleScript.
-		#expect(recorder.scripts.count == sweepCount)
-	}
-
-	@Test func audibleButUnmutableBrowserStillAnnouncesItselfOnce() async {
-		let mutes = MuteRecorder()
-		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
+	@Test func blockedBrowserAnnouncesRecoveryWithoutABlindFallback() async {
+		let (coordinator, recorder) = makeCoordinator()
 		let posts = BlockedNotificationRecorder()
 		let observer = observeBlocked(coordinator, posts)
 		defer { NotificationCenter.default.removeObserver(observer) }
@@ -626,36 +523,11 @@ struct MediaPlaybackCoordinatorFlowTests {
 		await coordinator.flush()
 
 		#expect(posts.payloads == [["Safari"]])
-	}
-
-	@Test func resumeWithNothingPausedStillLiftsTheMute() async {
-		let mutes = MuteRecorder()
-		let (coordinator, _) = makeCoordinator(mutes: mutes)
-
-		coordinator.resumeAfterDictation()
-		await coordinator.flush()
-
-		#expect(mutes.unmuteCalls == 1)
-	}
-
-	/// A script that returns nothing leaves the browser's state unknown, which is
-	/// not the same as "silent" — it goes down the mute path with the browsers
-	/// that refused outright.
-	@Test func browsersWithNoScriptOutputAreMutedToo() async {
-		let mutes = MuteRecorder()
-		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
-		recorder.output = nil
-
-		coordinator.pauseForDictation()
-		await coordinator.flush()
-
-		#expect(mutes.muteCalls.count == 1)
-		#expect(Set(mutes.muteCalls[0]) == Set([.safari, .chrome, .edge, .brave]))
+		#expect(recorder.scripts.count == sweepCount * 2)
 	}
 
 	@Test func unresolvedBrowserLeftAudibleAnnouncesItselfOnce() async {
-		let mutes = MuteRecorder()
-		let (coordinator, recorder) = makeCoordinator(playersEnabled: false, mutes: mutes)
+		let (coordinator, recorder) = makeCoordinator(playersEnabled: false)
 		let posts = BlockedNotificationRecorder()
 		let observer = observeBlocked(coordinator, posts)
 		defer { NotificationCenter.default.removeObserver(observer) }
@@ -667,67 +539,5 @@ struct MediaPlaybackCoordinatorFlowTests {
 
 		#expect(posts.payloads.count == 1)
 		#expect(Set(posts.payloads[0]) == Set(["Safari", "Google Chrome", "Microsoft Edge", "Brave Browser"]))
-	}
-
-	@Test func mutedUnresolvedBrowserIsNotAnnounced() async {
-		let mutes = MuteRecorder()
-		mutes.allowMuting(Set(MediaTarget.allCases))
-		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
-		let posts = BlockedNotificationRecorder()
-		let observer = observeBlocked(coordinator, posts)
-		defer { NotificationCenter.default.removeObserver(observer) }
-		recorder.output = nil
-
-		coordinator.pauseForDictation()
-		await coordinator.flush()
-
-		#expect(posts.payloads.isEmpty)
-	}
-
-	@Test func everyPauseSweepsTheAppsItCannotName() async {
-		let mutes = MuteRecorder()
-		mutes.stubRemaining(muted: ["org.mozilla.firefox"], unmutable: ["org.videolan.vlc"])
-		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
-		let posts = BlockedNotificationRecorder()
-		let observer = observeBlocked(coordinator, posts)
-		defer { NotificationCenter.default.removeObserver(observer) }
-		recorder.output = "|"
-
-		coordinator.pauseForDictation()
-		await coordinator.flush()
-
-		#expect(mutes.remainingCalls == 1)
-		// Unnameable apps are logged, never put in front of the user, and muting
-		// is not an AppleScript.
-		#expect(posts.payloads.isEmpty)
-		#expect(recorder.scripts.count == sweepCount)
-	}
-
-	/// Browser opt-out excludes browser bundle ids without suppressing the
-	/// general sweep that catches non-browser media.
-	@Test func generalMutePassRespectsTheBrowserOptOut() async {
-		let mutes = MuteRecorder()
-		let (coordinator, recorder) = makeCoordinator(browsersEnabled: false, mutes: mutes)
-		recorder.output = "|"
-
-		coordinator.pauseForDictation()
-		await coordinator.flush()
-
-		#expect(mutes.remainingCalls == 1)
-		#expect(mutes.remainingExclusions == [true])
-	}
-
-	@Test func resumeAfterOnlyGeneralMutesStillLiftsThem() async {
-		let mutes = MuteRecorder()
-		mutes.stubRemaining(muted: ["org.mozilla.firefox"], unmutable: [])
-		let (coordinator, recorder) = makeCoordinator(mutes: mutes)
-		recorder.output = "|"
-
-		coordinator.pauseForDictation()
-		coordinator.resumeAfterDictation()
-		await coordinator.flush()
-
-		#expect(mutes.unmuteCalls == 1)
-		#expect(recorder.scripts.count == sweepCount)
 	}
 }

@@ -131,11 +131,9 @@ struct MediaPauseSession: Equatable, Sendable {
 /// `player state` plus the identity of the track we paused, browser tabs
 /// through in-page JavaScript that pauses only elements that are actually
 /// playing and tags them so resume can find exactly those elements again.
-/// Whatever is left over — a browser that refused that JavaScript or never
-/// answered at all, and every app we have no dictionary for — is muted instead
-/// (`BrowserAudioMuter`), so a dictation is quiet whatever is playing. No blind
-/// system media key, ever: a toggle sent without established playback can just
-/// as easily start something, while a mute can only ever take sound away.
+/// A browser that refuses tab scripting is reported with concrete recovery
+/// steps. Whispera deliberately does not fall back to the system media key: it
+/// is a blind toggle and can start playback when nothing was playing.
 ///
 /// Every Apple Event runs out of process; the recording path only ever enqueues
 /// work and returns. See WHI-W2.
@@ -159,9 +157,6 @@ final class MediaPlaybackCoordinator {
 	private let playersEnabled: @Sendable () -> Bool
 	private let browsersEnabled: @Sendable () -> Bool
 	private let runScript: @Sendable (String) -> String?
-	private let muteBlocked: @Sendable ([MediaTarget]) -> ([MediaTarget], [MediaTarget])
-	private let muteRemaining: @Sendable (Bool) -> ([String], [String])
-	private let unmuteAll: @Sendable () -> Void
 	private let now: @Sendable () -> Date
 
 	init(
@@ -172,24 +167,11 @@ final class MediaPlaybackCoordinator {
 		// A closure literal rather than a bare function reference: an unapplied
 		// declaration reference isn't inferred `@Sendable`.
 		runScript: @escaping @Sendable (String) -> String? = { MediaPlaybackCoordinator.runOsascript($0) },
-		muteBlocked: @escaping @Sendable ([MediaTarget]) -> ([MediaTarget], [MediaTarget]) = { targets in
-			let outcome = BrowserAudioMuter.shared.muteAudiblyPlaying(targets)
-			return (outcome.muted, outcome.audibleButUnmutable)
-		},
-		muteRemaining: @escaping @Sendable (Bool) -> ([String], [String]) = { excludingBrowsers in
-			let outcome = BrowserAudioMuter.shared.muteRemainingAudibleProcesses(
-				excludingBrowsers: excludingBrowsers)
-			return (outcome.muted, outcome.unmutable)
-		},
-		unmuteAll: @escaping @Sendable () -> Void = { BrowserAudioMuter.shared.unmuteAll() },
 		now: @escaping @Sendable () -> Date = { Date() }
 	) {
 		self.playersEnabled = playersEnabled
 		self.browsersEnabled = browsersEnabled
 		self.runScript = runScript
-		self.muteBlocked = muteBlocked
-		self.muteRemaining = muteRemaining
-		self.unmuteAll = unmuteAll
 		self.now = now
 	}
 
@@ -277,45 +259,15 @@ final class MediaPlaybackCoordinator {
 			if sub.blocked.contains(target) { scan.blocked.append(target) }
 		}
 
-		// A browser we could not pause gets muted instead. Without in-page
-		// JavaScript there is no way to pause a tab, and every blind playback
-		// playback command (media key, play) can just as easily START something
-		// the user never began — but a CoreAudio mute tap can only take sound
-		// away, so it is safe even on a browser whose state we never read. Only
-		// one we proved is audible and still could not silence is worth
-		// interrupting the user for.
-		let mutable = scan.blocked + unresolved.filter { !scan.blocked.contains($0) }
-		let (muted, unmutable) = await detachedMute(mutable)
-		if !muted.isEmpty {
+		// No blind fallback is safe here. A play/pause key can start idle media,
+		// while a process tap that is not connected to an active aggregate-device
+		// IO graph does not mute anything. Report the deterministic permission fix
+		// instead of claiming success or silencing unrelated calls and alerts.
+		let blocked = scan.blocked + unresolved.filter { !scan.blocked.contains($0) }
+		if !blocked.isEmpty {
 			AppLogger.shared.audioManager.info(
-				"Muted browsers we could not pause: \(muted.map(\.rawValue).joined(separator: ", "))")
-		}
-		if !unmutable.isEmpty {
-			AppLogger.shared.audioManager.info(
-				"Browsers still audible after the mute attempt: \(unmutable.map(\.rawValue).joined(separator: ", "))")
-			announceNewlyBlocked(unmutable)
-		}
-
-		// Everything else that is still making sound gets the same one-way mute.
-		// This covers unlisted browsers and players without ever issuing a blind
-		// playback toggle that could start an idle application.
-		//
-		// This pass still runs when browser handling is opted out: bundle ids let
-		// it skip browsers while continuing to silence known players such as VLC,
-		// Podcasts, and IINA.
-		if playersEnabled() || browsersEnabled() {
-			let (genericMuted, genericUnmutable) = await detachedMuteRemaining(
-				excludingBrowsers: !browsersEnabled())
-			if !genericMuted.isEmpty {
-				AppLogger.shared.audioManager.info(
-					"Muted other audible apps: \(genericMuted.joined(separator: ", "))")
-			}
-			if !genericUnmutable.isEmpty {
-				// Logged, never announced: there is no setting the user could change
-				// for an app we can only name by bundle id.
-				AppLogger.shared.audioManager.info(
-					"Could not mute audible apps: \(genericUnmutable.joined(separator: ", "))")
-			}
+				"Browser pause blocked: \(blocked.map(\.rawValue).joined(separator: ", "))")
+			announceNewlyBlocked(blocked)
 		}
 
 		session = MediaPauseSession.started(from: scan, at: now(), identities: identities)
@@ -363,12 +315,6 @@ final class MediaPlaybackCoordinator {
 	}
 
 	private func performResume() async {
-		// Unconditionally first: a mute can exist without a session (a blocked
-		// browser was the only thing playing), it outlives the resume window
-		// because leaving the user silenced is never acceptable, and lifting it
-		// can only reveal silence — never start playback.
-		await detachedUnmute()
-
 		guard let session else { return }
 		self.session = nil
 
@@ -402,23 +348,6 @@ final class MediaPlaybackCoordinator {
 	private func detached(_ source: String) async -> String? {
 		let run = runScript
 		return await Task.detached { run(source) }.value
-	}
-
-	/// CoreAudio property reads and tap creation are synchronous IPC to
-	/// coreaudiod, so they go off the main actor exactly like the scripts do.
-	private func detachedMute(_ targets: [MediaTarget]) async -> ([MediaTarget], [MediaTarget]) {
-		let mute = muteBlocked
-		return await Task.detached { mute(targets) }.value
-	}
-
-	private func detachedMuteRemaining(excludingBrowsers: Bool) async -> ([String], [String]) {
-		let mute = muteRemaining
-		return await Task.detached { mute(excludingBrowsers) }.value
-	}
-
-	private func detachedUnmute() async {
-		let unmute = unmuteAll
-		await Task.detached { unmute() }.value
 	}
 
 	// MARK: - Scripts

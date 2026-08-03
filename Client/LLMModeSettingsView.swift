@@ -46,7 +46,7 @@ private struct MediaPauseConfig: View {
 		SettingsSection("Media") {
 			VStack(alignment: .leading, spacing: 8) {
 				Toggle("Pause media while dictating", isOn: $pauseMedia)
-				Text("Pauses Music and Spotify when recording starts and resumes only what Whispera paused.")
+				Text("Pauses supported players when recording starts and resumes only what Whispera paused. Whispera never sends a blind media-key toggle that could start idle playback.")
 					.font(.caption)
 					.foregroundColor(.secondary)
 
