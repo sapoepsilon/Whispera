@@ -235,18 +235,14 @@ struct ListeningView: View {
 				userInfo: PillControlsRouting.userInfo(show: showControls)
 			)
 		} label: {
-			HStack(spacing: 3) {
-				Image(systemName: "switch.2")
-					.font(.system(size: 11))
-				controlsSwitch
-			}
-			.padding(.horizontal, 5)
-			.padding(.vertical, 3)
-			.background(
-				RoundedRectangle(cornerRadius: 5)
-					.fill(Color.blue.opacity(0.15))
-			)
-			.foregroundColor(.secondary)
+			controlsSwitch
+				.padding(.horizontal, 5)
+				.padding(.vertical, 3)
+				.background(
+					RoundedRectangle(cornerRadius: 5)
+						.fill(Color.blue.opacity(0.15))
+				)
+				.foregroundColor(.secondary)
 		}
 		.buttonStyle(.plain)
 		.help("Input device & post-dictation action — \(ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes))")
