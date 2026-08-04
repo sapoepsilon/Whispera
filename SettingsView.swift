@@ -141,6 +141,8 @@ struct SettingsView: View {
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
 	@AppStorage("enableRecordingGlow") private var enableRecordingGlow = true
+	// Key unchanged from the older pause-based feature so existing opt-outs survive.
+	@AppStorage("whisperaPauseMediaWhileDictating") private var muteAudioWhileDictating = true
 	@AppStorage(RecordingGlowColor.key) private var recordingGlowColorHex = RecordingGlowColor
 		.defaultHex
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
@@ -193,13 +195,15 @@ struct SettingsView: View {
 	@State private var liveTranscriptionInfoWindow: NSWindow?
 	@State private var logsSize: String = "Calculating..."
 	@State private var showingClearLogsConfirmation = false
+	@AppStorage(SettingsRouting.selectedTabDefaultsKey) private var selectedSettingsTab =
+		SettingsDestination.general.rawValue
 
 	// Extended logging settings
 	@AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
 	@AppStorage("enableDebugLogging") private var enableDebugLogging = false
 
 	var body: some View {
-		TabView {
+		TabView(selection: $selectedSettingsTab) {
 			// MARK: - General Tab
 			ScrollView {
 				VStack(spacing: 24) {
@@ -299,6 +303,14 @@ struct SettingsView: View {
 							description: "Trackpad vibration when shortcut is triggered"
 						) {
 							Toggle("", isOn: $shortcutHapticFeedback)
+						}
+
+						SettingRow(
+							"Mute Audio While Dictating",
+							description:
+								"Mutes your system audio for the length of the dictation and restores it afterwards, so nothing is heard while you speak"
+						) {
+							Toggle("", isOn: $muteAudioWhileDictating)
 						}
 
 						SettingRow(
@@ -612,6 +624,21 @@ struct SettingsView: View {
 			.tabItem {
 				Label("General", systemImage: "gear")
 			}
+			.tag(SettingsDestination.general.rawValue)
+
+			// MARK: - AI Mode Tab
+			LLMModeSettingsView()
+				.tabItem {
+					Label("AI Mode", systemImage: "brain")
+				}
+				.tag(SettingsDestination.aiMode.rawValue)
+
+			// MARK: - Recipes Tab
+			RecipesView()
+				.tabItem {
+					Label("Recipes", systemImage: "wand.and.stars")
+				}
+				.tag(SettingsDestination.recipes.rawValue)
 
 			// MARK: - Storage & Downloads Tab
 			ScrollView {
@@ -735,6 +762,7 @@ struct SettingsView: View {
 			.tabItem {
 				Label("Storage & Downloads", systemImage: "internaldrive")
 			}
+			.tag(SettingsDestination.storage.rawValue)
 
 			// MARK: - Live Transcription Tab (only shows when enabled)
 			if enableStreaming {
@@ -909,6 +937,7 @@ struct SettingsView: View {
 				.tabItem {
 					Label("Live Transcription", systemImage: "waveform")
 				}
+				.tag(SettingsDestination.liveTranscription.rawValue)
 			}
 
 			// MARK: - File Transcription Tab
@@ -1074,11 +1103,13 @@ struct SettingsView: View {
 			.tabItem {
 				Label("File Transcription", systemImage: "doc.on.doc")
 			}
+			.tag(SettingsDestination.fileTranscription.rawValue)
 
 			BenchmarkView()
 				.tabItem {
 					Label("Benchmark", systemImage: "speedometer")
 				}
+				.tag(SettingsDestination.benchmark.rawValue)
 		}
 		.frame(maxWidth: 600)
 		.onAppear {
@@ -1856,4 +1887,3 @@ struct LiveTranscriptionInfoView: View {
 		.background(Color(NSColor.windowBackgroundColor))
 	}
 }
-

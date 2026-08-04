@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DictationView: View {
 	@Bindable private var whisperKit = WhisperKitTranscriber.shared
+	@State private var coordinator = DictationCoordinator.shared
 	private let audioManager: AudioManager
 
 	// Live transcription customization settings
@@ -31,7 +32,9 @@ struct DictationView: View {
 
 	var body: some View {
 		VStack(spacing: 0) {
-			if whisperKit.isWaitingForModel {
+			if let overlayError = coordinator.overlayError {
+				errorIndicator(overlayError)
+			} else if whisperKit.isWaitingForModel {
 				HStack(spacing: 8) {
 					ProgressView()
 						.scaleEffect(0.7)
@@ -103,6 +106,21 @@ struct DictationView: View {
 		)
 		.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
 		.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
+	}
+
+	private func errorIndicator(_ message: String) -> some View {
+		HStack(spacing: 6) {
+			Image(systemName: "exclamationmark.triangle.fill")
+				.foregroundColor(.orange)
+				.imageScale(.small)
+			Text(message)
+				.font(.system(.caption, design: .rounded))
+				.foregroundColor(.primary)
+				.lineLimit(2)
+		}
+		.padding(.horizontal, 14)
+		.padding(.vertical, 10)
+		.transition(.opacity.combined(with: .scale(scale: 0.95)))
 	}
 }
 

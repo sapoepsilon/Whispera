@@ -70,6 +70,31 @@ struct SettingsWithMaterial: View {
 	}
 }
 
+extension Notification.Name {
+	/// Ask the app to open Settings. Surfaces that cannot reach the AppDelegate
+	/// reliably (the pill's floating panels, where `NSApp.delegate` may be
+	/// SwiftUI's adaptor wrapper rather than our class) post this instead of
+	/// casting.
+	static let openSettingsRequested = Notification.Name("OpenSettingsRequested")
+}
+
+enum SettingsDestination: String {
+	case general, aiMode, recipes, storage, liveTranscription, fileTranscription, benchmark
+}
+
+enum SettingsRouting {
+	static let destinationKey = "destination"
+	static let selectedTabDefaultsKey = "whisperaSelectedSettingsTab"
+
+	static func userInfo(destination: SettingsDestination) -> [String: Any] {
+		[destinationKey: destination.rawValue]
+	}
+
+	static func destination(in userInfo: [AnyHashable: Any]?) -> SettingsDestination? {
+		(userInfo?[destinationKey] as? String).flatMap(SettingsDestination.init(rawValue:))
+	}
+}
+
 enum StatusMenuAction: String {
 	case settings
 	case activity
@@ -131,6 +156,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 		Task { @MainActor in
 			audioManager = AudioManager()
+			let coordinator = DictationCoordinator.shared
+			audioManager.dictationProcessor = { text in await coordinator.process(text) }
 			shortcutManager = GlobalShortcutManager()
 			fileTranscriptionManager = FileTranscriptionManager()
 			networkDownloader = NetworkFileDownloader()
@@ -169,6 +196,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				queue: .main
 			) { [weak self] _ in
 				self?.showOnboarding()
+			}
+
+			NotificationCenter.default.addObserver(
+				forName: .openSettingsRequested,
+				object: nil,
+				queue: .main
+			) { [weak self] notification in
+				Task { @MainActor in
+					if let destination = SettingsRouting.destination(in: notification.userInfo) {
+						UserDefaults.standard.set(
+							destination.rawValue, forKey: SettingsRouting.selectedTabDefaultsKey)
+					}
+					AppLogger.shared.general.info(
+						"Settings open requested via notification, destination: \(SettingsRouting.destination(in: notification.userInfo)?.rawValue ?? "current")")
+					self?.perform(.settings)
+				}
 			}
 
 			// Listen for activation requests from other instances
@@ -388,40 +431,61 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	// silently no-ops when the environment lacks a scene bridge - a known gap for
 	// accessory apps - so if no scene window materializes, fall back to a
 	// retained window hosting the same settings view.
+	//
+	// A settings window that already exists is brought forward directly instead
+	// of going through openSettings again: the environment action is not
+	// reliable on repeat invocations, and re-running the 0.4s verification for a
+	// window we can already see just adds a beat of dead time.
 	@MainActor
 	private func showSettingsWindow() {
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
-		if let action = swiftUIOpenSettings {
-			action()
-			DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-				guard let self else { return }
-				if let scene = self.settingsSceneWindow() {
-					AppLogger.shared.general.info("Settings opened via native scene")
-					scene.makeKeyAndOrderFront(nil)
-				} else {
-					AppLogger.shared.general.info("openSettings no-oped, using retained settings window")
-					self.showRetainedSettingsWindow()
-				}
-			}
-		} else {
+
+		if let existing = settingsSceneWindow(requireVisible: false) ?? settingsWindow {
+			AppLogger.shared.general.info("Settings window already exists, bringing it forward")
+			existing.makeKeyAndOrderFront(nil)
+			return
+		}
+
+		guard let action = swiftUIOpenSettings else {
+			AppLogger.shared.general.info("openSettings not registered yet, using retained settings window")
 			showRetainedSettingsWindow()
+			return
+		}
+
+		action()
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+			guard let self else { return }
+			if let scene = self.settingsSceneWindow() {
+				AppLogger.shared.general.info("Settings opened via native scene")
+				scene.makeKeyAndOrderFront(nil)
+			} else {
+				AppLogger.shared.general.info("openSettings no-oped, using retained settings window")
+				self.showRetainedSettingsWindow()
+			}
 		}
 	}
 
 	@MainActor
-	private func settingsSceneWindow() -> NSWindow? {
+	private func settingsSceneWindow(requireVisible: Bool = true) -> NSWindow? {
 		NSApp.windows.first {
-			$0.isVisible && $0.identifier?.rawValue.hasPrefix("com_apple_SwiftUI_Settings") == true
+			(!requireVisible || $0.isVisible)
+				&& AppDelegate.isSettingsSceneIdentifier($0.identifier?.rawValue)
 		}
+	}
+
+	nonisolated static func isSettingsSceneIdentifier(_ rawIdentifier: String?) -> Bool {
+		rawIdentifier?.hasPrefix("com_apple_SwiftUI_Settings") == true
 	}
 
 	@MainActor
 	private func showRetainedSettingsWindow() {
 		if let window = settingsWindow {
+			AppLogger.shared.general.info("Reusing retained settings window")
 			window.makeKeyAndOrderFront(nil)
 			return
 		}
+		AppLogger.shared.general.info("Creating retained settings window")
 		let hosting = NSHostingController(
 			rootView: SettingsWithMaterial(
 				permissionManager: permissionManager ?? PermissionManager(),

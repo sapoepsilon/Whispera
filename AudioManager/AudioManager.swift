@@ -29,6 +29,30 @@ enum RecordingWindowPolicy {
 	}
 }
 
+/// Where a device selection has to land. Extracted from switchInputDevice so the
+/// routing matrix can be exercised without standing up an AudioManager.
+enum DeviceSwitchRoute: Equatable, Sendable {
+	case startupInFlight
+	case nextRecording
+	case liveRestart
+	case engineRestart
+	case fileRecorderRestart
+}
+
+enum RecordingSegmentError: Error, LocalizedError {
+	case recorderRefusedToStart
+	case unreadableSegment(URL)
+
+	var errorDescription: String? {
+		switch self {
+		case .recorderRefusedToStart:
+			return "The audio recorder refused to start on the selected input"
+		case .unreadableSegment(let url):
+			return "Could not read recording segment \(url.lastPathComponent)"
+		}
+	}
+}
+
 @MainActor
 @Observable
 final class AudioManager: NSObject {
@@ -104,9 +128,24 @@ final class AudioManager: NSObject {
 	private var meteringTimer: Timer?
 	@ObservationIgnored
 	private var deviceActivationTask: Task<Void, Never>?
+	/// True from the moment a start path is entered until capture is established
+	/// (or the attempt aborts). A device switch arriving in this window must not
+	/// cancel the task that is bringing capture up.
+	@ObservationIgnored
+	private var isStartingCapture = false
+	/// File segments already closed by a mid-recording device switch. The live
+	/// segment lives in audioFileURL and joins these at stop.
+	@ObservationIgnored
+	private var completedSegmentURLs: [URL] = []
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
+
+	/// Transforms a finished transcription before it is pasted (recipe matching
+	/// + execution). Returns nil to paste nothing. Injected by the app so
+	/// AudioManager stays free of recipe/network dependencies. WHI-41.
+	@ObservationIgnored
+	var dictationProcessor: ((String) async -> String?)?
 
 	// MARK: - Initialization
 
@@ -131,54 +170,117 @@ final class AudioManager: NSObject {
 			// Keep the mode the session started with: re-reading enableStreaming here
 			// would route stop to the wrong path if the setting changed mid-recording.
 			stopRecording()
+		} else if isMicrophoneInitializing || isStartingCapture {
+			// Startup is owned by deviceActivationTask. A second shortcut press
+			// cancels it so it can never fall through and create an overlapping
+			// recorder/engine.
+			cancelCaptureStartup()
 		} else {
 			currentRecordingMode = enableStreaming ? .liveTranscription : .text
 			startRecording()
 		}
 	}
 
-	func switchInputDevice(to uid: String) {
+	private func cancelCaptureStartup() {
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
+		audioRecorder?.stop()
+		audioRecorder = nil
+		engineController.cleanup()
+		discardRecordingSegments()
+		isMicrophoneInitializing = false
+		isStartingCapture = false
+		SystemAudioMuter.shared.restoreAfterDictation()
+		AppLogger.shared.audioManager.info("Cancelled capture startup")
+	}
+
+	nonisolated static func deviceSwitchRoute(
+		isStartingCapture: Bool,
+		isRecording: Bool,
+		isMicrophoneInitializing: Bool,
+		mode: RecordingMode,
+		useStreaming: Bool
+	) -> DeviceSwitchRoute {
+		// Startup wins over everything: isMicrophoneInitializing is also true while
+		// capture is coming up, so without this the startup would be mistaken for an
+		// established session and torn down.
+		if isStartingCapture { return .startupInFlight }
+		guard isRecording || isMicrophoneInitializing else { return .nextRecording }
+		if mode == .liveTranscription { return .liveRestart }
+		return useStreaming ? .engineRestart : .fileRecorderRestart
+	}
+
+	/// Whether a failed activation should be mirrored back into the selection. The
+	/// persisted UID moving away from the one that was activated means either the
+	/// user re-picked while activation was in flight - that newer choice is applied
+	/// separately and must not be overwritten - or activateSelectedDevice already
+	/// healed a vanished device itself.
+	nonisolated static func shouldHealSelectionAfterFailedActivation(
+		activated: Bool,
+		activationUID: String,
+		persistedUID: String
+	) -> Bool {
+		guard !activated else { return false }
+		return persistedUID == activationUID
+	}
+
+	func switchInputDevice(to uid: String) {
+		AppLogger.shared.audioManager.info(
+			"switchInputDevice(to: \(uid)) state=\(currentState) mode=\(currentRecordingMode)")
+
+		let route = Self.deviceSwitchRoute(
+			isStartingCapture: isStartingCapture,
+			isRecording: isRecording,
+			isMicrophoneInitializing: isMicrophoneInitializing,
+			mode: currentRecordingMode,
+			useStreaming: useStreamingTranscription
+		)
+
 		deviceManager.selectDevice(uid: uid)
 
-		guard isRecording || isMicrophoneInitializing else { return }
+		switch route {
+		case .startupInFlight:
+			AppLogger.shared.audioManager.info(
+				"switchInputDevice: capture startup in flight, selection persisted and applied once capture is established")
+			return
+		case .nextRecording:
+			deviceActivationTask?.cancel()
+			deviceActivationTask = nil
+			AppLogger.shared.audioManager.info(
+				"switchInputDevice: not capturing, activation deferred to next recording start")
+			return
+		case .liveRestart, .engineRestart, .fileRecorderRestart:
+			deviceActivationTask?.cancel()
+			deviceActivationTask = nil
+		}
 
 		isMicrophoneInitializing = true
 		deviceActivationTask = Task {
-			if currentRecordingMode == .liveTranscription {
+			switch route {
+			case .liveRestart:
 				await whisperKitTranscriber.switchLiveStreamDevice()
 				guard !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
-			} else if useStreamingTranscription {
-				let savedBuffer = audioBuffer
-				engineController.cleanup()
-
-				do {
-					await deviceManager.activateSelectedDevice()
-					guard !Task.isCancelled else { return }
-					let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
-					try engineController.installTap { [weak self] buffer, format in
-						self?.processAudioBuffer(buffer, originalFormat: format)
-					}
-					audioBuffer = savedBuffer
-					isMicrophoneInitializing = false
-					AppLogger.shared.audioManager.info("Switched input device while recording")
-				} catch {
-					guard !Task.isCancelled else { return }
-					isMicrophoneInitializing = false
-					AppLogger.shared.audioManager.error("Failed to switch device: \(error)")
-					isRecording = false
-					timer.stop()
-				}
-			} else {
-				deviceManager.restoreSystemDefault()
-				await deviceManager.activateSelectedDevice()
-				guard !Task.isCancelled else { return }
-				isMicrophoneInitializing = false
+			case .engineRestart:
+				await restartEngineForDeviceSwitch()
+			case .fileRecorderRestart:
+				await restartFileRecorderForDeviceSwitch()
+			case .startupInFlight, .nextRecording:
+				break
 			}
 			deviceActivationTask = nil
 		}
+	}
+
+	/// Applies a selection the user made while capture was still coming up. The
+	/// tap was deliberately not allowed to cancel the startup task, so it is
+	/// replayed here through the established-session path.
+	fileprivate func applySelectionMadeDuringStartup(activationUID: String) {
+		let current = deviceManager.persistedDeviceUID
+		guard current != activationUID else { return }
+		AppLogger.shared.audioManager.info(
+			"Applying device selection made during capture startup: \(current)")
+		switchInputDevice(to: current)
 	}
 
 	// MARK: - Deprecated Compatibility
@@ -226,6 +328,11 @@ extension AudioManager {
 		// result or error underneath it.
 		lastTranscription = nil
 		transcriptionError = nil
+		isMicrophoneInitializing = true
+		// A picker selection arriving while capture is coming up must be persisted
+		// for replay after startup, not mistaken for an established recorder that
+		// should be restarted now.
+		isStartingCapture = true
 		if currentRecordingMode == .liveTranscription {
 			startLiveTranscription()
 		} else if useStreamingTranscription {
@@ -248,49 +355,115 @@ extension AudioManager {
 // MARK: - File-Based Recording
 
 extension AudioManager {
+	/// Keeps the selection mirror honest when the requested input could not be made
+	/// the system default. AVAudioRecorder captures from whatever the system default
+	/// is, so after a failed activation the recorder is on a different device than
+	/// `activeDevice` - and the pill icon - claims. Re-selecting the system default
+	/// makes `activeDevice` describe what is really being captured: when activation
+	/// failed because the persisted device vanished, activateSelectedDevice healed
+	/// the selection itself and this is an idempotent no-op; when it failed because
+	/// the CoreAudio set/verify did not take, this is what makes the UI honest.
+	/// Returns the UID the caller should treat as activated, so a startup replay does
+	/// not restart a recorder that is already on the healed input.
+	@discardableResult
+	fileprivate func healSelectionIfActivationFailed(activated: Bool, activationUID: String) -> String {
+		guard
+			Self.shouldHealSelectionAfterFailedActivation(
+				activated: activated,
+				activationUID: activationUID,
+				persistedUID: deviceManager.persistedDeviceUID
+			)
+		else { return activationUID }
+
+		AppLogger.shared.audioManager.error(
+			"Input device activation failed for \(activationUID); recording continues from the actual system default")
+		deviceManager.selectDevice(uid: AudioDeviceManager.systemDefaultUID)
+		return AudioDeviceManager.systemDefaultUID
+	}
+
 	fileprivate func startFileBasedRecording() {
 		isMicrophoneInitializing = true
+		isStartingCapture = true
+		completedSegmentURLs.removeAll()
+		audioFileURL = nil
 
 		deviceActivationTask = Task {
-			await deviceManager.activateSelectedDevice()
-			guard !Task.isCancelled else { return }
-
-			let appSupportPath = getApplicationSupportDirectory()
-			let audioFilename =
-				appSupportPath
-				.appendingPathComponent("recordings")
-				.appendingPathComponent("recording_\(Date().timeIntervalSince1970).wav")
-			audioFileURL = audioFilename
-
-			try? FileManager.default.createDirectory(
-				at: audioFilename.deletingLastPathComponent(),
-				withIntermediateDirectories: true
-			)
-
-			let settings: [String: Any] = [
-				AVFormatIDKey: Int(kAudioFormatLinearPCM),
-				AVSampleRateKey: 16000.0,
-				AVNumberOfChannelsKey: 1,
-				AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-			]
+			var activationUID = deviceManager.persistedDeviceUID
+			let activated = await deviceManager.activateSelectedDevice()
+			guard !Task.isCancelled else {
+				isStartingCapture = false
+				isMicrophoneInitializing = false
+				SystemAudioMuter.shared.restoreAfterDictation()
+				return
+			}
+			activationUID = healSelectionIfActivationFailed(
+				activated: activated, activationUID: activationUID)
 
 			do {
-				audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
-				audioRecorder?.isMeteringEnabled = true
-				audioRecorder?.record()
+				let segmentURL = try makeRecordingSegmentURL()
+				let recorder = try startRecorder(at: segmentURL)
+				audioRecorder = recorder
+				audioFileURL = segmentURL
 				isMicrophoneInitializing = false
 				isRecording = true
+				// Muted only once the mic is actually capturing: bringing the input up
+				// can rebuild the output device - a Bluetooth headset switching from
+				// A2DP to HFP - and take an earlier mute down with it.
+				SystemAudioMuter.shared.muteForDictation()
 				timer.start()
 				playFeedbackSound(start: true)
 				startMeteringTimer()
+				isStartingCapture = false
 				AppLogger.shared.audioManager.debug("File-based recording started")
+				applySelectionMadeDuringStartup(activationUID: activationUID)
 			} catch {
+				isStartingCapture = false
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start recording: \(error)")
+				SystemAudioMuter.shared.restoreAfterDictation()
 				showRecordingErrorAlert(error)
 			}
 		}
 	}
+
+	/// Reopens the file recorder on the device that was just selected. AudioQueue
+	/// pins its input at record() time, so an established file recording only
+	/// follows a switch by closing the current segment and starting a new one;
+	/// the segments are stitched back together at stop.
+	fileprivate func restartFileRecorderForDeviceSwitch() async {
+		audioRecorder?.stop()
+		audioRecorder = nil
+		if let audioFileURL {
+			completedSegmentURLs.append(audioFileURL)
+		}
+		audioFileURL = nil
+
+		let activationUID = deviceManager.persistedDeviceUID
+		let activated = await deviceManager.activateSelectedDevice()
+		guard !Task.isCancelled else { return }
+		healSelectionIfActivationFailed(activated: activated, activationUID: activationUID)
+
+		do {
+			let segmentURL = try makeRecordingSegmentURL()
+			let recorder = try startRecorder(at: segmentURL)
+			audioRecorder = recorder
+			audioFileURL = segmentURL
+			isMicrophoneInitializing = false
+			AppLogger.shared.audioManager.info(
+				"Restarted file recorder; capturing from \(deviceManager.activeDevice?.name ?? "system default")")
+		} catch {
+			isMicrophoneInitializing = false
+			AppLogger.shared.audioManager.error(
+				"Failed to restart file recorder after device switch: \(error)")
+			isRecording = false
+			timer.stop()
+			// This aborts the recording without reaching any stop path, so
+			// without this the user's music would stay paused for good.
+			SystemAudioMuter.shared.restoreAfterDictation()
+			discardRecordingSegments()
+		}
+	}
+
 	fileprivate func stopFileBasedRecording() {
 		stopMeteringTimer()
 		audioRecorder?.stop()
@@ -299,14 +472,123 @@ extension AudioManager {
 		timer.stop()
 		playFeedbackSound(start: false)
 		deviceManager.restoreSystemDefault()
+		// We are done listening, so the user gets their audio back now rather than
+		// after a transcription they are not waiting in silence for.
+		SystemAudioMuter.shared.restoreAfterDictation()
 
-		if let audioFileURL {
+		let segments = completedSegmentURLs + (audioFileURL.map { [$0] } ?? [])
+		completedSegmentURLs.removeAll()
+		audioFileURL = nil
+
+		if segments.count > 1 {
 			Task {
-				await transcribeAudio(fileURL: audioFileURL, enableTranslation: enableTranslation)
+				await transcribeRecordingSegments(segments, enableTranslation: enableTranslation)
+			}
+		} else if let onlySegment = segments.first {
+			Task {
+				await transcribeAudio(fileURL: onlySegment, enableTranslation: enableTranslation)
 			}
 		}
 
 		scheduleTimerReset()
+	}
+
+	fileprivate func makeRecordingSegmentURL() throws -> URL {
+		let recordingsDirectory =
+			getApplicationSupportDirectory()
+			.appendingPathComponent("recordings")
+
+		try FileManager.default.createDirectory(
+			at: recordingsDirectory, withIntermediateDirectories: true)
+
+		return recordingsDirectory
+			.appendingPathComponent("recording_\(Date().timeIntervalSince1970).wav")
+	}
+
+	fileprivate func startRecorder(at url: URL) throws -> AVAudioRecorder {
+		let settings: [String: Any] = [
+			AVFormatIDKey: Int(kAudioFormatLinearPCM),
+			AVSampleRateKey: 16000.0,
+			AVNumberOfChannelsKey: 1,
+			AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+		]
+
+		let recorder = try AVAudioRecorder(url: url, settings: settings)
+		recorder.isMeteringEnabled = true
+		guard recorder.record() else {
+			throw RecordingSegmentError.recorderRefusedToStart
+		}
+		return recorder
+	}
+
+	fileprivate func discardRecordingSegments() {
+		for url in completedSegmentURLs {
+			try? FileManager.default.removeItem(at: url)
+		}
+		completedSegmentURLs.removeAll()
+		if let audioFileURL {
+			try? FileManager.default.removeItem(at: audioFileURL)
+		}
+		audioFileURL = nil
+	}
+
+	/// Stitches the segments a mid-recording device switch produced into one
+	/// buffer so the dictation is transcribed as a single utterance.
+	fileprivate func transcribeRecordingSegments(_ segments: [URL], enableTranslation: Bool) async {
+		let samples: [Float]
+		do {
+			samples = try Self.loadSamples(from: segments)
+		} catch {
+			AppLogger.shared.audioManager.error("Failed to load recording segments: \(error)")
+			samples = []
+		}
+
+		for url in segments {
+			try? FileManager.default.removeItem(at: url)
+		}
+
+		guard !samples.isEmpty else {
+			AppLogger.shared.audioManager.info("No audio captured")
+			return
+		}
+
+		await transcribeAudioBuffer(audioArray: samples, enableTranslation: enableTranslation)
+	}
+
+	/// Concatenates recorded segments into one mono sample array. A segment that
+	/// fails to read is skipped with a logged error: losing the audio around one
+	/// device switch beats losing the whole dictation.
+	nonisolated static func loadSamples(from urls: [URL]) throws -> [Float] {
+		var samples: [Float] = []
+
+		for url in urls {
+			do {
+				let file = try AVAudioFile(forReading: url)
+				let frameCount = AVAudioFrameCount(file.length)
+				guard frameCount > 0 else { continue }
+
+				guard
+					let buffer = AVAudioPCMBuffer(
+						pcmFormat: file.processingFormat, frameCapacity: frameCount)
+				else {
+					throw RecordingSegmentError.unreadableSegment(url)
+				}
+
+				try file.read(into: buffer)
+
+				guard let channelData = buffer.floatChannelData?[0] else {
+					throw RecordingSegmentError.unreadableSegment(url)
+				}
+
+				samples.append(
+					contentsOf: UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
+			} catch {
+				AppLogger.shared.audioManager.error(
+					"Skipping unreadable recording segment \(url.lastPathComponent): \(error)")
+			}
+		}
+
+		return samples
 	}
 
 	private func startMeteringTimer() {
@@ -335,11 +617,20 @@ extension AudioManager {
 		AppLogger.shared.audioManager.info("Starting streaming recording")
 		audioBuffer.removeAll()
 		isMicrophoneInitializing = true
+		isStartingCapture = true
 
 		deviceActivationTask = Task {
+			var activationUID = deviceManager.persistedDeviceUID
 			do {
-				await deviceManager.activateSelectedDevice()
-				guard !Task.isCancelled else { return }
+				let activated = await deviceManager.activateSelectedDevice()
+				guard !Task.isCancelled else {
+					isStartingCapture = false
+					isMicrophoneInitializing = false
+					SystemAudioMuter.shared.restoreAfterDictation()
+					return
+				}
+				activationUID = healSelectionIfActivationFailed(
+					activated: activated, activationUID: activationUID)
 				let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
 				try engineController.installTap { [weak self] buffer, format in
 					self?.processAudioBuffer(buffer, originalFormat: format)
@@ -347,15 +638,57 @@ extension AudioManager {
 
 				isMicrophoneInitializing = false
 				isRecording = true
+				// The tap is live, so the input is up and the output device is done
+				// being rebuilt underneath us; muting any earlier can be undone by that
+				// rebuild on a Bluetooth headset.
+				SystemAudioMuter.shared.muteForDictation()
 				timer.start()
 				playFeedbackSound(start: true)
-
+				isStartingCapture = false
+				applySelectionMadeDuringStartup(activationUID: activationUID)
 			} catch {
+				guard !Task.isCancelled else {
+					isMicrophoneInitializing = false
+					isStartingCapture = false
+					return
+				}
 				isMicrophoneInitializing = false
+				isStartingCapture = false
 				AppLogger.shared.audioManager.error("Failed to start streaming: \(error)")
 				useStreamingTranscription = false
+				// Nothing to restore here: capture never went live, so nothing was
+				// muted, and the fallback mutes when its own recorder starts.
 				startFileBasedRecording()
 			}
+		}
+	}
+
+	/// Rebuilds the capture engine on the device that was just selected, keeping
+	/// the audio recorded so far.
+	fileprivate func restartEngineForDeviceSwitch() async {
+		let savedBuffer = audioBuffer
+		engineController.cleanup()
+
+		do {
+			let activated = await deviceManager.activateSelectedDevice()
+			guard !Task.isCancelled else { return }
+			let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
+			try engineController.installTap { [weak self] buffer, format in
+				self?.processAudioBuffer(buffer, originalFormat: format)
+			}
+			audioBuffer = savedBuffer
+			isMicrophoneInitializing = false
+			AppLogger.shared.audioManager.info(
+				"Switched input device while recording; capturing from \(deviceManager.activeDevice?.name ?? "system default") (activated=\(activated))")
+		} catch {
+			guard !Task.isCancelled else { return }
+			isMicrophoneInitializing = false
+			AppLogger.shared.audioManager.error("Failed to switch device: \(error)")
+			isRecording = false
+			timer.stop()
+			// This aborts the recording without reaching any stop path, so
+			// without this the user's music would stay paused for good.
+			SystemAudioMuter.shared.restoreAfterDictation()
 		}
 	}
 
@@ -370,6 +703,9 @@ extension AudioManager {
 
 		engineController.cleanup()
 		deviceManager.restoreSystemDefault()
+		// We are done listening, so the user gets their audio back now rather than
+		// after a transcription they are not waiting in silence for.
+		SystemAudioMuter.shared.restoreAfterDictation()
 
 		AppLogger.shared.audioManager.info("Streaming recording stopped")
 
@@ -437,6 +773,7 @@ extension AudioManager {
 extension AudioManager {
 	fileprivate func startLiveTranscription() {
 		isMicrophoneInitializing = true
+		isStartingCapture = true
 		isRecording = true
 		timer.start()
 		playFeedbackSound(start: true)
@@ -444,23 +781,42 @@ extension AudioManager {
 		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
 
 		deviceActivationTask = Task {
+			let activationUID = deviceManager.persistedDeviceUID
 			do {
 				try await whisperKitTranscriber.liveStream()
-				guard !Task.isCancelled else { return }
+				// A cancelled live start means stopLiveTranscription already ran, and
+				// that path owns the state reset and the media resume.
+				guard !Task.isCancelled else {
+					isStartingCapture = false
+					return
+				}
 				isMicrophoneInitializing = false
+				isStartingCapture = false
+				// The stream is running, so the mic is up and any output-device rebuild
+				// it triggered is over; a mute applied before this can be lost to it.
+				SystemAudioMuter.shared.muteForDictation()
 				AppLogger.shared.audioManager.info("Live transcription started")
+				applySelectionMadeDuringStartup(activationUID: activationUID)
 			} catch {
-				guard !Task.isCancelled else { return }
+				guard !Task.isCancelled else {
+					isStartingCapture = false
+					return
+				}
 				isMicrophoneInitializing = false
+				isStartingCapture = false
 				isRecording = false
 				timer.stop()
 				AppLogger.shared.audioManager.error("Failed to start live transcription: \(error)")
+				SystemAudioMuter.shared.restoreAfterDictation()
 			}
 		}
 	}
 	fileprivate func stopLiveTranscription() {
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
+		// Live is the one mode that can be stopped mid-startup, and a cancelled
+		// task may never resume to clear this itself.
+		isStartingCapture = false
 		isMicrophoneInitializing = false
 		isRecording = false
 		timer.stop()
@@ -468,6 +824,7 @@ extension AudioManager {
 
 		whisperKitTranscriber.stopLiveStream()
 		levelMonitor.reset()
+		SystemAudioMuter.shared.restoreAfterDictation()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
 		scheduleTimerReset()
@@ -483,15 +840,7 @@ extension AudioManager {
 		do {
 			let transcription = try await whisperKitTranscriber.transcribeAudioArray(
 				audioArray, enableTranslation: enableTranslation)
-
-			await MainActor.run {
-				lastTranscription = transcription
-				isTranscribing = false
-
-				if currentRecordingMode == .text {
-					pasteToFocusedApp(transcription)
-				}
-			}
+			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {
 				transcriptionError = error.localizedDescription
@@ -507,15 +856,7 @@ extension AudioManager {
 		do {
 			let transcription = try await whisperKitTranscriber.transcribe(
 				audioURL: fileURL, enableTranslation: enableTranslation)
-
-			await MainActor.run {
-				lastTranscription = transcription
-				isTranscribing = false
-
-				if currentRecordingMode == .text {
-					pasteToFocusedApp(transcription)
-				}
-			}
+			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {
 				transcriptionError = error.localizedDescription
@@ -525,6 +866,25 @@ extension AudioManager {
 		}
 
 		try? FileManager.default.removeItem(at: fileURL)
+	}
+
+	/// Runs the transcription through the dictation processor (recipe matching +
+	/// execution) when in text mode, then pastes the result. WHI-41.
+	@MainActor
+	fileprivate func applyAndPaste(_ transcription: String) async {
+		let mode = currentRecordingMode
+		let toPaste: String?
+		if mode == .text, let processor = dictationProcessor {
+			toPaste = await processor(transcription)
+		} else {
+			toPaste = transcription
+		}
+
+		lastTranscription = transcription
+		isTranscribing = false
+		if mode == .text, let toPaste {
+			pasteToFocusedApp(toPaste)
+		}
 	}
 }
 

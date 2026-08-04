@@ -130,11 +130,11 @@ struct MenuBarView: View {
 			// lanes glide to their new positions. Scoped to these two values so
 			// unrelated state (recording, mode, results) never animates this stack.
 			.animation(
-				reduceMotion ? nil : .easeOut(duration: 0.25),
+				reduceMotion ? nil : Motion.structural,
 				value: layout.updateVisible
 			)
 			.animation(
-				reduceMotion ? nil : .easeOut(duration: 0.25),
+				reduceMotion ? nil : Motion.structural,
 				value: layout.needsPermissions || layout.modelPreparing)
 
 			// Result glance: only when there is a real transcription (errors route to
@@ -153,7 +153,7 @@ struct MenuBarView: View {
 					.transition(.opacity)
 				}
 			}
-			.animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: layout.hasResult)
+			.animation(reduceMotion ? nil : Motion.reveal, value: layout.hasResult)
 
 		}
 		.frame(width: PopoverMetrics.width)
@@ -685,11 +685,11 @@ struct PrimaryButtonStyle: ButtonStyle {
 				.background(
 					RoundedRectangle(cornerRadius: ButtonMetrics.cornerRadius)
 						.fill(isRecording ? Color.recordingAccent : Color.primaryAction)
-						.opacity(configuration.isPressed ? 0.8 : 1.0)
-						.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+						.opacity(configuration.isPressed ? Motion.pressOpacity : 1.0)
+						.scaleEffect(configuration.isPressed ? Motion.pressScale : 1.0)
 				)
 				.opacity(isEnabled ? 1.0 : 0.5)
-				.animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+				.animation(Motion.press, value: configuration.isPressed)
 		}
 	}
 }
@@ -704,10 +704,12 @@ struct SecondaryButtonStyle: ButtonStyle {
 			.background(
 				RoundedRectangle(cornerRadius: ButtonMetrics.cornerRadius)
 					.fill(Color.gray.opacity(0.2))
+					// Secondary presses dim a touch further than Motion.pressOpacity
+					// because the fill underneath is already low-contrast.
 					.opacity(configuration.isPressed ? 0.7 : 1.0)
-					.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+					.scaleEffect(configuration.isPressed ? Motion.pressScale : 1.0)
 			)
-			.animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+			.animation(Motion.press, value: configuration.isPressed)
 	}
 }
 
@@ -1137,7 +1139,7 @@ struct ToastOverlay: View {
 		}
 		.padding(.bottom, 8)
 		.padding(.horizontal, 8)
-		.animation(.spring(response: 0.4, dampingFraction: 0.8), value: toastCenter.current)
+		.animation(Motion.transient, value: toastCenter.current)
 	}
 }
 
@@ -1358,8 +1360,8 @@ struct HeaderGlyph: View {
 				.id(systemImage)
 				.transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
 		}
-		.animation(reduceMotion ? nil : .spring(duration: 0.3), value: systemImage)
-		.animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: color)
+		.animation(reduceMotion ? nil : Motion.iconMorph, value: systemImage)
+		.animation(reduceMotion ? nil : Motion.iconMorphTint, value: color)
 		// Fence the glyph's local animations off from ancestor layout shifts:
 		// when a Fix-It row collapses in the same beat as a state change, the
 		// circle must jump with the layout, not slide in from its old position.
