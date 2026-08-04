@@ -141,6 +141,7 @@ struct SettingsView: View {
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
 	@AppStorage("enableRecordingGlow") private var enableRecordingGlow = true
+	@AppStorage("whisperaPauseMediaWhileDictating") private var pauseMediaWhileDictating = true
 	@AppStorage(RecordingGlowColor.key) private var recordingGlowColorHex = RecordingGlowColor
 		.defaultHex
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
@@ -301,6 +302,14 @@ struct SettingsView: View {
 							description: "Trackpad vibration when shortcut is triggered"
 						) {
 							Toggle("", isOn: $shortcutHapticFeedback)
+						}
+
+						SettingRow(
+							"Pause Media While Dictating",
+							description:
+								"Pauses whatever is playing using the system play/pause control and resumes it afterwards, exactly like pressing the play/pause key on your keyboard"
+						) {
+							Toggle("", isOn: $pauseMediaWhileDictating)
 						}
 
 						SettingRow(

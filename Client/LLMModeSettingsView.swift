@@ -25,31 +25,12 @@ struct LLMModeSettingsView: View {
 				case .local: LocalModeConfig()
 				case .byok: ByokModeConfig()
 				}
-
-				MediaPauseConfig()
 			}
 			.padding(20)
 		}
 		// A raw value the picker no longer offers would leave it with nothing
 		// selected, so rewrite it to the fallback the router already uses.
 		.onAppear { if LLMMode(rawValue: modeRaw) == nil { modeRaw = LLMMode.local.rawValue } }
-	}
-}
-
-/// Toggle for pausing the user's music during a dictation. Lives here because
-/// this is the pane the dictation pipeline's other behaviour settings share.
-private struct MediaPauseConfig: View {
-	@AppStorage("whisperaPauseMediaWhileDictating") private var pauseMedia = true
-
-	var body: some View {
-		SettingsSection("Media") {
-			VStack(alignment: .leading, spacing: 8) {
-				Toggle("Pause media while dictating", isOn: $pauseMedia)
-				Text("Uses the system play/pause key, so it reaches whatever macOS is currently playing — music, video, a browser tab — and needs no permission. Whispera only sends it when something is actually playing, and only resumes what it paused.")
-					.font(.caption)
-					.foregroundColor(.secondary)
-			}
-		}
 	}
 }
 
