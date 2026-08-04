@@ -261,28 +261,13 @@ final class SystemAudioMuter {
 			AudioObjectGetPropertyData(
 				AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices) == noErr
 		else { return [] }
-		return devices.filter { hasOutputChannels(on: $0) }
-	}
-
-	private nonisolated static func hasOutputChannels(on device: AudioDeviceID) -> Bool {
-		var address = AudioObjectPropertyAddress(
-			mSelector: kAudioDevicePropertyStreamConfiguration,
-			mScope: kAudioDevicePropertyScopeOutput,
-			mElement: kAudioObjectPropertyElementMain
-		)
-		var size = UInt32(0)
-		guard
-			AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr, size > 0
-		else { return false }
-		let buffer = UnsafeMutableRawPointer.allocate(
-			byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
-		defer { buffer.deallocate() }
-		guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, buffer) == noErr else {
-			return false
-		}
-		let buffers = UnsafeMutableAudioBufferListPointer(
-			buffer.assumingMemoryBound(to: AudioBufferList.self))
-		return buffers.contains { $0.mNumberChannels > 0 }
+		// Deliberately unfiltered. Sleeping Bluetooth outputs (AirPods Max) report
+		// zero output channels while still existing as writable objects holding our
+		// mute: measured `set device 114 mute=0 -> status 0, read-back 0` while the
+		// device was absent from a channel-filtered enumeration. Filtering here would
+		// skip exactly the device that gets stuck muted. Devices with no settable
+		// output mute — microphones, displays — are dropped by `muteIsSettable`.
+		return devices
 	}
 
 	nonisolated static func muteIsSettable(on device: AudioDeviceID) -> Bool {
