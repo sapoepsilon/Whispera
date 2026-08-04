@@ -60,36 +60,77 @@ private final class MediaKeyRecorder: @unchecked Sendable {
 @MainActor
 struct MediaPlaybackCoordinatorFlowTests {
 
-	/// A window short enough to keep the suite fast but wide enough for several
-	/// scripted polls.
-	private static let pollInterval = 0.001
-	private static let verifyWindow = 0.005
+	/// Windows short enough to keep the suite fast, keeping the shipped shape:
+	/// a tight appearance check and a lazier, longer disappearance check.
+	private static let fastPollInterval = 0.001
+	private static let fastWindow = 0.003
+	private static let slowPollInterval = 0.002
+	private static let slowWindow = 0.010
+	/// How many rendering-pid reads the appearance check consumes when it never
+	/// matches — scripts have to cover them before the disappearance can show up.
+	private static let fastPolls = 3
+
+	/// A process that renders output the whole time, the way Parsec and Final Cut
+	/// Pro do. It sits in every sample and so moves no delta, but it does keep the
+	/// pre-gate open.
+	private static let constantRenderer: pid_t = 7
 
 	private func makeCoordinator(
 		enabled: Bool = true,
-		script: [Set<pid_t>] = []
+		script: [Set<pid_t>] = [],
+		slowPollInterval: Double = MediaPlaybackCoordinatorFlowTests.slowPollInterval,
+		slowWindow: Double = MediaPlaybackCoordinatorFlowTests.slowWindow
 	) -> (MediaPlaybackCoordinator, MediaKeyRecorder) {
 		let recorder = MediaKeyRecorder(script: script)
 		let coordinator = MediaPlaybackCoordinator(
 			isEnabled: { enabled },
 			renderingPIDs: { recorder.nextPIDs() },
 			sendPlayPauseKey: { recorder.sendKey() },
-			pollInterval: Self.pollInterval,
-			verifyWindow: Self.verifyWindow,
+			fastPollInterval: Self.fastPollInterval,
+			fastWindow: Self.fastWindow,
+			slowPollInterval: slowPollInterval,
+			slowWindow: slowWindow,
 			now: { recorder.now }
 		)
 		return (coordinator, recorder)
 	}
 
-	/// Something disappeared from the rendering set right after our key: we paused
-	/// it, and a later resume has a session to act on.
-	@Test func pauseWithDisappearanceRecordsASession() async {
-		// baseline [42] -> poll [] (paused) | resume baseline [] -> poll [42] (back)
-		let (coordinator, recorder) = makeCoordinator(script: [[42], [], [], [42]])
+	/// Baseline, then the samples the appearance check will read without matching.
+	private func holdingThroughFastWindow(_ pids: Set<pid_t>) -> [Set<pid_t>] {
+		Array(repeating: pids, count: Self.fastPolls + 1)
+	}
+
+	// MARK: - Pause
+
+	/// Nothing has an output stream open, so the toggle could only *start*
+	/// playback. The cheapest correct answer is not to press at all.
+	@Test func silentSystemIsNeverPressed() async {
+		let (coordinator, recorder) = makeCoordinator(script: [[]])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()
-		#expect(recorder.keyPresses == 1)
+
+		#expect(recorder.keyPresses == 0)
+		#expect(coordinator.session == nil)
+
+		coordinator.resumeAfterDictation()
+		await coordinator.flush()
+
+		#expect(recorder.keyPresses == 0)
+	}
+
+	/// The pre-gate was open only because of a constant renderer, so the press
+	/// started playback the user never asked for. The undo press is the whole
+	/// point of watching the effect instead of predicting it, and no session may
+	/// survive it.
+	@Test func appearanceInsideTheFastWindowUndoesItself() async {
+		let (coordinator, recorder) = makeCoordinator(script: [[Self.constantRenderer], [Self.constantRenderer, 99]])
+
+		await coordinator.pauseBeforeDictation()
+		await coordinator.flush()
+
+		#expect(recorder.keyPresses == 2)
+		#expect(coordinator.session == nil)
 
 		coordinator.resumeAfterDictation()
 		await coordinator.flush()
@@ -97,41 +138,88 @@ struct MediaPlaybackCoordinatorFlowTests {
 		#expect(recorder.keyPresses == 2)
 	}
 
-	/// Nothing was playing, so the toggle *started* something. The undo press is
-	/// the whole point of watching the effect instead of predicting it, and no
-	/// session may survive it.
-	@Test func pauseWithAppearanceUndoesItselfAndRecordsNothing() async {
-		let (coordinator, recorder) = makeCoordinator(script: [[], [99]])
+	/// The measured falling edge is 2 s, far past the appearance check, so the
+	/// disappearance is only visible on the slow cadence — and it is the pids that
+	/// actually stopped that get recorded.
+	@Test func disappearanceAfterTheFastWindowRecordsASession() async {
+		let playing: Set<pid_t> = [42, 43, Self.constantRenderer]
+		let (coordinator, recorder) = makeCoordinator(
+			script: holdingThroughFastWindow(playing) + [[Self.constantRenderer]])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()
-		#expect(recorder.keyPresses == 2)
+
+		#expect(recorder.keyPresses == 1)
+		#expect(coordinator.session?.pausedPIDs == [42, 43])
+	}
+
+	/// Constant renderers sit in both sets and cancel out. Nothing appeared and
+	/// nothing stopped, so the press reached an app that ignored it or reached
+	/// nothing — pressing again would be a coin flip.
+	@Test func neitherEdgeLeavesNoSessionAndNoSecondPress() async {
+		let (coordinator, recorder) = makeCoordinator(script: [[Self.constantRenderer]])
+
+		await coordinator.pauseBeforeDictation()
+		await coordinator.flush()
+
+		#expect(recorder.keyPresses == 1)
+		#expect(coordinator.session == nil)
 
 		coordinator.resumeAfterDictation()
 		await coordinator.flush()
 
-		#expect(recorder.keyPresses == 2)
+		#expect(recorder.keyPresses == 1)
 	}
 
-	/// Constant renderers such as Parsec sit in both sets and cancel out; an
-	/// unchanged world means the key reached nothing worth undoing or resuming.
-	@Test func pauseWithNoChangeSendsNothingFurther() async {
-		let (coordinator, recorder) = makeCoordinator(script: [[7], [7]])
+	/// A wrong press is audible, so the appearance check must not be queued behind
+	/// the multi-second disappearance window. With the slow cadence set far longer
+	/// than the whole test budget, finishing at all proves the fast interval drove
+	/// the undo.
+	@Test func fastUndoIsNotStarvedByTheSlowWindow() async {
+		let (coordinator, recorder) = makeCoordinator(
+			script: [[Self.constantRenderer], [Self.constantRenderer, 99]],
+			slowPollInterval: 0.5,
+			slowWindow: 2.0
+		)
+
+		let started = Date()
+		await coordinator.pauseBeforeDictation()
+		await coordinator.flush()
+		let elapsed = Date().timeIntervalSince(started)
+
+		#expect(recorder.keyPresses == 2)
+		#expect(elapsed < 0.25)
+	}
+
+	// MARK: - Resume
+
+	@Test func resumeBringsBackWhatWePaused() async {
+		let (coordinator, recorder) = makeCoordinator(
+			script: holdingThroughFastWindow([42, Self.constantRenderer])
+				+ [
+					[Self.constantRenderer],  // slow poll: 42 stopped
+					[Self.constantRenderer],  // resume baseline
+					[Self.constantRenderer, 42],  // resume poll: 42 is back
+				])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()
-		#expect(recorder.keyPresses == 1)
-
 		coordinator.resumeAfterDictation()
 		await coordinator.flush()
 
-		#expect(recorder.keyPresses == 1)
+		#expect(recorder.keyPresses == 2)
+		#expect(coordinator.session == nil)
 	}
 
-	/// Playback running again is playback the user restarted; the toggle would
-	/// stop it.
+	/// The session exists only because we watched pid 42 stop, so seeing it play
+	/// again means the user restarted it by hand; the toggle would stop it.
 	@Test func resumeSkipsPlaybackTheUserRestarted() async {
-		let (coordinator, recorder) = makeCoordinator(script: [[42], [], [42]])
+		let (coordinator, recorder) = makeCoordinator(
+			script: holdingThroughFastWindow([42, Self.constantRenderer])
+				+ [
+					[Self.constantRenderer],
+					[Self.constantRenderer, 42],  // resume baseline: already playing
+				])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()
@@ -144,7 +232,13 @@ struct MediaPlaybackCoordinatorFlowTests {
 	/// A resume that wakes a *different* app is the same mistake as a pause that
 	/// starts one, and gets the same undo.
 	@Test func resumeThatStartsADifferentAppUndoesItself() async {
-		let (coordinator, recorder) = makeCoordinator(script: [[42], [], [], [99]])
+		let (coordinator, recorder) = makeCoordinator(
+			script: holdingThroughFastWindow([42, Self.constantRenderer])
+				+ [
+					[Self.constantRenderer],
+					[Self.constantRenderer],
+					[Self.constantRenderer, 99],  // resume poll: wrong app woke up
+				])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()
@@ -155,7 +249,9 @@ struct MediaPlaybackCoordinatorFlowTests {
 	}
 
 	@Test func staleSessionIsNotResumed() async {
-		let (coordinator, recorder) = makeCoordinator(script: [[42], [], [], [42]])
+		let (coordinator, recorder) = makeCoordinator(
+			script: holdingThroughFastWindow([42, Self.constantRenderer])
+				+ [[Self.constantRenderer], [Self.constantRenderer], [Self.constantRenderer, 42]])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()
@@ -186,7 +282,9 @@ struct MediaPlaybackCoordinatorFlowTests {
 	}
 
 	@Test func secondResumeForOneDictationIsANoOp() async {
-		let (coordinator, recorder) = makeCoordinator(script: [[42], [], [], [42]])
+		let (coordinator, recorder) = makeCoordinator(
+			script: holdingThroughFastWindow([42, Self.constantRenderer])
+				+ [[Self.constantRenderer], [Self.constantRenderer], [Self.constantRenderer, 42]])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()

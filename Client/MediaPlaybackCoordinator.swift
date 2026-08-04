@@ -50,23 +50,42 @@ struct MediaPauseSession: Equatable, Sendable {
 /// renderers do, however, cancel out of a before/after comparison. So this class
 /// does not predict what the key will do — it presses once and then watches the
 /// set of output-rendering processes change. A process that *disappears* is one we
-/// paused; a process that *appears* means we started playback out of silence, and
-/// the same key is sent straight back to undo it.
+/// paused; a process that *appears* is playback we started by accident, and the
+/// same key is sent straight back to undo it.
+///
+/// Explicit MediaRemote play/pause commands are not an option: since macOS 15.4
+/// `MRMediaRemoteSendCommand` is entitlement-gated and returns true while doing
+/// nothing. The toggle key is the only actuator there is.
+///
+/// The two edges of the signal are wildly asymmetric, which is the whole shape of
+/// this class — see the timing constants on `init`.
 @MainActor
 final class MediaPlaybackCoordinator {
 	static let shared = MediaPlaybackCoordinator()
 
-	private var session: MediaPauseSession?
+	private(set) var session: MediaPauseSession?
 	/// Serializes pause/resume so a resume can never overtake its own pause.
 	private var work: Task<Void, Never>?
 
 	private let isEnabled: @Sendable () -> Bool
 	private let renderingPIDs: @Sendable () -> Set<pid_t>
 	private let sendPlayPauseKey: @Sendable () -> Void
-	private let pollInterval: Double
-	private let verifyWindow: Double
+	private let fastPollInterval: Double
+	private let fastWindow: Double
+	private let slowPollInterval: Double
+	private let slowWindow: Double
 	private let now: @Sendable () -> Date
 
+	// Measured against real Spotify on macOS 26 by sampling
+	// `kAudioProcessPropertyIsRunningOutput` per process:
+	//   paused -> playing (appearance) takes 37-51 ms
+	//   playing -> paused (disappearance) takes 2.0-2.3 s
+	// A wrong press is audible, so the appearance check has to be tight and
+	// cheap: 50 ms polls catch a real accidental start within two or three
+	// samples and the whole blip stays under half a second. Confirming a pause
+	// can only ever be slow, so it gets a lazy 250 ms cadence and a 3.5 s
+	// ceiling — comfortably past the worst measured falling edge without
+	// declaring failure early.
 	init(
 		isEnabled: @escaping @Sendable () -> Bool = { WhisperaSettings.pauseMediaWhileDictating },
 		// Closure literals rather than bare function references: an unapplied
@@ -77,15 +96,19 @@ final class MediaPlaybackCoordinator {
 		sendPlayPauseKey: @escaping @Sendable () -> Void = {
 			MediaPlaybackCoordinator.postSystemPlayPause()
 		},
-		pollInterval: Double = 0.1,
-		verifyWindow: Double = 1.2,
+		fastPollInterval: Double = 0.05,
+		fastWindow: Double = 0.5,
+		slowPollInterval: Double = 0.25,
+		slowWindow: Double = 3.5,
 		now: @escaping @Sendable () -> Date = { Date() }
 	) {
 		self.isEnabled = isEnabled
 		self.renderingPIDs = renderingPIDs
 		self.sendPlayPauseKey = sendPlayPauseKey
-		self.pollInterval = pollInterval
-		self.verifyWindow = verifyWindow
+		self.fastPollInterval = fastPollInterval
+		self.fastWindow = fastWindow
+		self.slowPollInterval = slowPollInterval
+		self.slowWindow = slowWindow
 		self.now = now
 	}
 
@@ -136,6 +159,15 @@ final class MediaPlaybackCoordinator {
 		guard #available(macOS 14.4, *) else { return nil }
 
 		let before = renderingPIDs()
+		// Nobody has an output stream open, so the toggle has nothing to pause and
+		// could only start something. Cheapest possible way to avoid the worst
+		// failure mode, and it costs one property read.
+		guard !before.isEmpty else {
+			AppLogger.shared.audioManager.info(
+				"Skipping media pause — no process is rendering output, the key could only start playback")
+			return nil
+		}
+
 		sendPlayPauseKey()
 		return before
 	}
@@ -143,36 +175,41 @@ final class MediaPlaybackCoordinator {
 	/// Watches what the key did and records a session only if it actually paused
 	/// something.
 	private func classifyPause(before: Set<pid_t>) async {
-		guard let after = await firstChange(from: before) else {
+		let appeared: (Set<pid_t>) -> Bool = { !$0.subtracting(before).isEmpty }
+		let disappeared: (Set<pid_t>) -> Bool = { !before.subtracting($0).isEmpty }
+
+		// Appearance first and on the tight cadence: a wrong press is audible, and
+		// the rising edge is ~40 ms, so this either fires almost immediately or not
+		// at all. Waiting out the slow disappearance window before checking would
+		// leave unwanted playback running for seconds.
+		if let after = await poll(every: fastPollInterval, upTo: fastWindow, until: appeared) {
+			let started = after.subtracting(before)
+			sendPlayPauseKey()
 			AppLogger.shared.audioManager.info(
-				"Media key reached nothing — no playback state changed, nothing to resume")
+				"Media key started playback that was not running (pids \(started.sorted())) — sending it back to stop"
+			)
+			return
+		}
+
+		guard let after = await poll(every: slowPollInterval, upTo: slowWindow, until: disappeared) else {
+			// Pressing again here would be a coin flip: we do not know whether the
+			// key reached nothing or reached an app that ignored it.
+			AppLogger.shared.audioManager.info(
+				"Media key stopped nothing within \(slowWindow)s — nothing to resume")
 			return
 		}
 
 		let stopped = before.subtracting(after)
-		let started = after.subtracting(before)
+		session = MediaPauseSession(pausedPIDs: stopped, startedAt: now())
+		AppLogger.shared.audioManager.info("Paused media for dictation: pids \(stopped.sorted())")
 
-		if !stopped.isEmpty {
-			session = MediaPauseSession(pausedPIDs: stopped, startedAt: now())
-			AppLogger.shared.audioManager.info("Paused media for dictation: pids \(stopped.sorted())")
-			// One press reaches only the system's active Now Playing app, by OS
-			// design. Pressing again would resume the app we just paused, so the
-			// honest outcome for the rest is a log.
-			if !after.isEmpty {
-				AppLogger.shared.audioManager.info(
-					"\(after.count) other process(es) are still rendering output — the media key only reaches the system's active Now Playing app"
-				)
-			}
-		} else if !started.isEmpty {
-			// Nothing had been playing, so the toggle started playback the user
-			// never asked for. Undo it; the audible blip is bounded by how fast we
-			// noticed.
-			sendPlayPauseKey()
+		// One press reaches only the system's active Now Playing app, by OS design.
+		// Pressing again would resume the app we just paused, so the honest outcome
+		// for the rest is a log.
+		if !after.isEmpty {
 			AppLogger.shared.audioManager.info(
-				"Media key started playback out of silence (pids \(started.sorted())) — sending it back to stop"
+				"\(after.count) other process(es) are still rendering output — the media key only reaches the system's active Now Playing app"
 			)
-		} else {
-			AppLogger.shared.audioManager.info("Media key produced no usable change — nothing to resume")
 		}
 	}
 
@@ -189,8 +226,9 @@ final class MediaPlaybackCoordinator {
 		}
 
 		let before = renderingPIDs()
-		// Anything we paused that is playing again is playback the user restarted
-		// by hand; the toggle would stop it.
+		// A session exists only because we watched these pids stop, so one of them
+		// rendering again is playback the user restarted by hand; the toggle would
+		// stop it.
 		guard session.pausedPIDs.isDisjoint(with: before) else {
 			AppLogger.shared.audioManager.info(
 				"Skipping media resume — the user restarted playback themselves")
@@ -199,36 +237,40 @@ final class MediaPlaybackCoordinator {
 
 		sendPlayPauseKey()
 
-		guard let after = await firstChange(from: before) else {
-			AppLogger.shared.audioManager.info("Media key reached nothing on resume")
+		// Resume is verified on the rising edge only, which is the fast one.
+		let appeared: (Set<pid_t>) -> Bool = { !$0.subtracting(before).isEmpty }
+		guard let after = await poll(every: fastPollInterval, upTo: fastWindow, until: appeared) else {
+			AppLogger.shared.audioManager.info(
+				"Resume key did not bring back what we paused — leaving playback alone")
 			return
 		}
 
 		let started = after.subtracting(before)
-		if !started.isDisjoint(with: session.pausedPIDs) {
-			AppLogger.shared.audioManager.info("Resumed media after dictation")
-		} else if !started.isEmpty {
+		if started.isDisjoint(with: session.pausedPIDs) {
 			sendPlayPauseKey()
 			AppLogger.shared.audioManager.info(
 				"Resume key started a different app (pids \(started.sorted())) — sending it back to stop"
 			)
 		} else {
-			AppLogger.shared.audioManager.info(
-				"Resume key did not bring back what we paused — leaving playback alone")
+			AppLogger.shared.audioManager.info("Resumed media after dictation")
 		}
 	}
 
 	// MARK: - Delta
 
-	/// The first rendering-pid set that differs from `before`, or nil if nothing
-	/// changed inside the verification window.
-	private func firstChange(from before: Set<pid_t>) async -> Set<pid_t>? {
-		guard pollInterval > 0, verifyWindow > 0 else { return nil }
-		let attempts = max(1, Int((verifyWindow / pollInterval).rounded(.up)))
+	/// Samples the rendering-pid set every `interval` for at most `window` seconds
+	/// and returns the first sample that satisfies `isMatch`, or nil.
+	private func poll(
+		every interval: Double,
+		upTo window: Double,
+		until isMatch: (Set<pid_t>) -> Bool
+	) async -> Set<pid_t>? {
+		guard interval > 0, window > 0 else { return nil }
+		let attempts = max(1, Int((window / interval).rounded(.up)))
 		for _ in 0..<attempts {
-			try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+			try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
 			let current = renderingPIDs()
-			if current != before { return current }
+			if isMatch(current) { return current }
 		}
 		return nil
 	}
