@@ -40,8 +40,9 @@ struct MediaPauseSession: Equatable, Sendable {
 /// without Whispera holding a single per-app permission.
 ///
 /// The key is a toggle, so firing it blind would *start* playback when nothing
-/// was playing. Both directions are therefore gated on CoreAudio's read of the
-/// default output device (see `defaultOutputDeviceIsRunning`).
+/// was playing. Both directions are therefore gated on whether some process
+/// other than Whispera is actively rendering audio output (see
+/// `otherProcessIsRenderingOutput`).
 @MainActor
 final class MediaPlaybackCoordinator {
 	static let shared = MediaPlaybackCoordinator()
@@ -51,7 +52,7 @@ final class MediaPlaybackCoordinator {
 	private var work: Task<Void, Never>?
 
 	private let isEnabled: @Sendable () -> Bool
-	private let isOutputRunning: @Sendable () -> Bool
+	private let otherProcessIsPlayingOutput: @Sendable () -> Bool
 	private let sendPlayPauseKey: @Sendable () -> Void
 	private let resumeSettleSeconds: Double
 	private let now: @Sendable () -> Date
@@ -60,8 +61,8 @@ final class MediaPlaybackCoordinator {
 		isEnabled: @escaping @Sendable () -> Bool = { WhisperaSettings.pauseMediaWhileDictating },
 		// Closure literals rather than bare function references: an unapplied
 		// declaration reference isn't inferred `@Sendable`.
-		isOutputRunning: @escaping @Sendable () -> Bool = {
-			MediaPlaybackCoordinator.defaultOutputDeviceIsRunning()
+		otherProcessIsPlayingOutput: @escaping @Sendable () -> Bool = {
+			MediaPlaybackCoordinator.otherProcessIsRenderingOutput()
 		},
 		sendPlayPauseKey: @escaping @Sendable () -> Void = {
 			MediaPlaybackCoordinator.postSystemPlayPause()
@@ -70,7 +71,7 @@ final class MediaPlaybackCoordinator {
 		now: @escaping @Sendable () -> Date = { Date() }
 	) {
 		self.isEnabled = isEnabled
-		self.isOutputRunning = isOutputRunning
+		self.otherProcessIsPlayingOutput = otherProcessIsPlayingOutput
 		self.sendPlayPauseKey = sendPlayPauseKey
 		self.resumeSettleSeconds = resumeSettleSeconds
 		self.now = now
@@ -110,7 +111,7 @@ final class MediaPlaybackCoordinator {
 
 	private func performPause() async {
 		session = nil
-		guard isOutputRunning() else {
+		guard otherProcessIsPlayingOutput() else {
 			AppLogger.shared.audioManager.debug("Skipping media pause — nothing is playing")
 			return
 		}
@@ -129,16 +130,16 @@ final class MediaPlaybackCoordinator {
 			return
 		}
 
-		// Whispera's own stop chime and the HAL's tail both keep the device
-		// "running" for a moment after a dictation ends; sampling immediately would
-		// read our own sound as the user having resumed playback themselves.
+		// The gate already ignores our own process, so the stop chime cannot be read
+		// as playback; the delay stays as cheap insurance against the paused app
+		// still winding its IO down as the dictation ends.
 		if resumeSettleSeconds > 0 {
 			try? await Task.sleep(nanoseconds: UInt64(resumeSettleSeconds * 1_000_000_000))
 		}
 
 		// Playback that is running again is playback the user restarted during the
 		// dictation. Sending the toggle now would stop it.
-		guard !isOutputRunning() else {
+		guard !otherProcessIsPlayingOutput() else {
 			AppLogger.shared.audioManager.info("Skipping media resume — playback is already running")
 			return
 		}
@@ -148,44 +149,87 @@ final class MediaPlaybackCoordinator {
 
 	// MARK: - Transport
 
-	/// Whether the current default output device has IO running anywhere on the
-	/// system — the only signal macOS offers about "is something playing" that
-	/// costs no permission at all.
+	/// Whether some process *other than Whispera* is actively rendering audio
+	/// output right now.
 	///
-	/// It is honestly approximate. It describes the device, not an app, so any
-	/// system sound counts; and several Bluetooth outputs keep their stream open
-	/// after playback stops (or spin it up before it starts), so the answer can
-	/// lag reality by seconds on those. Both failure modes are one-sided by
-	/// design: a false "running" only costs a skipped pause or a skipped resume,
-	/// never an unwanted toggle.
-	nonisolated static func defaultOutputDeviceIsRunning() -> Bool {
-		var deviceID = AudioDeviceID(kAudioObjectUnknown)
-		var deviceSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-		var deviceAddress = AudioObjectPropertyAddress(
-			mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+	/// The device-level answer (`kAudioDevicePropertyDeviceIsRunningSomewhere`)
+	/// cannot be used here: players and browsers keep the output device open for
+	/// tens of seconds after the user pauses, so it reads "running" over silence
+	/// and the play/pause toggle would *start* playback nobody asked for.
+	/// `kAudioProcessPropertyIsRunningOutput` reports active IO per process
+	/// instead, and skipping our own pid makes Whispera's own chimes structurally
+	/// incapable of moving the answer in either direction.
+	nonisolated static func otherProcessIsRenderingOutput() -> Bool {
+		// Per-process audio state landed in macOS 14.4; below it the honest answer
+		// is "unknown", and a skipped pause is a far cheaper failure than starting
+		// playback out of silence.
+		guard #available(macOS 14.4, *) else { return false }
+
+		var listAddress = AudioObjectPropertyAddress(
+			mSelector: kAudioHardwarePropertyProcessObjectList,
 			mScope: kAudioObjectPropertyScopeGlobal,
 			mElement: kAudioObjectPropertyElementMain
 		)
-		let deviceStatus = AudioObjectGetPropertyData(
-			AudioObjectID(kAudioObjectSystemObject), &deviceAddress, 0, nil, &deviceSize, &deviceID)
-		guard deviceStatus == noErr, deviceID != AudioDeviceID(kAudioObjectUnknown) else {
+		var listSize = UInt32(0)
+		let sizeStatus = AudioObjectGetPropertyDataSize(
+			AudioObjectID(kAudioObjectSystemObject), &listAddress, 0, nil, &listSize)
+		guard sizeStatus == noErr, listSize > 0 else {
 			AppLogger.shared.audioManager.error(
-				"Could not read the default output device: OSStatus \(deviceStatus)")
+				"Could not size the audio process list: OSStatus \(sizeStatus)")
 			return false
 		}
 
-		var isRunning = UInt32(0)
-		var runningSize = UInt32(MemoryLayout<UInt32>.size)
-		var runningAddress = AudioObjectPropertyAddress(
-			mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+		var processes = [AudioObjectID](
+			repeating: AudioObjectID(kAudioObjectUnknown),
+			count: Int(listSize) / MemoryLayout<AudioObjectID>.size)
+		let listStatus = AudioObjectGetPropertyData(
+			AudioObjectID(kAudioObjectSystemObject), &listAddress, 0, nil, &listSize, &processes)
+		guard listStatus == noErr else {
+			AppLogger.shared.audioManager.error(
+				"Could not read the audio process list: OSStatus \(listStatus)")
+			return false
+		}
+
+		let ownPID = getpid()
+		var playingCount = 0
+		for process in processes {
+			// An unreadable pid could be our own, and counting it would risk the one
+			// failure this gate exists to prevent.
+			guard let pid = processPID(process), pid != ownPID else { continue }
+			if processIsRunningOutput(process) { playingCount += 1 }
+		}
+
+		if playingCount > 1 {
+			AppLogger.shared.audioManager.info(
+				"\(playingCount) processes are playing audio — the media key only reaches the system's active Now Playing app"
+			)
+		}
+		return playingCount > 0
+	}
+
+	private nonisolated static func processPID(_ process: AudioObjectID) -> pid_t? {
+		var pid = pid_t(-1)
+		var size = UInt32(MemoryLayout<pid_t>.size)
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioProcessPropertyPID,
 			mScope: kAudioObjectPropertyScopeGlobal,
 			mElement: kAudioObjectPropertyElementMain
 		)
-		let runningStatus = AudioObjectGetPropertyData(
-			deviceID, &runningAddress, 0, nil, &runningSize, &isRunning)
-		guard runningStatus == noErr else {
-			AppLogger.shared.audioManager.error(
-				"Could not read output device activity: OSStatus \(runningStatus)")
+		guard AudioObjectGetPropertyData(process, &address, 0, nil, &size, &pid) == noErr else {
+			return nil
+		}
+		return pid
+	}
+
+	private nonisolated static func processIsRunningOutput(_ process: AudioObjectID) -> Bool {
+		var isRunning = UInt32(0)
+		var size = UInt32(MemoryLayout<UInt32>.size)
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioProcessPropertyIsRunningOutput,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		guard AudioObjectGetPropertyData(process, &address, 0, nil, &size, &isRunning) == noErr else {
 			return false
 		}
 		return isRunning != 0

@@ -22,19 +22,19 @@ struct MediaPauseSessionTests {
 	}
 }
 
-/// Stands in for the two hardware-facing seams — the CoreAudio activity read and
-/// the media-key post. File-scoped so it stays nonisolated: the coordinator's
-/// `@Sendable` closures call it off the main actor.
+/// Stands in for the two hardware-facing seams — the CoreAudio per-process
+/// activity read and the media-key post. File-scoped so it stays nonisolated:
+/// the coordinator's `@Sendable` closures call it off the main actor.
 private final class MediaKeyRecorder: @unchecked Sendable {
 	private let lock = NSLock()
 	private var _keyPresses = 0
-	private var _outputRunning = true
+	private var _otherProcessPlaying = true
 	private var _now = Date(timeIntervalSinceReferenceDate: 0)
 
 	var keyPresses: Int { lock.withLock { _keyPresses } }
-	var outputRunning: Bool {
-		get { lock.withLock { _outputRunning } }
-		set { lock.withLock { _outputRunning = newValue } }
+	var otherProcessPlaying: Bool {
+		get { lock.withLock { _otherProcessPlaying } }
+		set { lock.withLock { _otherProcessPlaying = newValue } }
 	}
 	var now: Date {
 		get { lock.withLock { _now } }
@@ -49,13 +49,13 @@ struct MediaPlaybackCoordinatorFlowTests {
 
 	private func makeCoordinator(
 		enabled: Bool = true,
-		outputRunning: Bool = true
+		otherProcessPlaying: Bool = true
 	) -> (MediaPlaybackCoordinator, MediaKeyRecorder) {
 		let recorder = MediaKeyRecorder()
-		recorder.outputRunning = outputRunning
+		recorder.otherProcessPlaying = otherProcessPlaying
 		let coordinator = MediaPlaybackCoordinator(
 			isEnabled: { enabled },
-			isOutputRunning: { recorder.outputRunning },
+			otherProcessIsPlayingOutput: { recorder.otherProcessPlaying },
 			sendPlayPauseKey: { recorder.sendKey() },
 			resumeSettleSeconds: 0,
 			now: { recorder.now }
@@ -73,8 +73,13 @@ struct MediaPlaybackCoordinatorFlowTests {
 
 	/// The key is a toggle: firing it against a silent system would start
 	/// playback the user never asked for.
+	///
+	/// The mirror case — only *our own* process rendering output, i.e. a Whispera
+	/// chime — cannot be staged here, because the pid comparison that discards it
+	/// lives inside `otherProcessIsRenderingOutput()`, below this seam. Faking it
+	/// would only test the fake.
 	@Test func pauseSendsNothingWhenNothingIsPlaying() async {
-		let (coordinator, recorder) = makeCoordinator(outputRunning: false)
+		let (coordinator, recorder) = makeCoordinator(otherProcessPlaying: false)
 
 		await coordinator.pauseBeforeDictation()
 
@@ -95,7 +100,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 		let (coordinator, recorder) = makeCoordinator()
 
 		await coordinator.pauseBeforeDictation()
-		recorder.outputRunning = false
+		recorder.otherProcessPlaying = false
 		coordinator.resumeAfterDictation()
 		await coordinator.flush()
 
@@ -115,7 +120,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 	}
 
 	@Test func resumeWithoutAPauseSendsNothing() async {
-		let (coordinator, recorder) = makeCoordinator(outputRunning: false)
+		let (coordinator, recorder) = makeCoordinator(otherProcessPlaying: false)
 
 		coordinator.resumeAfterDictation()
 		await coordinator.flush()
@@ -123,12 +128,14 @@ struct MediaPlaybackCoordinatorFlowTests {
 		#expect(recorder.keyPresses == 0)
 	}
 
-	/// A pause that never fired leaves nothing to put back, so the stop paths that
-	/// all call resume must not start idle media.
+	/// A silent system must yield no key press *and* no session, so the stop paths
+	/// that all call resume have nothing to put back and idle media stays idle.
 	@Test func skippedPauseMeansNoResume() async {
-		let (coordinator, recorder) = makeCoordinator(outputRunning: false)
+		let (coordinator, recorder) = makeCoordinator(otherProcessPlaying: false)
 
 		await coordinator.pauseBeforeDictation()
+		#expect(recorder.keyPresses == 0)
+
 		coordinator.resumeAfterDictation()
 		await coordinator.flush()
 
@@ -139,7 +146,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 		let (coordinator, recorder) = makeCoordinator()
 
 		await coordinator.pauseBeforeDictation()
-		recorder.outputRunning = false
+		recorder.otherProcessPlaying = false
 		coordinator.resumeAfterDictation()
 		coordinator.resumeAfterDictation()
 		await coordinator.flush()
@@ -151,7 +158,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 		let (coordinator, recorder) = makeCoordinator()
 
 		await coordinator.pauseBeforeDictation()
-		recorder.outputRunning = false
+		recorder.otherProcessPlaying = false
 		recorder.now = recorder.now.addingTimeInterval(MediaPauseSession.maxResumeGap + 1)
 		coordinator.resumeAfterDictation()
 		await coordinator.flush()
