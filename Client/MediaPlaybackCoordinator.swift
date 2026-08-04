@@ -53,6 +53,19 @@ struct MediaPauseSession: Equatable, Sendable {
 /// paused; a process that *appears* is playback we started by accident, and the
 /// same key is sent straight back to undo it.
 ///
+/// Undoing a wrong press is fast but not silent, so the press itself is gated on a
+/// second signal: a background observer samples the rendering set continuously and
+/// remembers which processes it has watched *change* state. Ambient renderers never
+/// change; real players start and stop. Only a process that is rendering now *and*
+/// has been seen to toggle earns a press — see `plausiblePlayerIsRendering()`.
+///
+/// The honest limitation of that rule: if Whispera launches while music is already
+/// playing, that process is rendering from the observer's very first sample and has
+/// never been seen to change, so the first dictation will not pause it. The first
+/// pause or resume the user performs by hand marks it, and every dictation after
+/// that works. This is the trade we want — a missed pause is invisible, a phantom
+/// start is not.
+///
 /// Explicit MediaRemote play/pause commands are not an option: since macOS 15.4
 /// `MRMediaRemoteSendCommand` is entitlement-gated and returns true while doing
 /// nothing. The toggle key is the only actuator there is.
@@ -66,15 +79,29 @@ final class MediaPlaybackCoordinator {
 	private(set) var session: MediaPauseSession?
 	/// Serializes pause/resume so a resume can never overtake its own pause.
 	private var work: Task<Void, Never>?
+	private var observations: [pid_t: RenderObservation] = [:]
+	private var hasObserved = false
+	private var observer: Task<Void, Never>?
+	private var observerGeneration = 0
 
 	private let isEnabled: @Sendable () -> Bool
 	private let renderingPIDs: @Sendable () -> Set<pid_t>
+	private let processIsAlive: @Sendable (pid_t) -> Bool
 	private let sendPlayPauseKey: @Sendable () -> Void
 	private let fastPollInterval: Double
 	private let fastWindow: Double
 	private let slowPollInterval: Double
 	private let slowWindow: Double
+	private let observeInterval: Double
 	private let now: @Sendable () -> Date
+
+	/// What the observer knows about one process's output rendering.
+	private struct RenderObservation {
+		var isRendering: Bool
+		/// True once we have seen this pid's rendering state differ from the
+		/// previous sample. Ambient infrastructure never earns this.
+		var everToggled: Bool
+	}
 
 	// Measured against real Spotify on macOS 26 by sampling
 	// `kAudioProcessPropertyIsRunningOutput` per process:
@@ -86,12 +113,18 @@ final class MediaPlaybackCoordinator {
 	// can only ever be slow, so it gets a lazy 250 ms cadence and a 3.5 s
 	// ceiling — comfortably past the worst measured falling edge without
 	// declaring failure early.
+	// `observeInterval` drives the always-on toggle observer instead, where the
+	// only requirement is to eventually notice a state change; a 2 s cadence
+	// costs a sub-millisecond property read every other second.
 	init(
 		isEnabled: @escaping @Sendable () -> Bool = { WhisperaSettings.pauseMediaWhileDictating },
 		// Closure literals rather than bare function references: an unapplied
 		// declaration reference isn't inferred `@Sendable`.
 		renderingPIDs: @escaping @Sendable () -> Set<pid_t> = {
 			MediaPlaybackCoordinator.renderingProcessPIDs()
+		},
+		processIsAlive: @escaping @Sendable (pid_t) -> Bool = {
+			MediaPlaybackCoordinator.processExists($0)
 		},
 		sendPlayPauseKey: @escaping @Sendable () -> Void = {
 			MediaPlaybackCoordinator.postSystemPlayPause()
@@ -100,15 +133,18 @@ final class MediaPlaybackCoordinator {
 		fastWindow: Double = 0.5,
 		slowPollInterval: Double = 0.25,
 		slowWindow: Double = 3.5,
+		observeInterval: Double = 2.0,
 		now: @escaping @Sendable () -> Date = { Date() }
 	) {
 		self.isEnabled = isEnabled
 		self.renderingPIDs = renderingPIDs
+		self.processIsAlive = processIsAlive
 		self.sendPlayPauseKey = sendPlayPauseKey
 		self.fastPollInterval = fastPollInterval
 		self.fastWindow = fastWindow
 		self.slowPollInterval = slowPollInterval
 		self.slowWindow = slowWindow
+		self.observeInterval = observeInterval
 		self.now = now
 	}
 
@@ -119,7 +155,11 @@ final class MediaPlaybackCoordinator {
 	/// what the key actually did stays queued behind it and is what a later
 	/// resume waits on.
 	func pauseBeforeDictation() async {
-		guard isEnabled() else { return }
+		guard isEnabled() else {
+			stopObserving()
+			return
+		}
+		startObserving()
 		let previous = work
 		let pressed = Task { @MainActor () -> Set<pid_t>? in
 			await previous?.value
@@ -147,6 +187,82 @@ final class MediaPlaybackCoordinator {
 		await work?.value
 	}
 
+	// MARK: - Observer
+
+	/// Samples the rendering set on a slow cadence for as long as the feature is
+	/// on, so that by the time a dictation starts we already know which processes
+	/// behave like players.
+	///
+	/// This exists because "is anything rendering output" is not a usable gate on
+	/// real machines: measured over 30+ minutes on the owner's Mac, `parsecd`
+	/// reported `kAudioProcessPropertyIsRunningOutput` true in 100% of samples with
+	/// nothing playing, and Final Cut Pro did the same while merely open. Spotify,
+	/// meanwhile, went true -> false -> true -> false across the same session. The
+	/// discriminator is movement, not presence.
+	private func startObserving() {
+		guard observer == nil, observeInterval > 0 else { return }
+		guard #available(macOS 14.4, *) else { return }
+
+		observerGeneration += 1
+		let generation = observerGeneration
+		observer = Task { @MainActor [weak self] in
+			while !Task.isCancelled {
+				guard let self, self.isEnabled() else { break }
+				self.observeOnce()
+				try? await Task.sleep(nanoseconds: UInt64(self.observeInterval * 1_000_000_000))
+			}
+			// Clearing the handle is what allows a restart, so only the loop that
+			// still owns it may do so — a later loop must not be dropped by an
+			// earlier one finishing.
+			guard let self, self.observerGeneration == generation else { return }
+			self.observer = nil
+		}
+	}
+
+	private func stopObserving() {
+		observer?.cancel()
+		observer = nil
+		observerGeneration += 1
+	}
+
+	/// One observation step: take a sample and fold it into `observations`.
+	/// Called on the observer's cadence, and once more from the press gate so the
+	/// decision is never made on a stale sample.
+	func observeOnce() {
+		record(sample: renderingPIDs())
+	}
+
+	private func record(sample: Set<pid_t>) {
+		for pid in sample where observations[pid] == nil {
+			// A pid already rendering at the very first sample may have been
+			// rendering for hours — we did not witness its start, so it is not
+			// toggled. A pid that shows up later did start while we watched.
+			observations[pid] = RenderObservation(isRendering: true, everToggled: hasObserved)
+		}
+
+		for (pid, observation) in observations {
+			let isRendering = sample.contains(pid)
+			guard isRendering != observation.isRendering else { continue }
+			observations[pid] = RenderObservation(isRendering: isRendering, everToggled: true)
+		}
+
+		// Keep the map bounded: a pid that is gone entirely can never toggle again,
+		// and pids are recycled.
+		for (pid, observation) in observations
+		where !observation.isRendering && !processIsAlive(pid) {
+			observations.removeValue(forKey: pid)
+		}
+
+		hasObserved = true
+	}
+
+	/// True when something rendering output right now has also been seen to change
+	/// state — the only evidence we have that a press would reach a real player
+	/// rather than start one.
+	func plausiblePlayerIsRendering() -> Bool {
+		observations.values.contains { $0.isRendering && $0.everToggled }
+	}
+
 	// MARK: - Pause
 
 	/// Reads the baseline and presses the key. Returns the baseline, or nil when
@@ -159,12 +275,13 @@ final class MediaPlaybackCoordinator {
 		guard #available(macOS 14.4, *) else { return nil }
 
 		let before = renderingPIDs()
-		// Nobody has an output stream open, so the toggle has nothing to pause and
-		// could only start something. Cheapest possible way to avoid the worst
-		// failure mode, and it costs one property read.
-		guard !before.isEmpty else {
-			AppLogger.shared.audioManager.info(
-				"Skipping media pause — no process is rendering output, the key could only start playback")
+		record(sample: before)
+		guard plausiblePlayerIsRendering() else {
+			// The common case on a machine with ambient renderers and nothing
+			// playing, so it must not spam the log at info.
+			AppLogger.shared.audioManager.debug(
+				"Skipping media pause — nothing that behaves like a player is rendering, the key could only start playback"
+			)
 			return nil
 		}
 
@@ -334,6 +451,12 @@ final class MediaPlaybackCoordinator {
 			return nil
 		}
 		return pid
+	}
+
+	/// Signal 0 performs the permission and existence checks without delivering
+	/// anything; EPERM means the process is alive but out of our reach.
+	nonisolated static func processExists(_ pid: pid_t) -> Bool {
+		kill(pid, 0) == 0 || errno == EPERM
 	}
 
 	private nonisolated static func processIsRunningOutput(_ process: AudioObjectID) -> Bool {

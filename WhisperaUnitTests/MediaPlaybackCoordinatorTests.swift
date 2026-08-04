@@ -71,11 +71,14 @@ struct MediaPlaybackCoordinatorFlowTests {
 	private static let fastPolls = 3
 
 	/// A process that renders output the whole time, the way Parsec and Final Cut
-	/// Pro do. It sits in every sample and so moves no delta, but it does keep the
-	/// pre-gate open.
+	/// Pro do. It sits in every sample, so it moves no delta and never earns a
+	/// toggle.
 	private static let constantRenderer: pid_t = 7
 
-	private func makeCoordinator(
+	/// Builds a coordinator whose observer is stepped by hand: `observeInterval: 0`
+	/// keeps the background loop from racing the scripted seam, so every sample a
+	/// test reads is one the test wrote.
+	private func makeUnobservedCoordinator(
 		enabled: Bool = true,
 		script: [Set<pid_t>] = [],
 		slowPollInterval: Double = MediaPlaybackCoordinatorFlowTests.slowPollInterval,
@@ -85,13 +88,36 @@ struct MediaPlaybackCoordinatorFlowTests {
 		let coordinator = MediaPlaybackCoordinator(
 			isEnabled: { enabled },
 			renderingPIDs: { recorder.nextPIDs() },
+			processIsAlive: { _ in true },
 			sendPlayPauseKey: { recorder.sendKey() },
 			fastPollInterval: Self.fastPollInterval,
 			fastWindow: Self.fastWindow,
 			slowPollInterval: slowPollInterval,
 			slowWindow: slowWindow,
+			observeInterval: 0,
 			now: { recorder.now }
 		)
+		return (coordinator, recorder)
+	}
+
+	/// The observation history a press needs: everything rendering, then the
+	/// player stops, then it starts again. Ambient pids sit in all three samples
+	/// and so stay unproven; `toggled` is seen to move and becomes pressable.
+	private func makeCoordinator(
+		enabled: Bool = true,
+		toggled: Set<pid_t> = [],
+		ambient: Set<pid_t> = [MediaPlaybackCoordinatorFlowTests.constantRenderer],
+		script: [Set<pid_t>] = [],
+		slowPollInterval: Double = MediaPlaybackCoordinatorFlowTests.slowPollInterval,
+		slowWindow: Double = MediaPlaybackCoordinatorFlowTests.slowWindow
+	) -> (MediaPlaybackCoordinator, MediaKeyRecorder) {
+		let history: [Set<pid_t>] = [toggled.union(ambient), ambient, toggled.union(ambient)]
+		let (coordinator, recorder) = makeUnobservedCoordinator(
+			enabled: enabled,
+			script: history + script,
+			slowPollInterval: slowPollInterval,
+			slowWindow: slowWindow)
+		for _ in history { coordinator.observeOnce() }
 		return (coordinator, recorder)
 	}
 
@@ -105,7 +131,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 	/// Nothing has an output stream open, so the toggle could only *start*
 	/// playback. The cheapest correct answer is not to press at all.
 	@Test func silentSystemIsNeverPressed() async {
-		let (coordinator, recorder) = makeCoordinator(script: [[]])
+		let (coordinator, recorder) = makeCoordinator(ambient: [], script: [[]])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()
@@ -119,12 +145,13 @@ struct MediaPlaybackCoordinatorFlowTests {
 		#expect(recorder.keyPresses == 0)
 	}
 
-	/// The pre-gate was open only because of a constant renderer, so the press
-	/// started playback the user never asked for. The undo press is the whole
-	/// point of watching the effect instead of predicting it, and no session may
-	/// survive it.
+	/// A proven player was rendering, so the press was justified — but it woke a
+	/// different app instead. The undo press is the whole point of watching the
+	/// effect instead of predicting it, and no session may survive it.
 	@Test func appearanceInsideTheFastWindowUndoesItself() async {
-		let (coordinator, recorder) = makeCoordinator(script: [[Self.constantRenderer], [Self.constantRenderer, 99]])
+		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42],
+			script: [[42, Self.constantRenderer], [42, Self.constantRenderer, 99]])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()
@@ -144,6 +171,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 	@Test func disappearanceAfterTheFastWindowRecordsASession() async {
 		let playing: Set<pid_t> = [42, 43, Self.constantRenderer]
 		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42, 43],
 			script: holdingThroughFastWindow(playing) + [[Self.constantRenderer]])
 
 		await coordinator.pauseBeforeDictation()
@@ -157,7 +185,8 @@ struct MediaPlaybackCoordinatorFlowTests {
 	/// nothing stopped, so the press reached an app that ignored it or reached
 	/// nothing — pressing again would be a coin flip.
 	@Test func neitherEdgeLeavesNoSessionAndNoSecondPress() async {
-		let (coordinator, recorder) = makeCoordinator(script: [[Self.constantRenderer]])
+		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42], script: [[42, Self.constantRenderer]])
 
 		await coordinator.pauseBeforeDictation()
 		await coordinator.flush()
@@ -177,7 +206,8 @@ struct MediaPlaybackCoordinatorFlowTests {
 	/// the undo.
 	@Test func fastUndoIsNotStarvedByTheSlowWindow() async {
 		let (coordinator, recorder) = makeCoordinator(
-			script: [[Self.constantRenderer], [Self.constantRenderer, 99]],
+			toggled: [42],
+			script: [[42, Self.constantRenderer], [42, Self.constantRenderer, 99]],
 			slowPollInterval: 0.5,
 			slowWindow: 2.0
 		)
@@ -191,10 +221,100 @@ struct MediaPlaybackCoordinatorFlowTests {
 		#expect(elapsed < 0.25)
 	}
 
+	// MARK: - Observer gate
+
+	/// The measurement that forced this gate: `parsecd` reported rendering output
+	/// in 100% of samples over 30+ minutes with nothing playing. Presence alone
+	/// would press the key on every dictation and blip the user's music.
+	@Test func constantRendererLikeParsecNeverEarnsAPress() async {
+		let (coordinator, recorder) = makeCoordinator(
+			ambient: [Self.constantRenderer], script: [[Self.constantRenderer]])
+
+		#expect(!coordinator.plausiblePlayerIsRendering())
+
+		await coordinator.pauseBeforeDictation()
+		await coordinator.flush()
+
+		#expect(recorder.keyPresses == 0)
+		#expect(coordinator.session == nil)
+	}
+
+	/// Rendering -> not rendering -> rendering is what a real player looks like,
+	/// and it is the only evidence that a press will land on one.
+	@Test func pidSeenToStopAndStartAgainEarnsAPress() async {
+		let player: pid_t = 42
+		let (coordinator, recorder) = makeUnobservedCoordinator(
+			script: [[player], [], [player], [player]])
+
+		coordinator.observeOnce()
+		#expect(!coordinator.plausiblePlayerIsRendering())
+		coordinator.observeOnce()
+		coordinator.observeOnce()
+		#expect(coordinator.plausiblePlayerIsRendering())
+
+		await coordinator.pauseBeforeDictation()
+		await coordinator.flush()
+
+		#expect(recorder.keyPresses == 1)
+	}
+
+	/// The documented limitation, pinned: launch Whispera while music is already
+	/// playing and that pid is rendering from the first sample, so we never
+	/// witnessed it start and will not press for it. A missed pause is invisible;
+	/// a phantom start is not. The user's own next pause marks it.
+	@Test func pidRenderingSinceTheFirstSampleIsNeverPressedFor() async {
+		let playingAtLaunch: pid_t = 55
+		let (coordinator, recorder) = makeUnobservedCoordinator(
+			script: [[playingAtLaunch]])
+
+		for _ in 0..<5 { coordinator.observeOnce() }
+		#expect(!coordinator.plausiblePlayerIsRendering())
+
+		await coordinator.pauseBeforeDictation()
+		await coordinator.flush()
+
+		#expect(recorder.keyPresses == 0)
+		#expect(coordinator.session == nil)
+	}
+
+	/// Ambient infrastructure alongside a proven player must not veto the press —
+	/// the gate asks whether *any* rendering pid has been seen to move.
+	@Test func ambientRendererAlongsideAProvenPlayerStillPresses() async {
+		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42],
+			ambient: [Self.constantRenderer],
+			script: [[42, Self.constantRenderer]])
+
+		#expect(coordinator.plausiblePlayerIsRendering())
+
+		await coordinator.pauseBeforeDictation()
+		await coordinator.flush()
+
+		#expect(recorder.keyPresses == 1)
+	}
+
+	/// The player is proven but stopped; what is left rendering is ambient. There
+	/// is nothing to pause, so the key could only start something.
+	@Test func provenPlayerThatStoppedLeavesOnlyAmbientAndNoPress() async {
+		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42],
+			script: [[Self.constantRenderer], [Self.constantRenderer]])
+
+		coordinator.observeOnce()
+		#expect(!coordinator.plausiblePlayerIsRendering())
+
+		await coordinator.pauseBeforeDictation()
+		await coordinator.flush()
+
+		#expect(recorder.keyPresses == 0)
+		#expect(coordinator.session == nil)
+	}
+
 	// MARK: - Resume
 
 	@Test func resumeBringsBackWhatWePaused() async {
 		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42],
 			script: holdingThroughFastWindow([42, Self.constantRenderer])
 				+ [
 					[Self.constantRenderer],  // slow poll: 42 stopped
@@ -215,6 +335,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 	/// again means the user restarted it by hand; the toggle would stop it.
 	@Test func resumeSkipsPlaybackTheUserRestarted() async {
 		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42],
 			script: holdingThroughFastWindow([42, Self.constantRenderer])
 				+ [
 					[Self.constantRenderer],
@@ -233,6 +354,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 	/// starts one, and gets the same undo.
 	@Test func resumeThatStartsADifferentAppUndoesItself() async {
 		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42],
 			script: holdingThroughFastWindow([42, Self.constantRenderer])
 				+ [
 					[Self.constantRenderer],
@@ -250,6 +372,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 
 	@Test func staleSessionIsNotResumed() async {
 		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42],
 			script: holdingThroughFastWindow([42, Self.constantRenderer])
 				+ [[Self.constantRenderer], [Self.constantRenderer], [Self.constantRenderer, 42]])
 
@@ -283,6 +406,7 @@ struct MediaPlaybackCoordinatorFlowTests {
 
 	@Test func secondResumeForOneDictationIsANoOp() async {
 		let (coordinator, recorder) = makeCoordinator(
+			toggled: [42],
 			script: holdingThroughFastWindow([42, Self.constantRenderer])
 				+ [[Self.constantRenderer], [Self.constantRenderer], [Self.constantRenderer, 42]])
 
