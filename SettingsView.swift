@@ -141,7 +141,8 @@ struct SettingsView: View {
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
 	@AppStorage("enableRecordingGlow") private var enableRecordingGlow = true
-	@AppStorage("whisperaPauseMediaWhileDictating") private var pauseMediaWhileDictating = true
+	// Key unchanged from the older pause-based feature so existing opt-outs survive.
+	@AppStorage("whisperaPauseMediaWhileDictating") private var muteAudioWhileDictating = true
 	@AppStorage(RecordingGlowColor.key) private var recordingGlowColorHex = RecordingGlowColor
 		.defaultHex
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
@@ -305,11 +306,11 @@ struct SettingsView: View {
 						}
 
 						SettingRow(
-							"Pause Media While Dictating",
+							"Mute Audio While Dictating",
 							description:
-								"Pauses whatever is playing using the system play/pause control and resumes it afterwards, exactly like pressing the play/pause key on your keyboard"
+								"Mutes your system audio for the length of the dictation and restores it afterwards, so nothing is heard while you speak"
 						) {
-							Toggle("", isOn: $pauseMediaWhileDictating)
+							Toggle("", isOn: $muteAudioWhileDictating)
 						}
 
 						SettingRow(

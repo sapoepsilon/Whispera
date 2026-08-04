@@ -195,7 +195,7 @@ final class AudioManager: NSObject {
 		discardRecordingSegments()
 		isMicrophoneInitializing = false
 		isStartingCapture = false
-		MediaPlaybackCoordinator.shared.resumeAfterDictation()
+		SystemAudioMuter.shared.restoreAfterDictation()
 		AppLogger.shared.audioManager.info("Cancelled capture startup")
 	}
 
@@ -341,7 +341,7 @@ extension AudioManager {
 		// mistaken for an established recorder that should be restarted now.
 		isStartingCapture = true
 		recordingPreparationTask = Task { @MainActor in
-			await MediaPlaybackCoordinator.shared.pauseBeforeDictation()
+			SystemAudioMuter.shared.muteForDictation()
 			guard !Task.isCancelled else {
 				isStartingCapture = false
 				return
@@ -408,7 +408,7 @@ extension AudioManager {
 			guard !Task.isCancelled else {
 				isStartingCapture = false
 				isMicrophoneInitializing = false
-				MediaPlaybackCoordinator.shared.resumeAfterDictation()
+				SystemAudioMuter.shared.restoreAfterDictation()
 				return
 			}
 			activationUID = healSelectionIfActivationFailed(
@@ -431,7 +431,7 @@ extension AudioManager {
 				isStartingCapture = false
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start recording: \(error)")
-				MediaPlaybackCoordinator.shared.resumeAfterDictation()
+				SystemAudioMuter.shared.restoreAfterDictation()
 				showRecordingErrorAlert(error)
 			}
 		}
@@ -470,7 +470,7 @@ extension AudioManager {
 			timer.stop()
 			// This aborts the recording without reaching any stop path, so
 			// without this the user's music would stay paused for good.
-			MediaPlaybackCoordinator.shared.resumeAfterDictation()
+			SystemAudioMuter.shared.restoreAfterDictation()
 			discardRecordingSegments()
 		}
 	}
@@ -497,7 +497,7 @@ extension AudioManager {
 				await transcribeAudio(fileURL: onlySegment, enableTranslation: enableTranslation)
 			}
 		} else {
-			MediaPlaybackCoordinator.shared.resumeAfterDictation()
+			SystemAudioMuter.shared.restoreAfterDictation()
 		}
 
 		scheduleTimerReset()
@@ -559,7 +559,7 @@ extension AudioManager {
 
 		guard !samples.isEmpty else {
 			AppLogger.shared.audioManager.info("No audio captured")
-			MediaPlaybackCoordinator.shared.resumeAfterDictation()
+			SystemAudioMuter.shared.restoreAfterDictation()
 			return
 		}
 
@@ -637,7 +637,7 @@ extension AudioManager {
 				guard !Task.isCancelled else {
 					isStartingCapture = false
 					isMicrophoneInitializing = false
-					MediaPlaybackCoordinator.shared.resumeAfterDictation()
+					SystemAudioMuter.shared.restoreAfterDictation()
 					return
 				}
 				activationUID = healSelectionIfActivationFailed(
@@ -695,7 +695,7 @@ extension AudioManager {
 			timer.stop()
 			// This aborts the recording without reaching any stop path, so
 			// without this the user's music would stay paused for good.
-			MediaPlaybackCoordinator.shared.resumeAfterDictation()
+			SystemAudioMuter.shared.restoreAfterDictation()
 		}
 	}
 
@@ -719,7 +719,7 @@ extension AudioManager {
 			}
 		} else {
 			AppLogger.shared.audioManager.info("No audio captured")
-			MediaPlaybackCoordinator.shared.resumeAfterDictation()
+			SystemAudioMuter.shared.restoreAfterDictation()
 		}
 
 		scheduleTimerReset()
@@ -809,7 +809,7 @@ extension AudioManager {
 				isRecording = false
 				timer.stop()
 				AppLogger.shared.audioManager.error("Failed to start live transcription: \(error)")
-				MediaPlaybackCoordinator.shared.resumeAfterDictation()
+				SystemAudioMuter.shared.restoreAfterDictation()
 			}
 		}
 	}
@@ -826,7 +826,7 @@ extension AudioManager {
 
 		whisperKitTranscriber.stopLiveStream()
 		levelMonitor.reset()
-		MediaPlaybackCoordinator.shared.resumeAfterDictation()
+		SystemAudioMuter.shared.restoreAfterDictation()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
 		scheduleTimerReset()
@@ -848,7 +848,7 @@ extension AudioManager {
 				transcriptionError = error.localizedDescription
 				lastTranscription = "Transcription failed: \(error.localizedDescription)"
 				isTranscribing = false
-				MediaPlaybackCoordinator.shared.resumeAfterDictation()
+				SystemAudioMuter.shared.restoreAfterDictation()
 			}
 		}
 	}
@@ -865,7 +865,7 @@ extension AudioManager {
 				transcriptionError = error.localizedDescription
 				lastTranscription = "Transcription failed: \(error.localizedDescription)"
 				isTranscribing = false
-				MediaPlaybackCoordinator.shared.resumeAfterDictation()
+				SystemAudioMuter.shared.restoreAfterDictation()
 			}
 		}
 
@@ -890,7 +890,7 @@ extension AudioManager {
 			pasteToFocusedApp(toPaste)
 		}
 		// After the paste, so the resume never races the ⌘V we just posted.
-		MediaPlaybackCoordinator.shared.resumeAfterDictation()
+		SystemAudioMuter.shared.restoreAfterDictation()
 	}
 }
 
