@@ -55,6 +55,7 @@ final class SystemAudioMuter {
 
 	private let isEnabled: @Sendable () -> Bool
 	private let defaultOutputDevice: @Sendable () -> AudioDeviceID?
+	private let outputDevices: @Sendable () -> [AudioDeviceID]
 	private let muteIsSettable: @Sendable (AudioDeviceID) -> Bool
 	private let readMute: @Sendable (AudioDeviceID) -> Bool?
 	private let writeMute: @Sendable (AudioDeviceID, Bool) -> Bool
@@ -67,6 +68,9 @@ final class SystemAudioMuter {
 		// declaration reference isn't inferred `@Sendable`.
 		defaultOutputDevice: @escaping @Sendable () -> AudioDeviceID? = {
 			SystemAudioMuter.systemDefaultOutputDevice()
+		},
+		outputDevices: @escaping @Sendable () -> [AudioDeviceID] = {
+			SystemAudioMuter.systemOutputDevices()
 		},
 		muteIsSettable: @escaping @Sendable (AudioDeviceID) -> Bool = {
 			SystemAudioMuter.muteIsSettable(on: $0)
@@ -82,6 +86,7 @@ final class SystemAudioMuter {
 	) {
 		self.isEnabled = isEnabled
 		self.defaultOutputDevice = defaultOutputDevice
+		self.outputDevices = outputDevices
 		self.muteIsSettable = muteIsSettable
 		self.readMute = readMute
 		self.writeMute = writeMute
@@ -136,7 +141,7 @@ final class SystemAudioMuter {
 				"Skipping dictation mute — output device \(device) is already muted")
 			return
 		}
-		guard writeMute(device, true) else {
+		guard write(device, muted: true) else {
 			AppLogger.shared.audioManager.error(
 				"Could not mute output device \(device) for dictation")
 			return
@@ -154,18 +159,41 @@ final class SystemAudioMuter {
 		watchdog?.cancel()
 		watchdog = nil
 
-		guard let device = mutedDevice else { return }
+		guard mutedDevice != nil else { return }
 		mutedDevice = nil
 		mutedAt = nil
 
-		guard writeMute(device, false) else {
-			// The likeliest cause is that the device went away mid-dictation, e.g.
-			// AirPods disconnecting; whatever replaced it was never muted by us.
-			AppLogger.shared.audioManager.info(
-				"Could not unmute output device \(device) — it is probably gone")
-			return
+		// Unmuting only the device we recorded is not enough. Measured on the owner's
+		// Mac, AirPods Max asleep mid-dictation:
+		//     12:56:49  Muted output device 114 for dictation
+		//     12:56:53  Restored output device 114 after dictation
+		// yet device 114 was still muted afterwards and the default was now 71 — the
+		// restore write landed while the device was disconnecting, reported noErr, and
+		// did nothing. So sweep every output device instead: that covers the one we
+		// muted, whatever became default in the meantime, and a device that came back
+		// carrying our mute, with no bookkeeping.
+		// The trade: a device the user had deliberately muted themselves gets unmuted
+		// too. Acceptable — the already-muted guard in muteForDictation() still covers
+		// the normal case, and leaving the Mac silent is the worse failure.
+		var unmuted = 0
+		for device in outputDevices() where muteIsSettable(device) {
+			guard readMute(device) == true else { continue }
+			guard write(device, muted: false) else {
+				AppLogger.shared.audioManager.error(
+					"Could not unmute output device \(device) after dictation")
+				continue
+			}
+			unmuted += 1
 		}
-		AppLogger.shared.audioManager.info("Restored output device \(device) after dictation")
+		AppLogger.shared.audioManager.info(
+			"Unmuted \(unmuted) output device(s) after dictation")
+	}
+
+	/// A CoreAudio mute write can return noErr without taking effect — see the log
+	/// quoted in `restoreAfterDictation()`. Only the read-back proves anything.
+	private func write(_ device: AudioDeviceID, muted: Bool) -> Bool {
+		guard writeMute(device, muted) else { return false }
+		return readMute(device) == muted
 	}
 
 	/// Awaits the watchdog; exists for tests.
@@ -212,6 +240,49 @@ final class SystemAudioMuter {
 			AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
 		guard status == noErr, device != AudioDeviceID(kAudioObjectUnknown) else { return nil }
 		return device
+	}
+
+	/// Every device that can play audio, default or not.
+	nonisolated static func systemOutputDevices() -> [AudioDeviceID] {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioHardwarePropertyDevices,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var size = UInt32(0)
+		guard
+			AudioObjectGetPropertyDataSize(
+				AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr
+		else { return [] }
+		let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+		guard count > 0 else { return [] }
+		var devices = [AudioDeviceID](repeating: AudioDeviceID(kAudioObjectUnknown), count: count)
+		guard
+			AudioObjectGetPropertyData(
+				AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices) == noErr
+		else { return [] }
+		return devices.filter { hasOutputChannels(on: $0) }
+	}
+
+	private nonisolated static func hasOutputChannels(on device: AudioDeviceID) -> Bool {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioDevicePropertyStreamConfiguration,
+			mScope: kAudioDevicePropertyScopeOutput,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var size = UInt32(0)
+		guard
+			AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr, size > 0
+		else { return false }
+		let buffer = UnsafeMutableRawPointer.allocate(
+			byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+		defer { buffer.deallocate() }
+		guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, buffer) == noErr else {
+			return false
+		}
+		let buffers = UnsafeMutableAudioBufferListPointer(
+			buffer.assumingMemoryBound(to: AudioBufferList.self))
+		return buffers.contains { $0.mNumberChannels > 0 }
 	}
 
 	nonisolated static func muteIsSettable(on device: AudioDeviceID) -> Bool {
