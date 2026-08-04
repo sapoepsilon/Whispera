@@ -128,8 +128,6 @@ final class AudioManager: NSObject {
 	private var meteringTimer: Timer?
 	@ObservationIgnored
 	private var deviceActivationTask: Task<Void, Never>?
-	@ObservationIgnored
-	private var recordingPreparationTask: Task<Void, Never>?
 	/// True from the moment a start path is entered until capture is established
 	/// (or the attempt aborts). A device switch arriving in this window must not
 	/// cancel the task that is bringing capture up.
@@ -173,10 +171,9 @@ final class AudioManager: NSObject {
 			// would route stop to the wrong path if the setting changed mid-recording.
 			stopRecording()
 		} else if isMicrophoneInitializing || isStartingCapture {
-			// Startup has two owners in sequence: recordingPreparationTask runs the
-			// bounded media preflight, then deviceActivationTask brings capture up.
-			// A second shortcut press cancels whichever phase is active so it can
-			// never fall through and create an overlapping recorder/engine.
+			// Startup is owned by deviceActivationTask. A second shortcut press
+			// cancels it so it can never fall through and create an overlapping
+			// recorder/engine.
 			cancelCaptureStartup()
 		} else {
 			currentRecordingMode = enableStreaming ? .liveTranscription : .text
@@ -185,8 +182,6 @@ final class AudioManager: NSObject {
 	}
 
 	private func cancelCaptureStartup() {
-		recordingPreparationTask?.cancel()
-		recordingPreparationTask = nil
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
 		audioRecorder?.stop()
@@ -333,27 +328,17 @@ extension AudioManager {
 		// result or error underneath it.
 		lastTranscription = nil
 		transcriptionError = nil
-		// Hooked here rather than in startRecording() so a denied mic permission
-		// never pauses the user's music for a recording that won't happen.
 		isMicrophoneInitializing = true
-		// The media sweep is part of capture startup. A picker selection during
-		// this bounded preflight must be persisted for replay after startup, not
-		// mistaken for an established recorder that should be restarted now.
+		// A picker selection arriving while capture is coming up must be persisted
+		// for replay after startup, not mistaken for an established recorder that
+		// should be restarted now.
 		isStartingCapture = true
-		recordingPreparationTask = Task { @MainActor in
-			SystemAudioMuter.shared.muteForDictation()
-			guard !Task.isCancelled else {
-				isStartingCapture = false
-				return
-			}
-			recordingPreparationTask = nil
-			if currentRecordingMode == .liveTranscription {
-				startLiveTranscription()
-			} else if useStreamingTranscription {
-				startStreamingRecording()
-			} else {
-				startFileBasedRecording()
-			}
+		if currentRecordingMode == .liveTranscription {
+			startLiveTranscription()
+		} else if useStreamingTranscription {
+			startStreamingRecording()
+		} else {
+			startFileBasedRecording()
 		}
 	}
 	fileprivate func stopRecording() {
@@ -421,6 +406,10 @@ extension AudioManager {
 				audioFileURL = segmentURL
 				isMicrophoneInitializing = false
 				isRecording = true
+				// Muted only once the mic is actually capturing: bringing the input up
+				// can rebuild the output device - a Bluetooth headset switching from
+				// A2DP to HFP - and take an earlier mute down with it.
+				SystemAudioMuter.shared.muteForDictation()
 				timer.start()
 				playFeedbackSound(start: true)
 				startMeteringTimer()
@@ -483,6 +472,9 @@ extension AudioManager {
 		timer.stop()
 		playFeedbackSound(start: false)
 		deviceManager.restoreSystemDefault()
+		// We are done listening, so the user gets their audio back now rather than
+		// after a transcription they are not waiting in silence for.
+		SystemAudioMuter.shared.restoreAfterDictation()
 
 		let segments = completedSegmentURLs + (audioFileURL.map { [$0] } ?? [])
 		completedSegmentURLs.removeAll()
@@ -496,8 +488,6 @@ extension AudioManager {
 			Task {
 				await transcribeAudio(fileURL: onlySegment, enableTranslation: enableTranslation)
 			}
-		} else {
-			SystemAudioMuter.shared.restoreAfterDictation()
 		}
 
 		scheduleTimerReset()
@@ -559,7 +549,6 @@ extension AudioManager {
 
 		guard !samples.isEmpty else {
 			AppLogger.shared.audioManager.info("No audio captured")
-			SystemAudioMuter.shared.restoreAfterDictation()
 			return
 		}
 
@@ -649,6 +638,10 @@ extension AudioManager {
 
 				isMicrophoneInitializing = false
 				isRecording = true
+				// The tap is live, so the input is up and the output device is done
+				// being rebuilt underneath us; muting any earlier can be undone by that
+				// rebuild on a Bluetooth headset.
+				SystemAudioMuter.shared.muteForDictation()
 				timer.start()
 				playFeedbackSound(start: true)
 				isStartingCapture = false
@@ -663,8 +656,8 @@ extension AudioManager {
 				isStartingCapture = false
 				AppLogger.shared.audioManager.error("Failed to start streaming: \(error)")
 				useStreamingTranscription = false
-				// No media resume here: the fallback continues the same dictation and
-				// its own stop path owns the resume.
+				// Nothing to restore here: capture never went live, so nothing was
+				// muted, and the fallback mutes when its own recorder starts.
 				startFileBasedRecording()
 			}
 		}
@@ -710,6 +703,9 @@ extension AudioManager {
 
 		engineController.cleanup()
 		deviceManager.restoreSystemDefault()
+		// We are done listening, so the user gets their audio back now rather than
+		// after a transcription they are not waiting in silence for.
+		SystemAudioMuter.shared.restoreAfterDictation()
 
 		AppLogger.shared.audioManager.info("Streaming recording stopped")
 
@@ -719,7 +715,6 @@ extension AudioManager {
 			}
 		} else {
 			AppLogger.shared.audioManager.info("No audio captured")
-			SystemAudioMuter.shared.restoreAfterDictation()
 		}
 
 		scheduleTimerReset()
@@ -797,6 +792,9 @@ extension AudioManager {
 				}
 				isMicrophoneInitializing = false
 				isStartingCapture = false
+				// The stream is running, so the mic is up and any output-device rebuild
+				// it triggered is over; a mute applied before this can be lost to it.
+				SystemAudioMuter.shared.muteForDictation()
 				AppLogger.shared.audioManager.info("Live transcription started")
 				applySelectionMadeDuringStartup(activationUID: activationUID)
 			} catch {
@@ -848,7 +846,6 @@ extension AudioManager {
 				transcriptionError = error.localizedDescription
 				lastTranscription = "Transcription failed: \(error.localizedDescription)"
 				isTranscribing = false
-				SystemAudioMuter.shared.restoreAfterDictation()
 			}
 		}
 	}
@@ -865,7 +862,6 @@ extension AudioManager {
 				transcriptionError = error.localizedDescription
 				lastTranscription = "Transcription failed: \(error.localizedDescription)"
 				isTranscribing = false
-				SystemAudioMuter.shared.restoreAfterDictation()
 			}
 		}
 
@@ -889,8 +885,6 @@ extension AudioManager {
 		if mode == .text, let toPaste {
 			pasteToFocusedApp(toPaste)
 		}
-		// After the paste, so the resume never races the ⌘V we just posted.
-		SystemAudioMuter.shared.restoreAfterDictation()
 	}
 }
 

@@ -112,8 +112,11 @@ final class SystemAudioMuter {
 
 	// MARK: - Hooks
 
-	/// Recording-start hook. Synchronous: writing a CoreAudio property is a single
-	/// immediate call, so dictation never waits on us.
+	/// Called when capture actually goes live, not when a dictation is requested:
+	/// bringing the mic up can rebuild the output device — a Bluetooth headset
+	/// switching from A2DP to HFP — which silently drops a mute applied earlier.
+	/// Synchronous: writing a CoreAudio property is a single immediate call, so
+	/// dictation never waits on us.
 	func muteForDictation() {
 		guard isEnabled() else { return }
 		guard mutedDevice == nil else { return }
