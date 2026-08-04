@@ -18,7 +18,11 @@ extension WhisperaSettings {
 }
 
 /// One dictation's worth of paused media, and the rule for putting it back.
+///
+/// `pausedPIDs` are the processes that stopped rendering output in direct
+/// response to our key press — the only processes we have any claim to restart.
 struct MediaPauseSession: Equatable, Sendable {
+	let pausedPIDs: Set<pid_t>
 	let startedAt: Date
 
 	/// Past this gap the user has moved on — silently restarting their music
@@ -39,10 +43,15 @@ struct MediaPauseSession: Equatable, Sendable {
 /// anything else that registers with the Now Playing router are all covered
 /// without Whispera holding a single per-app permission.
 ///
-/// The key is a toggle, so firing it blind would *start* playback when nothing
-/// was playing. Both directions are therefore gated on whether some process
-/// other than Whispera is actively rendering audio output (see
-/// `otherProcessIsRenderingOutput`).
+/// The key is a toggle, and no public API answers "is media playing" beforehand:
+/// measurement on real machines shows apps such as Parsec and Final Cut Pro
+/// report `kAudioProcessPropertyIsRunningOutput` continuously while merely open,
+/// so any "is anyone rendering output" gate is stuck true forever. Those constant
+/// renderers do, however, cancel out of a before/after comparison. So this class
+/// does not predict what the key will do — it presses once and then watches the
+/// set of output-rendering processes change. A process that *disappears* is one we
+/// paused; a process that *appears* means we started playback out of silence, and
+/// the same key is sent straight back to undo it.
 @MainActor
 final class MediaPlaybackCoordinator {
 	static let shared = MediaPlaybackCoordinator()
@@ -52,44 +61,52 @@ final class MediaPlaybackCoordinator {
 	private var work: Task<Void, Never>?
 
 	private let isEnabled: @Sendable () -> Bool
-	private let otherProcessIsPlayingOutput: @Sendable () -> Bool
+	private let renderingPIDs: @Sendable () -> Set<pid_t>
 	private let sendPlayPauseKey: @Sendable () -> Void
-	private let resumeSettleSeconds: Double
+	private let pollInterval: Double
+	private let verifyWindow: Double
 	private let now: @Sendable () -> Date
 
 	init(
 		isEnabled: @escaping @Sendable () -> Bool = { WhisperaSettings.pauseMediaWhileDictating },
 		// Closure literals rather than bare function references: an unapplied
 		// declaration reference isn't inferred `@Sendable`.
-		otherProcessIsPlayingOutput: @escaping @Sendable () -> Bool = {
-			MediaPlaybackCoordinator.otherProcessIsRenderingOutput()
+		renderingPIDs: @escaping @Sendable () -> Set<pid_t> = {
+			MediaPlaybackCoordinator.renderingProcessPIDs()
 		},
 		sendPlayPauseKey: @escaping @Sendable () -> Void = {
 			MediaPlaybackCoordinator.postSystemPlayPause()
 		},
-		resumeSettleSeconds: Double = 0.6,
+		pollInterval: Double = 0.1,
+		verifyWindow: Double = 1.2,
 		now: @escaping @Sendable () -> Date = { Date() }
 	) {
 		self.isEnabled = isEnabled
-		self.otherProcessIsPlayingOutput = otherProcessIsPlayingOutput
+		self.renderingPIDs = renderingPIDs
 		self.sendPlayPauseKey = sendPlayPauseKey
-		self.resumeSettleSeconds = resumeSettleSeconds
+		self.pollInterval = pollInterval
+		self.verifyWindow = verifyWindow
 		self.now = now
 	}
 
 	// MARK: - Hooks
 
-	/// Recording-start hook. Does not return until the pause has been decided and
-	/// sent, so media cannot leak into the beginning (or all) of a short dictation.
+	/// Recording-start hook. Returns once the key has been sent, so media cannot
+	/// leak into the beginning of a short dictation; the slower job of watching
+	/// what the key actually did stays queued behind it and is what a later
+	/// resume waits on.
 	func pauseBeforeDictation() async {
 		guard isEnabled() else { return }
 		let previous = work
-		let current = Task { @MainActor in
+		let pressed = Task { @MainActor () -> Set<pid_t>? in
 			await previous?.value
-			await self.performPause()
+			return self.sendPauseKey()
 		}
-		work = current
-		await current.value
+		work = Task { @MainActor in
+			guard let before = await pressed.value else { return }
+			await self.classifyPause(before: before)
+		}
+		_ = await pressed.value
 	}
 
 	/// Fire-and-forget. Safe to call from every stop/cancel path — the second and
@@ -107,18 +124,59 @@ final class MediaPlaybackCoordinator {
 		await work?.value
 	}
 
-	// MARK: - Pause / resume
+	// MARK: - Pause
 
-	private func performPause() async {
+	/// Reads the baseline and presses the key. Returns the baseline, or nil when
+	/// no key was sent.
+	private func sendPauseKey() -> Set<pid_t>? {
 		session = nil
-		guard otherProcessIsPlayingOutput() else {
-			AppLogger.shared.audioManager.debug("Skipping media pause — nothing is playing")
+		// Per-process audio state landed in macOS 14.4. Without it there is no
+		// baseline to compare against, so the honest move is to leave the user's
+		// audio alone entirely rather than fire a blind toggle.
+		guard #available(macOS 14.4, *) else { return nil }
+
+		let before = renderingPIDs()
+		sendPlayPauseKey()
+		return before
+	}
+
+	/// Watches what the key did and records a session only if it actually paused
+	/// something.
+	private func classifyPause(before: Set<pid_t>) async {
+		guard let after = await firstChange(from: before) else {
+			AppLogger.shared.audioManager.info(
+				"Media key reached nothing — no playback state changed, nothing to resume")
 			return
 		}
-		sendPlayPauseKey()
-		session = MediaPauseSession(startedAt: now())
-		AppLogger.shared.audioManager.info("Paused media for dictation")
+
+		let stopped = before.subtracting(after)
+		let started = after.subtracting(before)
+
+		if !stopped.isEmpty {
+			session = MediaPauseSession(pausedPIDs: stopped, startedAt: now())
+			AppLogger.shared.audioManager.info("Paused media for dictation: pids \(stopped.sorted())")
+			// One press reaches only the system's active Now Playing app, by OS
+			// design. Pressing again would resume the app we just paused, so the
+			// honest outcome for the rest is a log.
+			if !after.isEmpty {
+				AppLogger.shared.audioManager.info(
+					"\(after.count) other process(es) are still rendering output — the media key only reaches the system's active Now Playing app"
+				)
+			}
+		} else if !started.isEmpty {
+			// Nothing had been playing, so the toggle started playback the user
+			// never asked for. Undo it; the audible blip is bounded by how fast we
+			// noticed.
+			sendPlayPauseKey()
+			AppLogger.shared.audioManager.info(
+				"Media key started playback out of silence (pids \(started.sorted())) — sending it back to stop"
+			)
+		} else {
+			AppLogger.shared.audioManager.info("Media key produced no usable change — nothing to resume")
+		}
 	}
+
+	// MARK: - Resume
 
 	private func performResume() async {
 		guard let session else { return }
@@ -130,40 +188,63 @@ final class MediaPlaybackCoordinator {
 			return
 		}
 
-		// The gate already ignores our own process, so the stop chime cannot be read
-		// as playback; the delay stays as cheap insurance against the paused app
-		// still winding its IO down as the dictation ends.
-		if resumeSettleSeconds > 0 {
-			try? await Task.sleep(nanoseconds: UInt64(resumeSettleSeconds * 1_000_000_000))
-		}
-
-		// Playback that is running again is playback the user restarted during the
-		// dictation. Sending the toggle now would stop it.
-		guard !otherProcessIsPlayingOutput() else {
-			AppLogger.shared.audioManager.info("Skipping media resume — playback is already running")
+		let before = renderingPIDs()
+		// Anything we paused that is playing again is playback the user restarted
+		// by hand; the toggle would stop it.
+		guard session.pausedPIDs.isDisjoint(with: before) else {
+			AppLogger.shared.audioManager.info(
+				"Skipping media resume — the user restarted playback themselves")
 			return
 		}
+
 		sendPlayPauseKey()
-		AppLogger.shared.audioManager.info("Resumed media after dictation")
+
+		guard let after = await firstChange(from: before) else {
+			AppLogger.shared.audioManager.info("Media key reached nothing on resume")
+			return
+		}
+
+		let started = after.subtracting(before)
+		if !started.isDisjoint(with: session.pausedPIDs) {
+			AppLogger.shared.audioManager.info("Resumed media after dictation")
+		} else if !started.isEmpty {
+			sendPlayPauseKey()
+			AppLogger.shared.audioManager.info(
+				"Resume key started a different app (pids \(started.sorted())) — sending it back to stop"
+			)
+		} else {
+			AppLogger.shared.audioManager.info(
+				"Resume key did not bring back what we paused — leaving playback alone")
+		}
+	}
+
+	// MARK: - Delta
+
+	/// The first rendering-pid set that differs from `before`, or nil if nothing
+	/// changed inside the verification window.
+	private func firstChange(from before: Set<pid_t>) async -> Set<pid_t>? {
+		guard pollInterval > 0, verifyWindow > 0 else { return nil }
+		let attempts = max(1, Int((verifyWindow / pollInterval).rounded(.up)))
+		for _ in 0..<attempts {
+			try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+			let current = renderingPIDs()
+			if current != before { return current }
+		}
+		return nil
 	}
 
 	// MARK: - Transport
 
-	/// Whether some process *other than Whispera* is actively rendering audio
-	/// output right now.
+	/// The pids of every process *other than Whispera* rendering audio output
+	/// right now.
 	///
 	/// The device-level answer (`kAudioDevicePropertyDeviceIsRunningSomewhere`)
-	/// cannot be used here: players and browsers keep the output device open for
-	/// tens of seconds after the user pauses, so it reads "running" over silence
-	/// and the play/pause toggle would *start* playback nobody asked for.
-	/// `kAudioProcessPropertyIsRunningOutput` reports active IO per process
+	/// is useless here: it stays "running" over silence for tens of seconds after a
+	/// pause. `kAudioProcessPropertyIsRunningOutput` reports active IO per process
 	/// instead, and skipping our own pid makes Whispera's own chimes structurally
-	/// incapable of moving the answer in either direction.
-	nonisolated static func otherProcessIsRenderingOutput() -> Bool {
-		// Per-process audio state landed in macOS 14.4; below it the honest answer
-		// is "unknown", and a skipped pause is a far cheaper failure than starting
-		// playback out of silence.
-		guard #available(macOS 14.4, *) else { return false }
+	/// incapable of moving any delta.
+	nonisolated static func renderingProcessPIDs() -> Set<pid_t> {
+		guard #available(macOS 14.4, *) else { return [] }
 
 		var listAddress = AudioObjectPropertyAddress(
 			mSelector: kAudioHardwarePropertyProcessObjectList,
@@ -176,7 +257,7 @@ final class MediaPlaybackCoordinator {
 		guard sizeStatus == noErr, listSize > 0 else {
 			AppLogger.shared.audioManager.error(
 				"Could not size the audio process list: OSStatus \(sizeStatus)")
-			return false
+			return []
 		}
 
 		var processes = [AudioObjectID](
@@ -187,24 +268,16 @@ final class MediaPlaybackCoordinator {
 		guard listStatus == noErr else {
 			AppLogger.shared.audioManager.error(
 				"Could not read the audio process list: OSStatus \(listStatus)")
-			return false
+			return []
 		}
 
 		let ownPID = getpid()
-		var playingCount = 0
+		var playing = Set<pid_t>()
 		for process in processes {
-			// An unreadable pid could be our own, and counting it would risk the one
-			// failure this gate exists to prevent.
 			guard let pid = processPID(process), pid != ownPID else { continue }
-			if processIsRunningOutput(process) { playingCount += 1 }
+			if processIsRunningOutput(process) { playing.insert(pid) }
 		}
-
-		if playingCount > 1 {
-			AppLogger.shared.audioManager.info(
-				"\(playingCount) processes are playing audio — the media key only reaches the system's active Now Playing app"
-			)
-		}
-		return playingCount > 0
+		return playing
 	}
 
 	private nonisolated static func processPID(_ process: AudioObjectID) -> pid_t? {
