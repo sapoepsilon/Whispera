@@ -1,5 +1,7 @@
 # Whispera
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fsapoepsilon%2FWhispera.svg)](https://mcptoplist.com/server/glama%2Fsapoepsilon%2FWhispera)
+
 A native macOS app that replaces the built-in dictation with OpenAI's Whisper for superior transcription accuracy. Transcribe speech, local files, YouTube videos, and network streams - all processed locally on your Neural Engine.
 <div align="center">
   
