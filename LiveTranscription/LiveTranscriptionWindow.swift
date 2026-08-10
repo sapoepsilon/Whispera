@@ -18,6 +18,12 @@ class LiveTranscriptionWindow: NSWindow {
 	private let audioManager: AudioManager
 	private var observationTimer: Timer?
 	private var lastTextContent: String = ""
+	// Latched once the session shows its first words, cleared when the window
+	// leaves. It is what lets a momentarily blank transcript keep the window up
+	// (DictationView holds the words themselves) without ever allowing a window
+	// that has shown nothing yet — the wide empty capsule the WHI-58 QA session
+	// caught mid-dictation.
+	private var hadWordsThisSession = false
 
 	@AppStorage("liveTranscriptionMaxWidthPercentage") private var maxWidthPercentage = 0.6
 	// The width estimate must price the words DictationView actually shows —
@@ -83,14 +89,24 @@ class LiveTranscriptionWindow: NSWindow {
 		// Keep the HUD up briefly after a recipe errors so the message is
 		// readable. The running state itself lives in the listening pill.
 		let recipeActive = coordinator.overlayError != nil
-		// A session whose display text is momentarily empty must not drop
-		// the window: blanking mid-sentence is the jumping the WHI-58 QA
-		// session reported. While the session runs, a window already on
-		// screen stays on screen; it leaves only when the dictation ends.
+		if isSessionActive, !live.isWaitingForModel, !live.stableDisplayText.isEmpty {
+			hadWordsThisSession = true
+		}
+		// The window shows only while it has something to say — a status
+		// line, words, or words it is holding through a momentarily blank
+		// transcript (the mid-sentence jumping the WHI-58 QA session
+		// reported). A session that has said nothing yet keeps the window
+		// hidden rather than presenting an empty capsule.
+		let hasContent = DictationHUDContent.hasSomethingToSay(
+			overlayError: coordinator.overlayError,
+			isWaitingForModel: live.isWaitingForModel,
+			waitingStatusText: live.waitingForModelStatusText,
+			displayText: live.stableDisplayText,
+			hasShownWordsThisSession: hadWordsThisSession)
 		return RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
 			mode: audioManager.currentRecordingMode,
 			transcriberWantsWindow: isSessionActive
-				&& (live.shouldShowLiveTranscriptionWindow || isVisible)
+				&& live.shouldShowLiveTranscriptionWindow && hasContent
 		) || recipeActive
 	}
 
@@ -101,6 +117,15 @@ class LiveTranscriptionWindow: NSWindow {
 			let newSize = self.calculateDynamicSize()
 
 			if !self.isVisible {
+				// The first presentation waits for the pill's published frame
+				// when the pill is on its way: presenting against the fallback
+				// spot lands the capsule on the pill itself and then visibly
+				// snaps up once the frame arrives. The pill publishes as part of
+				// its own show pass, so this waits at most one poll tick.
+				let pillExpected = RecordingOverlayPolicy.shouldShowPill(
+					state: audioManager.currentState, mode: audioManager.currentRecordingMode,
+					style: RecordingOverlayStyle.stored())
+				if pillExpected && PillAnchorProvider.shared.pillFrame == nil { return }
 				self.presentAbovePill(size: newSize)
 			} else {
 				let pendingText =
@@ -121,6 +146,7 @@ class LiveTranscriptionWindow: NSWindow {
 				self.alphaValue = 1
 				self.lastTextContent = ""
 			}
+			self.hadWordsThisSession = false
 		}
 	}
 
@@ -165,10 +191,10 @@ class LiveTranscriptionWindow: NSWindow {
 		let holdSteady = isSessionActive || isShowingRecipeError
 
 		if let overlayError = coordinator.overlayError {
-			// The recipe error is a caption-sized status line, priced like one.
+			// The recipe error is a caption-sized status line, measured like one.
 			let width = DictationHUDWidth.width(
 				current: currentWidth,
-				estimated: CGFloat(overlayError.count) * 7 + 60,
+				estimated: DictationHUDWidth.statusWidth(overlayError),
 				maximum: maxWidth,
 				isDictating: holdSteady
 			)
@@ -179,7 +205,7 @@ class LiveTranscriptionWindow: NSWindow {
 		if live.isWaitingForModel {
 			// A status line renders at caption size behind an indicator, not as
 			// the word ticker; the shared rule still keeps its frame stable.
-			estimated = CGFloat(live.waitingForModelStatusText.count) * 7 + 60
+			estimated = DictationHUDWidth.statusWidth(live.waitingForModelStatusText)
 		} else {
 			let allWords = live.stableDisplayText.split(separator: " ")
 			estimated = DictationHUDWidth.estimatedWidth(

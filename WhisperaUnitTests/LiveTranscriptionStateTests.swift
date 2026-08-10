@@ -357,3 +357,65 @@ struct UtteranceDraftAccumulatorTests {
 		#expect(state.pendingText == "")
 	}
 }
+
+/// Back-to-back dictations through the real state object — the WHI-58 QA
+/// session found words no longer appearing after a couple of consecutive
+/// dictations. Each test replays the exact call sequence the engines make at
+/// session boundaries and pins that the next session opens clean and shows its
+/// first words.
+@MainActor
+struct LiveTranscriptionBackToBackSessionTests {
+	/// The delta-engine cycle: startStreaming's beginWaiting, the .listening
+	/// handler, partials, then stopStreaming's exact stop sequence — twice.
+	@Test func aSecondDeltaSessionOpensCleanAndShowsItsFirstWords() {
+		let state = LiveTranscriptionState()
+
+		state.beginWaiting()
+		state.isWaitingForModel = false
+		state.isTranscribing = true
+		state.ingest(committed: "", draft: "Hello world")
+		#expect(state.stableDisplayText == "Hello world")
+
+		state.isTranscribing = false
+		state.ingest(committed: "Hello world", draft: "")
+		state.setPending("")
+		state.shouldShowLiveTranscriptionWindow = false
+
+		state.beginWaiting()
+		#expect(state.stableDisplayText.isEmpty, "no leftover words from the previous session")
+		#expect(state.confirmedText.isEmpty, "no leftover confirmation from the previous session")
+		state.isWaitingForModel = false
+		state.isTranscribing = true
+		state.ingest(committed: state.confirmedText, draft: "Again")
+
+		#expect(state.stableDisplayText == "Again", "the new session's first words must appear")
+	}
+
+	/// A segment engine that starts its next session through beginWaiting alone
+	/// must still confirm from its first segment: a confirmation count left
+	/// over from the previous session would silently swallow the new session's
+	/// opening words from the confirmed text.
+	@Test func beginWaitingResetsTheSegmentConfirmationCount() {
+		let state = LiveTranscriptionState()
+		state.ingest(segmentTexts: ["one", "two", "three", "four", "five"])
+		#expect(state.confirmedText == "one two three")
+
+		state.beginWaiting()
+		state.ingest(segmentTexts: ["a", "b", "c"])
+
+		#expect(state.confirmedText == "a")
+		#expect(state.pendingText == "b c")
+	}
+
+	/// The flicker filter compares against the last displayed text; a stale
+	/// value surviving the session boundary could suppress the next session's
+	/// first (short) update. beginWaiting must leave the filter wide open.
+	@Test func theFlickerFilterCannotSuppressANewSessionsFirstWord() {
+		let state = LiveTranscriptionState()
+		state.ingest(committed: "", draft: "Thank you")
+
+		state.beginWaiting()
+
+		#expect(state.shouldUpdatePendingText(newText: "Thank"))
+	}
+}

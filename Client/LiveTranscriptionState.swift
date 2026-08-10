@@ -81,6 +81,10 @@ final class LiveTranscriptionState {
 		lastDisplayedPendingText = ""
 		confirmedText = ""
 		failure = nil
+		// A session that begins waiting is a fresh stream: a confirmation count
+		// left over from the previous session would silently swallow the first
+		// segments of this one.
+		lastConfirmedSegmentCount = 0
 		shouldShowLiveTranscriptionWindow = true
 		isWaitingForModel = true
 		waitingForModelStatusText = "Waiting for model..."
