@@ -19,8 +19,14 @@ import WhisperaDictation
 @MainActor
 final class StreamingTranscriber: SpeechTranscribing {
 	static let shared = StreamingTranscriber()
+	/// Same conformer, addressed straight at an engine. Separate instance because
+	/// each holds its own socket and resolved server.
+	static let direct = StreamingTranscriber(
+		baseURLProvider: { WhisperaSettings.transcriptionServerURL },
+		directProvider: { true })
 
-	nonisolated var engine: TranscriptionEngine { .whisperaStreaming }
+	private let engineCase: TranscriptionEngine
+	nonisolated var engine: TranscriptionEngine { engineCase }
 
 	/// One-shot transcription runs the same socket with a file or buffer source
 	/// instead of the microphone, so text mode works on this engine too.
@@ -34,6 +40,8 @@ final class StreamingTranscriber: SpeechTranscribing {
 	private let baseURLProvider: () -> URL?
 	private let serverIdProvider: () -> String
 	private let credentials: DictationCredentialProvider
+	private let isDirect: () -> Bool
+	private let directModel: () -> String
 
 	private var session: DictationSession?
 	private var eventTask: Task<Void, Never>?
@@ -55,10 +63,19 @@ final class StreamingTranscriber: SpeechTranscribing {
 	init(
 		baseURLProvider: @escaping () -> URL? = { WhisperaSettings.transcriptionServerURL },
 		serverIdProvider: @escaping () -> String = { WhisperaSettings.transcriptionServerId },
+		// Direct mode addresses an OpenAI-Realtime engine itself, with no Whispera
+		// backend in the path: no discovery to ask for a model, and no proxy to
+		// hold the engine's credentials. Useful on a trusted network, and the only
+		// shape available to a host that has no backend at all.
+		directProvider: @escaping () -> Bool = { false },
+		modelProvider: @escaping () -> String = { WhisperaSettings.transcriptionDirectModel },
 		tokenStore: AuthTokenStore = .shared
 	) {
 		self.baseURLProvider = baseURLProvider
 		self.serverIdProvider = serverIdProvider
+		self.isDirect = directProvider
+		self.directModel = modelProvider
+		self.engineCase = directProvider() ? .realtimeDirect : .whisperaStreaming
 		// Read at connect time and dropped afterwards, and re-read on the one
 		// unauthorized retry, so a short-lived session token survives it.
 		// A missing token is not fatal: a self-hosted proxy on a trusted network
@@ -73,6 +90,9 @@ final class StreamingTranscriber: SpeechTranscribing {
 	// MARK: - Lifecycle
 
 	func prepare() async throws {
+		// Direct mode has no registry to consult; the endpoint and model are the
+		// host's to state, and the first connect is what proves them.
+		guard !isDirect() else { return }
 		_ = try await resolveServer()
 	}
 
@@ -84,17 +104,25 @@ final class StreamingTranscriber: SpeechTranscribing {
 
 	// MARK: - Models
 
-	var activeModel: String? { cachedServer?.model }
+	var activeModel: String? { isDirect() ? directModel() : cachedServer?.model }
 
 	/// The backend lists one model per server, so the model list is the server
 	/// list. Selecting one records which server to stream through.
 	func models() async throws -> [TranscriptionModelInfo] {
-		try await directory().servers()
+		if isDirect() {
+			let model = directModel()
+			return [TranscriptionModelInfo(id: model, displayName: model)]
+		}
+		return try await directory().servers()
 			.filter { $0.supportsRealtime && $0.isOnline }
 			.map { TranscriptionModelInfo(id: $0.id, displayName: "\($0.label) — \($0.model)") }
 	}
 
 	func selectModel(_ id: String) async throws {
+		if isDirect() {
+			WhisperaSettings.transcriptionDirectModel = id
+			return
+		}
 		WhisperaSettings.transcriptionServerId = id
 		cachedServer = nil
 		_ = try await resolveServer()
@@ -389,6 +417,12 @@ final class StreamingTranscriber: SpeechTranscribing {
 	{
 		guard let baseURL = baseURLProvider() else {
 			throw StreamingTranscriberError.invalidServerURL
+		}
+		if isDirect() {
+			let model = directModel()
+			AppLogger.shared.transcriber.info(
+				"Streaming direct to \(baseURL.absoluteString) (\(model)); no backend in the path")
+			return .directEngine(baseURL, model: model, language: options.language)
 		}
 		let server = try await resolveServer()
 		return .backend(
