@@ -42,10 +42,47 @@ enum TranscriptionEngine: String, CaseIterable, Sendable {
 	}
 }
 
+/// One-time split of the transcription-server URL into per-mode keys. The old
+/// single key was shared between the backend proxy (whisperaStreaming, e.g.
+/// http://127.0.0.1:3000) and a directly-addressed engine (realtimeDirect,
+/// e.g. http://192.168.50.140:8000/v1) — switching engines silently reused
+/// the other mode's URL and 404ed. The legacy value lands in whichever new
+/// key matches the engine that was selected when it was typed, so current
+/// setups keep working. Pure and defaults-injected so the whole table is
+/// testable against an isolated suite — see TranscriptionServerURLMigrationTests.
+enum TranscriptionServerURLMigration {
+	static let legacyKey = "whisperaTranscriptionServerURL"
+	static let migratedFlagKey = "whisperaTranscriptionServerURLKeysSplit"
+
+	static func migrateIfNeeded(in defaults: UserDefaults) {
+		guard !defaults.bool(forKey: migratedFlagKey) else { return }
+		defaults.set(true, forKey: migratedFlagKey)
+
+		let legacy = defaults.string(forKey: legacyKey) ?? ""
+		guard !legacy.isEmpty else { return }
+
+		let engine =
+			TranscriptionEngine(
+				rawValue: defaults.string(forKey: WhisperaSettings.transcriptionEngineKey) ?? "")
+			?? .auto
+		let destination =
+			engine == .realtimeDirect
+			? WhisperaSettings.transcriptionDirectURLKey
+			: WhisperaSettings.transcriptionBackendURLKey
+		// Never clobber a value the user already typed into a new key.
+		guard (defaults.string(forKey: destination) ?? "").isEmpty else { return }
+		defaults.set(legacy, forKey: destination)
+		AppLogger.shared.general.info(
+			"Split legacy transcription server URL into \(destination)")
+	}
+}
+
 extension WhisperaSettings {
-	private static let engineKey = "whisperaTranscriptionEngine"
-	private static let transcriptionServerURLKey = "whisperaTranscriptionServerURL"
-	private static let transcriptionServerIdKey = "whisperaTranscriptionServerId"
+	static let transcriptionEngineKey = "whisperaTranscriptionEngine"
+	static let transcriptionBackendURLKey = "whisperaTranscriptionBackendURL"
+	static let transcriptionDirectURLKey = "whisperaTranscriptionDirectURL"
+	static let transcriptionServerIdKey = "whisperaTranscriptionServerId"
+	static let transcriptionDirectModelKey = "whisperaTranscriptionDirectModel"
 
 	/// Unknown or absent raw values fall back to `auto` — a fresh install and a
 	/// build that had an engine this one no longer ships land on the same
@@ -53,25 +90,61 @@ extension WhisperaSettings {
 	/// whenever nothing is configured. Mirrors `llmMode`.
 	static var transcriptionEngine: TranscriptionEngine {
 		get {
-			TranscriptionEngine(rawValue: UserDefaults.standard.string(forKey: engineKey) ?? "")
+			TranscriptionEngine(
+				rawValue: UserDefaults.standard.string(forKey: transcriptionEngineKey) ?? "")
 				?? .auto
 		}
-		set { UserDefaults.standard.set(newValue.rawValue, forKey: engineKey) }
+		set { UserDefaults.standard.set(newValue.rawValue, forKey: transcriptionEngineKey) }
 	}
 
-	/// Base URL of the transcription backend. Separate from `serverURLString`
-	/// because the streaming proxy can live somewhere other than the account
-	/// backend; empty means "use the account backend".
-	static var transcriptionServerURLString: String {
+	/// Base URL of the Whispera transcription backend (the proxy `auto` and
+	/// `whisperaStreaming` talk to). Separate from `serverURLString` because the
+	/// streaming proxy can live somewhere other than the account backend; empty
+	/// means "use the account backend".
+	static var transcriptionBackendURLString: String {
 		get {
-			let stored = UserDefaults.standard.string(forKey: transcriptionServerURLKey) ?? ""
+			TranscriptionServerURLMigration.migrateIfNeeded(in: .standard)
+			let stored = UserDefaults.standard.string(forKey: transcriptionBackendURLKey) ?? ""
 			return stored.isEmpty ? serverURLString : stored
 		}
-		set { UserDefaults.standard.set(newValue, forKey: transcriptionServerURLKey) }
+		set { UserDefaults.standard.set(newValue, forKey: transcriptionBackendURLKey) }
 	}
 
-	static var transcriptionServerURL: URL? {
-		URL(string: transcriptionServerURLString.trimmingCharacters(in: .whitespacesAndNewlines))
+	static var transcriptionBackendURL: URL? { url(from: transcriptionBackendURLString) }
+
+	/// Base URL of a directly-addressed OpenAI-compatible engine (the
+	/// `realtimeDirect` mode), ending in /v1. Its own key rather than sharing the
+	/// backend's: the two are different machines with different URL shapes, and
+	/// one shared field meant switching engines silently kept the wrong one.
+	/// No account-server fallback — with no URL the direct engine is simply
+	/// unconfigured, which surfaces as `invalidServerURL` instead of a 404
+	/// against a server that is not an engine.
+	static var transcriptionDirectURLString: String {
+		get {
+			TranscriptionServerURLMigration.migrateIfNeeded(in: .standard)
+			return UserDefaults.standard.string(forKey: transcriptionDirectURLKey) ?? ""
+		}
+		set { UserDefaults.standard.set(newValue, forKey: transcriptionDirectURLKey) }
+	}
+
+	static var transcriptionDirectURL: URL? { url(from: transcriptionDirectURLString) }
+
+	/// The URL for whichever engine is currently selected. Read-only and routed
+	/// by engine: the streaming conformers' default `baseURLProvider` closures
+	/// (which live in a file another change owns right now) all read this one
+	/// property, and the routing is what guarantees each of them resolves the
+	/// URL that belongs to its mode.
+	static var transcriptionServerURLString: String {
+		transcriptionEngine == .realtimeDirect
+			? transcriptionDirectURLString
+			: transcriptionBackendURLString
+	}
+
+	static var transcriptionServerURL: URL? { url(from: transcriptionServerURLString) }
+
+	private static func url(from string: String) -> URL? {
+		let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+		return trimmed.isEmpty ? nil : URL(string: trimmed)
 	}
 
 	/// Which engine on that backend to stream through. Empty means "let the
@@ -81,10 +154,10 @@ extension WhisperaSettings {
 	/// to name one, so the host has to.
 	static var transcriptionDirectModel: String {
 		get {
-			let stored = UserDefaults.standard.string(forKey: "whisperaTranscriptionDirectModel") ?? ""
+			let stored = UserDefaults.standard.string(forKey: transcriptionDirectModelKey) ?? ""
 			return stored.isEmpty ? "Systran/faster-distil-whisper-large-v3" : stored
 		}
-		set { UserDefaults.standard.set(newValue, forKey: "whisperaTranscriptionDirectModel") }
+		set { UserDefaults.standard.set(newValue, forKey: transcriptionDirectModelKey) }
 	}
 
 	static var transcriptionServerId: String {

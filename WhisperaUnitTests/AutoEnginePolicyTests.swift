@@ -18,8 +18,8 @@ struct AutoEnginePolicyTests {
 		granularity: StreamingGranularity = .utterance
 	) -> DiscoveredServer {
 		DiscoveredServer(
-			id: id, label: label ?? id, isOnline: isOnline, supportsRealtime: supportsRealtime,
-			isDefault: isDefault, granularity: granularity)
+			id: id, label: label ?? id, model: "", isOnline: isOnline,
+			supportsRealtime: supportsRealtime, isDefault: isDefault, granularity: granularity)
 	}
 
 	// MARK: - No server to talk to

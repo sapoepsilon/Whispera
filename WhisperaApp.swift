@@ -79,7 +79,9 @@ extension Notification.Name {
 }
 
 enum SettingsDestination: String {
-	case general, aiMode, recipes, storage, liveTranscription, fileTranscription, benchmark
+	// `servers` replaced `aiMode` when the LLM configuration moved under the
+	// Servers tab; SettingsView rewrites a stored "aiMode" selection on appear.
+	case general, servers, recipes, storage, liveTranscription, fileTranscription, benchmark
 }
 
 enum SettingsRouting {
@@ -153,6 +155,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		}
 
 		AppDelegate.registerInitialDefaults(in: .standard)
+		// Before any engine reads a server URL: the shared key splits into
+		// per-mode keys exactly once, keyed off the engine it was typed for.
+		TranscriptionServerURLMigration.migrateIfNeeded(in: .standard)
 
 		Task { @MainActor in
 			audioManager = AudioManager()

@@ -139,11 +139,6 @@ struct SettingsView: View {
 	@AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
 	@AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
-	@AppStorage("whisperaTranscriptionEngine") private var transcriptionEngineRaw = TranscriptionEngine
-		.auto.rawValue
-	@AppStorage("whisperaTranscriptionServerURL") private var transcriptionServerURL = ""
-	@AppStorage("whisperaTranscriptionServerId") private var transcriptionServerId = ""
-	@AppStorage("whisperaTranscriptionDirectModel") private var transcriptionDirectModel = ""
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
 	@AppStorage("enableRecordingGlow") private var enableRecordingGlow = true
 	// Key unchanged from the older pause-based feature so existing opt-outs survive.
@@ -154,14 +149,6 @@ struct SettingsView: View {
 
 	private var materialStyle: MaterialStyle {
 		MaterialStyle(rawValue: materialStyleRaw)
-	}
-
-	/// Falls back to `auto` for the same reason `WhisperaSettings` does: a stored
-	/// engine from a build that shipped one we no longer do must degrade, not
-	/// trap — and `auto` itself degrades further, to on-device, whenever nothing
-	/// is configured.
-	private var selectedTranscriptionEngine: TranscriptionEngine {
-		TranscriptionEngine(rawValue: transcriptionEngineRaw) ?? .auto
 	}
 
 	/// The live state, for the dictation-failure alert. Read directly rather than
@@ -214,17 +201,6 @@ struct SettingsView: View {
 	@State private var liveTranscriptionInfoWindow: NSWindow?
 	@State private var logsSize: String = "Calculating..."
 	@State private var showingClearLogsConfirmation = false
-	// Direct-mode ("realtimeDirect") model list: fetched from the engine's own
-	// /models endpoint rather than typed by hand. Empty + no error means "not
-	// fetched yet", which is also the state a failed fetch falls back to, so the
-	// free-text field underneath stays reachable either way.
-	@State private var directModelOptions: [TranscriptionModelInfo] = []
-	@State private var isFetchingDirectModels = false
-	@State private var directModelFetchError: String?
-	// Automatic engine: what it currently resolves to, refreshed whenever the
-	// picker lands on it. Same shape as the direct-mode model fetch above.
-	@State private var autoResolutionCaption = "Deciding…"
-	@State private var isResolvingAutoEngine = false
 	@AppStorage(SettingsRouting.selectedTabDefaultsKey) private var selectedSettingsTab =
 		SettingsDestination.general.rawValue
 
@@ -487,181 +463,13 @@ struct SettingsView: View {
 					Divider()
 
 					SettingsSection("Transcription") {
-						SettingRow(
-							"Engine",
-							description: "Where speech-to-text runs. On-device needs no network."
-						) {
-							Picker("Transcription engine", selection: $transcriptionEngineRaw) {
-								ForEach(TranscriptionEngine.allCases, id: \.rawValue) { engine in
-									Text(engine.displayName).tag(engine.rawValue)
-								}
-							}
-							.labelsHidden()
-							.frame(width: 240)
-							.accessibilityIdentifier("transcriptionEnginePicker")
-							// A server engine with live transcription off records first and
-							// transcribes at the end, which reads as the engine not working.
-							// Choosing one turns it on; the box below says so, and the
-							// toggle stays the user's.
-							.onChange(of: transcriptionEngineRaw) { _, raw in
-								guard TranscriptionEngine(rawValue: raw)?.streamsFromAServer == true,
-									!enableStreaming
-								else { return }
-								enableStreaming = true
-								AppLogger.shared.general.info(
-									"Live transcription turned on because a server engine was selected: \(raw)")
-							}
-						}
-
-						if transcriptionEngineRaw == TranscriptionEngine.auto.rawValue {
-							VStack(alignment: .leading, spacing: 8) {
-								Text(
-									"Streams through a transcription server when one is configured and reachable, preferring the one with the best live-word quality. Falls back to WhisperKit on-device otherwise. Nothing else to set up."
-								)
-								.font(.caption)
-								.foregroundColor(.secondary)
-								HStack(spacing: 6) {
-									if isResolvingAutoEngine {
-										ProgressView()
-											.scaleEffect(0.5)
-									}
-									Text(autoResolutionCaption)
-										.font(.caption)
-										.foregroundColor(.secondary)
-										.accessibilityIdentifier("autoEngineResolutionCaption")
-								}
-								.animation(.easeInOut(duration: 0.2), value: isResolvingAutoEngine)
-							}
-							.task(id: transcriptionEngineRaw) {
-								guard transcriptionEngineRaw == TranscriptionEngine.auto.rawValue else {
-									return
-								}
-								isResolvingAutoEngine = true
-								autoResolutionCaption = await AutoTranscriber.shared.resolutionCaption()
-								isResolvingAutoEngine = false
-							}
-						}
-
-						if transcriptionEngineRaw == TranscriptionEngine.whisperaStreaming.rawValue {
-							VStack(alignment: .leading, spacing: 8) {
-								Text(
-									"Streams audio to a Whispera transcription server over a WebSocket. Leave the server blank to use the backend's own default."
-								)
-								.font(.caption)
-								.foregroundColor(.secondary)
-								TextField(
-									WhisperaSettings.serverURLString + " (leave blank to reuse the account server)",
-									text: $transcriptionServerURL
-								)
-								.textFieldStyle(.roundedBorder)
-								.autocorrectionDisabled()
-								.accessibilityIdentifier("transcriptionServerURLField")
-								TextField("Server id (e.g. speaches-lan)", text: $transcriptionServerId)
-									.textFieldStyle(.roundedBorder)
-									.autocorrectionDisabled()
-									.accessibilityIdentifier("transcriptionServerIdField")
-							}
-						}
-
-						// Direct mode has no backend to ask which engines exist or what
-						// they run, so both are the user's to state. Without these fields
-						// the engine is only reachable by editing defaults by hand.
-						if transcriptionEngineRaw == TranscriptionEngine.realtimeDirect.rawValue {
-							VStack(alignment: .leading, spacing: 8) {
-								Text(
-									"Streams audio straight to an OpenAI-Realtime engine, with no Whispera backend in between. The engine holds its own credentials, so use this only on a network you trust."
-								)
-								.font(.caption)
-								.foregroundColor(.secondary)
-								TextField("http://192.168.0.10:8000/v1", text: $transcriptionServerURL)
-									.textFieldStyle(.roundedBorder)
-									.autocorrectionDisabled()
-									.accessibilityIdentifier("directEngineURLField")
-
-								HStack(spacing: 8) {
-									if isFetchingDirectModels {
-										ProgressView()
-											.scaleEffect(0.6)
-										Text("Checking the engine for installed models…")
-											.font(.caption)
-											.foregroundColor(.secondary)
-									} else if !directModelOptions.isEmpty {
-										Picker("Model", selection: $transcriptionDirectModel) {
-											ForEach(directModelOptions) { model in
-												Text(model.displayName).tag(model.id)
-											}
-										}
-										.labelsHidden()
-										.frame(width: 260)
-										.accessibilityIdentifier("directEngineModelPicker")
-									} else {
-										// Fallback: the fetch never ran or it failed. Typing a
-										// model by hand keeps the engine reachable even when
-										// Whispera cannot list what it has installed.
-										TextField(
-											"Model (e.g. Systran/faster-distil-whisper-large-v3)",
-											text: $transcriptionDirectModel
-										)
-										.textFieldStyle(.roundedBorder)
-										.autocorrectionDisabled()
-										.accessibilityIdentifier("directEngineModelField")
-									}
-
-									Button {
-										refreshDirectModels()
-									} label: {
-										Image(systemName: "arrow.clockwise")
-									}
-									.buttonStyle(.bordered)
-									.controlSize(.small)
-									.disabled(isFetchingDirectModels)
-									.accessibilityIdentifier("directEngineModelsRefreshButton")
-									.help("Ask the engine what speech-to-text models it has installed")
-								}
-								.animation(.easeInOut(duration: 0.2), value: isFetchingDirectModels)
-								.animation(.easeInOut(duration: 0.2), value: directModelOptions)
-
-								if let directModelFetchError {
-									HStack(spacing: 6) {
-										Image(systemName: "exclamationmark.triangle.fill")
-											.foregroundColor(.orange)
-											.font(.caption)
-										Text(directModelFetchError)
-											.font(.caption)
-											.foregroundColor(.orange)
-									}
-									.transition(.opacity)
-								}
-
-								Text(
-									"The URL is the engine's OpenAI-compatible base, ending in /v1. Refresh to list the models it already has installed, or type one directly if it cannot be reached right now."
-								)
-								.font(.caption)
-								.foregroundColor(.secondary)
-							}
-							.animation(.easeInOut(duration: 0.2), value: directModelFetchError)
-							.task(id: transcriptionEngineRaw) {
-								guard directModelOptions.isEmpty, directModelFetchError == nil else { return }
-								refreshDirectModels()
-							}
-						}
-
-						// `auto` is included alongside the server engines: it may resolve to
-						// one, and the wording below is already engine-agnostic — the
-						// caveat is exactly as true when `auto` lands on WhisperKit.
-						if selectedTranscriptionEngine.streamsFromAServer
-							|| selectedTranscriptionEngine == .auto
-						{
-							InfoBox(style: .info) {
-								Text(
-									enableStreaming
-										? "Live transcription is on, so words appear while you speak. Turning it off under Live Transcription Mode makes Whispera record first and transcribe at the end."
-										: "Live Transcription Mode is off, so nothing appears until you stop speaking and the whole recording is transcribed. Turn it on below to see words as you say them."
-								)
-								.font(.caption)
-								.foregroundColor(.secondary)
-							}
-						}
+						// The engine picker and every server field moved to the Servers
+						// tab; this line is the trail for anyone who last saw them here.
+						Text(
+							"The speech engine and its servers are set up in the Servers tab."
+						)
+						.font(.caption)
+						.foregroundColor(.secondary)
 
 						SettingRow(
 							"Streaming Transcription",
@@ -832,12 +640,12 @@ struct SettingsView: View {
 			}
 			.tag(SettingsDestination.general.rawValue)
 
-			// MARK: - AI Mode Tab
-			LLMModeSettingsView()
+			// MARK: - Servers Tab
+			ServersSettingsView()
 				.tabItem {
-					Label("AI Mode", systemImage: "brain")
+					Label("Servers", systemImage: "server.rack")
 				}
-				.tag(SettingsDestination.aiMode.rawValue)
+				.tag(SettingsDestination.servers.rawValue)
 
 			// MARK: - Recipes Tab
 			RecipesView()
@@ -1289,6 +1097,11 @@ struct SettingsView: View {
 		}
 		.frame(maxWidth: 600)
 		.onAppear {
+			// The AI Mode tab became the Servers tab; a stored selection of the
+			// old tab would otherwise leave the TabView with nothing selected.
+			if selectedSettingsTab == "aiMode" {
+				selectedSettingsTab = SettingsDestination.servers.rawValue
+			}
 			loadAvailableModels()
 			checkLaunchAtStartupStatus()
 			updateLogsSize()
@@ -1727,29 +1540,6 @@ struct SettingsView: View {
 
 		// Store reference
 		liveTranscriptionInfoWindow = window
-	}
-
-	/// Asks the directly-addressed engine what speech-to-text models it has
-	/// installed. A failure keeps whatever model string is already saved and
-	/// falls back to the free-text field rather than clearing the selection —
-	/// an engine that is briefly unreachable should not cost the user their
-	/// configured model.
-	private func refreshDirectModels() {
-		isFetchingDirectModels = true
-		directModelFetchError = nil
-		Task { @MainActor in
-			do {
-				let models = try await StreamingTranscriber.direct.models()
-				directModelOptions = models
-				isFetchingDirectModels = false
-			} catch {
-				AppLogger.shared.general.error(
-					"Failed to list direct-engine models: \(error.localizedDescription)")
-				directModelOptions = []
-				directModelFetchError = error.localizedDescription
-				isFetchingDirectModels = false
-			}
-		}
 	}
 
 	private func getModelStatusText() -> String {
