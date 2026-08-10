@@ -39,6 +39,10 @@ enum StreamingGranularity: String, Sendable, Equatable {
 struct DiscoveredServer: Sendable, Equatable {
 	let id: String
 	let label: String
+	/// What the server runs, for the Settings server list. The policy never
+	/// ranks on it — granularity is the quality signal — but a user pinning a
+	/// server picks by model name as much as by label.
+	let model: String
 	let isOnline: Bool
 	let supportsRealtime: Bool
 	let isDefault: Bool
@@ -61,6 +65,7 @@ enum ServerDiscoveryProbe {
 			struct Realtime: Decodable { let granularity: String? }
 			let id: String
 			let label: String
+			let model: String?
 			let capabilities: [String]
 			let status: String?
 			let realtime: Realtime?
@@ -104,6 +109,7 @@ enum ServerDiscoveryProbe {
 			DiscoveredServer(
 				id: $0.id,
 				label: $0.label,
+				model: $0.model ?? "",
 				isOnline: $0.status == nil || $0.status == "online",
 				supportsRealtime: $0.capabilities.contains("realtime"),
 				isDefault: $0.default ?? false,
