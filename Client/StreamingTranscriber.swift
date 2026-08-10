@@ -49,6 +49,12 @@ final class StreamingTranscriber: SpeechTranscribing {
 
 	private var session: DictationSession?
 	private var eventTask: Task<Void, Never>?
+	/// The previous session's close, still running behind the stop that returned
+	/// immediately. The next start awaits it (bounded) before opening capture:
+	/// in QA, back-to-back dictations opened the new AVAudioEngine while the old
+	/// one still held the input device, and the new session heard only silence —
+	/// or failed with -10868 once the engine gave up.
+	private var closingTask: Task<Void, Never>?
 	private var wordTracker: DictationWordTracker?
 	/// Builds the in-flight utterance out of `.partialTranscript` deltas before
 	/// they reach the live state; see the accumulator's own comment for why a
@@ -239,6 +245,11 @@ final class StreamingTranscriber: SpeechTranscribing {
 		utteranceDraft.clear()
 
 		do {
+			// The previous session's microphone engine must be fully down before
+			// this one opens its own, or the new capture starts against a device
+			// the old engine still holds and delivers nothing.
+			await awaitPreviousSessionClosed()
+
 			let configuration = try await configuration(for: options)
 
 			// The input device the user picked has to be the system default before
@@ -346,7 +357,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 		// session's own microphone engine is down — switching the default device
 		// under a still-running AVAudioEngine is the main-thread wedge suspected
 		// in the QA hang — and only while no newer dictation has claimed it.
-		Task.detached { [weak self] in
+		closingTask = Task.detached { [weak self] in
 			await session.cancel()
 			await MainActor.run {
 				guard self?.session == nil else { return }
@@ -589,9 +600,36 @@ final class StreamingTranscriber: SpeechTranscribing {
 		wordTracker = nil
 		finishStartIfPending(throwing: CancellationError())
 		if let closing {
-			Task { await closing.cancel() }
+			closingTask = Task { await closing.cancel() }
 		}
 	}
+
+	/// Waits for the previous session's close to finish, bounded: the microphone
+	/// half of a close is local and quick — and it is the half the next capture
+	/// needs done — while the socket half may take as long as the network wants,
+	/// and a slow server must not hold the user's next dictation hostage.
+	///
+	/// Not a task group: awaiting a never-failing task's `value` cannot be
+	/// interrupted, and a group would wait for that child anyway at its scope's
+	/// end. Two independent observers race to resume one continuation instead;
+	/// whichever loses resumes into nothing.
+	private func awaitPreviousSessionClosed() async {
+		guard let closing = closingTask else { return }
+		closingTask = nil
+		await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+			let handoff = ResumeOnce(continuation)
+			Task.detached {
+				await closing.value
+				handoff.resume()
+			}
+			Task.detached {
+				try? await Task.sleep(nanoseconds: UInt64(Self.closeHandoverTimeout * 1_000_000_000))
+				handoff.resume()
+			}
+		}
+	}
+
+	private static let closeHandoverTimeout: Double = 2
 
 	// MARK: - Server resolution
 
@@ -646,6 +684,25 @@ final class StreamingTranscriber: SpeechTranscribing {
 		let server = try await resolveServer()
 		return .backend(
 			baseURL, server: server.id, model: server.model, language: options.language)
+	}
+}
+
+/// Resumes a continuation exactly once, whichever of two racing observers gets
+/// there first. See `StreamingTranscriber.awaitPreviousSessionClosed`.
+private final class ResumeOnce: @unchecked Sendable {
+	private let lock = NSLock()
+	private var continuation: CheckedContinuation<Void, Never>?
+
+	init(_ continuation: CheckedContinuation<Void, Never>) {
+		self.continuation = continuation
+	}
+
+	func resume() {
+		lock.lock()
+		let continuation = self.continuation
+		self.continuation = nil
+		lock.unlock()
+		continuation?.resume()
 	}
 }
 

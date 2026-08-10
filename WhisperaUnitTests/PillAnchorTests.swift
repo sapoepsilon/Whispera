@@ -22,6 +22,22 @@ struct PillAnchorTests {
 		#expect(PillAnchor.gap == PillMetrics.controlsGap, "one shared gap, not a second invented number")
 	}
 
+	/// The concrete numbers from the WHI-58 QA follow-up: for a pill whose top
+	/// edge is at y=130, a 36pt capsule must sit with its bottom at exactly
+	/// 130 + 8 — the design language's small spacing step — and dead-centered,
+	/// so the two surfaces read as one attached stack, never overlapping.
+	@Test func theGapIsTheDesignLanguageSmallSpacingStep() {
+		#expect(PillAnchor.gap == 8)
+
+		let pill = NSRect(x: 620, y: 86, width: 280, height: 44)
+		let frame = PillAnchor.frame(
+			for: CGSize(width: 216, height: 36), screenFrame: screen, pillFrame: pill)
+
+		#expect(frame.minY == 138)
+		#expect(frame.midX == 760)
+		#expect(frame.minY > pill.maxY, "a visible gap, not touching or overlapping")
+	}
+
 	@Test func neverOverlapsThePill() {
 		let pill = NSRect(x: 600, y: 80, width: 200, height: 50)
 		let size = CGSize(width: 240, height: 200)  // a tall, many-line surface

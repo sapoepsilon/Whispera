@@ -100,15 +100,96 @@ struct DictationHUDWidthTests {
 		#expect(width < 552)
 	}
 
-	@Test func estimateIsFlatPerCharacterSoWordOrderCannotWobbleIt() {
-		let a = DictationHUDWidth.estimatedWidth(words: ["hello", "world"], hasEllipsis: false)
-		let b = DictationHUDWidth.estimatedWidth(words: ["world", "hello"], hasEllipsis: false)
-		#expect(a == b, "which word is last must not change the estimate")
+	/// The QA screenshot's exact ticker: the old flat 9pt/char price sat far
+	/// above what the rendered text needs, and — because the frame never
+	/// shrinks mid-dictation — that error accumulated into a capsule whose left
+	/// half stayed blank. The estimate now measures the same type PillWordFlow
+	/// renders, so the quantized window fits the text and hugs it within one
+	/// growth step.
+	@Test func estimateHugsTheRenderedTextInsteadOfPricingPerCharacter() {
+		let words = ["Space", "there", "There", "are", "no"]
+		let measured = DictationHUDWidth.estimatedWidth(words: words, hasEllipsis: true)
+		let characters = CGFloat(words.reduce(0) { $0 + $1.count })
+		let oldFlatPrice = characters * 9 + CGFloat(words.count - 1) * 4 + 20 + 32
+		#expect(measured < oldFlatPrice, "the flat price is what left half the capsule blank")
+
+		let width = DictationHUDWidth.width(
+			current: nil, estimated: measured, maximum: maximum, isDictating: true)
+		#expect(width >= measured, "the window must fit the text it shows")
+		#expect(width - measured < DictationHUDWidth.step, "and hug it within one growth step")
+	}
+
+	@Test func estimateGrowsWhenAWordIsAdded() {
+		let shorter = DictationHUDWidth.estimatedWidth(
+			words: ["hello", "there"], hasEllipsis: false)
+		let longer = DictationHUDWidth.estimatedWidth(
+			words: ["hello", "there", "general"], hasEllipsis: false)
+		#expect(longer > shorter)
 	}
 
 	@Test func ellipsisReservesRoom() {
 		let without = DictationHUDWidth.estimatedWidth(words: ["hello"], hasEllipsis: false)
 		let with = DictationHUDWidth.estimatedWidth(words: ["hello"], hasEllipsis: true)
 		#expect(with > without)
+	}
+
+	/// A status line ("Waiting for model...") must price out near the compact
+	/// floor, not race the frame up two growth steps before a word has arrived.
+	@Test func aStatusLineStaysNearTheCompactFloor() {
+		let width = DictationHUDWidth.width(
+			current: nil,
+			estimated: DictationHUDWidth.statusWidth("Waiting for model..."),
+			maximum: maximum,
+			isDictating: true)
+		#expect(width <= DictationHUDWidth.compact + DictationHUDWidth.step)
+	}
+}
+
+/// The HUD may only be on screen while it has something to say — the WHI-58 QA
+/// session photographed a wide, completely empty capsule above the running
+/// pill. Before the first word: a status line or nothing. After words: a
+/// momentarily blank transcript holds the window (DictationView holds the
+/// words), and only the session ending releases it.
+struct DictationHUDContentTests {
+	@Test func aSessionWithNoWordsYetShowsNothing() {
+		#expect(
+			!DictationHUDContent.hasSomethingToSay(
+				overlayError: nil, isWaitingForModel: false, waitingStatusText: "",
+				displayText: "", hasShownWordsThisSession: false))
+	}
+
+	@Test func aWaitingStatusLineIsContent() {
+		#expect(
+			DictationHUDContent.hasSomethingToSay(
+				overlayError: nil, isWaitingForModel: true, waitingStatusText: "Connecting…",
+				displayText: "", hasShownWordsThisSession: false))
+	}
+
+	@Test func waitingWithAnEmptyStatusIsNotContent() {
+		#expect(
+			!DictationHUDContent.hasSomethingToSay(
+				overlayError: nil, isWaitingForModel: true, waitingStatusText: "",
+				displayText: "", hasShownWordsThisSession: false))
+	}
+
+	@Test func wordsAreContent() {
+		#expect(
+			DictationHUDContent.hasSomethingToSay(
+				overlayError: nil, isWaitingForModel: false, waitingStatusText: "",
+				displayText: "hello there", hasShownWordsThisSession: false))
+	}
+
+	@Test func aBlankTranscriptAfterWordsHoldsTheWindow() {
+		#expect(
+			DictationHUDContent.hasSomethingToSay(
+				overlayError: nil, isWaitingForModel: false, waitingStatusText: "",
+				displayText: "", hasShownWordsThisSession: true))
+	}
+
+	@Test func aRecipeErrorIsContent() {
+		#expect(
+			DictationHUDContent.hasSomethingToSay(
+				overlayError: "Recipe failed", isWaitingForModel: false, waitingStatusText: "",
+				displayText: "", hasShownWordsThisSession: false))
 	}
 }
