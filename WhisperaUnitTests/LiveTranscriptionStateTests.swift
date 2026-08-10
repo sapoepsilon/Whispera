@@ -197,8 +197,9 @@ struct LiveTranscriptionRemoteIngestTests {
 	@Test func theDisplayOnlyGrowsAcrossAnUtteranceBoundary() {
 		let state = LiveTranscriptionState()
 		var displays: [String] = []
-		// Mirrors StreamingTranscriber.handle: .partialTranscript carries only the
-		// current utterance; .transcript carries the whole accumulated text.
+		// Mirrors StreamingTranscriber.handle: each `partial` here stands for the
+		// draft the transcriber has accumulated out of its delta events so far;
+		// .transcript carries the whole accumulated text.
 		func partial(_ draft: String) {
 			state.ingest(committed: state.confirmedText, draft: draft)
 			displays.append(state.stableDisplayText)
@@ -266,5 +267,93 @@ struct LiveTranscriptionRemoteIngestTests {
 		state.ingest(committed: "hello there", draft: "")
 
 		#expect(announced == ["hello", "hello there"])
+	}
+}
+
+/// The transcriber-side accumulation of `.partialTranscript` deltas. A partial
+/// carries only the fragment since the previous event, so the transcriber
+/// appends it into `UtteranceDraftAccumulator` before handing the draft to the
+/// live state; showing a fragment alone replaced the pill's tail instead of
+/// growing it. These tests replay the exact event sequence recorded in the
+/// WHI-58 nemo-stream QA session through the same logic the handler runs.
+@MainActor
+struct UtteranceDraftAccumulatorTests {
+	@Test func fragmentsConcatenateWithoutASeparator() {
+		var accumulator = UtteranceDraftAccumulator()
+
+		accumulator.append(" should be work")
+		accumulator.append("ing right")
+
+		#expect(accumulator.draft == "should be working right")
+	}
+
+	@Test func clearingStartsTheNextUtteranceEmpty() {
+		var accumulator = UtteranceDraftAccumulator()
+		accumulator.append("Hello, hello")
+
+		accumulator.clear()
+
+		#expect(accumulator.draft == "")
+	}
+
+	@Test func theExactQAEventSequenceGrowsThePillInsteadOfReplacingItsTail() {
+		let state = LiveTranscriptionState()
+		var accumulator = UtteranceDraftAccumulator()
+		// Mirrors StreamingTranscriber.handle for a native-delta engine.
+		func partialTranscript(_ delta: String) {
+			accumulator.append(delta)
+			state.ingest(committed: state.confirmedText, draft: accumulator.draft)
+		}
+		func finalTranscript() { accumulator.clear() }
+		func transcript(_ whole: String) {
+			accumulator.clear()
+			state.ingest(committed: whole, draft: "")
+		}
+
+		partialTranscript("Hello, hello")
+		partialTranscript(".")
+		finalTranscript()
+		transcript("Hello, hello.")
+
+		#expect(state.stableDisplayText == "Hello, hello.")
+		#expect(state.confirmedText == "Hello, hello.")
+		#expect(state.pendingText == "")
+
+		partialTranscript("Eh this")
+		partialTranscript(" should be work")
+		partialTranscript("ing right")
+		partialTranscript(", yep.")
+
+		#expect(state.pendingText == "Eh this should be working right, yep.")
+		#expect(state.stableDisplayText == "Hello, hello. Eh this should be working right, yep.")
+
+		partialTranscript("  It is.")
+
+		#expect(state.pendingText == "Eh this should be working right, yep.  It is.")
+
+		// Stopping mid-utterance pastes committed plus the accumulated draft,
+		// exactly as stopStreaming composes them from the live state.
+		let pasted = LiveTranscriptionState.joined(
+			committed: state.confirmedText, draft: state.pendingText
+		).trimmingCharacters(in: .whitespacesAndNewlines)
+		#expect(pasted == "Hello, hello. Eh this should be working right, yep.  It is.")
+	}
+
+	@Test func aWholeTranscriptAfterAccumulatedPartialsShowsTheUtteranceOnce() {
+		let state = LiveTranscriptionState()
+		var accumulator = UtteranceDraftAccumulator()
+
+		accumulator.append("Hello, hello")
+		state.ingest(committed: state.confirmedText, draft: accumulator.draft)
+		accumulator.append(".")
+		state.ingest(committed: state.confirmedText, draft: accumulator.draft)
+		// finalTranscript clears; the whole-transcript event clears again and
+		// commits — the second clear must be harmless.
+		accumulator.clear()
+		accumulator.clear()
+		state.ingest(committed: "Hello, hello.", draft: accumulator.draft)
+
+		#expect(state.stableDisplayText == "Hello, hello.")
+		#expect(state.pendingText == "")
 	}
 }

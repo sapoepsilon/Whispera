@@ -202,3 +202,33 @@ final class LiveTranscriptionState {
 		return false
 	}
 }
+
+/// The draft of the utterance currently in flight, built out of an engine's
+/// partial-transcript events. This accumulator exists because those partials
+/// are deltas: the OpenAI-Realtime contract
+/// (`conversation.item.input_audio_transcription.delta`) sends only the new
+/// fragment since the previous event, so handing one fragment straight to the
+/// display replaced the pill's tail with the latest few words instead of
+/// growing it — the nemo-stream WHI-58 QA bug. Fragments concatenate with no
+/// separator injected: the engine carries its own spacing, and a mid-word
+/// split like "work" + "ing" must stay one word.
+struct UtteranceDraftAccumulator {
+	private var fragments = ""
+
+	/// The utterance so far, trimmed only at the edges. A fragment often opens
+	/// with the space that separates it from the previous one, and a leading
+	/// space here would double up against the separator
+	/// `LiveTranscriptionState.joined` inserts between the committed text and
+	/// this draft. Interior spacing is the engine's own and stays untouched.
+	var draft: String {
+		fragments.trimmingCharacters(in: .whitespaces)
+	}
+
+	mutating func append(_ delta: String) {
+		fragments += delta
+	}
+
+	mutating func clear() {
+		fragments = ""
+	}
+}
