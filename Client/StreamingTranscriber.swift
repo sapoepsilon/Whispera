@@ -278,7 +278,8 @@ final class StreamingTranscriber: SpeechTranscribing {
 			"Input device selection applied; the running remote stream keeps its original input until it is restarted")
 	}
 
-	func stopStreaming() {
+	@discardableResult
+	func stopStreaming() async -> String {
 		isStopping = true
 		live.isWaitingForModel = false
 		live.waitingForModelStatusText = ""
@@ -288,24 +289,22 @@ final class StreamingTranscriber: SpeechTranscribing {
 
 		guard let session else {
 			teardown()
-			return
+			return live.confirmedText.trimmingCharacters(in: .whitespacesAndNewlines)
 		}
 		self.session = nil
 
-		Task { @MainActor [weak self] in
-			let transcript = await session.finish()
-			guard let self else { return }
-			let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-			if !trimmed.isEmpty {
-				self.live.ingest(committed: trimmed, draft: "")
-			}
-			self.live.setPending("")
-			self.wordTracker?.endSession()
-			self.wordTracker = nil
-			self.eventTask?.cancel()
-			self.eventTask = nil
-			AppLogger.shared.transcriber.info("Remote live streaming stopped")
+		let transcript = await session.finish()
+		let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+		if !trimmed.isEmpty {
+			live.ingest(committed: trimmed, draft: "")
 		}
+		live.setPending("")
+		wordTracker?.endSession()
+		wordTracker = nil
+		eventTask?.cancel()
+		eventTask = nil
+		AppLogger.shared.transcriber.info("Remote live streaming stopped")
+		return trimmed
 	}
 
 	// MARK: - Events

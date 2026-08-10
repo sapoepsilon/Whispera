@@ -46,16 +46,19 @@ enum CorrectionCommand {
 		}
 	}
 
+	/// Tracking only: a live dictation no longer types each confirmed segment as
+	/// it lands. Whispera pastes once, when the dictation ends (see
+	/// `AudioManager.applyAndPaste`/`stopLiveTranscription`), and the HUD is the
+	/// only place mid-dictation words show up. See WHI-58. `trackedWords` is
+	/// kept up to date regardless, since the correction commands below
+	/// (`processCorrectionCommand`/`executeCorrection`) still index into it.
 	private func handleConfirmedTextChange(_ fullText: String) {
 		guard isTrackingEnabled else { return }
 		let newContent = extractNewContent(from: fullText)
 		if !newContent.isEmpty {
 			trackWords(from: newContent)
-			Task {
-				await pasteText(newContent)
-			}
 		} else {
-			logger.debug("No new content to paste")
+			logger.debug("No new content to track")
 		}
 	}
 

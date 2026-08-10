@@ -857,13 +857,38 @@ extension AudioManager {
 		timer.stop()
 		playFeedbackSound(start: false)
 
-		(sessionTranscriber ?? transcriber).stopStreaming()
+		let engine = sessionTranscriber ?? transcriber
 		sessionTranscriber = nil
 		levelMonitor.reset()
 		SystemAudioMuter.shared.restoreAfterDictation()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
+		// The transcript is not final until the engine's stream actually closes
+		// (a network round trip for the remote engine), so the paste-once-at-stop
+		// behaviour has to wait for that rather than pasting whatever was on
+		// screen the instant the shortcut fired.
+		isTranscribing = true
+		Task {
+			let transcript = await engine.stopStreaming()
+			guard let toPaste = Self.textToPaste(afterLiveDictationFinished: transcript) else {
+				isTranscribing = false
+				return
+			}
+			await applyAndPaste(toPaste)
+		}
+
 		scheduleTimerReset()
+	}
+
+	/// What a finished live dictation should paste, if anything. Cancelling
+	/// during startup (`cancelCaptureStartup`) and a failed `startStreaming`
+	/// never reach `stopStreaming` at all, so they never reach this function
+	/// either — the only case left to decide is whether the engine actually
+	/// produced words. An empty or whitespace-only transcript is not an error:
+	/// the user said nothing, or a stream closed before confirming anything.
+	nonisolated static func textToPaste(afterLiveDictationFinished transcript: String) -> String? {
+		let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+		return trimmed.isEmpty ? nil : trimmed
 	}
 }
 
@@ -905,12 +930,14 @@ extension AudioManager {
 	}
 
 	/// Runs the transcription through the dictation processor (recipe matching +
-	/// execution) when in text mode, then pastes the result. WHI-41.
+	/// execution), then pastes the result once. WHI-41. Shared by text mode's
+	/// one-shot transcription and live mode's final flush at
+	/// `stopLiveTranscription` — recipes apply the same way regardless of which
+	/// mode produced the words. See WHI-58.
 	@MainActor
 	fileprivate func applyAndPaste(_ transcription: String) async {
-		let mode = currentRecordingMode
 		let toPaste: String?
-		if mode == .text, let processor = dictationProcessor {
+		if let processor = dictationProcessor {
 			toPaste = await processor(transcription)
 		} else {
 			toPaste = transcription
@@ -918,7 +945,7 @@ extension AudioManager {
 
 		lastTranscription = transcription
 		isTranscribing = false
-		if mode == .text, let toPaste {
+		if let toPaste, !toPaste.isEmpty {
 			pasteToFocusedApp(toPaste)
 		}
 	}

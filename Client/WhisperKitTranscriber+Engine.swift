@@ -93,7 +93,12 @@ extension WhisperKitTranscriber: SpeechTranscribing {
 		await switchLiveStreamDevice()
 	}
 
-	func stopStreaming() {
+	@discardableResult
+	func stopStreaming() async -> String {
 		stopLiveStream()
+		// stopLiveStream() confirms the pending tail synchronously, so
+		// confirmedText already holds the whole transcript by the time it returns.
+		return LiveTranscriptionState.shared.confirmedText.trimmingCharacters(
+			in: .whitespacesAndNewlines)
 	}
 }
