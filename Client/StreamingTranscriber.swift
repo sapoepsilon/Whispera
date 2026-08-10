@@ -253,6 +253,12 @@ final class StreamingTranscriber: SpeechTranscribing {
 
 			await session.start()
 			try await awaitCaptureEstablished()
+		} catch is CancellationError {
+			// The user stopped before capture was established. The stop path owns
+			// the state reset and the teardown; repeating either here would run
+			// against whatever dictation is current by the time this resumes, and
+			// there is no failure to report — ending a start is what was asked for.
+			throw CancellationError()
 		} catch {
 			live.isWaitingForModel = false
 			live.isTranscribing = false
@@ -280,61 +286,69 @@ final class StreamingTranscriber: SpeechTranscribing {
 		live.isWaitingForModel = false
 		live.waitingForModelStatusText = ""
 		live.isTranscribing = false
-		live.shouldShowLiveTranscriptionWindow = false
-		AudioDeviceManager.shared.restoreSystemDefault()
 
 		guard let session else {
 			teardown()
-			return live.confirmedText.trimmingCharacters(in: .whitespacesAndNewlines)
+			live.shouldShowLiveTranscriptionWindow = false
+			AudioDeviceManager.shared.restoreSystemDefault()
+			return LiveTranscriptionState.joined(
+				committed: live.confirmedText, draft: live.pendingText
+			).trimmingCharacters(in: .whitespacesAndNewlines)
 		}
 		self.session = nil
-		// Snapshot this dictation's plumbing before any await. The user can start
-		// a new dictation while the finish below is still waiting; from that
-		// moment the instance fields belong to the new session, and this stop's
-		// epilogue must only ever touch what it snapshotted — a late cleanup that
-		// cancels the new session's event task reads as "dictation randomly dies
-		// two seconds in", which is exactly the bug this shipped with.
 		let tracker = wordTracker
 		wordTracker = nil
 		let events = eventTask
 		eventTask = nil
+		// A start still waiting on `.listening` resolves now, so its failure path
+		// runs while this stop still owns the instance fields — not fifteen
+		// seconds later, against a newer dictation's session.
+		finishStartIfPending(throwing: CancellationError())
 
-		// A stop with nothing said must return in bounded time. finish() waits
-		// trailing silence plus the final-transcript timeout (~17 s) for an
-		// utterance that never existed; racing it against a deadline keeps the
-		// honest case (final lands ~0.6–1.3 s after the last word) and turns the
-		// silent case into a fast cancel.
-		let finished: String? = await withTaskGroup(of: String?.self) { group in
-			group.addTask { await session.finish() }
-			group.addTask {
-				try? await Task.sleep(nanoseconds: 3_500_000_000)
-				return nil
-			}
-			let first = await group.next() ?? nil
-			group.cancelAll()
-			return first
-		}
-		if finished == nil {
-			AppLogger.shared.transcriber.info(
-				"Stop deadline hit with no final transcript; cancelling the session")
-			await session.cancel()
-		}
+		// The transcript is already here: a streaming engine has fed every word
+		// into the live state as it was spoken, so the socket's close handshake
+		// adds nothing the paste needs. It used to gate the paste anyway, behind a
+		// 3.5 s deadline race — and in QA even the deadline never fired, because
+		// `addTask` children inherit this MainActor context and a wedged main
+		// thread starves the timer along with everything else. So the stop path
+		// now never suspends: take the words, hand them back, and let the close
+		// run behind it. The draft is included — for a native-delta engine those
+		// are real words the user spoke that the engine has not committed yet —
+		// and a trailing final that lands after this is dropped on purpose.
+		let transcript = LiveTranscriptionState.joined(
+			committed: live.confirmedText, draft: live.pendingText
+		).trimmingCharacters(in: .whitespacesAndNewlines)
 
-		let transcript = finished ?? live.confirmedText
-		let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-		// A new dictation may already own the shared live state; only the stop
-		// that is still current writes to it.
-		let superseded = self.session != nil
-		if !superseded {
-			if !trimmed.isEmpty {
-				live.ingest(committed: trimmed, draft: "")
-			}
-			live.setPending("")
+		// This method has no suspension point before returning, so no newer
+		// dictation can own the live state yet; promoting the draft here keeps
+		// what the tracker and the HUD saw consistent with what gets pasted.
+		if !transcript.isEmpty {
+			live.ingest(committed: transcript, draft: "")
 		}
+		live.setPending("")
+		live.shouldShowLiveTranscriptionWindow = false
 		tracker?.endSession()
 		events?.cancel()
-		AppLogger.shared.transcriber.info("Remote live streaming stopped")
-		return trimmed
+
+		// The epilogue may take as long as the network wants; it touches only
+		// this stop's snapshot, never the instance fields, which a newer dictation
+		// may already own. cancel(), not finish(): finish() waits out trailing
+		// silence plus the final-transcript timeout for a final this stop has
+		// already chosen to drop. The input device is restored only after the
+		// session's own microphone engine is down — switching the default device
+		// under a still-running AVAudioEngine is the main-thread wedge suspected
+		// in the QA hang — and only while no newer dictation has claimed it.
+		Task.detached { [weak self] in
+			await session.cancel()
+			await MainActor.run {
+				guard self?.session == nil else { return }
+				AudioDeviceManager.shared.restoreSystemDefault()
+			}
+		}
+
+		AppLogger.shared.transcriber.info(
+			"Remote live streaming stopped; returning the locally accumulated transcript")
+		return transcript
 	}
 
 	// MARK: - Events
