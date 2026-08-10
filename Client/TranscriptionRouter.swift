@@ -5,9 +5,11 @@ import Foundation
 
 /// Where speech-to-text runs. Identity only — what each engine can do lives on
 /// the conformer as `TranscriptionCapabilities`, so adding a case never reopens
-/// a switch anywhere but here. WhisperKit stays the default (on-device, no
-/// network). See WHI-42, WHI-58.
+/// a switch anywhere but here. `auto` is the default for fresh installs: it
+/// decides between the others itself, so nobody has to configure anything to
+/// get the best path available. See WHI-42, WHI-58.
 enum TranscriptionEngine: String, CaseIterable, Sendable {
+	case auto
 	case whisperKit
 	case whisperViaBYOK
 	case whisperaStreaming
@@ -17,15 +19,21 @@ enum TranscriptionEngine: String, CaseIterable, Sendable {
 	/// engines that need a URL, and the ones live transcription is worth turning on
 	/// for — a server engine with it off records first and transcribes at the end,
 	/// which looks like the feature is broken.
+	///
+	/// `auto` answers `false` even though it may end up streaming: it resolves to
+	/// a *conformer* (`AutoTranscriber`) rather than to `StreamingTranscriber`
+	/// itself, so it is not "the streaming conformer" the way the other two are —
+	/// see `ServerEngineTests.everyServerEngineResolvesToTheStreamingConformer`.
 	var streamsFromAServer: Bool {
 		switch self {
 		case .whisperaStreaming, .realtimeDirect: return true
-		case .whisperKit, .whisperViaBYOK: return false
+		case .auto, .whisperKit, .whisperViaBYOK: return false
 		}
 	}
 
 	var displayName: String {
 		switch self {
+		case .auto: return "Automatic (recommended)"
 		case .whisperKit: return "WhisperKit (on-device)"
 		case .whisperViaBYOK: return "OpenAI Whisper via your key"
 		case .whisperaStreaming: return "Whispera server (streaming)"
@@ -39,13 +47,14 @@ extension WhisperaSettings {
 	private static let transcriptionServerURLKey = "whisperaTranscriptionServerURL"
 	private static let transcriptionServerIdKey = "whisperaTranscriptionServerId"
 
-	/// Unknown raw values fall back to WhisperKit, so a persisted engine from a
-	/// build that had one we no longer ship degrades on-device instead of
-	/// trapping. Mirrors `llmMode`.
+	/// Unknown or absent raw values fall back to `auto` — a fresh install and a
+	/// build that had an engine this one no longer ships land on the same
+	/// default, which is honest because `auto` degrades to on-device itself
+	/// whenever nothing is configured. Mirrors `llmMode`.
 	static var transcriptionEngine: TranscriptionEngine {
 		get {
 			TranscriptionEngine(rawValue: UserDefaults.standard.string(forKey: engineKey) ?? "")
-				?? .whisperKit
+				?? .auto
 		}
 		set { UserDefaults.standard.set(newValue.rawValue, forKey: engineKey) }
 	}
@@ -107,6 +116,8 @@ struct TranscriptionRouter {
 
 	static func transcriber(for engine: TranscriptionEngine) -> SpeechTranscribing {
 		switch engine {
+		case .auto:
+			return AutoTranscriber.shared
 		case .whisperKit:
 			return WhisperKitTranscriber.shared
 		case .whisperViaBYOK:

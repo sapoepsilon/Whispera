@@ -140,7 +140,7 @@ struct SettingsView: View {
 	@AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@AppStorage("whisperaTranscriptionEngine") private var transcriptionEngineRaw = TranscriptionEngine
-		.whisperKit.rawValue
+		.auto.rawValue
 	@AppStorage("whisperaTranscriptionServerURL") private var transcriptionServerURL = ""
 	@AppStorage("whisperaTranscriptionServerId") private var transcriptionServerId = ""
 	@AppStorage("whisperaTranscriptionDirectModel") private var transcriptionDirectModel = ""
@@ -156,10 +156,12 @@ struct SettingsView: View {
 		MaterialStyle(rawValue: materialStyleRaw)
 	}
 
-	/// Falls back on-device for the same reason `WhisperaSettings` does: a stored
-	/// engine from a build that shipped one we no longer do must degrade, not trap.
+	/// Falls back to `auto` for the same reason `WhisperaSettings` does: a stored
+	/// engine from a build that shipped one we no longer do must degrade, not
+	/// trap — and `auto` itself degrades further, to on-device, whenever nothing
+	/// is configured.
 	private var selectedTranscriptionEngine: TranscriptionEngine {
-		TranscriptionEngine(rawValue: transcriptionEngineRaw) ?? .whisperKit
+		TranscriptionEngine(rawValue: transcriptionEngineRaw) ?? .auto
 	}
 
 	/// The live state, for the dictation-failure alert. Read directly rather than
@@ -219,6 +221,10 @@ struct SettingsView: View {
 	@State private var directModelOptions: [TranscriptionModelInfo] = []
 	@State private var isFetchingDirectModels = false
 	@State private var directModelFetchError: String?
+	// Automatic engine: what it currently resolves to, refreshed whenever the
+	// picker lands on it. Same shape as the direct-mode model fetch above.
+	@State private var autoResolutionCaption = "Deciding…"
+	@State private var isResolvingAutoEngine = false
 	@AppStorage(SettingsRouting.selectedTabDefaultsKey) private var selectedSettingsTab =
 		SettingsDestination.general.rawValue
 
@@ -507,6 +513,35 @@ struct SettingsView: View {
 							}
 						}
 
+						if transcriptionEngineRaw == TranscriptionEngine.auto.rawValue {
+							VStack(alignment: .leading, spacing: 8) {
+								Text(
+									"Streams through a transcription server when one is configured and reachable, preferring the one with the best live-word quality. Falls back to WhisperKit on-device otherwise. Nothing else to set up."
+								)
+								.font(.caption)
+								.foregroundColor(.secondary)
+								HStack(spacing: 6) {
+									if isResolvingAutoEngine {
+										ProgressView()
+											.scaleEffect(0.5)
+									}
+									Text(autoResolutionCaption)
+										.font(.caption)
+										.foregroundColor(.secondary)
+										.accessibilityIdentifier("autoEngineResolutionCaption")
+								}
+								.animation(.easeInOut(duration: 0.2), value: isResolvingAutoEngine)
+							}
+							.task(id: transcriptionEngineRaw) {
+								guard transcriptionEngineRaw == TranscriptionEngine.auto.rawValue else {
+									return
+								}
+								isResolvingAutoEngine = true
+								autoResolutionCaption = await AutoTranscriber.shared.resolutionCaption()
+								isResolvingAutoEngine = false
+							}
+						}
+
 						if transcriptionEngineRaw == TranscriptionEngine.whisperaStreaming.rawValue {
 							VStack(alignment: .leading, spacing: 8) {
 								Text(
@@ -611,7 +646,12 @@ struct SettingsView: View {
 							}
 						}
 
-						if selectedTranscriptionEngine.streamsFromAServer {
+						// `auto` is included alongside the server engines: it may resolve to
+						// one, and the wording below is already engine-agnostic — the
+						// caveat is exactly as true when `auto` lands on WhisperKit.
+						if selectedTranscriptionEngine.streamsFromAServer
+							|| selectedTranscriptionEngine == .auto
+						{
 							InfoBox(style: .info) {
 								Text(
 									enableStreaming

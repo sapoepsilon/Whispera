@@ -39,6 +39,23 @@ struct TranscriptionRouterTests {
 		#expect(
 			TranscriptionRouter.transcriber(for: .whisperViaBYOK)
 				=== TranscriptionRouter.transcriber(for: .whisperViaBYOK))
+		#expect(
+			TranscriptionRouter.transcriber(for: .auto) === TranscriptionRouter.transcriber(for: .auto))
+	}
+
+	@Test func autoResolvesToTheAutoTranscriber() {
+		#expect(TranscriptionRouter.transcriber(for: .auto) === AutoTranscriber.shared)
+	}
+
+	/// An absent or unrecognised stored value degrades to `auto` rather than
+	/// trapping — a fresh install and a build that shipped an engine this one no
+	/// longer does land on the same default. `auto` degrades further, to
+	/// on-device, whenever nothing is configured, so the fallback is honest
+	/// either way.
+	@Test func anAbsentOrUnknownStoredEngineFallsBackToAuto() {
+		#expect((TranscriptionEngine(rawValue: "") ?? .auto) == .auto)
+		#expect((TranscriptionEngine(rawValue: "subscriptionWhisper") ?? .auto) == .auto)
+		#expect((TranscriptionEngine(rawValue: "whisperKit") ?? .auto) == .whisperKit)
 	}
 
 	@Test func onlyTheOnDeviceEngineManagesModels() {
