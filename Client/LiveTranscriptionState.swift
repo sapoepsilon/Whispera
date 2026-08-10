@@ -137,12 +137,30 @@ final class LiveTranscriptionState {
 	/// For an engine that already distinguishes what it has committed from what
 	/// is still in flight, so there is nothing to buffer — but the same flicker
 	/// filter still decides when the display is allowed to move.
+	///
+	/// The HUD renders `stableDisplayText` alone, so the committed words have to
+	/// be part of it. Displaying only the draft meant every utterance boundary
+	/// wiped the whole sentence and restarted from the next utterance's first
+	/// word — the disappear-and-reappear the WHI-58 QA session reported. With the
+	/// full transcript composed here, the display only ever grows during a
+	/// dictation: committed words never leave it, and only the draft tail is
+	/// still allowed to be rewritten in flight.
 	func ingest(committed: String, draft: String) {
 		if committed != confirmedText {
 			confirmedText = committed
 		}
-		setPending(draft)
+		pendingText = draft
+		let combined = Self.joined(committed: committed, draft: draft)
+		if shouldUpdatePendingText(newText: combined) {
+			stableDisplayText = combined
+			lastDisplayedPendingText = combined
+		}
 		shouldShowLiveTranscriptionWindow = !stableDisplayText.isEmpty || !confirmedText.isEmpty
+	}
+
+	/// One transcript out of the two halves a committed/draft engine reports.
+	static func joined(committed: String, draft: String) -> String {
+		[committed, draft].filter { !$0.isEmpty }.joined(separator: " ")
 	}
 
 	/// Sets the in-flight text, moving the display only when the words changed
