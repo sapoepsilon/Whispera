@@ -42,6 +42,10 @@ final class StreamingTranscriber: SpeechTranscribing {
 	private let credentials: DictationCredentialProvider
 	private let isDirect: () -> Bool
 	private let directModel: () -> String
+	/// Injectable so `models()`'s direct-mode fetch can be exercised against a
+	/// mock in tests without a real engine on the network. Named apart from
+	/// `session` below, which is the dictation socket, not an HTTP session.
+	private let urlSession: URLSession
 
 	private var session: DictationSession?
 	private var eventTask: Task<Void, Never>?
@@ -75,12 +79,14 @@ final class StreamingTranscriber: SpeechTranscribing {
 		// shape available to a host that has no backend at all.
 		directProvider: @escaping () -> Bool = { false },
 		modelProvider: @escaping () -> String = { WhisperaSettings.transcriptionDirectModel },
-		tokenStore: AuthTokenStore = .shared
+		tokenStore: AuthTokenStore = .shared,
+		urlSession: URLSession = .shared
 	) {
 		self.baseURLProvider = baseURLProvider
 		self.serverIdProvider = serverIdProvider
 		self.isDirect = directProvider
 		self.directModel = modelProvider
+		self.urlSession = urlSession
 		self.engineCase = directProvider() ? .realtimeDirect : .whisperaStreaming
 		// Read at connect time and dropped afterwards, and re-read on the one
 		// unauthorized retry, so a short-lived session token survives it.
@@ -112,16 +118,62 @@ final class StreamingTranscriber: SpeechTranscribing {
 
 	var activeModel: String? { isDirect() ? directModel() : cachedServer?.model }
 
-	/// The backend lists one model per server, so the model list is the server
-	/// list. Selecting one records which server to stream through.
+	/// Backend mode lists one model per server, so the model list is the server
+	/// list. Direct mode has no server registry to ask, so it asks the engine
+	/// itself what it can run. Selecting one records which server/model to
+	/// stream through.
 	func models() async throws -> [TranscriptionModelInfo] {
 		if isDirect() {
-			let model = directModel()
-			return [TranscriptionModelInfo(id: model, displayName: model)]
+			return try await directModels()
 		}
 		return try await directory().servers()
 			.filter { $0.supportsRealtime && $0.isOnline }
 			.map { TranscriptionModelInfo(id: $0.id, displayName: "\($0.label) — \($0.model)") }
+	}
+
+	private struct DirectModelsResponse: Decodable {
+		struct Model: Decodable {
+			let id: String
+			let task: String?
+		}
+		let data: [Model]
+	}
+
+	/// `GET <baseURL>/models`, OpenAI-compatible. The endpoint lists every model
+	/// the engine serves — LLMs, TTS, embeddings on a multi-purpose host — so this
+	/// filters to the ones that can transcribe, the same way backend mode filters
+	/// servers to ones that support realtime. No credentials: direct mode is
+	/// deliberately for a trusted network with no proxy in front to hold one.
+	private func directModels() async throws -> [TranscriptionModelInfo] {
+		guard let baseURL = baseURLProvider() else {
+			throw StreamingTranscriberError.invalidServerURL
+		}
+		let destination = baseURL.host ?? baseURL.absoluteString
+
+		let data: Data
+		let response: URLResponse
+		do {
+			(data, response) = try await urlSession.data(
+				for: URLRequest(url: baseURL.appendingPathComponent("models")))
+		} catch {
+			throw StreamingTranscriberError.engineUnreachable(destination)
+		}
+		guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+			throw StreamingTranscriberError.engineUnreachable(destination)
+		}
+
+		let decoded: DirectModelsResponse
+		do {
+			decoded = try JSONDecoder().decode(DirectModelsResponse.self, from: data)
+		} catch {
+			throw StreamingTranscriberError.engineUnreachable(destination)
+		}
+
+		let asrModels = decoded.data.filter { $0.task == "automatic-speech-recognition" }
+		guard !asrModels.isEmpty else {
+			throw StreamingTranscriberError.noModelsInstalled(destination)
+		}
+		return asrModels.map { TranscriptionModelInfo(id: $0.id) }
 	}
 
 	func selectModel(_ id: String) async throws {
@@ -540,6 +592,8 @@ enum StreamingTranscriberError: LocalizedError, Equatable {
 	case noRealtimeServer(requested: String)
 	case serverCannotStream(String)
 	case captureTimedOut
+	case engineUnreachable(String)
+	case noModelsInstalled(String)
 
 	var errorDescription: String? {
 		switch self {
@@ -555,6 +609,11 @@ enum StreamingTranscriberError: LocalizedError, Equatable {
 				: "Transcription server '\(requested)' was not found on the backend."
 		case .serverCannotStream(let label):
 			return "\(label) does not support streaming transcription."
+		case .engineUnreachable(let destination):
+			return
+				"Could not reach \(destination) to list its models. Check that the engine is running and reachable at the configured URL."
+		case .noModelsInstalled(let destination):
+			return "\(destination) is reachable but reports no installed speech-to-text models."
 		}
 	}
 }
