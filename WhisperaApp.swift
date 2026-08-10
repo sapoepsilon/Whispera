@@ -186,22 +186,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			listeningWindow = ListeningWindow(audioManager: audioManager)
 			recordingGlowController = RecordingGlowController(audioManager: audioManager)
 
-			// Verification affordance: dictation can otherwise only start from a real
-			// keypress, which a headless harness cannot post without an Accessibility
-			// grant. Env-gated, so every normal launch is unaffected.
-			// WHISPERA_AUTOSTART_DICTATION=<seconds to record>
-			if let raw = ProcessInfo.processInfo.environment["WHISPERA_AUTOSTART_DICTATION"],
-				let duration = Double(raw), duration > 0
-			{
-				AppLogger.shared.general.info("Autostart: dictating for \(duration)s")
-				Task { @MainActor [weak self] in
-					try? await Task.sleep(nanoseconds: 4_000_000_000)
-					self?.audioManager.toggleRecording()
-					try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
-					self?.audioManager.toggleRecording()
-					AppLogger.shared.general.info("Autostart: stopped")
-				}
-			}
+			startAutostartDictationIfRequested()
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
@@ -231,6 +216,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				}
 			}
 
+			// A dictation that failed for a reason the user has to fix. Settings is
+			// where the alert is presented and where every one of those reasons is
+			// changed, so bringing it up is the whole recovery step.
+			NotificationCenter.default.addObserver(
+				forName: .transcriptionFailureRaised,
+				object: nil,
+				queue: .main
+			) { [weak self] _ in
+				Task { @MainActor in
+					UserDefaults.standard.set(
+						SettingsDestination.general.rawValue,
+						forKey: SettingsRouting.selectedTabDefaultsKey)
+					self?.perform(.settings)
+				}
+			}
+
 			// Listen for activation requests from other instances
 			DistributedNotificationCenter.default().addObserver(
 				forName: NSNotification.Name("ActivateApp"),
@@ -241,6 +242,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			}
 		}
 	}
+
+	// MARK: - Test affordance
+
+	/// Starts and stops one dictation on a timer, when — and only when — the
+	/// environment asks for it.
+	///
+	/// Dictation is otherwise reachable only from a real keypress, which a headless
+	/// verification run cannot post without an Accessibility grant. Nothing in the
+	/// app sets this variable and nothing in a normal launch supplies it, so the
+	/// method returns immediately on every user's machine; the log line names it as
+	/// a test affordance so a support log that does contain one is not mistaken for
+	/// the app dictating on its own.
+	///
+	/// `WHISPERA_AUTOSTART_DICTATION=<seconds to record>`.
+	private func startAutostartDictationIfRequested() {
+		guard let raw = ProcessInfo.processInfo.environment["WHISPERA_AUTOSTART_DICTATION"],
+			let requested = Double(raw), requested > 0
+		else { return }
+
+		// Clamped so a stray value cannot hold the microphone open indefinitely.
+		let duration = min(requested, Self.autostartMaximumSeconds)
+		AppLogger.shared.general.info(
+			"Test affordance WHISPERA_AUTOSTART_DICTATION is set: dictating for \(duration)s")
+		Task { @MainActor [weak self] in
+			try? await Task.sleep(nanoseconds: UInt64(Self.autostartWarmupSeconds * 1_000_000_000))
+			self?.audioManager.toggleRecording()
+			try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+			self?.audioManager.toggleRecording()
+			AppLogger.shared.general.info("Test affordance WHISPERA_AUTOSTART_DICTATION: stopped")
+		}
+	}
+
+	/// Long enough for the status item, the windows and the engine to settle before
+	/// the microphone opens.
+	private static let autostartWarmupSeconds: Double = 4
+	private static let autostartMaximumSeconds: Double = 120
 
 	nonisolated static func registerInitialDefaults(in defaults: UserDefaults) {
 		defaults.register(defaults: [

@@ -143,6 +143,7 @@ struct SettingsView: View {
 		.whisperKit.rawValue
 	@AppStorage("whisperaTranscriptionServerURL") private var transcriptionServerURL = ""
 	@AppStorage("whisperaTranscriptionServerId") private var transcriptionServerId = ""
+	@AppStorage("whisperaTranscriptionDirectModel") private var transcriptionDirectModel = ""
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
 	@AppStorage("enableRecordingGlow") private var enableRecordingGlow = true
 	// Key unchanged from the older pause-based feature so existing opt-outs survive.
@@ -154,6 +155,16 @@ struct SettingsView: View {
 	private var materialStyle: MaterialStyle {
 		MaterialStyle(rawValue: materialStyleRaw)
 	}
+
+	/// Falls back on-device for the same reason `WhisperaSettings` does: a stored
+	/// engine from a build that shipped one we no longer do must degrade, not trap.
+	private var selectedTranscriptionEngine: TranscriptionEngine {
+		TranscriptionEngine(rawValue: transcriptionEngineRaw) ?? .whisperKit
+	}
+
+	/// The live state, for the dictation-failure alert. Read directly rather than
+	/// mirrored into `@State`: `@Observable` tracks the read from the body.
+	private let liveTranscription = LiveTranscriptionState.shared
 
 	// MARK: - Live Transcription Settings
 	@AppStorage("liveTranscriptionMaxWords") private var liveTranscriptionMaxWords = 5
@@ -192,6 +203,7 @@ struct SettingsView: View {
 	@State private var showingToolsSettings = false
 	@State private var showingSafetySettings = false
 	@State private var showingUpdaterError = false
+	@State private var showingTranscriptionFailure = false
 	@State private var showingStorageDetails = false
 	@State private var showingClearAllConfirmation = false
 	@State private var confirmationStep = 0
@@ -473,6 +485,18 @@ struct SettingsView: View {
 							.labelsHidden()
 							.frame(width: 240)
 							.accessibilityIdentifier("transcriptionEnginePicker")
+							// A server engine with live transcription off records first and
+							// transcribes at the end, which reads as the engine not working.
+							// Choosing one turns it on; the box below says so, and the
+							// toggle stays the user's.
+							.onChange(of: transcriptionEngineRaw) { _, raw in
+								guard TranscriptionEngine(rawValue: raw)?.streamsFromAServer == true,
+									!enableStreaming
+								else { return }
+								enableStreaming = true
+								AppLogger.shared.general.info(
+									"Live transcription turned on because a server engine was selected: \(raw)")
+							}
 						}
 
 						if transcriptionEngineRaw == TranscriptionEngine.whisperaStreaming.rawValue {
@@ -493,6 +517,47 @@ struct SettingsView: View {
 									.textFieldStyle(.roundedBorder)
 									.autocorrectionDisabled()
 									.accessibilityIdentifier("transcriptionServerIdField")
+							}
+						}
+
+						// Direct mode has no backend to ask which engines exist or what
+						// they run, so both are the user's to state. Without these fields
+						// the engine is only reachable by editing defaults by hand.
+						if transcriptionEngineRaw == TranscriptionEngine.realtimeDirect.rawValue {
+							VStack(alignment: .leading, spacing: 8) {
+								Text(
+									"Streams audio straight to an OpenAI-Realtime engine, with no Whispera backend in between. The engine holds its own credentials, so use this only on a network you trust."
+								)
+								.font(.caption)
+								.foregroundColor(.secondary)
+								TextField("http://192.168.0.10:8000/v1", text: $transcriptionServerURL)
+									.textFieldStyle(.roundedBorder)
+									.autocorrectionDisabled()
+									.accessibilityIdentifier("directEngineURLField")
+								TextField(
+									"Model (e.g. Systran/faster-distil-whisper-large-v3)",
+									text: $transcriptionDirectModel
+								)
+								.textFieldStyle(.roundedBorder)
+								.autocorrectionDisabled()
+								.accessibilityIdentifier("directEngineModelField")
+								Text(
+									"The URL is the engine's OpenAI-compatible base, ending in /v1. The model has to be one the engine already has installed."
+								)
+								.font(.caption)
+								.foregroundColor(.secondary)
+							}
+						}
+
+						if selectedTranscriptionEngine.streamsFromAServer {
+							InfoBox(style: .info) {
+								Text(
+									enableStreaming
+										? "Live transcription is on, so words appear while you speak. Turning it off under Live Transcription Mode makes Whispera record first and transcribe at the end."
+										: "Live Transcription Mode is off, so nothing appears until you stop speaking and the whole recording is transcribed. Turn it on below to see words as you say them."
+								)
+								.font(.caption)
+								.foregroundColor(.secondary)
 							}
 						}
 
@@ -1199,6 +1264,18 @@ struct SettingsView: View {
 		}
 		.onChange(of: softwareUpdater.lastUpdaterError) {
 			showingUpdaterError = softwareUpdater.lastUpdaterError != nil
+		}
+		.alert(
+			liveTranscription.failure?.title ?? "Dictation stopped",
+			isPresented: $showingTranscriptionFailure,
+			presenting: liveTranscription.failure
+		) { _ in
+			Button("OK") { liveTranscription.failure = nil }
+		} message: { failure in
+			Text(failure.message)
+		}
+		.onChange(of: liveTranscription.failure) {
+			showingTranscriptionFailure = liveTranscription.failure != nil
 		}
 		.alert("Storage Details", isPresented: $showingStorageDetails) {
 			Button("OK") {}

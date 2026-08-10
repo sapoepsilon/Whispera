@@ -5,6 +5,7 @@ struct DictationView: View {
 	// is transcribing reaches this view. See WHI-58.
 	@Bindable private var live = LiveTranscriptionState.shared
 	@State private var coordinator = DictationCoordinator.shared
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	private let audioManager: AudioManager
 
 	// Live transcription customization settings
@@ -25,7 +26,6 @@ struct DictationView: View {
 
 		// Take only the last N words
 		let wordsToShow = words.suffix(maxWordsToShow)
-		let startIndex = words.count - wordsToShow.count
 
 		return wordsToShow.enumerated().map { index, word in
 			(text: word, isLast: index == wordsToShow.count - 1)
@@ -38,12 +38,22 @@ struct DictationView: View {
 				errorIndicator(overlayError)
 			} else if live.isWaitingForModel {
 				HStack(spacing: 8) {
-					ProgressView()
-						.scaleEffect(0.7)
+					// A spinner is indeterminate motion that never settles, which is
+					// exactly what reduced motion asks us not to draw. The dot says the
+					// same thing — something is in progress — and holds still.
+					if reduceMotion {
+						Image(systemName: "circle.dotted")
+							.imageScale(.small)
+							.foregroundColor(.secondary)
+					} else {
+						ProgressView()
+							.scaleEffect(0.7)
+					}
 					Text(live.waitingForModelStatusText)
 						.font(.system(.caption, design: .rounded))
 						.foregroundColor(.secondary)
 						.lineLimit(1)
+						.animation(.easeInOut(duration: 0.2), value: live.waitingForModelStatusText)
 				}
 				.padding(.horizontal, 14)
 				.padding(.vertical, 10)
@@ -74,6 +84,9 @@ struct DictationView: View {
 				ListeningView(audioManager: audioManager)
 			}
 		}
+		.animation(
+			reduceMotion ? nil : .easeInOut(duration: 0.2), value: live.isWaitingForModel
+		)
 		.fixedSize()
 		.background(
 			RoundedRectangle(cornerRadius: cornerRadius)
