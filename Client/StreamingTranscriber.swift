@@ -56,9 +56,6 @@ final class StreamingTranscriber: SpeechTranscribing {
 	/// continuation below is installed. Recording the outcome means that start
 	/// resolves immediately instead of waiting on a resume that already happened.
 	private var startOutcome: Result<Void, Error>?
-	/// The newest committed utterance, so the HUD can show the words that just
-	/// landed. The package emits it just before the whole-transcript event.
-	private var lastUtterance = ""
 	private var didTranscribeAnything = false
 	/// Set while the package is replacing a socket, so the `.connecting` that
 	/// follows a reconnect reads as recovery rather than as a fresh start.
@@ -228,7 +225,6 @@ final class StreamingTranscriber: SpeechTranscribing {
 	func startStreaming(options: TranscriptionOptions) async throws {
 		live.beginWaiting()
 		live.waitingForModelStatusText = "Connecting to \(destinationName)…"
-		lastUtterance = ""
 		didTranscribeAnything = false
 		isRecovering = false
 		isStopping = false
@@ -355,15 +351,15 @@ final class StreamingTranscriber: SpeechTranscribing {
 		case .partialTranscript(let draft):
 			live.ingest(committed: live.confirmedText, draft: draft)
 
-		case .finalTranscript(let utterance):
-			// Remembered only so the HUD can show the words that just landed.
-			// `.transcript` immediately after carries the whole transcript, and
-			// consuming both would double-count.
-			lastUtterance = utterance
+		case .finalTranscript:
 			didTranscribeAnything = true
 
 		case .transcript(let whole):
-			live.ingest(committed: whole, draft: lastUtterance)
+			// The whole transcript already contains the utterance that just
+			// finalized. Carrying that utterance forward as the draft — which this
+			// used to do — put it in both halves at once, and the HUD showed it
+			// twice until the next utterance's first partial replaced it.
+			live.ingest(committed: whole, draft: "")
 
 		case .audioLevel(let level):
 			// The level meter wants samples, not an RMS. Spreading the reported

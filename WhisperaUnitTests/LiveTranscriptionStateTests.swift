@@ -178,14 +178,72 @@ struct LiveTranscriptionFlickerFilterTests {
 /// so nothing is buffered, but the display still moves on the same rule.
 @MainActor
 struct LiveTranscriptionRemoteIngestTests {
-	@Test func committedTextBecomesConfirmedAndTheDraftIsDisplayed() {
+	@Test func theDisplayCarriesTheCommittedWordsAndTheDraft() {
 		let state = LiveTranscriptionState()
 
 		state.ingest(committed: "the quick brown fox", draft: "jumps over")
 
 		#expect(state.confirmedText == "the quick brown fox")
-		#expect(state.stableDisplayText == "jumps over")
+		#expect(state.pendingText == "jumps over")
+		#expect(state.stableDisplayText == "the quick brown fox jumps over")
 		#expect(state.shouldShowLiveTranscriptionWindow)
+	}
+
+	/// The sequence a native-delta engine produces, as observed in the WHI-58 QA
+	/// session: word-by-word partials, the utterance finalizes and the whole
+	/// accumulated transcript arrives, then the next utterance's partials begin.
+	/// The display must only ever grow — committed words never vanish at an
+	/// utterance boundary.
+	@Test func theDisplayOnlyGrowsAcrossAnUtteranceBoundary() {
+		let state = LiveTranscriptionState()
+		var displays: [String] = []
+		// Mirrors StreamingTranscriber.handle: .partialTranscript carries only the
+		// current utterance; .transcript carries the whole accumulated text.
+		func partial(_ draft: String) {
+			state.ingest(committed: state.confirmedText, draft: draft)
+			displays.append(state.stableDisplayText)
+		}
+		func transcript(_ whole: String) {
+			state.ingest(committed: whole, draft: "")
+			displays.append(state.stableDisplayText)
+		}
+
+		partial("Hello")
+		partial("Hello there.")
+		transcript("Hello there.")
+		partial("General")
+		partial("General Kenobi.")
+		transcript("Hello there. General Kenobi.")
+
+		for (previous, next) in zip(displays, displays.dropFirst()) {
+			#expect(next.hasPrefix(previous))
+		}
+		#expect(state.stableDisplayText == "Hello there. General Kenobi.")
+		#expect(state.confirmedText == "Hello there. General Kenobi.")
+	}
+
+	/// The whole-transcript event already contains the utterance that just
+	/// finalized; it must not appear a second time as a leftover draft.
+	@Test func theWholeTranscriptEventDoesNotRepeatTheFinalizedUtterance() {
+		let state = LiveTranscriptionState()
+
+		state.ingest(committed: "", draft: "Hello.")
+		state.ingest(committed: "Hello.", draft: "")
+
+		#expect(state.stableDisplayText == "Hello.")
+		#expect(state.confirmedText == "Hello.")
+		#expect(state.pendingText == "")
+	}
+
+	/// What stop pastes: the committed words plus any draft still in flight —
+	/// for a native-delta engine the draft is real words the user spoke.
+	@Test func stopComposesCommittedAndDraftIntoOneTranscript() {
+		#expect(
+			LiveTranscriptionState.joined(committed: "Hello there.", draft: "General")
+				== "Hello there. General")
+		#expect(LiveTranscriptionState.joined(committed: "", draft: "Hello") == "Hello")
+		#expect(LiveTranscriptionState.joined(committed: "Hello", draft: "") == "Hello")
+		#expect(LiveTranscriptionState.joined(committed: "", draft: "") == "")
 	}
 
 	@Test func anUnchangedCommitIsNotAnnouncedAgain() {
