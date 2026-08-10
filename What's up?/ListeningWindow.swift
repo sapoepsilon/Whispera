@@ -15,6 +15,9 @@ enum PillMetrics {
 
 	/// Gap between the top of the pill and the bottom of the controls panel.
 	static let controlsGap: CGFloat = 8
+	/// Distance from the bottom of the screen, as a fraction of screen height
+	/// (`RecordingOverlayPolicy.origin` uses the same inset).
+	static let bottomAnchorFraction: CGFloat = 0.1
 }
 
 /// SwiftUI -> AppKit sizing bridge, the same shape as `PopoverPresenter`: the
@@ -138,9 +141,11 @@ class ListeningWindow: NSWindow {
 			applyPillSize(animated: false)
 			positionOnScreen()
 			orderFront(nil)
+			PillAnchorProvider.shared.publish(frame)
 		} else if !shouldShow && isVisible {
 			hidePickerWindow(animated: false)
 			orderOut(nil)
+			PillAnchorProvider.shared.publish(nil)
 		}
 	}
 
@@ -155,16 +160,14 @@ class ListeningWindow: NSWindow {
 			}
 		}
 
-		// RecordingStateChanged covers the three stored AudioManager flags but not
-		// `currentRecordingMode`, which the policy also reads. Observing the
-		// computed policy inputs directly closes that gap without polling.
+		// RecordingStateChanged covers the three stored AudioManager flags.
+		// Observing the policy's input directly closes any gap without polling.
 		observeRecordingState()
 	}
 
 	private func observeRecordingState() {
 		withObservationTracking {
 			_ = audioManager.currentState
-			_ = audioManager.currentRecordingMode
 		} onChange: {
 			Task { @MainActor [weak self] in
 				guard let self else { return }
@@ -225,6 +228,7 @@ class ListeningWindow: NSWindow {
 		guard animated, isVisible, !Motion.systemReduceMotion else {
 			setFrame(newFrame, display: true)
 			layoutPickerWindow(pillFrame: newFrame, animated: false)
+			PillAnchorProvider.shared.publish(newFrame)
 			return
 		}
 
@@ -234,6 +238,11 @@ class ListeningWindow: NSWindow {
 		let pickerTarget: NSRect? = pickerWindow.flatMap { picker in
 			picker.isVisible ? pickerFrame(size: controlsPresenter.size, pillFrame: newFrame) : nil
 		}
+
+		// Published up front rather than in the completion handler: anything
+		// anchored above the pill (the live-words HUD) animates to its own new
+		// position on the same beat instead of lagging a whole animation behind.
+		PillAnchorProvider.shared.publish(newFrame)
 
 		drivenFrameAnimations += 1
 		NSAnimationContext.runAnimationGroup { context in
@@ -287,8 +296,9 @@ class ListeningWindow: NSWindow {
 		}
 	}
 
-	/// Keeps the controls panel glued to the pill while the user drags it, and
-	/// while any frame change this class did not initiate lands.
+	/// Keeps the controls panel — and, via `PillAnchorProvider`, the live-words
+	/// HUD — glued to the pill while the user drags it, and while any frame
+	/// change this class did not initiate lands.
 	private func setupFollowObservers() {
 		moveObserver = NotificationCenter.default.addObserver(
 			forName: NSWindow.didMoveNotification,
@@ -298,6 +308,7 @@ class ListeningWindow: NSWindow {
 			Task { @MainActor in
 				guard let self, !self.isDrivingFrameAnimation else { return }
 				self.layoutPickerWindow(animated: false)
+				PillAnchorProvider.shared.publish(self.frame)
 			}
 		}
 
@@ -309,6 +320,7 @@ class ListeningWindow: NSWindow {
 			Task { @MainActor in
 				guard let self, !self.isDrivingFrameAnimation else { return }
 				self.layoutPickerWindow(animated: false)
+				PillAnchorProvider.shared.publish(self.frame)
 			}
 		}
 	}

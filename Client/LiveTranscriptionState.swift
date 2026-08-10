@@ -30,7 +30,6 @@ final class LiveTranscriptionState {
 	var isTranscribing: Bool = false
 	var isWaitingForModel: Bool = false
 	var waitingForModelStatusText: String = ""
-	var currentText: String = ""
 	var shouldShowDebugWindow: Bool = false
 	/// The last failure that needs the user to do something. Presented as an
 	/// `.alert()`, never inline: the HUD is one line and the recovery step does not
