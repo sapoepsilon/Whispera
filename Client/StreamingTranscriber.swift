@@ -292,17 +292,51 @@ final class StreamingTranscriber: SpeechTranscribing {
 			return live.confirmedText.trimmingCharacters(in: .whitespacesAndNewlines)
 		}
 		self.session = nil
-
-		let transcript = await session.finish()
-		let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-		if !trimmed.isEmpty {
-			live.ingest(committed: trimmed, draft: "")
-		}
-		live.setPending("")
-		wordTracker?.endSession()
+		// Snapshot this dictation's plumbing before any await. The user can start
+		// a new dictation while the finish below is still waiting; from that
+		// moment the instance fields belong to the new session, and this stop's
+		// epilogue must only ever touch what it snapshotted — a late cleanup that
+		// cancels the new session's event task reads as "dictation randomly dies
+		// two seconds in", which is exactly the bug this shipped with.
+		let tracker = wordTracker
 		wordTracker = nil
-		eventTask?.cancel()
+		let events = eventTask
 		eventTask = nil
+
+		// A stop with nothing said must return in bounded time. finish() waits
+		// trailing silence plus the final-transcript timeout (~17 s) for an
+		// utterance that never existed; racing it against a deadline keeps the
+		// honest case (final lands ~0.6–1.3 s after the last word) and turns the
+		// silent case into a fast cancel.
+		let finished: String? = await withTaskGroup(of: String?.self) { group in
+			group.addTask { await session.finish() }
+			group.addTask {
+				try? await Task.sleep(nanoseconds: 3_500_000_000)
+				return nil
+			}
+			let first = await group.next() ?? nil
+			group.cancelAll()
+			return first
+		}
+		if finished == nil {
+			AppLogger.shared.transcriber.info(
+				"Stop deadline hit with no final transcript; cancelling the session")
+			await session.cancel()
+		}
+
+		let transcript = finished ?? live.confirmedText
+		let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+		// A new dictation may already own the shared live state; only the stop
+		// that is still current writes to it.
+		let superseded = self.session != nil
+		if !superseded {
+			if !trimmed.isEmpty {
+				live.ingest(committed: trimmed, draft: "")
+			}
+			live.setPending("")
+		}
+		tracker?.endSession()
+		events?.cancel()
 		AppLogger.shared.transcriber.info("Remote live streaming stopped")
 		return trimmed
 	}
