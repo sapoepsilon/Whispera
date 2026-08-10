@@ -61,11 +61,12 @@ final class StreamingTranscriber: SpeechTranscribing {
 		self.serverIdProvider = serverIdProvider
 		// Read at connect time and dropped afterwards, and re-read on the one
 		// unauthorized retry, so a short-lived session token survives it.
+		// A missing token is not fatal: a self-hosted proxy on a trusted network
+		// may not require one, and refusing to connect would make the app harder
+		// to bring up than the server it talks to. If the server does want a
+		// credential it answers 4401, which surfaces as a real error.
 		self.credentials = .refreshingBearer {
-			guard let token = try tokenStore.load(), !token.isEmpty else {
-				throw StreamingTranscriberError.notSignedIn
-			}
-			return token
+			(try? tokenStore.load()).flatMap { $0.isEmpty ? nil : $0 } ?? ""
 		}
 	}
 
@@ -222,6 +223,10 @@ final class StreamingTranscriber: SpeechTranscribing {
 	// MARK: - Events
 
 	private func handle(_ event: DictationEvent) {
+		// Every event, at debug level. A remote session that stalls used to leave
+		// no trace at all between "connecting" and silence, which made a stuck
+		// socket and a silent microphone look identical from the log.
+		AppLogger.shared.transcriber.debug("Remote dictation event: \(String(describing: event))")
 		switch event {
 		case .connectionState(let connectionState):
 			handle(connectionState)
@@ -303,15 +308,30 @@ final class StreamingTranscriber: SpeechTranscribing {
 	}
 
 	/// Waits for the session to reach `.listening`, or for the first failure.
+	/// Capture is established when the engine says it is listening. Without a
+	/// deadline a session that never reaches that state hangs this call forever:
+	/// the continuation is only resumed by an event, so a socket that stalls or a
+	/// microphone that never yields frames leaves dictation silently wedged with
+	/// nothing logged. Fail loudly instead.
 	private func awaitCaptureEstablished() async throws {
 		if let outcome = startOutcome {
 			startOutcome = nil
 			return try outcome.get()
 		}
+		let deadline = Task { @MainActor [weak self] in
+			try await Task.sleep(nanoseconds: UInt64(Self.captureTimeout * 1_000_000_000))
+			guard !Task.isCancelled else { return }
+			AppLogger.shared.transcriber.error(
+				"Remote capture did not start within \(Self.captureTimeout)s; giving up")
+			self?.finishStartIfPending(throwing: StreamingTranscriberError.captureTimedOut)
+		}
+		defer { deadline.cancel() }
 		try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
 			startContinuation = continuation
 		}
 	}
+
+	private static let captureTimeout: Double = 15
 
 	private func teardown() {
 		eventTask?.cancel()
@@ -381,9 +401,12 @@ enum StreamingTranscriberError: LocalizedError, Equatable {
 	case invalidServerURL
 	case noRealtimeServer(requested: String)
 	case serverCannotStream(String)
+	case captureTimedOut
 
 	var errorDescription: String? {
 		switch self {
+		case .captureTimedOut:
+			return "The transcription server did not start listening. Check that it is reachable."
 		case .notSignedIn:
 			return "Streaming transcription needs an auth token (Account settings)."
 		case .invalidServerURL:
