@@ -78,6 +78,10 @@ struct ServerEngineTests {
 		#expect(TranscriptionEngine.realtimeDirect.streamsFromAServer)
 		#expect(!TranscriptionEngine.whisperKit.streamsFromAServer)
 		#expect(!TranscriptionEngine.whisperViaBYOK.streamsFromAServer)
+		// `auto` resolves to `AutoTranscriber`, not to `StreamingTranscriber`
+		// itself, even on a run that ends up streaming — see
+		// `everyServerEngineResolvesToTheStreamingConformer` below.
+		#expect(!TranscriptionEngine.auto.streamsFromAServer)
 	}
 
 	/// Every engine that streams from a server is one the streaming conformer
