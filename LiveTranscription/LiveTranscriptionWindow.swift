@@ -20,6 +20,10 @@ class LiveTranscriptionWindow: NSWindow {
 	private var lastTextContent: String = ""
 
 	@AppStorage("liveTranscriptionMaxWidthPercentage") private var maxWidthPercentage = 0.6
+	// The width estimate must price the words DictationView actually shows —
+	// its trailing ticker caps at this many — not the whole transcript, or the
+	// frame would race to the ceiling while the visible text stays short.
+	@AppStorage("liveTranscriptionMaxWords") private var maxWordsToShow = 5
 
 	init(audioManager: AudioManager) {
 		self.audioManager = audioManager
@@ -61,11 +65,15 @@ class LiveTranscriptionWindow: NSWindow {
 				// Keep the HUD up briefly after a recipe errors so the message is
 				// readable. The running state itself lives in the listening pill.
 				let recipeActive = self.coordinator.overlayError != nil
+				// A session whose display text is momentarily empty must not drop
+				// the window: blanking mid-sentence is the jumping the WHI-58 QA
+				// session reported. While the session runs, a window already on
+				// screen stays on screen; it leaves only when the dictation ends.
 				let shouldShow =
 					RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
 						mode: self.audioManager.currentRecordingMode,
-						transcriberWantsWindow: self.live.shouldShowLiveTranscriptionWindow
-							&& (self.live.isTranscribing || self.live.isWaitingForModel)
+						transcriberWantsWindow: self.isSessionActive
+							&& (self.live.shouldShowLiveTranscriptionWindow || self.isVisible)
 					) || recipeActive
 
 				if shouldShow {
@@ -103,6 +111,12 @@ class LiveTranscriptionWindow: NSWindow {
 		coordinator.overlayError != nil
 	}
 
+	/// A dictation is running: the engine is transcribing, or holding the
+	/// session open behind a status line (waiting for model, reconnecting).
+	private var isSessionActive: Bool {
+		live.isTranscribing || live.isWaitingForModel
+	}
+
 	/// Repositions above the pill whenever the pill itself moves (a drag) or
 	/// changes size, so this window never has to reach into `ListeningWindow`
 	/// directly. See `PillAnchorProvider`.
@@ -120,38 +134,48 @@ class LiveTranscriptionWindow: NSWindow {
 		}
 	}
 
+	/// The frame's calm-motion contract lives in `DictationHUDWidth`: while a
+	/// dictation runs the width only ever steps up on a coarse grid, never
+	/// shrinks — even when the display text is momentarily empty — and stops
+	/// changing once it reaches the screen-derived ceiling. The content inside
+	/// handles overflow (DictationView's trailing ticker). Between sessions the
+	/// window is hidden, which is what resets the growth back to compact.
 	private func calculateDynamicSize() -> NSSize {
-		// The recipe error gets its own comfortable width.
+		let maxWidth = min(currentScreen().visibleFrame.width * maxWidthPercentage, 800)
+		let currentWidth = isVisible ? frame.width : nil
+		let holdSteady = isSessionActive || isShowingRecipeError
+
 		if let overlayError = coordinator.overlayError {
-			let width = min(480, max(200, CGFloat(overlayError.count) * 7 + 60))
+			// The recipe error is a caption-sized status line, priced like one.
+			let width = DictationHUDWidth.width(
+				current: currentWidth,
+				estimated: CGFloat(overlayError.count) * 7 + 60,
+				maximum: maxWidth,
+				isDictating: holdSteady
+			)
 			return NSSize(width: width, height: 44)
 		}
 
-		let pendingText =
-			live.isWaitingForModel
-			? live.waitingForModelStatusText
-			: live.stableDisplayText
-
-		if pendingText.isEmpty {
-			return NSSize(width: 120, height: 36)
+		let estimated: CGFloat
+		if live.isWaitingForModel {
+			// A status line renders at caption size behind an indicator, not as
+			// the word ticker; the shared rule still keeps its frame stable.
+			estimated = CGFloat(live.waitingForModelStatusText.count) * 7 + 60
+		} else {
+			let allWords = live.stableDisplayText.split(separator: " ")
+			estimated = DictationHUDWidth.estimatedWidth(
+				words: allWords.suffix(maxWordsToShow).map(String.init),
+				hasEllipsis: allWords.count > maxWordsToShow
+			)
 		}
 
-		let screenWidth = currentScreen().visibleFrame.width
-		let screenBasedMaxWidth = screenWidth * maxWidthPercentage
-
-		let words = pendingText.split(separator: " ")
-		let lastWordWidth = words.last.map { CGFloat($0.count) * 10 } ?? 0
-		let otherWordsWidth = words.dropLast().reduce(0) { $0 + CGFloat($1.count) * 7 }
-		let spacesWidth = CGFloat(max(0, words.count - 1)) * 4
-
-		let estimatedTextWidth = lastWordWidth + otherWordsWidth + spacesWidth
-		let paddedWidth = estimatedTextWidth + 32
-		let minWidth: CGFloat = 120
-		let maxWidth = min(screenBasedMaxWidth, 800)
-		let finalWidth = min(maxWidth, max(minWidth, paddedWidth))
-		let finalHeight: CGFloat = 36
-
-		return NSSize(width: finalWidth, height: finalHeight)
+		let width = DictationHUDWidth.width(
+			current: currentWidth,
+			estimated: estimated,
+			maximum: maxWidth,
+			isDictating: holdSteady
+		)
+		return NSSize(width: width, height: 36)
 	}
 
 	/// The screen the pill is resting on, so this window's width clamp and its
