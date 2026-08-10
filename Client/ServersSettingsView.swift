@@ -357,7 +357,7 @@ struct ServersSettingsView: View {
 				}
 				// Same credential shape the dictation socket uses; an empty token is
 				// fine against a self-hosted backend that requires none.
-				let credentials = DictationCredentialProvider.refreshingBearer {
+				let credentials = RefreshingCredential.refreshingBearer {
 					(try? AuthTokenStore.shared.load()).flatMap { $0.isEmpty ? nil : $0 } ?? ""
 				}
 				discoveredServers = try await ServerDiscoveryProbe.fetch(
