@@ -229,6 +229,30 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 
+	/// The engine the user selected. Resolved per call rather than cached so a
+	/// change in Settings applies to the next dictation without a restart, and
+	/// so remote and on-device reach AudioManager through one interface instead
+	/// of a branch. See WHI-58.
+	@ObservationIgnored
+	var transcriberProvider: () -> SpeechTranscribing = { TranscriptionRouter.shared.active }
+
+	private var transcriber: SpeechTranscribing { transcriberProvider() }
+
+	/// The engine the current dictation started on. Keeping it means a change in
+	/// Settings mid-recording cannot route stop, or a device switch, at an
+	/// engine that never started — the same reason a session keeps the mode it
+	/// began with.
+	@ObservationIgnored
+	private var sessionTranscriber: SpeechTranscribing?
+
+	/// Options for one dictation. The language is passed for engines that need
+	/// telling; WhisperKit reads its own persisted language, as it always has.
+	fileprivate func dictationOptions(translate: Bool) -> TranscriptionOptions {
+		TranscriptionOptions(
+			mode: translate ? .translate : .transcribe,
+			language: Constants.languageCode(for: selectedLanguage))
+	}
+
 	/// Transforms a finished transcription before it is pasted (recipe matching
 	/// + execution). Returns nil to paste nothing. Injected by the app so
 	/// AudioManager stays free of recipe/network dependencies. WHI-41.
@@ -241,11 +265,7 @@ final class AudioManager: NSObject {
 		super.init()
 		SystemOutputMuter.shared.recoverFromUncleanExit()
 		whisperKitTranscriber.startInitialization()
-		whisperKitTranscriber.onLiveAudioSamples = { [weak self] samples in
-			// WhisperKit delivers per-buffer chunks; cap the window so level
-			// math stays cheap even if a large backlog arrives at once
-			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
-		}
+		whisperKitTranscriber.onLiveAudioSamples = liveAudioSampleHandler()
 		captureBuffer.onLimitReached = { [weak self] in
 			Task { @MainActor in
 				_ = self?.handleCaptureInterruption(.captureLimitReached)
@@ -263,6 +283,14 @@ final class AudioManager: NSObject {
 			MainActor.assumeIsolated {
 				self?.handleInputDeviceLost(name: name)
 			}
+		}
+	}
+
+	private func liveAudioSampleHandler() -> @MainActor ([Float]) -> Void {
+		{ [weak self] samples in
+			// Engines deliver per-buffer chunks; cap the window so level
+			// math stays cheap even if a large backlog arrives at once
+			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
 		}
 	}
 
@@ -372,7 +400,13 @@ final class AudioManager: NSObject {
 		deviceActivationTask = nil
 		switch activeCapturePath {
 		case .live:
-			whisperKitTranscriber.cancelLiveStream()
+			let engine = sessionTranscriber ?? transcriber
+			sessionTranscriber = nil
+			if engine === whisperKitTranscriber {
+				whisperKitTranscriber.cancelLiveStream()
+			} else {
+				engine.stopStreaming()
+			}
 		case .file:
 			stopMeteringTimer()
 			audioRecorder?.stop()
@@ -514,7 +548,7 @@ final class AudioManager: NSObject {
 		let session = ledger.capturing?.id
 		deviceActivationTask = Task {
 			if currentRecordingMode == .liveTranscription {
-				await whisperKitTranscriber.switchLiveStreamDevice()
+				await (sessionTranscriber ?? transcriber).switchStreamingDevice()
 				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				isMicrophoneInitializing = false
 			} else if activeCapturePath == .stream {
@@ -1209,13 +1243,16 @@ extension AudioManager {
 		timer.start()
 		playFeedbackSound(start: true)
 		muteOutputAfterStartSound()
-		whisperKitTranscriber.clearLiveTranscriptionState()
-		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
+		let engine = transcriber
+		sessionTranscriber = engine
+		engine.onLiveAudioSamples = liveAudioSampleHandler()
+		engine.resetStreamingSession()
+		LiveTranscriptionState.shared.beginWaiting()
 		let session = ledger.capturing?.id
 
 		deviceActivationTask = Task {
 			do {
-				try await whisperKitTranscriber.liveStream()
+				try await engine.startStreaming(options: dictationOptions(translate: enableTranslation))
 				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.info("Live transcription started")
@@ -1225,6 +1262,7 @@ extension AudioManager {
 					return
 				}
 				deviceActivationTask = nil
+				sessionTranscriber = nil
 				isMicrophoneInitializing = false
 				isRecording = false
 				timer.stop()
@@ -1251,12 +1289,19 @@ extension AudioManager {
 
 		activeCapturePath = nil
 		ledger.dropCapture()
-		let finishing = whisperKitTranscriber.stopLiveStream()
+		let engine = sessionTranscriber ?? transcriber
+		sessionTranscriber = nil
 		deviceManager.endRecordingSession()
 		levelMonitor.reset()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 		scheduleTimerReset()
 
+		// Only the on-device engine keeps a session to finish decoding and save to history
+		guard engine === whisperKitTranscriber else {
+			engine.stopStreaming()
+			return
+		}
+		let finishing = whisperKitTranscriber.stopLiveStream()
 		// The words said after the newest live pass are decoded before the session is complete
 		Task { @MainActor [weak self] in
 			guard await finishing.value, let self else { return }
@@ -1353,8 +1398,8 @@ extension AudioManager {
 	) async {
 		guard let audioArray = await applyVoiceActivityDetection(audioArray) else { return }
 		await runTranscription(session: session, historyAudio: .samples(audioArray, sampleRate: 16000)) {
-			try await self.whisperKitTranscriber.transcribeAudioArray(
-				audioArray, enableTranslation: enableTranslation)
+			try await self.transcriber.transcribe(
+				samples: audioArray, options: self.dictationOptions(translate: enableTranslation))
 		}
 	}
 
@@ -1395,8 +1440,8 @@ extension AudioManager {
 		}
 
 		await runTranscription(session: session, historyAudio: .file(fileURL)) {
-			try await self.whisperKitTranscriber.transcribe(
-				audioURL: fileURL, enableTranslation: enableTranslation)
+			try await self.transcriber.transcribe(
+				fileAt: fileURL, options: self.dictationOptions(translate: enableTranslation))
 		}
 		// No-op when history already moved the recording into its own folder
 		try? FileManager.default.removeItem(at: fileURL)

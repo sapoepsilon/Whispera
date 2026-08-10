@@ -4,7 +4,9 @@ import SwiftUI
 
 @MainActor
 class LiveTranscriptionWindow: NSWindow {
-	private let whisperKit = WhisperKitTranscriber.shared
+	// The shared live state, not one engine: any engine that streams drives this
+	// window. See WHI-58.
+	private let live = LiveTranscriptionState.shared
 	private let coordinator = DictationCoordinator.shared
 	private let audioManager: AudioManager
 	private var observationTimer: Timer?
@@ -76,8 +78,8 @@ class LiveTranscriptionWindow: NSWindow {
 		let recipeActive = coordinator.overlayError != nil
 		return RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
 			mode: audioManager.currentRecordingMode,
-			transcriberWantsWindow: whisperKit.shouldShowLiveTranscriptionWindow
-				&& (whisperKit.isTranscribing || whisperKit.isWaitingForModel)
+			transcriberWantsWindow: live.shouldShowLiveTranscriptionWindow
+				&& (live.isTranscribing || live.isWaitingForModel)
 		) || recipeActive
 	}
 
@@ -119,9 +121,9 @@ class LiveTranscriptionWindow: NSWindow {
 				}
 
 				let pendingText =
-					self.whisperKit.isWaitingForModel
-					? self.whisperKit.waitingForModelStatusText
-					: self.whisperKit.stableDisplayText
+					self.live.isWaitingForModel
+					? self.live.waitingForModelStatusText
+					: self.live.stableDisplayText
 
 				if pendingText != self.lastTextContent {
 					self.updateWindowSize(newSize)
@@ -188,9 +190,9 @@ class LiveTranscriptionWindow: NSWindow {
 		}
 
 		let pendingText =
-			whisperKit.isWaitingForModel
-			? whisperKit.waitingForModelStatusText
-			: whisperKit.stableDisplayText
+			live.isWaitingForModel
+			? live.waitingForModelStatusText
+			: live.stableDisplayText
 
 		if pendingText.isEmpty {
 			return NSSize(width: 120, height: 36)
@@ -345,7 +347,7 @@ class LiveTranscriptionWindow: NSWindow {
 			if let caretPosition = newCaretPosition {
 				self.lastCaretPosition = caretPosition
 
-				if self.followCaret && self.isVisible && self.whisperKit.isTranscribing
+				if self.followCaret && self.isVisible && self.live.isTranscribing
 					&& !self.isShowingRecipeError
 				{
 					let windowSize = self.calculateDynamicSize()

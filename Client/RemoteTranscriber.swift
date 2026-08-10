@@ -3,33 +3,6 @@
 
 import Foundation
 
-/// Where speech-to-text runs. WhisperKit stays the default (on-device, no
-/// network). See WHI-42.
-enum TranscriptionEngine: String, CaseIterable, Sendable {
-	case whisperKit
-	case whisperViaBYOK
-
-	var displayName: String {
-		switch self {
-		case .whisperKit: return "WhisperKit (on-device)"
-		case .whisperViaBYOK: return "OpenAI Whisper via your key"
-		}
-	}
-}
-
-extension WhisperaSettings {
-	private static let engineKey = "whisperaTranscriptionEngine"
-
-	/// Hard-pinned while the engine picker is parked and the app ships
-	/// WhisperKit-only: any persisted value — including a still-valid
-	/// "whisperViaBYOK" — degrades on-device. Restore the stored lookup below
-	/// alongside the picker.
-	static var transcriptionEngine: TranscriptionEngine {
-		get { .whisperKit }
-		set { UserDefaults.standard.set(newValue.rawValue, forKey: engineKey) }
-	}
-}
-
 enum RemoteTranscriberError: LocalizedError {
 	case notSignedIn
 	case missingOpenAIKey

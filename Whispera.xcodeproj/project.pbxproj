@@ -74,6 +74,7 @@
 		D6SOFTUPD2ED700000000005 /* SoftwareUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */; };
 		D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D6SPARKLE2ED700000000002 /* Sparkle */; };
 		D6FLUIDAU2F3000000000003 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = D6FLUIDAU2F3000000000002 /* FluidAudio */; };
+		D6WDICTBLD00000000000003 /* WhisperaDictation in Frameworks */ = {isa = PBXBuildFile; productRef = D6WDICTPRD00000000000002 /* WhisperaDictation */; };
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
 		D6AUDIN101F0000000000001 /* VoiceActivityTrimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN201F0000000000001 /* VoiceActivityTrimmer.swift */; };
 		D6AUDIN102F0000000000001 /* AudioInputSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN202F0000000000001 /* AudioInputSettingsView.swift */; };
@@ -222,6 +223,7 @@
 				D63900CF2E3D77B4005B5623 /* YouTubeKit in Frameworks */,
 				D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */,
 				D6FLUIDAU2F3000000000003 /* FluidAudio in Frameworks */,
+				D6WDICTBLD00000000000003 /* WhisperaDictation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -550,6 +552,7 @@
 				D6D486302EA49C1F00C1D5FA /* XCRemoteSwiftPackageReference "WhisperKit" */,
 				D6SPARKLE2ED700000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				D6FLUIDAU2F3000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
+				D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */,
 			);
 			productRefGroup = 8A8A8A8A8A8A8A8A8A8A8A8A /* Products */;
 			projectDirPath = "";
@@ -1046,6 +1049,11 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sapoepsilon/whispera-components";
+			requirement = { kind = exactVersion; version = 0.1.1; };
+		};
 		D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/alexeichhorn/YouTubeKit";
@@ -1131,6 +1139,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D6FLUIDAU2F3000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
 			productName = FluidAudio;
+		};
+		D6WDICTPRD00000000000002 /* WhisperaDictation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
+			productName = WhisperaDictation;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
