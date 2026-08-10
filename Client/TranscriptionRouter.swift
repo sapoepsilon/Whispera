@@ -11,12 +11,14 @@ enum TranscriptionEngine: String, CaseIterable, Sendable {
 	case whisperKit
 	case whisperViaBYOK
 	case whisperaStreaming
+	case realtimeDirect
 
 	var displayName: String {
 		switch self {
 		case .whisperKit: return "WhisperKit (on-device)"
 		case .whisperViaBYOK: return "OpenAI Whisper via your key"
 		case .whisperaStreaming: return "Whispera server (streaming)"
+		case .realtimeDirect: return "OpenAI-Realtime server (direct)"
 		}
 	}
 }
@@ -54,6 +56,17 @@ extension WhisperaSettings {
 
 	/// Which engine on that backend to stream through. Empty means "let the
 	/// backend's own `/transcription/servers` listing pick its default".
+	/// The model to ask a directly-addressed engine for. Only consulted in
+	/// `.realtimeDirect`: with no backend there is no `/transcription/servers`
+	/// to name one, so the host has to.
+	static var transcriptionDirectModel: String {
+		get {
+			let stored = UserDefaults.standard.string(forKey: "whisperaTranscriptionDirectModel") ?? ""
+			return stored.isEmpty ? "Systran/faster-distil-whisper-large-v3" : stored
+		}
+		set { UserDefaults.standard.set(newValue, forKey: "whisperaTranscriptionDirectModel") }
+	}
+
 	static var transcriptionServerId: String {
 		get { UserDefaults.standard.string(forKey: transcriptionServerIdKey) ?? "" }
 		set { UserDefaults.standard.set(newValue, forKey: transcriptionServerIdKey) }
@@ -89,6 +102,8 @@ struct TranscriptionRouter {
 			return RemoteBatchTranscriber.byok
 		case .whisperaStreaming:
 			return StreamingTranscriber.shared
+		case .realtimeDirect:
+			return StreamingTranscriber.direct
 		}
 	}
 }
