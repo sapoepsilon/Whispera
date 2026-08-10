@@ -212,6 +212,13 @@ struct SettingsView: View {
 	@State private var liveTranscriptionInfoWindow: NSWindow?
 	@State private var logsSize: String = "Calculating..."
 	@State private var showingClearLogsConfirmation = false
+	// Direct-mode ("realtimeDirect") model list: fetched from the engine's own
+	// /models endpoint rather than typed by hand. Empty + no error means "not
+	// fetched yet", which is also the state a failed fetch falls back to, so the
+	// free-text field underneath stays reachable either way.
+	@State private var directModelOptions: [TranscriptionModelInfo] = []
+	@State private var isFetchingDirectModels = false
+	@State private var directModelFetchError: String?
 	@AppStorage(SettingsRouting.selectedTabDefaultsKey) private var selectedSettingsTab =
 		SettingsDestination.general.rawValue
 
@@ -535,18 +542,72 @@ struct SettingsView: View {
 									.textFieldStyle(.roundedBorder)
 									.autocorrectionDisabled()
 									.accessibilityIdentifier("directEngineURLField")
-								TextField(
-									"Model (e.g. Systran/faster-distil-whisper-large-v3)",
-									text: $transcriptionDirectModel
-								)
-								.textFieldStyle(.roundedBorder)
-								.autocorrectionDisabled()
-								.accessibilityIdentifier("directEngineModelField")
+
+								HStack(spacing: 8) {
+									if isFetchingDirectModels {
+										ProgressView()
+											.scaleEffect(0.6)
+										Text("Checking the engine for installed models…")
+											.font(.caption)
+											.foregroundColor(.secondary)
+									} else if !directModelOptions.isEmpty {
+										Picker("Model", selection: $transcriptionDirectModel) {
+											ForEach(directModelOptions) { model in
+												Text(model.displayName).tag(model.id)
+											}
+										}
+										.labelsHidden()
+										.frame(width: 260)
+										.accessibilityIdentifier("directEngineModelPicker")
+									} else {
+										// Fallback: the fetch never ran or it failed. Typing a
+										// model by hand keeps the engine reachable even when
+										// Whispera cannot list what it has installed.
+										TextField(
+											"Model (e.g. Systran/faster-distil-whisper-large-v3)",
+											text: $transcriptionDirectModel
+										)
+										.textFieldStyle(.roundedBorder)
+										.autocorrectionDisabled()
+										.accessibilityIdentifier("directEngineModelField")
+									}
+
+									Button {
+										refreshDirectModels()
+									} label: {
+										Image(systemName: "arrow.clockwise")
+									}
+									.buttonStyle(.bordered)
+									.controlSize(.small)
+									.disabled(isFetchingDirectModels)
+									.accessibilityIdentifier("directEngineModelsRefreshButton")
+									.help("Ask the engine what speech-to-text models it has installed")
+								}
+								.animation(.easeInOut(duration: 0.2), value: isFetchingDirectModels)
+								.animation(.easeInOut(duration: 0.2), value: directModelOptions)
+
+								if let directModelFetchError {
+									HStack(spacing: 6) {
+										Image(systemName: "exclamationmark.triangle.fill")
+											.foregroundColor(.orange)
+											.font(.caption)
+										Text(directModelFetchError)
+											.font(.caption)
+											.foregroundColor(.orange)
+									}
+									.transition(.opacity)
+								}
+
 								Text(
-									"The URL is the engine's OpenAI-compatible base, ending in /v1. The model has to be one the engine already has installed."
+									"The URL is the engine's OpenAI-compatible base, ending in /v1. Refresh to list the models it already has installed, or type one directly if it cannot be reached right now."
 								)
 								.font(.caption)
 								.foregroundColor(.secondary)
+							}
+							.animation(.easeInOut(duration: 0.2), value: directModelFetchError)
+							.task(id: transcriptionEngineRaw) {
+								guard directModelOptions.isEmpty, directModelFetchError == nil else { return }
+								refreshDirectModels()
 							}
 						}
 
@@ -1626,6 +1687,29 @@ struct SettingsView: View {
 
 		// Store reference
 		liveTranscriptionInfoWindow = window
+	}
+
+	/// Asks the directly-addressed engine what speech-to-text models it has
+	/// installed. A failure keeps whatever model string is already saved and
+	/// falls back to the free-text field rather than clearing the selection —
+	/// an engine that is briefly unreachable should not cost the user their
+	/// configured model.
+	private func refreshDirectModels() {
+		isFetchingDirectModels = true
+		directModelFetchError = nil
+		Task { @MainActor in
+			do {
+				let models = try await StreamingTranscriber.direct.models()
+				directModelOptions = models
+				isFetchingDirectModels = false
+			} catch {
+				AppLogger.shared.general.error(
+					"Failed to list direct-engine models: \(error.localizedDescription)")
+				directModelOptions = []
+				directModelFetchError = error.localizedDescription
+				isFetchingDirectModels = false
+			}
+		}
 	}
 
 	private func getModelStatusText() -> String {
