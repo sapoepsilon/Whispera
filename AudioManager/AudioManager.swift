@@ -863,10 +863,12 @@ extension AudioManager {
 		SystemAudioMuter.shared.restoreAfterDictation()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
-		// The transcript is not final until the engine's stream actually closes
-		// (a network round trip for the remote engine), so the paste-once-at-stop
-		// behaviour has to wait for that rather than pasting whatever was on
-		// screen the instant the shortcut fired.
+		// Every engine's stopStreaming returns the transcript it has already
+		// accumulated locally, without waiting on any network close handshake —
+		// a stop that gated the paste on the socket going down hung past its own
+		// deadline in QA and never pasted at all. isTranscribing brackets only
+		// the recipe processing applyAndPaste may still run, so it always comes
+		// back down in bounded time.
 		isTranscribing = true
 		Task {
 			let transcript = await engine.stopStreaming()
