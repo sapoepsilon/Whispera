@@ -139,6 +139,10 @@ struct SettingsView: View {
 	@AppStorage("autoExecuteCommands") private var autoExecuteCommands = false
 	@AppStorage("globalCommandShortcut") private var globalCommandShortcut = "⌘⌥C"
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
+	@AppStorage("whisperaTranscriptionEngine") private var transcriptionEngineRaw = TranscriptionEngine
+		.whisperKit.rawValue
+	@AppStorage("whisperaTranscriptionServerURL") private var transcriptionServerURL = ""
+	@AppStorage("whisperaTranscriptionServerId") private var transcriptionServerId = ""
 	@AppStorage("shortcutHapticFeedback") private var shortcutHapticFeedback = false
 	@AppStorage("enableRecordingGlow") private var enableRecordingGlow = true
 	// Key unchanged from the older pause-based feature so existing opt-outs survive.
@@ -457,6 +461,41 @@ struct SettingsView: View {
 					Divider()
 
 					SettingsSection("Transcription") {
+						SettingRow(
+							"Engine",
+							description: "Where speech-to-text runs. On-device needs no network."
+						) {
+							Picker("Transcription engine", selection: $transcriptionEngineRaw) {
+								ForEach(TranscriptionEngine.allCases, id: \.rawValue) { engine in
+									Text(engine.displayName).tag(engine.rawValue)
+								}
+							}
+							.labelsHidden()
+							.frame(width: 240)
+							.accessibilityIdentifier("transcriptionEnginePicker")
+						}
+
+						if transcriptionEngineRaw == TranscriptionEngine.whisperaStreaming.rawValue {
+							VStack(alignment: .leading, spacing: 8) {
+								Text(
+									"Streams audio to a Whispera transcription server over a WebSocket. Leave the server blank to use the backend's own default."
+								)
+								.font(.caption)
+								.foregroundColor(.secondary)
+								TextField(
+									WhisperaSettings.serverURLString + " (leave blank to reuse the account server)",
+									text: $transcriptionServerURL
+								)
+								.textFieldStyle(.roundedBorder)
+								.autocorrectionDisabled()
+								.accessibilityIdentifier("transcriptionServerURLField")
+								TextField("Server id (e.g. speaches-lan)", text: $transcriptionServerId)
+									.textFieldStyle(.roundedBorder)
+									.autocorrectionDisabled()
+									.accessibilityIdentifier("transcriptionServerIdField")
+							}
+						}
+
 						SettingRow(
 							"Streaming Transcription",
 							description:

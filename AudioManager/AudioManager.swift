@@ -141,6 +141,30 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 
+	/// The engine the user selected. Resolved per call rather than cached so a
+	/// change in Settings applies to the next dictation without a restart, and
+	/// so remote and on-device reach AudioManager through one interface instead
+	/// of a branch. See WHI-58.
+	@ObservationIgnored
+	var transcriberProvider: () -> SpeechTranscribing = { TranscriptionRouter.shared.active }
+
+	private var transcriber: SpeechTranscribing { transcriberProvider() }
+
+	/// The engine the current dictation started on. Keeping it means a change in
+	/// Settings mid-recording cannot route stop, or a device switch, at an
+	/// engine that never started — the same reason `toggleRecording` keeps the
+	/// mode the session began with.
+	@ObservationIgnored
+	private var sessionTranscriber: SpeechTranscribing?
+
+	/// Options for one dictation. The language is passed for engines that need
+	/// telling; WhisperKit reads its own persisted language, as it always has.
+	fileprivate func dictationOptions(translate: Bool) -> TranscriptionOptions {
+		TranscriptionOptions(
+			mode: translate ? .translate : .transcribe,
+			language: Constants.languageCode(for: selectedLanguage))
+	}
+
 	/// Transforms a finished transcription before it is pasted (recipe matching
 	/// + execution). Returns nil to paste nothing. Injected by the app so
 	/// AudioManager stays free of recipe/network dependencies. WHI-41.
@@ -152,8 +176,12 @@ final class AudioManager: NSObject {
 	override init() {
 		super.init()
 		whisperKitTranscriber.startInitialization()
-		whisperKitTranscriber.onLiveAudioSamples = { [weak self] samples in
-			// WhisperKit delivers per-buffer chunks; cap the window so level
+		whisperKitTranscriber.onLiveAudioSamples = liveAudioSampleHandler()
+	}
+
+	private func liveAudioSampleHandler() -> @MainActor ([Float]) -> Void {
+		{ [weak self] samples in
+			// Engines deliver per-buffer chunks; cap the window so level
 			// math stays cheap even if a large backlog arrives at once
 			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
 		}
@@ -258,7 +286,7 @@ final class AudioManager: NSObject {
 		deviceActivationTask = Task {
 			switch route {
 			case .liveRestart:
-				await whisperKitTranscriber.switchLiveStreamDevice()
+				await (sessionTranscriber ?? transcriber).switchStreamingDevice()
 				guard !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
 			case .engineRestart:
@@ -777,13 +805,16 @@ extension AudioManager {
 		isRecording = true
 		timer.start()
 		playFeedbackSound(start: true)
-		whisperKitTranscriber.clearLiveTranscriptionState()
-		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
+		let engine = transcriber
+		sessionTranscriber = engine
+		engine.onLiveAudioSamples = liveAudioSampleHandler()
+		engine.resetStreamingSession()
+		LiveTranscriptionState.shared.beginWaiting()
 
 		deviceActivationTask = Task {
 			let activationUID = deviceManager.persistedDeviceUID
 			do {
-				try await whisperKitTranscriber.liveStream()
+				try await engine.startStreaming(options: dictationOptions(translate: enableTranslation))
 				// A cancelled live start means stopLiveTranscription already ran, and
 				// that path owns the state reset and the media resume.
 				guard !Task.isCancelled else {
@@ -822,7 +853,8 @@ extension AudioManager {
 		timer.stop()
 		playFeedbackSound(start: false)
 
-		whisperKitTranscriber.stopLiveStream()
+		(sessionTranscriber ?? transcriber).stopStreaming()
+		sessionTranscriber = nil
 		levelMonitor.reset()
 		SystemAudioMuter.shared.restoreAfterDictation()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
@@ -838,8 +870,8 @@ extension AudioManager {
 		transcriptionError = nil
 
 		do {
-			let transcription = try await whisperKitTranscriber.transcribeAudioArray(
-				audioArray, enableTranslation: enableTranslation)
+			let transcription = try await transcriber.transcribe(
+				samples: audioArray, options: dictationOptions(translate: enableTranslation))
 			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {
@@ -854,8 +886,8 @@ extension AudioManager {
 		transcriptionError = nil
 
 		do {
-			let transcription = try await whisperKitTranscriber.transcribe(
-				audioURL: fileURL, enableTranslation: enableTranslation)
+			let transcription = try await transcriber.transcribe(
+				fileAt: fileURL, options: dictationOptions(translate: enableTranslation))
 			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {

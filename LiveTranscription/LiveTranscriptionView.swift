@@ -1,12 +1,14 @@
 import SwiftUI
 
 struct LiveTranscriptionView: View {
-	@Bindable private var whisperKit = WhisperKitTranscriber.shared
+	// Bound to the shared live state rather than one engine, so whichever engine
+	// is transcribing reaches this view. See WHI-58.
+	@Bindable private var live = LiveTranscriptionState.shared
 	@State private var lastDisplayedText: String = ""
 
 	// Show only the last few words being transcribed
 	private var latestWords: String {
-		let currentText = whisperKit.currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+		let currentText = live.currentText.trimmingCharacters(in: .whitespacesAndNewlines)
 
 		// Filter out WhisperKit's default messages
 		if currentText.isEmpty || currentText.contains("Waiting for speech")
@@ -38,16 +40,16 @@ struct LiveTranscriptionView: View {
 					.padding(.horizontal, 12)
 					.padding(.vertical, 8)
 					.animation(.none, value: latestWords)  // No animation to prevent rewrites
-			} else if whisperKit.isTranscribing {
+			} else if live.isTranscribing {
 				// Minimal listening indicator
 				HStack(spacing: 6) {
 					Circle()
 						.fill(.blue)
 						.frame(width: 4, height: 4)
-						.scaleEffect(whisperKit.isTranscribing ? 1.2 : 1.0)
+						.scaleEffect(live.isTranscribing ? 1.2 : 1.0)
 						.animation(
 							.easeInOut(duration: 1.0).repeatForever(autoreverses: true),
-							value: whisperKit.isTranscribing)
+							value: live.isTranscribing)
 
 					Text("Listening...")
 						.font(.system(.caption, design: .rounded))

@@ -1,0 +1,181 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2025-2026 Ismatulla Mansurov
+
+import Foundation
+
+/// Everything the live-transcription HUD reads, owned in one place so every
+/// engine feeds the same surface. Extracted from `WhisperKitTranscriber`
+/// unchanged: the two-segment confirmation buffer and the flicker filter below
+/// are the ones that were already tuned there, and a remote engine reuses them
+/// rather than growing a second display path. See WHI-58.
+///
+/// `WhisperKitTranscriber` forwards its own live properties here, so callers
+/// and tests that still speak to the transcriber see exactly what they saw
+/// before.
+@MainActor
+@Observable
+final class LiveTranscriptionState {
+	static let shared = LiveTranscriptionState()
+
+	/// Text the engine will not revise again. Whoever is typing it into the
+	/// focused app watches this.
+	var confirmedText: String = "" {
+		didSet {
+			onConfirmedTextChange?(confirmedText)
+		}
+	}
+	/// UI-facing stable property: only moves when the words meaningfully change.
+	var stableDisplayText: String = ""
+	var shouldShowLiveTranscriptionWindow: Bool = false
+	var isTranscribing: Bool = false
+	var isWaitingForModel: Bool = false
+	var waitingForModelStatusText: String = ""
+	var currentText: String = ""
+	var shouldShowDebugWindow: Bool = false
+
+	@ObservationIgnored
+	var onConfirmedTextChange: ((String) -> Void)?
+
+	/// Internal working property: the words still in flight.
+	var pendingText: String = ""
+	private var lastDisplayedPendingText: String = ""
+	private var lastConfirmedSegmentCount: Int = 0
+
+	var latestWord: String {
+		let words = stableDisplayText.split(separator: " ")
+		return words.last?.description ?? ""
+	}
+
+	/// How many trailing segments stay pending. Whisper revises the tail of its
+	/// output as more audio arrives, so confirming it early duplicates words.
+	static let requiredSegmentsForConfirmation = 2
+
+	// MARK: - Session boundaries
+
+	func reset() {
+		isWaitingForModel = false
+		waitingForModelStatusText = ""
+		pendingText = ""
+		stableDisplayText = ""
+		lastDisplayedPendingText = ""
+		shouldShowLiveTranscriptionWindow = false
+		isTranscribing = false
+		confirmedText = ""
+		shouldShowDebugWindow = false
+		lastConfirmedSegmentCount = 0
+	}
+
+	/// Forgets how much of the segment history has been confirmed, so a fresh
+	/// stream starts counting from its first segment again.
+	func resetSegmentConfirmation() {
+		lastConfirmedSegmentCount = 0
+	}
+
+	func beginWaiting() {
+		pendingText = ""
+		stableDisplayText = ""
+		lastDisplayedPendingText = ""
+		confirmedText = ""
+		shouldShowLiveTranscriptionWindow = true
+		isWaitingForModel = true
+		waitingForModelStatusText = "Waiting for model..."
+	}
+
+	/// Promotes whatever is still pending at the end of a session.
+	func confirmPending() {
+		guard !pendingText.isEmpty else { return }
+
+		// Sync all display properties before confirming to prevent double transcription
+		stableDisplayText = pendingText
+		lastDisplayedPendingText = pendingText
+
+		// The engine hands back its complete transcription history in pendingText,
+		// so we replace confirmedText entirely rather than appending
+		confirmedText = pendingText
+		pendingText = ""
+	}
+
+	// MARK: - Ingest
+
+	/// For an engine that re-transcribes its whole buffer each pass and hands
+	/// back the full segment history, WhisperKit-style. Everything but the last
+	/// two segments is confirmed, exactly once each.
+	func ingest(segmentTexts: [String]) {
+		guard !segmentTexts.isEmpty else { return }
+
+		let required = Self.requiredSegmentsForConfirmation
+
+		if segmentTexts.count > required {
+			let numberOfSegmentsToConfirm = segmentTexts.count - required
+
+			// Only confirm new segments that haven't been confirmed before
+			if numberOfSegmentsToConfirm > lastConfirmedSegmentCount {
+				let startIndex = lastConfirmedSegmentCount
+				let endIndex = numberOfSegmentsToConfirm
+				let newConfirmedText = segmentTexts[startIndex..<endIndex].joined(separator: " ")
+
+				if !newConfirmedText.isEmpty {
+					confirmedText =
+						confirmedText.isEmpty ? newConfirmedText : confirmedText + " " + newConfirmedText
+					lastConfirmedSegmentCount = numberOfSegmentsToConfirm
+				}
+			}
+
+			setPending(segmentTexts.suffix(required).joined(separator: " "))
+		} else {
+			setPending(segmentTexts.joined(separator: " "))
+		}
+
+		shouldShowLiveTranscriptionWindow = !stableDisplayText.isEmpty || !confirmedText.isEmpty
+	}
+
+	/// For an engine that already distinguishes what it has committed from what
+	/// is still in flight, so there is nothing to buffer — but the same flicker
+	/// filter still decides when the display is allowed to move.
+	func ingest(committed: String, draft: String) {
+		if committed != confirmedText {
+			confirmedText = committed
+		}
+		setPending(draft)
+		shouldShowLiveTranscriptionWindow = !stableDisplayText.isEmpty || !confirmedText.isEmpty
+	}
+
+	/// Sets the in-flight text, moving the display only when the words changed
+	/// enough to be worth a redraw.
+	func setPending(_ newPendingText: String) {
+		pendingText = newPendingText
+
+		if shouldUpdatePendingText(newText: newPendingText) {
+			stableDisplayText = newPendingText
+			lastDisplayedPendingText = newPendingText
+		}
+	}
+
+	/// Suppresses redraws for a tail the engine is only nudging. Whisper rewrites
+	/// its last words constantly, and repainting each rewrite makes the HUD
+	/// flicker.
+	func shouldUpdatePendingText(newText: String) -> Bool {
+		// If the text is empty or previous text was non-empty, always update (to handle clearing)
+		if newText.isEmpty || lastDisplayedPendingText.isEmpty {
+			return true
+		}
+
+		let newWords = newText.split(separator: " ").map(String.init)
+		let oldWords = lastDisplayedPendingText.split(separator: " ").map(String.init)
+
+		let wordCountDiff = abs(newWords.count - oldWords.count)
+		if wordCountDiff > 1 { return true }
+
+		let wordsToCompare = min(3, min(newWords.count, oldWords.count))
+		if wordsToCompare > 0 {
+			let newLastWords = Array(newWords.suffix(wordsToCompare))
+			let oldLastWords = Array(oldWords.suffix(wordsToCompare))
+
+			if newLastWords != oldLastWords {
+				return true
+			}
+		}
+
+		return false
+	}
+}

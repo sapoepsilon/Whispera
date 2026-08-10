@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct DictationView: View {
-	@Bindable private var whisperKit = WhisperKitTranscriber.shared
+	// Bound to the shared live state rather than one engine, so whichever engine
+	// is transcribing reaches this view. See WHI-58.
+	@Bindable private var live = LiveTranscriptionState.shared
 	@State private var coordinator = DictationCoordinator.shared
 	private let audioManager: AudioManager
 
@@ -15,7 +17,7 @@ struct DictationView: View {
 	}
 
 	private var displayWords: [(text: String, isLast: Bool)] {
-		let words = whisperKit.stableDisplayText
+		let words = live.stableDisplayText
 			.split(separator: " ")
 			.map(String.init)
 
@@ -34,11 +36,11 @@ struct DictationView: View {
 		VStack(spacing: 0) {
 			if let overlayError = coordinator.overlayError {
 				errorIndicator(overlayError)
-			} else if whisperKit.isWaitingForModel {
+			} else if live.isWaitingForModel {
 				HStack(spacing: 8) {
 					ProgressView()
 						.scaleEffect(0.7)
-					Text(whisperKit.waitingForModelStatusText)
+					Text(live.waitingForModelStatusText)
 						.font(.system(.caption, design: .rounded))
 						.foregroundColor(.secondary)
 						.lineLimit(1)
@@ -46,10 +48,10 @@ struct DictationView: View {
 				.padding(.horizontal, 14)
 				.padding(.vertical, 10)
 				.transition(.opacity.combined(with: .scale(scale: 0.95)))
-			} else if !whisperKit.stableDisplayText.isEmpty {
+			} else if !live.stableDisplayText.isEmpty {
 				HStack(spacing: 4) {
 					if showEllipsis
-						&& whisperKit.stableDisplayText.split(separator: " ").count > maxWordsToShow
+						&& live.stableDisplayText.split(separator: " ").count > maxWordsToShow
 					{
 						Text("...")
 							.font(.system(.body, design: .rounded))
@@ -68,7 +70,7 @@ struct DictationView: View {
 				.padding(.horizontal, 14)
 				.padding(.vertical, 10)
 				.transition(.opacity.combined(with: .scale(scale: 0.95)))
-			} else if whisperKit.isTranscribing {
+			} else if live.isTranscribing {
 				ListeningView(audioManager: audioManager)
 			}
 		}
