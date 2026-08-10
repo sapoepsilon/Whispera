@@ -32,6 +32,10 @@ final class LiveTranscriptionState {
 	var waitingForModelStatusText: String = ""
 	var currentText: String = ""
 	var shouldShowDebugWindow: Bool = false
+	/// The last failure that needs the user to do something. Presented as an
+	/// `.alert()`, never inline: the HUD is one line and the recovery step does not
+	/// fit on it. Cleared when the alert is dismissed and when a new session starts.
+	var failure: TranscriptionFailure?
 
 	@ObservationIgnored
 	var onConfirmedTextChange: ((String) -> Void)?
@@ -63,6 +67,7 @@ final class LiveTranscriptionState {
 		confirmedText = ""
 		shouldShowDebugWindow = false
 		lastConfirmedSegmentCount = 0
+		failure = nil
 	}
 
 	/// Forgets how much of the segment history has been confirmed, so a fresh
@@ -76,6 +81,7 @@ final class LiveTranscriptionState {
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
 		confirmedText = ""
+		failure = nil
 		shouldShowLiveTranscriptionWindow = true
 		isWaitingForModel = true
 		waitingForModelStatusText = "Waiting for model..."

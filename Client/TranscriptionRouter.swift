@@ -13,6 +13,17 @@ enum TranscriptionEngine: String, CaseIterable, Sendable {
 	case whisperaStreaming
 	case realtimeDirect
 
+	/// Whether the engine transcribes over a live socket to a server. These are the
+	/// engines that need a URL, and the ones live transcription is worth turning on
+	/// for — a server engine with it off records first and transcribes at the end,
+	/// which looks like the feature is broken.
+	var streamsFromAServer: Bool {
+		switch self {
+		case .whisperaStreaming, .realtimeDirect: return true
+		case .whisperKit, .whisperViaBYOK: return false
+		}
+	}
+
 	var displayName: String {
 		switch self {
 		case .whisperKit: return "WhisperKit (on-device)"

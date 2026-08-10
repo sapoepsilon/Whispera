@@ -56,6 +56,12 @@ final class StreamingTranscriber: SpeechTranscribing {
 	/// landed. The package emits it just before the whole-transcript event.
 	private var lastUtterance = ""
 	private var didTranscribeAnything = false
+	/// Set while the package is replacing a socket, so the `.connecting` that
+	/// follows a reconnect reads as recovery rather than as a fresh start.
+	private var isRecovering = false
+	/// Set the moment the user asks to stop, so a session that fails on the way
+	/// down after handing back words does not raise an alert about it.
+	private var isStopping = false
 
 	private(set) var state: TranscriptionEngineState = .unavailable(
 		"Not connected to a transcription server yet.")
@@ -169,9 +175,11 @@ final class StreamingTranscriber: SpeechTranscribing {
 
 	func startStreaming(options: TranscriptionOptions) async throws {
 		live.beginWaiting()
-		live.waitingForModelStatusText = "Connecting to \(serverIdProvider().isEmpty ? "transcription server" : serverIdProvider())..."
+		live.waitingForModelStatusText = "Connecting to \(destinationName)…"
 		lastUtterance = ""
 		didTranscribeAnything = false
+		isRecovering = false
+		isStopping = false
 		startOutcome = nil
 
 		do {
@@ -200,10 +208,9 @@ final class StreamingTranscriber: SpeechTranscribing {
 		} catch {
 			live.isWaitingForModel = false
 			live.isTranscribing = false
-			if live.waitingForModelStatusText.isEmpty {
-				live.waitingForModelStatusText = "Unable to start dictation."
-			}
-			live.shouldShowLiveTranscriptionWindow = true
+			live.waitingForModelStatusText = ""
+			live.shouldShowLiveTranscriptionWindow = false
+			report(error)
 			teardown()
 			AppLogger.shared.transcriber.error("Failed to start remote live stream: \(error)")
 			throw error
@@ -220,6 +227,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 	}
 
 	func stopStreaming() {
+		isStopping = true
 		live.isWaitingForModel = false
 		live.waitingForModelStatusText = ""
 		live.isTranscribing = false
@@ -279,21 +287,43 @@ final class StreamingTranscriber: SpeechTranscribing {
 			onLiveAudioSamples?((0..<700).map { _ in level + Float.random(in: -0.02...0.02) })
 
 		case .failed(let error):
+			// Only terminal failures reach here — the package holds a recoverable one
+			// back while it replaces the socket, and reports it only once the budget
+			// is spent.
 			AppLogger.shared.transcriber.error("Remote dictation failed: \(error.localizedDescription)")
 			state = .unavailable(error.localizedDescription)
 			live.isWaitingForModel = true
-			live.waitingForModelStatusText = error.localizedDescription
+			live.waitingForModelStatusText = "Dictation stopped."
 			live.shouldShowLiveTranscriptionWindow = true
+			report(error)
 			finishStartIfPending(throwing: error)
 		}
 	}
 
 	private func handle(_ connectionState: DictationConnectionState) {
 		switch connectionState {
-		case .idle, .connecting, .finishing:
+		case .idle, .finishing:
 			break
 
+		case .connecting:
+			// A reconnect emits `.reconnecting` and then `.connecting` again. Without
+			// the flag the second one would read as a fresh connection and quietly
+			// drop the warning that words are being missed right now.
+			guard isRecovering else { break }
+			live.waitingForModelStatusText = "Reconnecting to \(destinationName)…"
+
+		case .reconnecting:
+			isRecovering = true
+			state = .preparing(progress: 0, status: "Reconnecting")
+			live.isWaitingForModel = true
+			live.waitingForModelStatusText = "Connection lost — reconnecting. Words spoken now are missed."
+			live.shouldShowLiveTranscriptionWindow = true
+
 		case .listening:
+			if isRecovering {
+				AppLogger.shared.transcriber.info("Remote session reconnected and is listening again")
+			}
+			isRecovering = false
 			state = .ready
 			live.isWaitingForModel = false
 			live.waitingForModelStatusText = ""
@@ -307,9 +337,8 @@ final class StreamingTranscriber: SpeechTranscribing {
 			case .finished, .cancelled:
 				break
 			case .failed(let error):
-				// The engine tears the socket down right after it commits an
-				// utterance, so a failure that arrives with words already in hand
-				// is the end of a good dictation, not a lost one.
+				// A failure that arrives with words already in hand at the moment the
+				// user is stopping is the end of a good dictation, not a lost one.
 				if didTranscribeAnything {
 					AppLogger.shared.transcriber.info(
 						"Remote session closed after transcribing: \(error.localizedDescription)")
@@ -320,6 +349,81 @@ final class StreamingTranscriber: SpeechTranscribing {
 				}
 			}
 		}
+	}
+
+	/// What to call the thing on the other end, in a sentence a user reads.
+	private var destinationName: String {
+		if isDirect() {
+			return baseURLProvider()?.host ?? "the transcription server"
+		}
+		let requested = serverIdProvider()
+		if !requested.isEmpty { return requested }
+		return cachedServer?.label ?? "the transcription server"
+	}
+
+	/// Turns a failure into something the user can act on, and raises it where it
+	/// will be seen. Silent while the user is already stopping a dictation that
+	/// produced words — interrupting them to report the end of a session they
+	/// ended, and got what they wanted from, would be noise.
+	private func report(_ error: Error) {
+		guard !(isStopping && didTranscribeAnything) else { return }
+		let failure = Self.failure(for: error, destination: destinationName)
+		live.failure = failure
+		AppLogger.shared.transcriber.error(
+			"Surfacing dictation failure: \(failure.title) — \(failure.message)")
+		NotificationCenter.default.post(name: .transcriptionFailureRaised, object: nil)
+	}
+
+	static func failure(for error: Error, destination: String) -> TranscriptionFailure {
+		let title = "Dictation stopped"
+		if let dictationError = error as? DictationError {
+			switch dictationError {
+			case .unauthorized, .credentialUnavailable:
+				return TranscriptionFailure(
+					title: title,
+					message:
+						"\(destination) rejected your credentials. Sign in again under Account settings, then start dictation again."
+				)
+			case .connectionFailed:
+				return TranscriptionFailure(
+					title: title,
+					message:
+						"Whispera could not reach \(destination). Check that the server is running and that this Mac can reach it on the network."
+				)
+			case .closedUnexpectedly:
+				return TranscriptionFailure(
+					title: title,
+					message:
+						"The connection to \(destination) dropped and reconnecting did not help. Check that the server is still running, then start dictation again."
+				)
+			case .protocolViolation:
+				return TranscriptionFailure(
+					title: title,
+					message:
+						"\(destination) answered with something Whispera did not understand. Check that the server URL points at an OpenAI-Realtime endpoint."
+				)
+			case .audioUnavailable:
+				return TranscriptionFailure(
+					title: title,
+					message:
+						"Whispera could not open the microphone. Check System Settings > Privacy & Security > Microphone."
+				)
+			case .server:
+				return TranscriptionFailure(
+					title: title,
+					message:
+						"\(destination) reported an error and reconnecting did not help. Its own log will say why; Whispera's log has the message it sent."
+				)
+			}
+		}
+		if let described = (error as? LocalizedError)?.errorDescription {
+			return TranscriptionFailure(title: title, message: described)
+		}
+		return TranscriptionFailure(
+			title: title,
+			message:
+				"Whispera could not run this dictation through \(destination). Check the server settings under Transcription."
+		)
 	}
 
 	private func finishStartIfPending(throwing error: Error?) {
