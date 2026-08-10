@@ -2,6 +2,13 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
+/// The pill's overlay for transient live-session content: the emerging words,
+/// a "waiting for model" status, or a post-dictation recipe error. It always
+/// sits above the listening pill — see `PillAnchor` — growing upward as its
+/// content grows, and never follows the caret: that used to be this window's
+/// only positioning mode, but with the pill itself now visible in every
+/// recording mode (see `RecordingWindowPolicy`), anchoring to the pill reads
+/// as one continuous surface instead of two disagreeing ones. See WHI-58.
 @MainActor
 class LiveTranscriptionWindow: NSWindow {
 	// The shared live state, not one engine: any engine that streams drives this
@@ -10,17 +17,14 @@ class LiveTranscriptionWindow: NSWindow {
 	private let coordinator = DictationCoordinator.shared
 	private let audioManager: AudioManager
 	private var observationTimer: Timer?
-	private var lastCaretPosition: NSPoint?
 	private var lastTextContent: String = ""
 
-	@AppStorage("liveTranscriptionWindowOffset") private var windowOffset = 25.0
 	@AppStorage("liveTranscriptionMaxWidthPercentage") private var maxWidthPercentage = 0.6
-	@AppStorage("liveTranscriptionFollowCaret") private var followCaret = true
 
 	init(audioManager: AudioManager) {
 		self.audioManager = audioManager
 		super.init(
-			contentRect: NSRect(x: 0, y: 0, width: 200, height: 32),  //TODO: make it customizeable
+			contentRect: NSRect(x: 0, y: 0, width: 200, height: 32),
 			styleMask: [.borderless],
 			backing: .buffered,
 			defer: false
@@ -30,9 +34,11 @@ class LiveTranscriptionWindow: NSWindow {
 		self.isOpaque = false
 		self.backgroundColor = .clear
 		self.hasShadow = true
-		self.isMovable = true
-		self.ignoresMouseEvents = false
-		self.isMovableByWindowBackground = true
+		// Dragging the pill is how the user repositions this whole surface;
+		// dragging the words themselves would just fight PillAnchor putting it
+		// straight back above the pill on the next layout pass.
+		self.isMovable = false
+		self.ignoresMouseEvents = true
 
 		self.center()
 
@@ -40,14 +46,11 @@ class LiveTranscriptionWindow: NSWindow {
 		self.contentView = hostingView
 
 		setupObservation()
-		setupCaretTracking()
+		observePillMovement()
 	}
 
 	deinit {
 		observationTimer?.invalidate()
-		Task { @MainActor in
-			AccessibilityHelper.onCaretChange = nil
-		}
 	}
 
 	private func setupObservation() {
@@ -69,42 +72,14 @@ class LiveTranscriptionWindow: NSWindow {
 					let newSize = self.calculateDynamicSize()
 
 					if !self.isVisible {
-						// The recipe error is not tied to what the user is typing, so it
-						// rises into the pill's resting place instead of dropping in at
-						// the caret.
-						if self.isShowingRecipeError {
-							self.presentErrorAtBottomCenter(size: newSize)
-						} else {
-							self.positionNearCaret(size: newSize)
-							self.makeKeyAndOrderFront(nil)
-						}
-					} else if self.isShowingRecipeError {
-						self.updateWindowSize(newSize)
+						self.presentAbovePill(size: newSize)
 					} else {
-						if self.followCaret {
-							_ = AccessibilityHelper.getCaretPosition()
-						}
-
-						if let currentCaretPosition = AccessibilityHelper.getCaretPosition() {
-							if let lastPosition = self.lastCaretPosition {
-								let distance = sqrt(
-									pow(currentCaretPosition.x - lastPosition.x, 2)
-										+ pow(currentCaretPosition.y - lastPosition.y, 2))
-
-								if distance > 50 {
-									self.positionRelativeToCaret(
-										caretPosition: currentCaretPosition, windowSize: newSize)
-								}
-							}
-							self.lastCaretPosition = currentCaretPosition
-						}
-
 						let pendingText =
 							self.live.isWaitingForModel
 							? self.live.waitingForModelStatusText
 							: self.live.stableDisplayText
 
-						if pendingText != self.lastTextContent {
+						if pendingText != self.lastTextContent || self.isShowingRecipeError {
 							self.updateWindowSize(newSize)
 							self.lastTextContent = pendingText
 						}
@@ -112,8 +87,8 @@ class LiveTranscriptionWindow: NSWindow {
 				} else {
 					if self.isVisible {
 						self.orderOut(nil)
-						// The error entry fades in from 0; restore it so a later
-						// caret-anchored word display is never left invisible.
+						// The reveal fades in from 0; restore it so the next appearance
+						// is never left invisible.
 						self.alphaValue = 1
 						self.lastTextContent = ""
 					}
@@ -128,41 +103,22 @@ class LiveTranscriptionWindow: NSWindow {
 		coordinator.overlayError != nil
 	}
 
-	/// Rises into the same bottom-centre resting place as the listening pill,
-	/// on the pill's own motion constants, instead of dropping in from above.
-	private func presentErrorAtBottomCenter(size: NSSize) {
-		let screenFrame = screenForWindow().visibleFrame
-		let x = screenFrame.origin.x + (screenFrame.width - size.width) / 2
-		let y = screenFrame.origin.y + (screenFrame.height * PillMetrics.bottomAnchorFraction)
-		let target = NSRect(x: x, y: y, width: size.width, height: size.height)
-
-		guard !Motion.systemReduceMotion else {
-			alphaValue = 1
-			setFrame(target, display: true)
-			makeKeyAndOrderFront(nil)
-			return
-		}
-
-		alphaValue = 0
-		setFrame(target.offsetBy(dx: 0, dy: -Self.errorRiseDistance), display: false)
-		makeKeyAndOrderFront(nil)
-
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = Motion.structuralDuration
-			context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-			context.allowsImplicitAnimation = true
-			self.animator().setFrame(target, display: true)
-		}
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = Motion.revealDuration
-			context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-			context.allowsImplicitAnimation = true
-			self.animator().alphaValue = 1
+	/// Repositions above the pill whenever the pill itself moves (a drag) or
+	/// changes size, so this window never has to reach into `ListeningWindow`
+	/// directly. See `PillAnchorProvider`.
+	private func observePillMovement() {
+		withObservationTracking {
+			_ = PillAnchorProvider.shared.pillFrame
+		} onChange: {
+			Task { @MainActor [weak self] in
+				guard let self else { return }
+				if self.isVisible {
+					self.updateWindowSize(self.calculateDynamicSize())
+				}
+				self.observePillMovement()
+			}
 		}
 	}
-
-	/// How far below its resting place the error starts its rise.
-	private static let errorRiseDistance: CGFloat = 24
 
 	private func calculateDynamicSize() -> NSSize {
 		// The recipe error gets its own comfortable width.
@@ -180,8 +136,7 @@ class LiveTranscriptionWindow: NSWindow {
 			return NSSize(width: 120, height: 36)
 		}
 
-		let screen = screenForWindow()
-		let screenWidth = screen.visibleFrame.width
+		let screenWidth = currentScreen().visibleFrame.width
 		let screenBasedMaxWidth = screenWidth * maxWidthPercentage
 
 		let words = pendingText.split(separator: " ")
@@ -199,143 +154,75 @@ class LiveTranscriptionWindow: NSWindow {
 		return NSSize(width: finalWidth, height: finalHeight)
 	}
 
-	private func screenForWindow() -> NSScreen {
-		if let caretPosition = lastCaretPosition {
-			let screen = screenContaining(point: caretPosition)
-			return screen
-		}
-
-		if self.isVisible {
-			let windowCenter = NSPoint(x: frame.midX, y: frame.midY)
-			let screen = screenContaining(point: windowCenter)
-			return screen
-		}
-
-		let screen = NSScreen.main ?? NSScreen.screens.first!
-		return screen
-	}
-
-	private func screenContaining(point: NSPoint) -> NSScreen {
-		for screen in NSScreen.screens {
-			if screen.frame.contains(point) {
+	/// The screen the pill is resting on, so this window's width clamp and its
+	/// anchor fallback agree with whatever display the pill is actually on.
+	private func currentScreen() -> NSScreen {
+		if let pillFrame = PillAnchorProvider.shared.pillFrame {
+			for screen in NSScreen.screens where screen.frame.contains(NSPoint(x: pillFrame.midX, y: pillFrame.midY)) {
 				return screen
 			}
 		}
 		return NSScreen.main ?? NSScreen.screens.first!
 	}
 
-	private func positionNearCaret(size: NSSize) {
-		if let caretPosition = AccessibilityHelper.getCaretPosition() {
-			lastCaretPosition = caretPosition
-			positionRelativeToCaret(caretPosition: caretPosition, windowSize: size)
-		} else {
-			positionAtBottomCenter(size: size)
-		}
-	}
+	/// First appearance: rises into place from just below its resting spot,
+	/// the same reveal language `ListeningWindow` uses for its controls panel.
+	private func presentAbovePill(size: NSSize) {
+		let target = PillAnchor.frame(
+			for: size, screenFrame: currentScreen().visibleFrame, pillFrame: PillAnchorProvider.shared.pillFrame)
 
-	private func positionRelativeToCaret(caretPosition: NSPoint, windowSize: NSSize) {
-		let screen = screenContaining(point: caretPosition)
-		let screenFrame = screen.visibleFrame
-
-		let halfScreenHeight = screenFrame.height / 2
-		let screenCenterY = screenFrame.origin.y + halfScreenHeight
-
-		var windowX: CGFloat
-		var windowY: CGFloat
-
-		windowX = caretPosition.x - (windowSize.width / 2)
-
-		let minX = screenFrame.origin.x + 20
-		let maxX = screenFrame.origin.x + screenFrame.width - windowSize.width - 20
-
-		windowX = max(minX, windowX)
-		windowX = min(maxX, windowX)
-
-		if caretPosition.y > screenCenterY {
-			windowY = caretPosition.y - windowSize.height - windowOffset
-
-			if windowY < screenFrame.origin.y + 10 {
-				windowY = caretPosition.y + (windowOffset * 0.6)
-			}
-		} else {
-			windowY = caretPosition.y + (windowOffset * 0.4)
-
-			if windowY + windowSize.height > screenFrame.origin.y + screenFrame.height - 10 {
-				windowY = caretPosition.y - windowSize.height - (windowOffset * 0.6)
-			}
+		guard !Motion.systemReduceMotion else {
+			alphaValue = 1
+			setFrame(target, display: true)
+			orderFront(nil)
+			return
 		}
 
-		windowY = max(screenFrame.origin.y + 20, windowY)
-		windowY = min(screenFrame.origin.y + screenFrame.height - windowSize.height - 20, windowY)
-
-		let newFrame = NSRect(
-			x: windowX, y: windowY, width: windowSize.width, height: windowSize.height)
+		alphaValue = 0
+		setFrame(target.offsetBy(dx: 0, dy: -Self.riseDistance), display: false)
+		orderFront(nil)
 
 		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 0.2
+			context.duration = Motion.structuralDuration
+			context.timingFunction = CAMediaTimingFunction(name: .easeOut)
 			context.allowsImplicitAnimation = true
-			self.animator().setFrame(newFrame, display: true)
+			self.animator().setFrame(target, display: true)
 		}
-	}
-
-	private func positionAtBottomCenter(size: NSSize) {
-		let screen = screenForWindow()
-		let screenFrame = screen.visibleFrame
-		let windowX = screenFrame.origin.x + (screenFrame.width - size.width) / 2
-		let bottomOffset = screenFrame.height * 0.1
-		let windowY = screenFrame.origin.y + bottomOffset
-
-		let newFrame = NSRect(x: windowX, y: windowY, width: size.width, height: size.height)
-
 		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 0.2
+			context.duration = Motion.revealDuration
+			context.timingFunction = CAMediaTimingFunction(name: .easeOut)
 			context.allowsImplicitAnimation = true
-			self.animator().setFrame(newFrame, display: true)
+			self.animator().alphaValue = 1
 		}
 	}
 
-	private func centerOnScreen(size: NSSize) {
-		positionAtBottomCenter(size: size)
-	}
+	/// How far below its resting place the reveal starts its rise.
+	private static let riseDistance: CGFloat = 24
 
 	private func updateWindowSize(_ newSize: NSSize) {
 		let currentFrame = self.frame
 
 		let widthDiff = abs(newSize.width - currentFrame.width)
 		let heightDiff = abs(newSize.height - currentFrame.height)
+		let pillFrame = PillAnchorProvider.shared.pillFrame
+		let target = PillAnchor.frame(for: newSize, screenFrame: currentScreen().visibleFrame, pillFrame: pillFrame)
 
-		if widthDiff < 10 && heightDiff < 5 {
+		// A pill move always repositions, even when the content size did not
+		// change; a content-only change below the noise floor is skipped.
+		guard widthDiff >= 10 || heightDiff >= 5 || abs(target.origin.x - currentFrame.origin.x) > 1
+			|| abs(target.origin.y - currentFrame.origin.y) > 1
+		else { return }
+
+		guard !Motion.systemReduceMotion else {
+			setFrame(target, display: true)
 			return
 		}
 
-		// The error stays bottom-centre for its whole life; only the live
-		// transcription display tracks the caret.
-		if isShowingRecipeError {
-			positionAtBottomCenter(size: newSize)
-			return
-		}
-
-		if let caretPosition = lastCaretPosition {
-			positionRelativeToCaret(caretPosition: caretPosition, windowSize: newSize)
-		} else {
-			positionAtBottomCenter(size: newSize)
-		}
-	}
-
-	private func setupCaretTracking() {
-		AccessibilityHelper.onCaretChange = { [weak self] newCaretPosition in
-			guard let self = self else { return }
-
-			if let caretPosition = newCaretPosition {
-				self.lastCaretPosition = caretPosition
-
-				if self.followCaret && self.isVisible && self.live.isTranscribing
-					&& !self.isShowingRecipeError
-				{
-					let windowSize = self.calculateDynamicSize()
-					self.positionRelativeToCaret(caretPosition: caretPosition, windowSize: windowSize)
-				}
-			}
+		NSAnimationContext.runAnimationGroup { context in
+			context.duration = Motion.structuralDuration
+			context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+			context.allowsImplicitAnimation = true
+			self.animator().setFrame(target, display: true)
 		}
 	}
 }

@@ -50,10 +50,6 @@ import WhisperKit
 		get { live.isTranscribing }
 		set { live.isTranscribing = newValue }
 	}
-	var currentText: String {
-		get { live.currentText }
-		set { live.currentText = newValue }
-	}
 	var confirmedText: String {
 		get { live.confirmedText }
 		set { live.confirmedText = newValue }

@@ -37,6 +37,8 @@
 		D63900E52E3F13F7005B5623 /* TranscriptionQueueManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900E42E3F13F7005B5623 /* TranscriptionQueueManager.swift */; };
 		D63900E72E3F1550005B5623 /* TranscriptionQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63900E62E3F1550005B5623 /* TranscriptionQueueView.swift */; };
 		D63A30E32E2EBF1300BA20B7 /* LiveTranscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30DF2E2EBF1300BA20B7 /* LiveTranscriptionView.swift */; };
+		D6PILLSTY02F000000000002 /* PillStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6PILLSTY02F000000000001 /* PillStyle.swift */; };
+		D6PILLANCR02F00000000002 /* PillAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6PILLANCR02F00000000001 /* PillAnchor.swift */; };
 		D63A30E52E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30E02E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift */; };
 		D63A30E72E2EBF1E00BA20B7 /* AccessibilityHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A30E62E2EBF1E00BA20B7 /* AccessibilityHelper.swift */; };
 		D63A31112E2EE20C00BA20B7 /* DictationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63A31102E2EE20C00BA20B7 /* DictationView.swift */; };
@@ -162,6 +164,8 @@
 		D6BENCH022F0000000000003 /* BenchmarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkView.swift; sourceTree = "<group>"; };
 		D6C81FC82E0001AB00D32F2A /* ContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextProvider.swift; sourceTree = "<group>"; };
 		D6D486242EA482B200C1D5FA /* AudioMeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMeterView.swift; sourceTree = "<group>"; };
+		D6PILLSTY02F000000000001 /* PillStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillStyle.swift; sourceTree = "<group>"; };
+		D6PILLANCR02F00000000001 /* PillAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillAnchor.swift; sourceTree = "<group>"; };
 		D6DEVPK022F0000000000001 /* DevicePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePickerView.swift; sourceTree = "<group>"; };
 		D6F9D7812ED6C31C00959822 /* AudioEngineController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngineController.swift; sourceTree = "<group>"; };
 		D6F9D7822ED6C31C00959822 /* AudioLevelMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioLevelMonitor.swift; sourceTree = "<group>"; };
@@ -269,6 +273,8 @@
 				D6DEVPK022F0000000000001 /* DevicePickerView.swift */,
 				D60F53F52EA4688E0063C008 /* ListeningWindow.swift */,
 				D60F53F22EA451200063C008 /* ListeningView.swift */,
+				D6PILLSTY02F000000000001 /* PillStyle.swift */,
+				D6PILLANCR02F00000000001 /* PillAnchor.swift */,
 			);
 			path = "What's up?";
 			sourceTree = "<group>";
@@ -549,6 +555,8 @@
 				D66E6D6B2E185B8E00F55A5B /* ShortcutOptionsView.swift in Sources */,
 				D66E6D6F2E185BD100F55A5B /* TestStepView.swift in Sources */,
 				D63A30E32E2EBF1300BA20B7 /* LiveTranscriptionView.swift in Sources */,
+				D6PILLSTY02F000000000002 /* PillStyle.swift in Sources */,
+				D6PILLANCR02F00000000002 /* PillAnchor.swift in Sources */,
 				D63900E52E3F13F7005B5623 /* TranscriptionQueueManager.swift in Sources */,
 				D63A30E52E2EBF1300BA20B7 /* LiveTranscriptionWindow.swift in Sources */,
 				D648B7CB2DF9FF8B006079ED /* Constants.swift in Sources */,

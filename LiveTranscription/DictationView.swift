@@ -17,125 +17,44 @@ struct DictationView: View {
 		self.audioManager = audioManager
 	}
 
-	private var displayWords: [(text: String, isLast: Bool)] {
-		let words = live.stableDisplayText
-			.split(separator: " ")
-			.map(String.init)
-
-		guard !words.isEmpty else { return [] }
-
-		// Take only the last N words
-		let wordsToShow = words.suffix(maxWordsToShow)
-
-		return wordsToShow.enumerated().map { index, word in
-			(text: word, isLast: index == wordsToShow.count - 1)
-		}
+	private var displayWords: [String] {
+		Array(
+			live.stableDisplayText
+				.split(separator: " ")
+				.map(String.init)
+				.suffix(maxWordsToShow))
 	}
 
-	var body: some View {
-		VStack(spacing: 0) {
-			if let overlayError = coordinator.overlayError {
-				errorIndicator(overlayError)
-			} else if live.isWaitingForModel {
-				HStack(spacing: 8) {
-					// A spinner is indeterminate motion that never settles, which is
-					// exactly what reduced motion asks us not to draw. The dot says the
-					// same thing — something is in progress — and holds still.
-					if reduceMotion {
-						Image(systemName: "circle.dotted")
-							.imageScale(.small)
-							.foregroundColor(.secondary)
-					} else {
-						ProgressView()
-							.scaleEffect(0.7)
-					}
-					Text(live.waitingForModelStatusText)
-						.font(.system(.caption, design: .rounded))
-						.foregroundColor(.secondary)
-						.lineLimit(1)
-						.animation(.easeInOut(duration: 0.2), value: live.waitingForModelStatusText)
-				}
-				.padding(.horizontal, 14)
-				.padding(.vertical, 10)
-				.transition(.opacity.combined(with: .scale(scale: 0.95)))
-			} else if !live.stableDisplayText.isEmpty {
-				HStack(spacing: 4) {
-					if showEllipsis
-						&& live.stableDisplayText.split(separator: " ").count > maxWordsToShow
-					{
-						Text("...")
-							.font(.system(.body, design: .rounded))
-							.foregroundColor(Color.secondary.opacity(0.6))
-							.padding(.trailing, 2)
-					}
+	private var hasHiddenWords: Bool {
+		showEllipsis && live.stableDisplayText.split(separator: " ").count > maxWordsToShow
+	}
 
-					ForEach(Array(displayWords.enumerated()), id: \.offset) { _, wordInfo in
-						Text(wordInfo.text)
-							.font(.system(wordInfo.isLast ? .title3 : .body, design: .rounded))
-							.foregroundColor(wordInfo.isLast ? Color.blue : Color.primary.opacity(0.8))
-							.fontWeight(wordInfo.isLast ? .semibold : .regular)
-							.animation(.easeInOut(duration: 0.15), value: wordInfo.isLast)
-					}
-				}
-				.padding(.horizontal, 14)
-				.padding(.vertical, 10)
+	// This window is the pill's overlay for the transient things a live session
+	// says beyond "I am listening" — the pill underneath already covers that.
+	// See RecordingWindowPolicy and PillAnchor.
+	var body: some View {
+		Group {
+			if let overlayError = coordinator.overlayError {
+				PillStatusRow(
+					indicator: .icon("exclamationmark.triangle.fill", .orange),
+					text: overlayError,
+					textColor: .primary
+				)
 				.transition(.opacity.combined(with: .scale(scale: 0.95)))
-			} else if live.isTranscribing {
-				ListeningView(audioManager: audioManager)
+			} else if live.isWaitingForModel {
+				PillStatusRow(indicator: .progress, text: live.waitingForModelStatusText)
+					.animation(.easeInOut(duration: 0.2), value: live.waitingForModelStatusText)
+					.transition(.opacity.combined(with: .scale(scale: 0.95)))
+			} else if !live.stableDisplayText.isEmpty {
+				PillWordFlow(words: displayWords, showEllipsis: hasHiddenWords)
+					.transition(.opacity.combined(with: .scale(scale: 0.95)))
 			}
 		}
-		.animation(
-			reduceMotion ? nil : .easeInOut(duration: 0.2), value: live.isWaitingForModel
-		)
+		.padding(.horizontal, PillSpacing.md)
+		.padding(.vertical, PillSpacing.sm)
+		.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: live.isWaitingForModel)
 		.fixedSize()
-		.background(
-			RoundedRectangle(cornerRadius: cornerRadius)
-				.fill(.ultraThinMaterial)
-				.overlay(
-					RoundedRectangle(cornerRadius: cornerRadius)
-						.fill(
-							LinearGradient(
-								colors: [
-									Color.blue.opacity(0.05),
-									Color.blue.opacity(0.02),
-								],
-								startPoint: .topLeading,
-								endPoint: .bottomTrailing
-							)
-						)
-				)
-		)
-		.overlay(
-			RoundedRectangle(cornerRadius: cornerRadius)
-				.strokeBorder(
-					LinearGradient(
-						colors: [
-							Color.blue.opacity(0.3),
-							Color.blue.opacity(0.1),
-						],
-						startPoint: .topLeading,
-						endPoint: .bottomTrailing
-					),
-					lineWidth: 1
-				)
-		)
-		.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
-		.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
-	}
-
-	private func errorIndicator(_ message: String) -> some View {
-		HStack(spacing: 6) {
-			Image(systemName: "exclamationmark.triangle.fill")
-				.foregroundColor(.orange)
-				.imageScale(.small)
-			Text(message)
-				.font(.system(.caption, design: .rounded))
-				.foregroundColor(.primary)
-				.lineLimit(2)
-		}
-		.padding(.horizontal, 14)
-		.padding(.vertical, 10)
-		.transition(.opacity.combined(with: .scale(scale: 0.95)))
+		.pillChrome(cornerRadius: cornerRadius)
 	}
 }
 

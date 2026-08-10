@@ -16,10 +16,14 @@ enum AudioState {
 }
 
 // Both recording windows route through this policy so they can never disagree
-// via separate preferences: exactly one surface is eligible per recording mode.
+// via separate preferences. The listening pill is the persistent home for
+// recording/transcribing status in both modes; the live-transcription window
+// layers above it and only shows in live mode, and only once there is
+// something transient to say (words, a waiting-for-model status, or an
+// error) — see PillAnchor for how the two stay glued together on screen.
 enum RecordingWindowPolicy {
-	static func shouldShowListeningWindow(state: AudioState, mode: RecordingMode) -> Bool {
-		state != .idle && mode == .text
+	static func shouldShowListeningWindow(state: AudioState) -> Bool {
+		state != .idle
 	}
 
 	static func shouldShowLiveTranscriptionWindow(
