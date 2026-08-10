@@ -50,6 +50,10 @@ final class StreamingTranscriber: SpeechTranscribing {
 	private var session: DictationSession?
 	private var eventTask: Task<Void, Never>?
 	private var wordTracker: DictationWordTracker?
+	/// Builds the in-flight utterance out of `.partialTranscript` deltas before
+	/// they reach the live state; see the accumulator's own comment for why a
+	/// partial cannot be displayed on its own.
+	private var utteranceDraft = UtteranceDraftAccumulator()
 	private var cachedServer: DictationServer?
 	private var startContinuation: CheckedContinuation<Void, Error>?
 	/// The session can reach `.listening` — or fail outright — before the
@@ -219,6 +223,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 
 	func resetStreamingSession() {
 		teardown()
+		utteranceDraft.clear()
 		live.reset()
 	}
 
@@ -229,6 +234,9 @@ final class StreamingTranscriber: SpeechTranscribing {
 		isRecovering = false
 		isStopping = false
 		startOutcome = nil
+		// A stale draft from the previous session must not prefix this one's
+		// first partial.
+		utteranceDraft.clear()
 
 		do {
 			let configuration = try await configuration(for: options)
@@ -362,17 +370,29 @@ final class StreamingTranscriber: SpeechTranscribing {
 		case .connectionState(let connectionState):
 			handle(connectionState)
 
-		case .partialTranscript(let draft):
-			live.ingest(committed: live.confirmedText, draft: draft)
+		case .partialTranscript(let delta):
+			// A partial is a delta — only the fragment since the previous event, per
+			// the OpenAI-Realtime contract — so it is appended to the utterance's
+			// accumulator first. Passing the fragment alone as the draft made each
+			// event replace the pill's tail with the latest few words instead of
+			// growing it (nemo-stream QA, WHI-58). The accumulated draft also lands
+			// in `pendingText`, which is what stop pastes for words still in flight.
+			utteranceDraft.append(delta)
+			live.ingest(committed: live.confirmedText, draft: utteranceDraft.draft)
 
 		case .finalTranscript:
 			didTranscribeAnything = true
+			// The utterance is settled; its deltas must not leak into the next one.
+			utteranceDraft.clear()
 
 		case .transcript(let whole):
 			// The whole transcript already contains the utterance that just
 			// finalized. Carrying that utterance forward as the draft — which this
 			// used to do — put it in both halves at once, and the HUD showed it
-			// twice until the next utterance's first partial replaced it.
+			// twice until the next utterance's first partial replaced it. Clearing
+			// the accumulator here as well covers an engine that emits the whole
+			// transcript without a preceding final.
+			utteranceDraft.clear()
 			live.ingest(committed: whole, draft: "")
 
 		case .audioLevel(let level):
