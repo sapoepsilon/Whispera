@@ -93,7 +93,11 @@ extension WhisperKitTranscriber: SpeechTranscribing {
 		await switchLiveStreamDevice()
 	}
 
-	func stopStreaming() {
-		_ = stopLiveStream()
+	@discardableResult
+	func stopStreaming() async -> String {
+		// Waits for the last live pass so the words said after it are in the transcript
+		_ = await stopLiveStream().value
+		return LiveTranscriptionState.shared.confirmedText.trimmingCharacters(
+			in: .whitespacesAndNewlines)
 	}
 }

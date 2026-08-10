@@ -409,7 +409,7 @@ final class AudioManager: NSObject {
 			if engine === whisperKitTranscriber {
 				whisperKitTranscriber.cancelLiveStream()
 			} else {
-				engine.stopStreaming()
+				Task { await engine.stopStreaming() }
 			}
 		case .file:
 			stopMeteringTimer()
@@ -1300,9 +1300,10 @@ extension AudioManager {
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 		scheduleTimerReset()
 
-		// Only the on-device engine keeps a session to finish decoding and save to history
+		// The on-device engine typed its words as they were confirmed; a remote
+		// engine pastes its finished transcript once, here. See WHI-58.
 		guard engine === whisperKitTranscriber else {
-			engine.stopStreaming()
+			finishRemoteLiveDictation(engine)
 			return
 		}
 		let finishing = whisperKitTranscriber.stopLiveStream()
@@ -1320,6 +1321,43 @@ extension AudioManager {
 					source: .liveDictation)
 			}
 		}
+	}
+
+	/// The remote stream is not final until it actually closes (a network round
+	/// trip), so the paste waits for that, then goes through the same recipe
+	/// processor and secure-input rules as a text-mode dictation.
+	private func finishRemoteLiveDictation(_ engine: SpeechTranscribing) {
+		isTranscribing = true
+		Task { @MainActor [weak self] in
+			let transcript = await engine.stopStreaming()
+			guard let self else { return }
+			defer { self.syncTranscribingState() }
+			guard let text = Self.textToPaste(afterLiveDictationFinished: transcript) else { return }
+			let secure = SecureDictation.isSecureInputActive
+			let policy = SecureDictationPolicy.resolve(postProcessRequested: false, secureInput: secure)
+			let toPaste = await self.applyDictationProcessor(
+				text, mode: .text, secureInput: policy.concealClipboard)
+			if policy.rememberAsLastTranscription {
+				self.lastTranscription = text
+			}
+			if let toPaste, !toPaste.isEmpty {
+				self.pasteToFocusedApp(toPaste, concealed: policy.concealClipboard)
+			}
+			if policy.saveToHistory {
+				self.recordHistory(text: text, audio: nil, source: .liveDictation)
+			}
+		}
+	}
+
+	/// What a finished live dictation should paste, if anything. Cancelling
+	/// during startup (`cancelCaptureStartup`) and a failed `startStreaming`
+	/// never reach `stopStreaming` at all, so they never reach this function
+	/// either — the only case left to decide is whether the engine actually
+	/// produced words. An empty or whitespace-only transcript is not an error:
+	/// the user said nothing, or a stream closed before confirming anything.
+	nonisolated static func textToPaste(afterLiveDictationFinished transcript: String) -> String? {
+		let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+		return trimmed.isEmpty ? nil : trimmed
 	}
 }
 

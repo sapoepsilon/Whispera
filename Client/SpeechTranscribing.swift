@@ -133,7 +133,14 @@ protocol SpeechTranscribing: AnyObject {
 	func startStreaming(options: TranscriptionOptions) async throws
 	/// Moves an established stream onto the input device the user just picked.
 	func switchStreamingDevice() async
-	func stopStreaming()
+	/// Ends the stream and hands back the finished transcript, trimmed. Partial
+	/// text never leaves this method while it is still arriving — only what
+	/// `LiveTranscriptionState` had confirmed by the time the stream closed.
+	/// AudioManager pastes this once, if non-empty: the only place a live
+	/// dictation's words reach the focused app now that per-segment pasting is
+	/// gone. See WHI-58.
+	@discardableResult
+	func stopStreaming() async -> String
 }
 
 /// Defaults so a conformer writes only what it can actually do. Anything it
@@ -177,5 +184,6 @@ extension SpeechTranscribing {
 
 	func switchStreamingDevice() async {}
 
-	func stopStreaming() {}
+	@discardableResult
+	func stopStreaming() async -> String { "" }
 }
