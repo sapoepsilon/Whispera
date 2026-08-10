@@ -185,6 +185,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
 			recordingGlowController = RecordingGlowController(audioManager: audioManager)
+
+			// Verification affordance: dictation can otherwise only start from a real
+			// keypress, which a headless harness cannot post without an Accessibility
+			// grant. Env-gated, so every normal launch is unaffected.
+			// WHISPERA_AUTOSTART_DICTATION=<seconds to record>
+			if let raw = ProcessInfo.processInfo.environment["WHISPERA_AUTOSTART_DICTATION"],
+				let duration = Double(raw), duration > 0
+			{
+				AppLogger.shared.general.info("Autostart: dictating for \(duration)s")
+				Task { @MainActor [weak self] in
+					try? await Task.sleep(nanoseconds: 4_000_000_000)
+					self?.audioManager.toggleRecording()
+					try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+					self?.audioManager.toggleRecording()
+					AppLogger.shared.general.info("Autostart: stopped")
+				}
+			}
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
