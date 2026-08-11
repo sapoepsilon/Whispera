@@ -162,7 +162,7 @@ struct DictationCoordinatorTests {
 		defer { try? FileManager.default.removeItem(at: url) }
 		let coordinator = DictationCoordinator(store: store) { _, _ in throw Boom() }
 		_ = await coordinator.process("make professional hi")
-		#expect(coordinator.overlayError == "kaboom")
+		#expect(coordinator.overlayError == "kaboom Pasted your words unchanged.")
 	}
 
 	// MARK: - Default post-action command (WHI-49)
