@@ -6,10 +6,8 @@ import Foundation
 
 /// The one rule for how wide the live-words HUD may be at any moment.
 /// Extracted from `LiveTranscriptionWindow` so the calm-motion contract from
-/// the WHI-58 QA session — while a dictation runs the frame may grow, in
-/// coarse steps, and never shrinks or hides — is an ordinary unit-tested
-/// function instead of something only visible in a screen recording. See
-/// DictationHUDWidthTests.
+/// the WHI-58 QA sessions is an ordinary unit-tested function instead of
+/// something only visible in a screen recording. See DictationHUDWidthTests.
 enum DictationHUDWidth {
 	/// Where every session starts. Matches the window's historical floor.
 	static let compact: CGFloat = 120
@@ -19,34 +17,19 @@ enum DictationHUDWidth {
 	/// text has outgrown a whole step, not on every word.
 	static let step: CGFloat = 48
 
-	/// The width the window should adopt right now.
-	///
-	/// - `current`: the window's width, nil while it is off screen. A hidden
-	///   window has no width to preserve, which is what resets the growth
-	///   between dictations.
-	/// - `estimated`: the content's estimated natural width.
-	/// - `maximum`: the screen-derived ceiling. Once growth reaches it the
-	///   frame stops changing entirely and the content handles its own
-	///   overflow.
-	/// - `isDictating`: while true the result never drops below `current` —
-	///   the never-shrink half of the contract.
-	static func width(
-		current: CGFloat?, estimated: CGFloat, maximum: CGFloat, isDictating: Bool
-	) -> CGFloat {
-		let ceiling = max(compact, maximum)
+	/// The estimate snapped up onto the growth grid.
+	static func quantized(_ estimated: CGFloat) -> CGFloat {
 		let steps = max(0, ((estimated - compact) / step).rounded(.up))
-		let quantized = min(compact + steps * step, ceiling)
-		guard isDictating, let current else { return quantized }
-		return min(max(quantized, current), ceiling)
+		return compact + steps * step
 	}
 
 	/// Width of the trailing run of words the HUD shows, measured off the same
 	/// type `PillWordFlow` renders — body rounded for the run, title3 rounded
 	/// semibold for the emphasized last word — instead of priced per character.
 	/// The QA session showed why: a flat 9pt/char sat ~30% above what the text
-	/// actually needs, and with the never-shrink rule that error only ever
-	/// accumulated, leaving half the capsule blank. The step grid above still
-	/// absorbs word-to-word wobble; this only has to be honest about the total.
+	/// actually needs, and the width rule turned that error into a capsule whose
+	/// left half stayed blank. The step grid above still absorbs word-to-word
+	/// wobble; this only has to be honest about the total.
 	static func estimatedWidth(words: [String], hasEllipsis: Bool) -> CGFloat {
 		var items: [CGFloat] = []
 		if hasEllipsis {
@@ -92,12 +75,91 @@ enum DictationHUDWidth {
 	}
 }
 
+/// The frame's motion contract, one session at a time: grow fast, shrink slow.
+///
+/// Growth is immediate and quantized, exactly as before. But the ticker's
+/// displayed text — a trailing window of at most five words — is not monotonic:
+/// a run of long words scrolls out and the rendered line gets narrower again.
+/// Under the old never-shrink rule the frame kept the widest window it had ever
+/// seen and the trailing-aligned text left a permanent blank leading edge ("it
+/// shows up when it grows", WHI-58 QA follow-up). So a width the content has
+/// stopped needing now decays: only after the measured need has sat a full step
+/// below the frame for `shrinkDelay`, and then one quantum per further delay,
+/// so a momentary short window of words never wiggles the frame but a
+/// persistent gap closes itself calmly.
+///
+/// Time is injected (`now`), never read inside the rule, so the hysteresis is
+/// testable at any speed. Unchanged from before: a session starts compact,
+/// `reset()` (the window hiding) is what forgets the growth, the frame freezes
+/// entirely at the screen-derived ceiling, and outside a dictation the width is
+/// free to snap straight to the need.
+struct DictationHUDFrame {
+	/// How long the need must stay a full step below the frame before the first
+	/// shrink, and between consecutive shrink steps.
+	static let shrinkDelay: TimeInterval = 1.5
+
+	private(set) var width: CGFloat?
+	private var narrowSince: TimeInterval?
+
+	mutating func update(
+		estimated: CGFloat, maximum: CGFloat, isDictating: Bool, now: TimeInterval
+	) -> CGFloat {
+		let ceiling = max(DictationHUDWidth.compact, maximum)
+		let need = min(DictationHUDWidth.quantized(estimated), ceiling)
+
+		guard isDictating, let current = width else {
+			width = need
+			narrowSince = nil
+			return need
+		}
+
+		// At the ceiling the frame stops changing entirely; the content handles
+		// its own overflow.
+		guard current < ceiling else {
+			narrowSince = nil
+			width = ceiling
+			return ceiling
+		}
+
+		if need > current {
+			width = need
+			narrowSince = nil
+			return need
+		}
+
+		if need < current {
+			guard let since = narrowSince else {
+				narrowSince = now
+				return current
+			}
+			guard now - since >= Self.shrinkDelay else { return current }
+			// One quantum, then re-arm: the next step needs the gap to persist
+			// through another delay, which paces a multi-step shrink calmly and
+			// keeps a 60Hz caller (a pill drag) from draining it in one gesture.
+			let next = max(need, current - DictationHUDWidth.step)
+			width = next
+			narrowSince = now
+			return next
+		}
+
+		narrowSince = nil
+		return current
+	}
+
+	/// The hidden window: nothing to preserve, so the next session starts from
+	/// compact no matter how far this one grew.
+	mutating func reset() {
+		width = nil
+		narrowSince = nil
+	}
+}
+
 /// Whether the HUD has anything to say right now. The window must never sit on
-/// screen as an empty capsule — the QA session caught exactly that: a session
-/// whose words had not arrived yet held a wide blank surface above the pill.
-/// Before the first word the HUD either shows a status line or stays hidden;
-/// once words have shown, a momentarily blank transcript keeps the window (and
-/// DictationView keeps the held words) until the session ends.
+/// screen as an empty capsule — the QA session photographed exactly that: a
+/// session whose words had not arrived yet held a wide blank surface above the
+/// pill. Before the first word the HUD either shows a status line or stays
+/// hidden; once words have shown, a momentarily blank transcript keeps the
+/// window (and DictationView keeps the held words) until the session ends.
 enum DictationHUDContent {
 	static func hasSomethingToSay(
 		overlayError: String?,
