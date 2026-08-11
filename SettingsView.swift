@@ -151,14 +151,19 @@ struct SettingsView: View {
 		MaterialStyle(rawValue: materialStyleRaw)
 	}
 
+	/// The live state, for the dictation-failure alert. Read directly rather than
+	/// mirrored into `@State`: `@Observable` tracks the read from the body.
+	private let liveTranscription = LiveTranscriptionState.shared
+
 	// MARK: - Live Transcription Settings
+	// No caret-follow or cursor-offset settings: the live-words window now
+	// always rests above the listening pill (see PillAnchor), so there is
+	// nothing left for either knob to control.
 	@AppStorage("liveTranscriptionMaxWords") private var liveTranscriptionMaxWords = 5
 	@AppStorage("liveTranscriptionCornerRadius") private var liveTranscriptionCornerRadius = 10.0
-	@AppStorage("liveTranscriptionWindowOffset") private var liveTranscriptionWindowOffset = 25.0
 	@AppStorage("liveTranscriptionShowEllipsis") private var liveTranscriptionShowEllipsis = true
 	@AppStorage("liveTranscriptionMaxWidthPercentage") private
 		var liveTranscriptionMaxWidthPercentage = 0.6
-	@AppStorage("liveTranscriptionFollowCaret") private var liveTranscriptionFollowCaret = true
 
 	// MARK: - File Transcription Settings
 	@AppStorage("fileSelectionShortcut") private var fileSelectionShortcut = "⌃F"
@@ -188,6 +193,7 @@ struct SettingsView: View {
 	@State private var showingToolsSettings = false
 	@State private var showingSafetySettings = false
 	@State private var showingUpdaterError = false
+	@State private var showingTranscriptionFailure = false
 	@State private var showingStorageDetails = false
 	@State private var showingClearAllConfirmation = false
 	@State private var confirmationStep = 0
@@ -457,6 +463,14 @@ struct SettingsView: View {
 					Divider()
 
 					SettingsSection("Transcription") {
+						// The engine picker and every server field moved to the Servers
+						// tab; this line is the trail for anyone who last saw them here.
+						Text(
+							"The speech engine and its servers are set up in the Servers tab."
+						)
+						.font(.caption)
+						.foregroundColor(.secondary)
+
 						SettingRow(
 							"Streaming Transcription",
 							description:
@@ -626,12 +640,12 @@ struct SettingsView: View {
 			}
 			.tag(SettingsDestination.general.rawValue)
 
-			// MARK: - AI Mode Tab
-			LLMModeSettingsView()
+			// MARK: - Servers Tab
+			ServersSettingsView()
 				.tabItem {
-					Label("AI Mode", systemImage: "brain")
+					Label("Servers", systemImage: "server.rack")
 				}
-				.tag(SettingsDestination.aiMode.rawValue)
+				.tag(SettingsDestination.servers.rawValue)
 
 			// MARK: - Recipes Tab
 			RecipesView()
@@ -868,29 +882,6 @@ struct SettingsView: View {
 
 							VStack(alignment: .leading, spacing: 8) {
 								HStack {
-									Text("Window Position Offset")
-										.font(.subheadline)
-									Spacer()
-									Text("\(Int(liveTranscriptionWindowOffset)) px")
-										.font(.system(.body, design: .monospaced))
-										.foregroundColor(.secondary)
-								}
-
-								Slider(value: $liveTranscriptionWindowOffset, in: 10...50, step: 5)
-									.onChange(of: liveTranscriptionWindowOffset) {
-										NSHapticFeedbackManager.defaultPerformer.perform(
-											.generic, performanceTime: .now)
-									}
-
-								Text("Distance from the cursor position")
-									.font(.caption)
-									.foregroundColor(.secondary)
-							}
-
-							Divider()
-
-							VStack(alignment: .leading, spacing: 8) {
-								HStack {
 									Text("Maximum Window Width")
 										.font(.subheadline)
 									Spacer()
@@ -921,13 +912,6 @@ struct SettingsView: View {
 								"Show Ellipsis", description: "Display '...' when text is truncated"
 							) {
 								Toggle("", isOn: $liveTranscriptionShowEllipsis)
-							}
-
-							SettingRow(
-								"Follow Caret Position",
-								description: "Window follows cursor position while typing"
-							) {
-								Toggle("", isOn: $liveTranscriptionFollowCaret)
 							}
 						}
 
@@ -1113,6 +1097,11 @@ struct SettingsView: View {
 		}
 		.frame(maxWidth: 600)
 		.onAppear {
+			// The AI Mode tab became the Servers tab; a stored selection of the
+			// old tab would otherwise leave the TabView with nothing selected.
+			if selectedSettingsTab == "aiMode" {
+				selectedSettingsTab = SettingsDestination.servers.rawValue
+			}
 			loadAvailableModels()
 			checkLaunchAtStartupStatus()
 			updateLogsSize()
@@ -1160,6 +1149,18 @@ struct SettingsView: View {
 		}
 		.onChange(of: softwareUpdater.lastUpdaterError) {
 			showingUpdaterError = softwareUpdater.lastUpdaterError != nil
+		}
+		.alert(
+			liveTranscription.failure?.title ?? "Dictation stopped",
+			isPresented: $showingTranscriptionFailure,
+			presenting: liveTranscription.failure
+		) { _ in
+			Button("OK") { liveTranscription.failure = nil }
+		} message: { failure in
+			Text(failure.message)
+		}
+		.onChange(of: liveTranscription.failure) {
+			showingTranscriptionFailure = liveTranscription.failure != nil
 		}
 		.alert("Storage Details", isPresented: $showingStorageDetails) {
 			Button("OK") {}
@@ -1656,70 +1657,21 @@ struct LiveTranscriptionPreview: View {
 
 	private let sampleText = "The quick brown fox jumps over the lazy dog and runs through the forest"
 
-	private var displayWords: [(text: String, isLast: Bool)] {
-		let words = sampleText.split(separator: " ").map(String.init)
-		guard !words.isEmpty else { return [] }
+	// Renders through the same PillWordFlow + pillChrome the real live-words
+	// window uses, so this preview can never drift from what Settings promises.
+	private var displayWords: [String] {
+		Array(sampleText.split(separator: " ").map(String.init).suffix(maxWords))
+	}
 
-		let wordsToShow = words.suffix(maxWords)
-		return wordsToShow.enumerated().map { index, word in
-			(text: word, isLast: index == wordsToShow.count - 1)
-		}
+	private var hasHiddenWords: Bool {
+		showEllipsis && sampleText.split(separator: " ").count > maxWords
 	}
 
 	var body: some View {
-		VStack(spacing: 0) {
-			HStack(spacing: 4) {
-				// Show ellipsis if configured and there are more words
-				if showEllipsis && sampleText.split(separator: " ").count > maxWords {
-					Text("...")
-						.font(.system(.body, design: .rounded))
-						.foregroundColor(Color.secondary.opacity(0.6))
-						.padding(.trailing, 2)
-				}
-
-				ForEach(Array(displayWords.enumerated()), id: \.offset) { _, wordInfo in
-					Text(wordInfo.text)
-						.font(.system(wordInfo.isLast ? .title3 : .body, design: .rounded))
-						.foregroundColor(wordInfo.isLast ? Color.blue : Color.primary.opacity(0.8))
-						.fontWeight(wordInfo.isLast ? .semibold : .regular)
-				}
-			}
-			.padding(.horizontal, 14)
-			.padding(.vertical, 10)
-		}
-		.background(
-			RoundedRectangle(cornerRadius: cornerRadius)
-				.fill(.ultraThinMaterial)
-				.overlay(
-					RoundedRectangle(cornerRadius: cornerRadius)
-						.fill(
-							LinearGradient(
-								colors: [
-									Color.blue.opacity(0.05),
-									Color.blue.opacity(0.02),
-								],
-								startPoint: .topLeading,
-								endPoint: .bottomTrailing
-							)
-						)
-				)
-		)
-		.overlay(
-			RoundedRectangle(cornerRadius: cornerRadius)
-				.strokeBorder(
-					LinearGradient(
-						colors: [
-							Color.blue.opacity(0.3),
-							Color.blue.opacity(0.1),
-						],
-						startPoint: .topLeading,
-						endPoint: .bottomTrailing
-					),
-					lineWidth: 1
-				)
-		)
-		.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
-		.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
+		PillWordFlow(words: displayWords, showEllipsis: hasHiddenWords)
+			.padding(.horizontal, PillSpacing.md)
+			.padding(.vertical, PillSpacing.sm)
+			.pillChrome(cornerRadius: cornerRadius)
 	}
 }
 

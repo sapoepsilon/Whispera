@@ -3,30 +3,29 @@
 
 import SwiftUI
 
-/// Settings tab to pick where recipe LLM steps run (Local / BYOK) and configure
-/// each mode. See WHI-39.
-struct LLMModeSettingsView: View {
+/// The "LLM Servers" group inside the Servers tab: pick where recipe LLM steps
+/// run (Local / BYOK) and configure each mode. Formerly its own "AI Mode" tab;
+/// the host view owns the scroll and the group heading, so this is only the
+/// picker and the per-mode config. See WHI-39.
+struct LLMServersGroupView: View {
 	@AppStorage("whisperaLLMMode") private var modeRaw = LLMMode.local.rawValue
 
 	private var mode: LLMMode { LLMMode(rawValue: modeRaw) ?? .local }
 
 	var body: some View {
-		ScrollView {
-			VStack(spacing: 24) {
-				Picker("Run recipe steps using", selection: $modeRaw) {
-					ForEach(LLMMode.allCases, id: \.rawValue) { mode in
-						Text(mode.displayName).tag(mode.rawValue)
-					}
-				}
-				.pickerStyle(.segmented)
-				.frame(maxWidth: .infinity, alignment: .leading)
-
-				switch mode {
-				case .local: LocalModeConfig()
-				case .byok: ByokModeConfig()
+		VStack(alignment: .leading, spacing: 16) {
+			Picker("Run recipe steps using", selection: $modeRaw) {
+				ForEach(LLMMode.allCases, id: \.rawValue) { mode in
+					Text(mode.displayName).tag(mode.rawValue)
 				}
 			}
-			.padding(20)
+			.pickerStyle(.segmented)
+			.frame(maxWidth: .infinity, alignment: .leading)
+
+			switch mode {
+			case .local: LocalModeConfig()
+			case .byok: ByokModeConfig()
+			}
 		}
 		// A raw value the picker no longer offers would leave it with nothing
 		// selected, so rewrite it to the fallback the router already uses.

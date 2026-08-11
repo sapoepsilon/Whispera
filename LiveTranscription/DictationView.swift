@@ -1,8 +1,11 @@
 import SwiftUI
 
 struct DictationView: View {
-	@Bindable private var whisperKit = WhisperKitTranscriber.shared
+	// Bound to the shared live state rather than one engine, so whichever engine
+	// is transcribing reaches this view. See WHI-58.
+	@Bindable private var live = LiveTranscriptionState.shared
 	@State private var coordinator = DictationCoordinator.shared
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	private let audioManager: AudioManager
 
 	// Live transcription customization settings
@@ -10,117 +13,89 @@ struct DictationView: View {
 	@AppStorage("liveTranscriptionCornerRadius") private var cornerRadius = 10.0
 	@AppStorage("liveTranscriptionShowEllipsis") private var showEllipsis = true
 
+	// The last non-empty run of words, held so a display text that blanks for a
+	// beat mid-session cannot blink the sentence away — the mid-sentence
+	// disappearing the WHI-58 QA session reported. Cleared when the session
+	// ends, so a new dictation never opens on the previous one's words.
+	@State private var heldWords: [String] = []
+	@State private var heldEllipsis = false
+
 	init(audioManager: AudioManager) {
 		self.audioManager = audioManager
 	}
 
-	private var displayWords: [(text: String, isLast: Bool)] {
-		let words = whisperKit.stableDisplayText
-			.split(separator: " ")
-			.map(String.init)
-
-		guard !words.isEmpty else { return [] }
-
-		// Take only the last N words
-		let wordsToShow = words.suffix(maxWordsToShow)
-		let startIndex = words.count - wordsToShow.count
-
-		return wordsToShow.enumerated().map { index, word in
-			(text: word, isLast: index == wordsToShow.count - 1)
-		}
+	private var displayWords: [String] {
+		Array(
+			live.stableDisplayText
+				.split(separator: " ")
+				.map(String.init)
+				.suffix(maxWordsToShow))
 	}
 
-	var body: some View {
-		VStack(spacing: 0) {
-			if let overlayError = coordinator.overlayError {
-				errorIndicator(overlayError)
-			} else if whisperKit.isWaitingForModel {
-				HStack(spacing: 8) {
-					ProgressView()
-						.scaleEffect(0.7)
-					Text(whisperKit.waitingForModelStatusText)
-						.font(.system(.caption, design: .rounded))
-						.foregroundColor(.secondary)
-						.lineLimit(1)
-				}
-				.padding(.horizontal, 14)
-				.padding(.vertical, 10)
-				.transition(.opacity.combined(with: .scale(scale: 0.95)))
-			} else if !whisperKit.stableDisplayText.isEmpty {
-				HStack(spacing: 4) {
-					if showEllipsis
-						&& whisperKit.stableDisplayText.split(separator: " ").count > maxWordsToShow
-					{
-						Text("...")
-							.font(.system(.body, design: .rounded))
-							.foregroundColor(Color.secondary.opacity(0.6))
-							.padding(.trailing, 2)
-					}
+	private var hasHiddenWords: Bool {
+		showEllipsis && live.stableDisplayText.split(separator: " ").count > maxWordsToShow
+	}
 
-					ForEach(Array(displayWords.enumerated()), id: \.offset) { _, wordInfo in
-						Text(wordInfo.text)
-							.font(.system(wordInfo.isLast ? .title3 : .body, design: .rounded))
-							.foregroundColor(wordInfo.isLast ? Color.blue : Color.primary.opacity(0.8))
-							.fontWeight(wordInfo.isLast ? .semibold : .regular)
-							.animation(.easeInOut(duration: 0.15), value: wordInfo.isLast)
-					}
-				}
-				.padding(.horizontal, 14)
-				.padding(.vertical, 10)
+	private var wordsToShow: [String] {
+		displayWords.isEmpty ? heldWords : displayWords
+	}
+
+	private var ellipsisToShow: Bool {
+		displayWords.isEmpty ? heldEllipsis : hasHiddenWords
+	}
+
+	// This window is the pill's overlay for the transient things a live session
+	// says beyond "I am listening" — the pill underneath already covers that.
+	// See RecordingWindowPolicy and PillAnchor.
+	var body: some View {
+		Group {
+			if let overlayError = coordinator.overlayError {
+				PillStatusRow(
+					indicator: .icon("exclamationmark.triangle.fill", .orange),
+					text: overlayError,
+					textColor: .primary
+				)
 				.transition(.opacity.combined(with: .scale(scale: 0.95)))
-			} else if whisperKit.isTranscribing {
-				ListeningView(audioManager: audioManager)
+			} else if live.isWaitingForModel {
+				PillStatusRow(indicator: .progress, text: live.waitingForModelStatusText)
+					.animation(.easeInOut(duration: 0.2), value: live.waitingForModelStatusText)
+					.transition(.opacity.combined(with: .scale(scale: 0.95)))
+			} else if !wordsToShow.isEmpty {
+				PillWordFlow(words: wordsToShow, showEllipsis: ellipsisToShow)
+					// The ticker keeps its natural width. With hidden history the
+					// ellipsis marks a sentence continuing off the leading edge, so
+					// the text hugs the trailing edge and older words slide out of
+					// view. With the whole transcript on screen there is no "more"
+					// side: any slack the frame's quantized width leaves splits
+					// evenly instead of pooling left of trailing-aligned text —
+					// the leftover gap the WHI-58 QA follow-up kept seeing.
+					.fixedSize()
+					.frame(maxWidth: .infinity, alignment: ellipsisToShow ? .trailing : .center)
+					.clipped()
+					.transition(.opacity.combined(with: .scale(scale: 0.95)))
 			}
 		}
-		.fixedSize()
-		.background(
-			RoundedRectangle(cornerRadius: cornerRadius)
-				.fill(.ultraThinMaterial)
-				.overlay(
-					RoundedRectangle(cornerRadius: cornerRadius)
-						.fill(
-							LinearGradient(
-								colors: [
-									Color.blue.opacity(0.05),
-									Color.blue.opacity(0.02),
-								],
-								startPoint: .topLeading,
-								endPoint: .bottomTrailing
-							)
-						)
-				)
-		)
-		.overlay(
-			RoundedRectangle(cornerRadius: cornerRadius)
-				.strokeBorder(
-					LinearGradient(
-						colors: [
-							Color.blue.opacity(0.3),
-							Color.blue.opacity(0.1),
-						],
-						startPoint: .topLeading,
-						endPoint: .bottomTrailing
-					),
-					lineWidth: 1
-				)
-		)
-		.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
-		.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
-	}
-
-	private func errorIndicator(_ message: String) -> some View {
-		HStack(spacing: 6) {
-			Image(systemName: "exclamationmark.triangle.fill")
-				.foregroundColor(.orange)
-				.imageScale(.small)
-			Text(message)
-				.font(.system(.caption, design: .rounded))
-				.foregroundColor(.primary)
-				.lineLimit(2)
+		.padding(.horizontal, PillSpacing.md)
+		.padding(.vertical, PillSpacing.sm)
+		.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: live.isWaitingForModel)
+		// The chrome spans the whole window: LiveTranscriptionWindow's frame
+		// follows the calm DictationHUDWidth rule, and filling it is what makes
+		// the visible pill grow in steady steps instead of re-fitting — and
+		// re-centering — around every new word.
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.pillChrome(cornerRadius: cornerRadius)
+		.onChange(of: live.stableDisplayText) {
+			if !displayWords.isEmpty {
+				heldWords = displayWords
+				heldEllipsis = hasHiddenWords
+			}
 		}
-		.padding(.horizontal, 14)
-		.padding(.vertical, 10)
-		.transition(.opacity.combined(with: .scale(scale: 0.95)))
+		.onChange(of: live.isTranscribing) { _, isTranscribing in
+			if !isTranscribing {
+				heldWords = []
+				heldEllipsis = false
+			}
+		}
 	}
 }
 

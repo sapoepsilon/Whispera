@@ -12,64 +12,73 @@ import WhisperKit
 	var isInitialized = false
 	private var cancellables = Set<AnyCancellable>()
 	var isInitializing = false
-	var isWaitingForModel: Bool = false
-	var waitingForModelStatusText: String = ""
 	var isStreamingAudio: Bool = false
 	var initializationProgress: Double = 0.0
 	var initializationStatus = "Starting..."
 	var availableModels: [String] = []
 	var currentModel: String?
 	var downloadedModels: Set<String> = []
-	var onConfirmedTextChange: ((String) -> Void)?
 	@ObservationIgnored var onLiveAudioSamples: (@MainActor ([Float]) -> Void)?
-	var shouldShowLiveTranscriptionWindow: Bool = false
-	var isTranscribing: Bool = false
 	var decodingOptions: DecodingOptions?
-	var currentText: String = ""
 	var dictationWordTracker: DictationWordTracker?
 	// Live text management
 	private var isLiveTranscriptionMode = false
-	private var lastConfirmedSegmentCount: Int = 0
-	var confirmedText: String = "" {
-		didSet {
-			onConfirmedTextChange?(confirmedText)
-		}
+
+	/// The one live-transcription surface, shared with every other engine. The
+	/// properties below forward to it so existing callers, views and tests are
+	/// unchanged while a remote engine can drive the same HUD. See WHI-58.
+	@ObservationIgnored
+	private let live = LiveTranscriptionState.shared
+
+	var onConfirmedTextChange: ((String) -> Void)? {
+		get { live.onConfirmedTextChange }
+		set { live.onConfirmedTextChange = newValue }
 	}
-	private var pendingText: String = ""  // Internal working property
-	var stableDisplayText: String = ""  // UI-facing stable property
-	private var lastDisplayedPendingText: String = ""
-	var shouldShowDebugWindow: Bool = false
-	var latestWord: String {
-		let words = stableDisplayText.split(separator: " ")
-		return words.last?.description ?? ""
+	var isWaitingForModel: Bool {
+		get { live.isWaitingForModel }
+		set { live.isWaitingForModel = newValue }
 	}
+	var waitingForModelStatusText: String {
+		get { live.waitingForModelStatusText }
+		set { live.waitingForModelStatusText = newValue }
+	}
+	var shouldShowLiveTranscriptionWindow: Bool {
+		get { live.shouldShowLiveTranscriptionWindow }
+		set { live.shouldShowLiveTranscriptionWindow = newValue }
+	}
+	var isTranscribing: Bool {
+		get { live.isTranscribing }
+		set { live.isTranscribing = newValue }
+	}
+	var confirmedText: String {
+		get { live.confirmedText }
+		set { live.confirmedText = newValue }
+	}
+	private var pendingText: String {
+		get { live.pendingText }
+		set { live.pendingText = newValue }
+	}
+	var stableDisplayText: String {
+		get { live.stableDisplayText }
+		set { live.stableDisplayText = newValue }
+	}
+	var shouldShowDebugWindow: Bool {
+		get { live.shouldShowDebugWindow }
+		set { live.shouldShowDebugWindow = newValue }
+	}
+	var latestWord: String { live.latestWord }
 
 	func clearLiveTranscriptionState() {
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
-		isWaitingForModel = false
-		waitingForModelStatusText = ""
-		pendingText = ""
-		stableDisplayText = ""
-		lastDisplayedPendingText = ""
-		shouldShowLiveTranscriptionWindow = false
-		isTranscribing = false
-		confirmedText = ""
-		shouldShowDebugWindow = false
+		live.reset()
 		transcriptionTask?.cancel()
 		transcriptionTask = nil
 		lastBufferSize = 0
-		lastConfirmedSegmentCount = 0
 	}
 
 	func beginLiveTranscriptionWaitingUI() {
-		pendingText = ""
-		stableDisplayText = ""
-		lastDisplayedPendingText = ""
-		confirmedText = ""
-		shouldShowLiveTranscriptionWindow = true
-		isWaitingForModel = true
-		waitingForModelStatusText = "Waiting for model..."
+		live.beginWaiting()
 	}
 
 	private func updateWaitingStatusText() {
@@ -185,35 +194,6 @@ import WhisperKit
 		}
 	}
 
-	private func shouldUpdatePendingText(newText: String) -> Bool {
-		// If the text is empty or previous text was non-empty, always update (to handle clearing)
-		if newText.isEmpty || lastDisplayedPendingText.isEmpty {
-			return true
-		}
-
-		// Convert to word arrays for comparison
-		let newWords = newText.split(separator: " ").map(String.init)
-		let oldWords = lastDisplayedPendingText.split(separator: " ").map(String.init)
-
-		// If word count changed significantly, update
-		let wordCountDiff = abs(newWords.count - oldWords.count)
-		if wordCountDiff > 1 { return true }
-
-		// If the last few words are different, update
-		let wordsToCompare = min(3, min(newWords.count, oldWords.count))
-		if wordsToCompare > 0 {
-			let newLastWords = Array(newWords.suffix(wordsToCompare))
-			let oldLastWords = Array(oldWords.suffix(wordsToCompare))
-
-			if newLastWords != oldLastWords {
-				return true
-			}
-		}
-
-		// Similar enough, don't update
-		return false
-	}
-
 	private func safelyPasteText(_ text: String) {
 		guard !text.isEmpty else { return }
 
@@ -236,16 +216,7 @@ import WhisperKit
 	}
 
 	private func confirmPendingText() {
-		guard !pendingText.isEmpty else { return }
-
-		// Sync all display properties before confirming to prevent double transcription
-		stableDisplayText = pendingText
-		lastDisplayedPendingText = pendingText
-
-		// Since WhisperKit provides complete transcription history in pendingText,
-		// we replace confirmedText entirely rather than appending
-		confirmedText = pendingText
-		pendingText = ""
+		live.confirmPending()
 	}
 
 	private var selectedLanguage: String {
@@ -568,7 +539,7 @@ import WhisperKit
 				shouldShowLiveTranscriptionWindow = true
 				isTranscribing = true
 				isLiveTranscriptionMode = true
-				lastConfirmedSegmentCount = 0
+				live.resetSegmentConfirmation()
 
 				await AudioDeviceManager.shared.activateSelectedDevice()
 				let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
@@ -674,84 +645,15 @@ import WhisperKit
 				return
 			}
 
-			let fullTranscriptionText =
-				segments
-				.map { $0.text.trimmingCharacters(in: .whitespaces) }
-				.joined(separator: " ")
+			let segmentTexts = segments.map { $0.text.trimmingCharacters(in: .whitespaces) }
 
 			AppLogger.shared.transcriber.debug(
-				"Transcription received: \(segments.count) segments, full text: '\(fullTranscriptionText)'"
+				"Transcription received: \(segments.count) segments, full text: '\(segmentTexts.joined(separator: " "))'"
 			)
 			AppLogger.shared.transcriber.debug(
 				"Current state: confirmedText.count=\(confirmedText.count), pendingText='\(pendingText)'")
 
-			let requiredSegmentsForConfirmation = 2
-
-			if segments.count > requiredSegmentsForConfirmation {
-				let numberOfSegmentsToConfirm = segments.count - requiredSegmentsForConfirmation
-
-				// Only confirm new segments that haven't been confirmed before
-				if numberOfSegmentsToConfirm > lastConfirmedSegmentCount {
-					let newSegmentsToConfirm = numberOfSegmentsToConfirm - lastConfirmedSegmentCount
-					let startIndex = lastConfirmedSegmentCount
-					let endIndex = lastConfirmedSegmentCount + newSegmentsToConfirm
-
-					let newConfirmedSegments = Array(segments[startIndex..<endIndex])
-
-					let newConfirmedText =
-						newConfirmedSegments
-						.map { $0.text.trimmingCharacters(in: .whitespaces) }
-						.joined(separator: " ")
-
-					AppLogger.shared.transcriber.debug("New segments to confirm: \(newSegmentsToConfirm), text: '\(newConfirmedText)'")
-
-					if !newConfirmedText.isEmpty {
-						let updatedConfirmedText: String
-						if !confirmedText.isEmpty {
-							updatedConfirmedText = confirmedText + " " + newConfirmedText
-						} else {
-							updatedConfirmedText = newConfirmedText
-						}
-						confirmedText = updatedConfirmedText
-						lastConfirmedSegmentCount = numberOfSegmentsToConfirm
-					}
-				} else {
-					AppLogger.shared.transcriber.debug(
-						"No new segments to confirm (already confirmed \(lastConfirmedSegmentCount) segments)"
-					)
-				}
-				let remainingSegments = Array(segments.suffix(requiredSegmentsForConfirmation))
-
-				let newPendingText =
-					remainingSegments
-					.map { $0.text.trimmingCharacters(in: .whitespaces) }
-					.joined(separator: " ")
-
-				// Always update internal pendingText for logic
-				pendingText = newPendingText
-
-				// Only update UI-facing property if text has changed meaningfully
-				if shouldUpdatePendingText(newText: newPendingText) {
-					stableDisplayText = newPendingText
-					lastDisplayedPendingText = newPendingText
-				}
-			} else {
-				let newPendingText =
-					segments
-					.map { $0.text.trimmingCharacters(in: .whitespaces) }
-					.joined(separator: " ")
-
-				// Always update internal pendingText for logic
-				pendingText = newPendingText
-
-				// Only update UI-facing property if text has changed meaningfully
-				if shouldUpdatePendingText(newText: newPendingText) {
-					stableDisplayText = newPendingText
-					lastDisplayedPendingText = newPendingText
-				}
-			}
-
-			shouldShowLiveTranscriptionWindow = !stableDisplayText.isEmpty || !confirmedText.isEmpty
+			live.ingest(segmentTexts: segmentTexts)
 		}
 	}
 

@@ -16,10 +16,14 @@ enum AudioState {
 }
 
 // Both recording windows route through this policy so they can never disagree
-// via separate preferences: exactly one surface is eligible per recording mode.
+// via separate preferences. The listening pill is the persistent home for
+// recording/transcribing status in both modes; the live-transcription window
+// layers above it and only shows in live mode, and only once there is
+// something transient to say (words, a waiting-for-model status, or an
+// error) — see PillAnchor for how the two stay glued together on screen.
 enum RecordingWindowPolicy {
-	static func shouldShowListeningWindow(state: AudioState, mode: RecordingMode) -> Bool {
-		state != .idle && mode == .text
+	static func shouldShowListeningWindow(state: AudioState) -> Bool {
+		state != .idle
 	}
 
 	static func shouldShowLiveTranscriptionWindow(
@@ -141,6 +145,30 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 
+	/// The engine the user selected. Resolved per call rather than cached so a
+	/// change in Settings applies to the next dictation without a restart, and
+	/// so remote and on-device reach AudioManager through one interface instead
+	/// of a branch. See WHI-58.
+	@ObservationIgnored
+	var transcriberProvider: () -> SpeechTranscribing = { TranscriptionRouter.shared.active }
+
+	private var transcriber: SpeechTranscribing { transcriberProvider() }
+
+	/// The engine the current dictation started on. Keeping it means a change in
+	/// Settings mid-recording cannot route stop, or a device switch, at an
+	/// engine that never started — the same reason `toggleRecording` keeps the
+	/// mode the session began with.
+	@ObservationIgnored
+	private var sessionTranscriber: SpeechTranscribing?
+
+	/// Options for one dictation. The language is passed for engines that need
+	/// telling; WhisperKit reads its own persisted language, as it always has.
+	fileprivate func dictationOptions(translate: Bool) -> TranscriptionOptions {
+		TranscriptionOptions(
+			mode: translate ? .translate : .transcribe,
+			language: Constants.languageCode(for: selectedLanguage))
+	}
+
 	/// Transforms a finished transcription before it is pasted (recipe matching
 	/// + execution). Returns nil to paste nothing. Injected by the app so
 	/// AudioManager stays free of recipe/network dependencies. WHI-41.
@@ -152,8 +180,12 @@ final class AudioManager: NSObject {
 	override init() {
 		super.init()
 		whisperKitTranscriber.startInitialization()
-		whisperKitTranscriber.onLiveAudioSamples = { [weak self] samples in
-			// WhisperKit delivers per-buffer chunks; cap the window so level
+		whisperKitTranscriber.onLiveAudioSamples = liveAudioSampleHandler()
+	}
+
+	private func liveAudioSampleHandler() -> @MainActor ([Float]) -> Void {
+		{ [weak self] samples in
+			// Engines deliver per-buffer chunks; cap the window so level
 			// math stays cheap even if a large backlog arrives at once
 			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
 		}
@@ -258,7 +290,7 @@ final class AudioManager: NSObject {
 		deviceActivationTask = Task {
 			switch route {
 			case .liveRestart:
-				await whisperKitTranscriber.switchLiveStreamDevice()
+				await (sessionTranscriber ?? transcriber).switchStreamingDevice()
 				guard !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
 			case .engineRestart:
@@ -777,13 +809,16 @@ extension AudioManager {
 		isRecording = true
 		timer.start()
 		playFeedbackSound(start: true)
-		whisperKitTranscriber.clearLiveTranscriptionState()
-		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
+		let engine = transcriber
+		sessionTranscriber = engine
+		engine.onLiveAudioSamples = liveAudioSampleHandler()
+		engine.resetStreamingSession()
+		LiveTranscriptionState.shared.beginWaiting()
 
 		deviceActivationTask = Task {
 			let activationUID = deviceManager.persistedDeviceUID
 			do {
-				try await whisperKitTranscriber.liveStream()
+				try await engine.startStreaming(options: dictationOptions(translate: enableTranslation))
 				// A cancelled live start means stopLiveTranscription already ran, and
 				// that path owns the state reset and the media resume.
 				guard !Task.isCancelled else {
@@ -822,12 +857,47 @@ extension AudioManager {
 		timer.stop()
 		playFeedbackSound(start: false)
 
-		whisperKitTranscriber.stopLiveStream()
+		let engine = sessionTranscriber ?? transcriber
+		sessionTranscriber = nil
 		levelMonitor.reset()
 		SystemAudioMuter.shared.restoreAfterDictation()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
+		// Every engine's stopStreaming returns the transcript it has already
+		// accumulated locally, without waiting on any network close handshake —
+		// a stop that gated the paste on the socket going down hung past its own
+		// deadline in QA and never pasted at all. isTranscribing brackets only
+		// the recipe processing applyAndPaste may still run, so it always comes
+		// back down in bounded time.
+		isTranscribing = true
+		Task {
+			let draft = await engine.stopStreaming()
+			// The two-pass finalizer, when the engine retained audio for one. It
+			// answers nil with no real suspension on the instant path, so a
+			// finalizer set to off pastes exactly as fast as before; when it is
+			// on, this is the bounded "polishing" wait, and isTranscribing holds
+			// the spinner up until the paste lands — the semantics it already had.
+			let polished = await engine.finalizeDictation(draft: draft)
+			guard let toPaste = Self.textToPaste(afterLiveDictationFinished: polished ?? draft)
+			else {
+				isTranscribing = false
+				return
+			}
+			await applyAndPaste(toPaste)
+		}
+
 		scheduleTimerReset()
+	}
+
+	/// What a finished live dictation should paste, if anything. Cancelling
+	/// during startup (`cancelCaptureStartup`) and a failed `startStreaming`
+	/// never reach `stopStreaming` at all, so they never reach this function
+	/// either — the only case left to decide is whether the engine actually
+	/// produced words. An empty or whitespace-only transcript is not an error:
+	/// the user said nothing, or a stream closed before confirming anything.
+	nonisolated static func textToPaste(afterLiveDictationFinished transcript: String) -> String? {
+		let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+		return trimmed.isEmpty ? nil : trimmed
 	}
 }
 
@@ -838,8 +908,8 @@ extension AudioManager {
 		transcriptionError = nil
 
 		do {
-			let transcription = try await whisperKitTranscriber.transcribeAudioArray(
-				audioArray, enableTranslation: enableTranslation)
+			let transcription = try await transcriber.transcribe(
+				samples: audioArray, options: dictationOptions(translate: enableTranslation))
 			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {
@@ -854,8 +924,8 @@ extension AudioManager {
 		transcriptionError = nil
 
 		do {
-			let transcription = try await whisperKitTranscriber.transcribe(
-				audioURL: fileURL, enableTranslation: enableTranslation)
+			let transcription = try await transcriber.transcribe(
+				fileAt: fileURL, options: dictationOptions(translate: enableTranslation))
 			await applyAndPaste(transcription)
 		} catch {
 			await MainActor.run {
@@ -869,12 +939,14 @@ extension AudioManager {
 	}
 
 	/// Runs the transcription through the dictation processor (recipe matching +
-	/// execution) when in text mode, then pastes the result. WHI-41.
+	/// execution), then pastes the result once. WHI-41. Shared by text mode's
+	/// one-shot transcription and live mode's final flush at
+	/// `stopLiveTranscription` — recipes apply the same way regardless of which
+	/// mode produced the words. See WHI-58.
 	@MainActor
 	fileprivate func applyAndPaste(_ transcription: String) async {
-		let mode = currentRecordingMode
 		let toPaste: String?
-		if mode == .text, let processor = dictationProcessor {
+		if let processor = dictationProcessor {
 			toPaste = await processor(transcription)
 		} else {
 			toPaste = transcription
@@ -882,7 +954,7 @@ extension AudioManager {
 
 		lastTranscription = transcription
 		isTranscribing = false
-		if mode == .text, let toPaste {
+		if let toPaste, !toPaste.isEmpty {
 			pasteToFocusedApp(toPaste)
 		}
 	}

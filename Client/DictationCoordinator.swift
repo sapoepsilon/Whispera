@@ -94,9 +94,11 @@ final class DictationCoordinator {
 			} catch is CancellationError {
 				return nil
 			} catch {
-				// Don't lose the user's words: fall back to the raw transcription
-				// and surface why the recipe didn't run.
-				self.flashError((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+				// Don't lose the user's words: fall back to the raw transcription,
+				// and say so — the HUD message must match what actually happens.
+				let reason =
+					(error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+				self.flashError("\(reason) Pasted your words unchanged.")
 				return transcription
 			}
 		}
