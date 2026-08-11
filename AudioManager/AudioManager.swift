@@ -1329,10 +1329,16 @@ extension AudioManager {
 	private func finishRemoteLiveDictation(_ engine: SpeechTranscribing) {
 		isTranscribing = true
 		Task { @MainActor [weak self] in
-			let transcript = await engine.stopStreaming()
+			let draft = await engine.stopStreaming()
+			// The two-pass finalizer, when the engine retained audio for one. It
+			// answers nil with no real suspension on the instant path, so a
+			// finalizer set to off pastes exactly as fast as before; when it is
+			// on, this is the bounded "polishing" wait, and isTranscribing holds
+			// the spinner up until the paste lands.
+			let polished = await engine.finalizeDictation(draft: draft)
 			guard let self else { return }
 			defer { self.syncTranscribingState() }
-			guard let text = Self.textToPaste(afterLiveDictationFinished: transcript) else { return }
+			guard let text = Self.textToPaste(afterLiveDictationFinished: polished ?? draft) else { return }
 			let secure = SecureDictation.isSecureInputActive
 			let policy = SecureDictationPolicy.resolve(postProcessRequested: false, secureInput: secure)
 			let toPaste = await self.applyDictationProcessor(

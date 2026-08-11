@@ -73,6 +73,25 @@ final class StreamingTranscriber: SpeechTranscribing {
 	/// Set the moment the user asks to stop, so a session that fails on the way
 	/// down after handing back words does not raise an alert about it.
 	private var isStopping = false
+	/// Counts dictations. A pending second pass carries the generation it was
+	/// snapshotted under and compares it against this to learn that a newer
+	/// dictation owns the HUD — the same reason the close epilogue checks
+	/// `self?.session == nil` before restoring the input device.
+	private var dictationGeneration = 0
+	/// The finalizer mode this session started with. Held rather than re-read at
+	/// stop so flipping the setting mid-recording cannot promise a second pass
+	/// over audio that was never retained.
+	private var sessionTwoPassMode: TwoPassFinalizerMode = .off
+	/// The options the running session started with, for the second pass to
+	/// transcribe under the same language and mode.
+	private var sessionOptions = TranscriptionOptions()
+	/// Everything the second pass needs, snapshotted by `stopStreaming` with no
+	/// suspension in between, so no newer dictation can slip in before the
+	/// snapshot exists. Consumed by `finalizeDictation`.
+	private var pendingTwoPass: TwoPassContext?
+	/// The in-flight second pass, kept so the next dictation can end the wait
+	/// promptly instead of letting a stale pass run out its deadline.
+	private var finalizeTask: (generation: Int, task: Task<TwoPassOutcome, Never>)?
 
 	private(set) var state: TranscriptionEngineState = .unavailable(
 		"Not connected to a transcription server yet.")
@@ -240,6 +259,19 @@ final class StreamingTranscriber: SpeechTranscribing {
 		isRecovering = false
 		isStopping = false
 		startOutcome = nil
+		// A dictation starting is what supersedes a pending second pass: the
+		// pass belongs to the previous session's snapshot and the user has moved
+		// on, so its wait ends now and its caller pastes the draft it already has.
+		dictationGeneration += 1
+		if let finalizeTask {
+			AppLogger.shared.transcriber.info(
+				"A new dictation superseded the pending two-pass finalize")
+			finalizeTask.task.cancel()
+		}
+		finalizeTask = nil
+		pendingTwoPass = nil
+		sessionTwoPassMode = WhisperaSettings.twoPassFinalizer
+		sessionOptions = options
 		// A stale draft from the previous session must not prefix this one's
 		// first partial.
 		utteranceDraft.clear()
@@ -250,7 +282,10 @@ final class StreamingTranscriber: SpeechTranscribing {
 			// the old engine still holds and delivers nothing.
 			await awaitPreviousSessionClosed()
 
-			let configuration = try await configuration(for: options)
+			var configuration = try await configuration(for: options)
+			// Retention costs memory (the package caps it at ten minutes), so it
+			// is paid only when a second pass will read the audio back.
+			configuration.retainAudio = sessionTwoPassMode.isOn
 
 			// The input device the user picked has to be the system default before
 			// the package opens its own capture, which follows the default.
@@ -365,9 +400,143 @@ final class StreamingTranscriber: SpeechTranscribing {
 			}
 		}
 
+		if sessionTwoPassMode.isOn {
+			// Snapshotted before this method returns — it still has no suspension
+			// point — so the pass can never bind to a newer dictation's session.
+			pendingTwoPass = TwoPassContext(
+				session: session,
+				closing: closingTask,
+				mode: sessionTwoPassMode,
+				options: sessionOptions,
+				generation: dictationGeneration)
+			// The paste is now waiting on the second pass. Saying so reuses the
+			// waiting channel the HUD already renders (and whose width rules
+			// already handle status text) instead of growing a new one.
+			live.isWaitingForModel = true
+			live.waitingForModelStatusText = "Polishing…"
+			live.shouldShowLiveTranscriptionWindow = true
+			AppLogger.shared.transcriber.info(
+				"Remote live streaming stopped; draft held for the two-pass finalizer (\(sessionTwoPassMode.rawValue))")
+			return transcript
+		}
+
 		AppLogger.shared.transcriber.info(
 			"Remote live streaming stopped; returning the locally accumulated transcript")
 		return transcript
+	}
+
+	/// Consumes the snapshot `stopStreaming` left behind and runs the second
+	/// pass over the session's retained audio, bounded by the mode's deadline.
+	/// Returns the polished transcript, or nil when the caller should paste the
+	/// streaming draft — and logs which way it went and why.
+	func finalizeDictation(draft: String) async -> String? {
+		guard let pending = pendingTwoPass else { return nil }
+		pendingTwoPass = nil
+
+		AppLogger.shared.transcriber.info(
+			"Two-pass finalize started (\(pending.mode.rawValue)); deadline \(pending.mode.deadline)s, draft \(draft.count) chars")
+
+		let operation = finalizeOperation(for: pending)
+		let race = Task { await TwoPassDeadline.race(seconds: pending.mode.deadline, operation: operation) }
+		finalizeTask = (pending.generation, race)
+		let outcome = await race.value
+		// Guarded by generation: a rapid stop of the *next* dictation may have
+		// installed its own pass here while this one was still resuming.
+		if finalizeTask?.generation == pending.generation { finalizeTask = nil }
+
+		// The polishing status belongs to this dictation alone; if a newer one
+		// has started, it owns the HUD and nothing here may touch it.
+		if pending.generation == dictationGeneration {
+			live.isWaitingForModel = false
+			live.waitingForModelStatusText = ""
+			live.shouldShowLiveTranscriptionWindow = false
+		}
+
+		if let text = TwoPassPolicy.finalizedText(from: outcome) {
+			AppLogger.shared.transcriber.info(
+				"Two-pass finalize produced \(text.count) chars; pasting the polished transcript")
+			return text
+		}
+		let reason = TwoPassPolicy.fallbackReason(for: outcome) ?? "unknown"
+		switch outcome {
+		case .failed, .deadlineExpired:
+			AppLogger.shared.transcriber.error(
+				"Two-pass finalize failed; pasting the streaming draft: \(reason)")
+		default:
+			AppLogger.shared.transcriber.info(
+				"Two-pass finalize skipped; pasting the streaming draft: \(reason)")
+		}
+		return nil
+	}
+
+	/// The pass itself, as a closure the deadline race can run off the main
+	/// actor. Everything it needs is captured up front from the snapshot; it
+	/// never reads instance state, which a newer dictation may own by the time
+	/// it runs.
+	private func finalizeOperation(for pending: TwoPassContext) -> @Sendable () async -> TwoPassOutcome {
+		let session = pending.session
+		let closing = pending.closing
+		let mode = pending.mode
+		let options = pending.options
+		let direct = isDirect()
+		// Built here, on the actor, so the closure below stays free of
+		// main-actor hops: the transcription backend is where discovery
+		// advertises the batch capability, and its batch endpoint is the
+		// existing POST /transcribe plumbing.
+		let batchUploader = RemoteTranscriber(
+			serverURLProvider: { WhisperaSettings.transcriptionBackendURL })
+
+		return {
+			// The microphone half of the close is what stops frames being
+			// retained; waiting for it makes capturedAudio() the whole utterance
+			// rather than a prefix. It sits inside the deadline race, so a close
+			// that hangs on the socket cannot hang the paste.
+			if let closing { await closing.value }
+
+			let audio = await session.capturedAudio()
+			guard !audio.isEmpty else { return .noAudio }
+			if await session.capturedAudioWasTruncated {
+				// Finalize anyway: the buffer holds the most recent ten minutes,
+				// and pasting an accurate tail beats failing the dictation.
+				// Nothing user-visible is prepended.
+				AppLogger.shared.transcriber.info(
+					"Two-pass audio hit the retention cap; finalizing the retained tail only")
+			}
+
+			let samples = PCM16Resampler.float32Samples(
+				fromPCM16LittleEndian: audio,
+				sourceHz: DictationAudioFormat.engine.sampleRate,
+				targetHz: 16_000)
+
+			switch mode {
+			case .off:
+				// Unreachable: stopStreaming only snapshots when the mode is on.
+				return .failed("the finalizer is off")
+			case .local:
+				do {
+					let text = try await WhisperKitTranscriber.shared.transcribe(
+						samples: samples, options: options)
+					return .finalized(text)
+				} catch {
+					return .failed("the on-device pass failed: \(error.localizedDescription)")
+				}
+			case .server:
+				guard !direct else {
+					// The batch upload is a backend route; a directly-addressed
+					// realtime engine has no backend in the path to receive it.
+					return .failed("the direct engine has no backend batch endpoint")
+				}
+				do {
+					let wav = RemoteBatchTranscriber.wav(from: samples)
+					let text = try await batchUploader.transcribeViaWhispera(
+						audio: wav, filename: "dictation.wav", mimetype: "audio/wav",
+						language: options.language)
+					return .finalized(text)
+				} catch {
+					return .failed("the batch upload failed: \(error.localizedDescription)")
+				}
+			}
+		}
 	}
 
 	// MARK: - Events
@@ -685,6 +854,19 @@ final class StreamingTranscriber: SpeechTranscribing {
 		return .backend(
 			baseURL, server: server.id, model: server.model, language: options.language)
 	}
+}
+
+/// One stopped dictation's claim on a second pass: the session whose retained
+/// audio to read, the close to wait out first, and the generation that says
+/// whether the dictation it belongs to is still the current one. A snapshot,
+/// deliberately — the pass must never read instance fields a newer dictation
+/// owns, the same rule the close epilogue follows.
+private struct TwoPassContext {
+	let session: DictationSession
+	let closing: Task<Void, Never>?
+	let mode: TwoPassFinalizerMode
+	let options: TranscriptionOptions
+	let generation: Int
 }
 
 /// Resumes a continuation exactly once, whichever of two racing observers gets

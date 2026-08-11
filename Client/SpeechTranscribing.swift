@@ -141,6 +141,14 @@ protocol SpeechTranscribing: AnyObject {
 	/// gone. See WHI-58.
 	@discardableResult
 	func stopStreaming() async -> String
+	/// The second, slower pass of a two-pass dictation: re-reads the whole
+	/// session's retained audio after `stopStreaming` and returns the polished
+	/// transcript to paste in place of the draft. Nil means "paste the draft" —
+	/// finalizer off, nothing retained, failure, deadline, or a newer dictation
+	/// superseding the pass — and the conformer logs which. Bounded: it resolves
+	/// within the finalizer's deadline, so the caller's spinner always comes
+	/// back down.
+	func finalizeDictation(draft: String) async -> String?
 }
 
 /// Defaults so a conformer writes only what it can actually do. Anything it
@@ -186,4 +194,8 @@ extension SpeechTranscribing {
 
 	@discardableResult
 	func stopStreaming() async -> String { "" }
+
+	/// Instant path: an engine that keeps no session audio has no second pass,
+	/// so the draft is pasted exactly as it was before two-pass existed.
+	func finalizeDictation(draft: String) async -> String? { nil }
 }
