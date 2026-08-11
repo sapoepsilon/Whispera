@@ -62,12 +62,15 @@ struct DictationView: View {
 					.transition(.opacity.combined(with: .scale(scale: 0.95)))
 			} else if !wordsToShow.isEmpty {
 				PillWordFlow(words: wordsToShow, showEllipsis: ellipsisToShow)
-					// The ticker keeps its natural width and clips at the leading
-					// edge: the newest words hug the trailing edge — the half of
-					// the sentence the speaker is actually tracking — while older
-					// words slide out of view instead of stretching the frame.
+					// The ticker keeps its natural width. With hidden history the
+					// ellipsis marks a sentence continuing off the leading edge, so
+					// the text hugs the trailing edge and older words slide out of
+					// view. With the whole transcript on screen there is no "more"
+					// side: any slack the frame's quantized width leaves splits
+					// evenly instead of pooling left of trailing-aligned text —
+					// the leftover gap the WHI-58 QA follow-up kept seeing.
 					.fixedSize()
-					.frame(maxWidth: .infinity, alignment: .trailing)
+					.frame(maxWidth: .infinity, alignment: ellipsisToShow ? .trailing : .center)
 					.clipped()
 					.transition(.opacity.combined(with: .scale(scale: 0.95)))
 			}

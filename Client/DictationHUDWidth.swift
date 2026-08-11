@@ -14,8 +14,13 @@ enum DictationHUDWidth {
 
 	/// Growth quantum. Word-by-word width estimates wobble by a few points on
 	/// every update; snapping to this grid means the frame only moves once the
-	/// text has outgrown a whole step, not on every word.
-	static let step: CGFloat = 48
+	/// text has outgrown a whole step, not on every word. Half the original
+	/// 48pt: the dwell-and-decay hysteresis in `DictationHUDFrame` is what
+	/// keeps the frame calm now, and a coarser grid only paid for that twice —
+	/// each grid line left up to a step of visible slack around the text
+	/// (10.png in the WHI-58 QA follow-up: 39pt of it), where this grid caps
+	/// the remainder at 23pt before the decay even runs.
+	static let step: CGFloat = 24
 
 	/// The estimate snapped up onto the growth grid.
 	static func quantized(_ estimated: CGFloat) -> CGFloat {
