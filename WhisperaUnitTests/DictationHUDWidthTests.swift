@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025-2026 Ismatulla Mansurov
 
+import AppKit
 import Foundation
 import Testing
 
@@ -56,7 +57,7 @@ struct DictationHUDWidthTests {
 	@Test func smallJitterDoesNotMoveTheFrameAtAll() {
 		var rule = frame(width: 200)
 		let settled = rule.width
-		for (tick, estimated) in [190.0, 205.0, 199.0, 210.0].enumerated() {
+		for (tick, estimated) in [196.0, 210.0, 199.0, 214.0].enumerated() {
 			#expect(
 				rule.update(
 					estimated: estimated, maximum: maximum, isDictating: true,
@@ -85,7 +86,7 @@ struct DictationHUDWidthTests {
 	@Test func aPersistentGapClosesOneQuantumPerDelayUntilTheFrameHugsTheText() {
 		var rule = frame(width: 300)  // quantizes to 312
 		let grown = rule.width ?? 0
-		let need: CGFloat = 150  // quantizes to 168, three steps below
+		let need: CGFloat = 230  // quantizes to 240, three steps below
 
 		#expect(rule.update(estimated: need, maximum: maximum, isDictating: true, now: 1) == grown)
 		#expect(
@@ -177,6 +178,36 @@ struct DictationHUDWidthTests {
 			estimated: measured, maximum: maximum, isDictating: true, now: 0)
 		#expect(width >= measured, "the window must fit the text it shows")
 		#expect(width - measured < DictationHUDWidth.step, "and hug it within one growth step")
+	}
+
+	/// Double-entry audit of the padding chain, on the exact 10.png ticker: the
+	/// estimate must exceed the truly rendered text width by ONLY the intended
+	/// visual inset — DictationView's 12pt-per-side content padding — with no
+	/// double-counted padding and no ellipsis reserve when there is no
+	/// ellipsis. The fonts here are constructed independently, the same way
+	/// PillTypography describes them, so a drift in either side breaks this.
+	@Test func estimateExceedsTheRenderedTextByExactlyTheIntendedInset() {
+		func rounded(_ style: NSFont.TextStyle, weight: NSFont.Weight) -> NSFont {
+			let size = NSFont.preferredFont(forTextStyle: style).pointSize
+			let base = NSFont.systemFont(ofSize: size, weight: weight)
+			guard let descriptor = base.fontDescriptor.withDesign(.rounded),
+				let font = NSFont(descriptor: descriptor, size: size)
+			else { return base }
+			return font
+		}
+		let words = ["One", "other", "good", "is", "leave."]
+		var rendered: CGFloat = 0
+		for (index, word) in words.enumerated() {
+			let font =
+				index == words.count - 1
+				? rounded(.title3, weight: .semibold) : rounded(.body, weight: .regular)
+			rendered += (word as NSString).size(withAttributes: [.font: font]).width
+		}
+		rendered += CGFloat(words.count - 1) * 4  // PillWordFlow's HStack spacing
+
+		let estimate = DictationHUDWidth.estimatedWidth(words: words, hasEllipsis: false)
+
+		#expect(estimate == (rendered + 24).rounded(.up), "text + 12pt per side, nothing else")
 	}
 
 	@Test func estimateGrowsWhenAWordIsAdded() {
