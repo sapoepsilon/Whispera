@@ -5,7 +5,8 @@ import Foundation
 /// tests running in parallel never clobber each other's responses.
 final class MockURLProtocol: URLProtocol {
 	private static let lock = NSLock()
-	nonisolated(unsafe) private static var handlers: [String: @Sendable (URLRequest) -> (HTTPURLResponse, Data)] = [:]
+	nonisolated(unsafe) private static var handlers:
+		[String: @Sendable (URLRequest) -> Result<(HTTPURLResponse, Data), Error>] = [:]
 	nonisolated(unsafe) private static var lastRequests: [String: URLRequest] = [:]
 
 	struct Mock {
@@ -15,6 +16,14 @@ final class MockURLProtocol: URLProtocol {
 	}
 
 	static func make(handler: @escaping @Sendable (URLRequest) -> (HTTPURLResponse, Data)) -> Mock {
+		makeResult { .success(handler($0)) }
+	}
+
+	/// Variant whose handler may fail the request with a transport error
+	/// (URLError), for exercising retry paths.
+	static func makeResult(
+		handler: @escaping @Sendable (URLRequest) -> Result<(HTTPURLResponse, Data), Error>
+	) -> Mock {
 		let host = "m\(UUID().uuidString.replacingOccurrences(of: "-", with: "")).test"
 		lock.lock()
 		handlers[host] = handler
@@ -55,10 +64,14 @@ final class MockURLProtocol: URLProtocol {
 			client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
 			return
 		}
-		let (response, data) = handler(request)
-		client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-		client?.urlProtocol(self, didLoad: data)
-		client?.urlProtocolDidFinishLoading(self)
+		switch handler(request) {
+		case .success(let (response, data)):
+			client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+			client?.urlProtocol(self, didLoad: data)
+			client?.urlProtocolDidFinishLoading(self)
+		case .failure(let error):
+			client?.urlProtocol(self, didFailWithError: error)
+		}
 	}
 
 	override func stopLoading() {}
