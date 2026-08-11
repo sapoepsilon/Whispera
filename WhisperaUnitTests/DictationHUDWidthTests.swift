@@ -172,8 +172,9 @@ struct DictationHUDWidthTests {
 		let oldFlatPrice = characters * 9 + CGFloat(words.count - 1) * 4 + 20 + 32
 		#expect(measured < oldFlatPrice, "the flat price is what left half the capsule blank")
 
-		let width = DictationHUDWidth.width(
-			current: nil, estimated: measured, maximum: maximum, isDictating: true)
+		var rule = DictationHUDFrame()
+		let width = rule.update(
+			estimated: measured, maximum: maximum, isDictating: true, now: 0)
 		#expect(width >= measured, "the window must fit the text it shows")
 		#expect(width - measured < DictationHUDWidth.step, "and hug it within one growth step")
 	}
@@ -195,11 +196,12 @@ struct DictationHUDWidthTests {
 	/// A status line ("Waiting for model...") must price out near the compact
 	/// floor, not race the frame up two growth steps before a word has arrived.
 	@Test func aStatusLineStaysNearTheCompactFloor() {
-		let width = DictationHUDWidth.width(
-			current: nil,
+		var rule = DictationHUDFrame()
+		let width = rule.update(
 			estimated: DictationHUDWidth.statusWidth("Waiting for model..."),
 			maximum: maximum,
-			isDictating: true)
+			isDictating: true,
+			now: 0)
 		#expect(width <= DictationHUDWidth.compact + DictationHUDWidth.step)
 	}
 }
