@@ -24,6 +24,8 @@ class LiveTranscriptionWindow: NSWindow {
 	// that has shown nothing yet — the wide empty capsule the WHI-58 QA session
 	// caught mid-dictation.
 	private var hadWordsThisSession = false
+	// The frame's grow-fast/shrink-slow state; see DictationHUDFrame.
+	private var frameRule = DictationHUDFrame()
 
 	@AppStorage("liveTranscriptionMaxWidthPercentage") private var maxWidthPercentage = 0.6
 	// The width estimate must price the words DictationView actually shows —
@@ -114,7 +116,13 @@ class LiveTranscriptionWindow: NSWindow {
 							? self.live.waitingForModelStatusText
 							: self.live.stableDisplayText
 
-						if pendingText != self.lastTextContent || self.isShowingRecipeError {
+						// Changed text resizes, but so does an unchanged one whose
+						// frame rule has decayed: the shrink half of the hysteresis
+						// fires on time, not on new words, so a speaker who pauses
+						// still gets the gap closed under them.
+						if pendingText != self.lastTextContent || self.isShowingRecipeError
+							|| abs(newSize.width - self.frame.width) >= 1
+						{
 							self.updateWindowSize(newSize)
 							self.lastTextContent = pendingText
 						}
@@ -162,24 +170,27 @@ class LiveTranscriptionWindow: NSWindow {
 		}
 	}
 
-	/// The frame's calm-motion contract lives in `DictationHUDWidth`: while a
-	/// dictation runs the width only ever steps up on a coarse grid, never
-	/// shrinks — even when the display text is momentarily empty — and stops
-	/// changing once it reaches the screen-derived ceiling. The content inside
-	/// handles overflow (DictationView's trailing ticker). Between sessions the
-	/// window is hidden, which is what resets the growth back to compact.
+	/// The frame's calm-motion contract lives in `DictationHUDFrame`: while a
+	/// dictation runs the width grows immediately on a coarse grid, decays one
+	/// quantum at a time only after the text has stopped needing it for a
+	/// sustained beat, and stops changing once it reaches the screen-derived
+	/// ceiling. The content inside handles overflow (DictationView's trailing
+	/// ticker). Hiding the window between sessions resets the growth to compact.
 	private func calculateDynamicSize() -> NSSize {
 		let maxWidth = min(currentScreen().visibleFrame.width * maxWidthPercentage, 800)
-		let currentWidth = isVisible ? frame.width : nil
+		// A hidden window has no width worth preserving; forgetting it here is
+		// what starts the next session compact.
+		if !isVisible { frameRule.reset() }
 		let holdSteady = isSessionActive || isShowingRecipeError
+		let now = CACurrentMediaTime()
 
 		if let overlayError = coordinator.overlayError {
 			// The recipe error is a caption-sized status line, measured like one.
-			let width = DictationHUDWidth.width(
-				current: currentWidth,
+			let width = frameRule.update(
 				estimated: DictationHUDWidth.statusWidth(overlayError),
 				maximum: maxWidth,
-				isDictating: holdSteady
+				isDictating: holdSteady,
+				now: now
 			)
 			return NSSize(width: width, height: 44)
 		}
@@ -191,17 +202,23 @@ class LiveTranscriptionWindow: NSWindow {
 			estimated = DictationHUDWidth.statusWidth(live.waitingForModelStatusText)
 		} else {
 			let allWords = live.stableDisplayText.split(separator: " ")
+			if allWords.isEmpty && hadWordsThisSession && isVisible {
+				// The transcript blanked mid-session and DictationView is showing
+				// its held words, which this window cannot measure. Hold the frame
+				// as it is rather than letting an empty measurement arm the decay.
+				return NSSize(width: frame.width, height: 36)
+			}
 			estimated = DictationHUDWidth.estimatedWidth(
 				words: allWords.suffix(maxWordsToShow).map(String.init),
 				hasEllipsis: allWords.count > maxWordsToShow
 			)
 		}
 
-		let width = DictationHUDWidth.width(
-			current: currentWidth,
+		let width = frameRule.update(
 			estimated: estimated,
 			maximum: maxWidth,
-			isDictating: holdSteady
+			isDictating: holdSteady,
+			now: now
 		)
 		return NSSize(width: width, height: 36)
 	}
