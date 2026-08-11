@@ -29,6 +29,8 @@ struct ServersSettingsView: View {
 	@AppStorage(WhisperaSettings.transcriptionServerIdKey) private var pinnedServerId = ""
 	@AppStorage(WhisperaSettings.transcriptionDirectModelKey) private var directModel = ""
 	@AppStorage("enableStreaming") private var enableStreaming = Constants.enableStreamingDefault
+	@AppStorage(WhisperaSettings.twoPassFinalizerKey) private var twoPassFinalizerRaw =
+		TwoPassFinalizerMode.off.rawValue
 
 	/// Falls back to `auto` for the same reason `WhisperaSettings` does: a stored
 	/// engine from a build that shipped one we no longer do must degrade, not trap.
@@ -97,6 +99,7 @@ struct ServersSettingsView: View {
 					// one, and the wording below is already engine-agnostic — the
 					// caveat is exactly as true when `auto` lands on WhisperKit.
 					if selectedEngine.streamsFromAServer || selectedEngine == .auto {
+						finalPassRow
 						InfoBox(style: .info) {
 							Text(
 								enableStreaming
@@ -122,6 +125,28 @@ struct ServersSettingsView: View {
 			}
 			.padding(20)
 		}
+	}
+
+	// MARK: - Final pass (two-pass dictation)
+
+	/// Shown only for the engines that stream: the second pass polishes a
+	/// streaming engine's low-latency draft, while the on-device engine already
+	/// re-reads its whole buffer as it goes and has nothing to gain from one.
+	private var finalPassRow: some View {
+		SettingRow(
+			"Final pass",
+			description: "More accurate paste, adds a short wait after you stop."
+		) {
+			Picker("Final pass", selection: $twoPassFinalizerRaw) {
+				ForEach(TwoPassFinalizerMode.allCases, id: \.rawValue) { mode in
+					Text(mode.displayName).tag(mode.rawValue)
+				}
+			}
+			.labelsHidden()
+			.frame(width: 240)
+			.accessibilityIdentifier("twoPassFinalizerPicker")
+		}
+		.animation(.easeInOut(duration: 0.2), value: twoPassFinalizerRaw)
 	}
 
 	// MARK: - Engine picker
