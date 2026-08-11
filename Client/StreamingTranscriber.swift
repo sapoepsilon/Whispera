@@ -409,12 +409,12 @@ final class StreamingTranscriber: SpeechTranscribing {
 				mode: sessionTwoPassMode,
 				options: sessionOptions,
 				generation: dictationGeneration)
-			// The paste is now waiting on the second pass. Saying so reuses the
-			// waiting channel the HUD already renders (and whose width rules
-			// already handle status text) instead of growing a new one.
-			live.isWaitingForModel = true
-			live.waitingForModelStatusText = "Polishing…"
-			live.shouldShowLiveTranscriptionWindow = true
+			// The paste is now waiting on the second pass. Announced on the
+			// finalize channel, which only the listening pill renders: the words
+			// window dismissed above, exactly as it does with the finalizer off,
+			// and must not come back for the polish. Routing this through
+			// isWaitingForModel put a second "Polishing…" capsule on screen.
+			live.beginFinalizing(statusText: "Polishing…")
 			AppLogger.shared.transcriber.info(
 				"Remote live streaming stopped; draft held for the two-pass finalizer (\(sessionTwoPassMode.rawValue))")
 			return transcript
@@ -447,9 +447,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 		// The polishing status belongs to this dictation alone; if a newer one
 		// has started, it owns the HUD and nothing here may touch it.
 		if pending.generation == dictationGeneration {
-			live.isWaitingForModel = false
-			live.waitingForModelStatusText = ""
-			live.shouldShowLiveTranscriptionWindow = false
+			live.endFinalizing()
 		}
 
 		if let text = TwoPassPolicy.finalizedText(from: outcome) {

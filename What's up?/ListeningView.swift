@@ -8,6 +8,10 @@ enum PillPhase: Equatable {
 	case initializing
 	case preparingModel(String)
 	case transcribing
+	/// The post-stop finalize pass ("Polishing…"). A phase of this pill because
+	/// the pill is the anchor the user watches after stopping; the words window
+	/// has already dismissed and must not come back to repeat the status.
+	case finalizing(String)
 	case runningRecipe(String)
 	case recording
 }
@@ -46,6 +50,7 @@ struct PillLayout: Equatable {
 
 struct ListeningView: View {
 	@State private var whisperKit = WhisperKitTranscriber.shared
+	@State private var live = LiveTranscriptionState.shared
 	@State private var coordinator = DictationCoordinator.shared
 	@State private var showControls = false
 	@State private var showCancel = false
@@ -112,6 +117,11 @@ struct ListeningView: View {
 			if coordinator.isRunning {
 				return .runningRecipe(coordinator.runningRecipeName ?? "command")
 			}
+			// Same shape for the two-pass polish: the words window dismissed at
+			// stop, and this pill is the one surface that says the paste is coming.
+			if live.isFinalizing {
+				return .finalizing(live.finalizingStatusText)
+			}
 			// A load in progress only blocks transcription when no other engine is loaded
 			if whisperKit.isWaitingForModel
 				|| whisperKit.isInitializing
@@ -147,7 +157,7 @@ struct ListeningView: View {
 			EmptyView()
 		case .initializing, .recording:
 			micLiveRow
-		case .preparingModel(let status):
+		case .preparingModel(let status), .finalizing(let status):
 			HStack(spacing: 8) {
 				PillStatusRow(indicator: .progress, text: status)
 				cancelButton

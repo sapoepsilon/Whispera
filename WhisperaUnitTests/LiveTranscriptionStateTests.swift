@@ -419,3 +419,148 @@ struct LiveTranscriptionBackToBackSessionTests {
 		#expect(state.shouldUpdatePendingText(newText: "Thank"))
 	}
 }
+
+/// After stop, exactly one surface communicates the two-pass polish: the
+/// listening pill. The 2026-08-10 QA screenshot showed two "Polishing…"
+/// spinner chips at once because stop routed the pass through the same
+/// isWaitingForModel channel both windows render. These tests replay the
+/// engine's exact call sequences through the real state object and pin that
+/// the words window's gate goes down at stop and stays down through the pass,
+/// while the pill's finalize channel carries the status until the paste lands.
+@MainActor
+struct LiveTranscriptionFinalizePassTests {
+	/// The words window's show decision, composed exactly as
+	/// LiveTranscriptionWindow composes it each poll tick: the session gate,
+	/// the transcriber's own wish, and the has-content rule.
+	private func wordsWindowWantsVisible(
+		_ state: LiveTranscriptionState, hasShownWordsThisSession: Bool = true
+	) -> Bool {
+		state.isSessionActive && state.shouldShowLiveTranscriptionWindow
+			&& DictationHUDContent.hasSomethingToSay(
+				overlayError: nil,
+				isWaitingForModel: state.isWaitingForModel,
+				waitingStatusText: state.waitingForModelStatusText,
+				displayText: state.stableDisplayText,
+				hasShownWordsThisSession: hasShownWordsThisSession)
+	}
+
+	/// A running dictation with words on screen: startStreaming's beginWaiting,
+	/// the .listening handler, then a partial.
+	private func dictate(_ state: LiveTranscriptionState) {
+		state.beginWaiting()
+		state.isWaitingForModel = false
+		state.waitingForModelStatusText = ""
+		state.isTranscribing = true
+		state.ingest(committed: "", draft: "Hello world")
+	}
+
+	/// stopStreaming's exact live-state sequence, with the finalizer on.
+	private func stopWithPolish(_ state: LiveTranscriptionState) {
+		state.isWaitingForModel = false
+		state.waitingForModelStatusText = ""
+		state.isTranscribing = false
+		let transcript = LiveTranscriptionState.joined(
+			committed: state.confirmedText, draft: state.pendingText
+		).trimmingCharacters(in: .whitespacesAndNewlines)
+		if !transcript.isEmpty {
+			state.ingest(committed: transcript, draft: "")
+		}
+		state.setPending("")
+		state.shouldShowLiveTranscriptionWindow = false
+		state.beginFinalizing(statusText: "Polishing…")
+	}
+
+	@Test func theWordsWindowGoesDownAtStopAndStaysDownThroughThePolish() {
+		let state = LiveTranscriptionState()
+		dictate(state)
+		#expect(wordsWindowWantsVisible(state), "the running dictation shows its words")
+
+		stopWithPolish(state)
+
+		#expect(!wordsWindowWantsVisible(state), "the words window dismisses at stop")
+		#expect(
+			!state.isSessionActive,
+			"the polish is not a session: the gate must not hold the window up through it")
+
+		state.endFinalizing()
+		#expect(!wordsWindowWantsVisible(state), "and it does not come back when the paste lands")
+	}
+
+	@Test func thePillCarriesThePolishStatusUntilThePasteLands() {
+		let state = LiveTranscriptionState()
+		dictate(state)
+
+		stopWithPolish(state)
+		#expect(state.isFinalizing)
+		#expect(state.finalizingStatusText == "Polishing…")
+		#expect(
+			!state.isWaitingForModel,
+			"the polish must not ride the waiting channel the words window renders")
+
+		state.endFinalizing()
+		#expect(!state.isFinalizing)
+		#expect(state.finalizingStatusText.isEmpty)
+	}
+
+	/// With the finalizer off, stop makes the same sequence minus
+	/// beginFinalizing; the window comes down identically and no finalize
+	/// status ever appears.
+	@Test func theOffPathIsUnchanged() {
+		let state = LiveTranscriptionState()
+		dictate(state)
+
+		state.isWaitingForModel = false
+		state.waitingForModelStatusText = ""
+		state.isTranscribing = false
+		state.ingest(committed: "Hello world", draft: "")
+		state.setPending("")
+		state.shouldShowLiveTranscriptionWindow = false
+
+		#expect(!wordsWindowWantsVisible(state))
+		#expect(!state.isFinalizing)
+		#expect(state.finalizingStatusText.isEmpty)
+	}
+
+	/// A rapid next dictation supersedes the pending pass; its pill must open
+	/// on the new session's status, not the stale "Polishing…".
+	@Test func theNextDictationResetsThePendingPolish() {
+		let state = LiveTranscriptionState()
+		dictate(state)
+		stopWithPolish(state)
+
+		state.beginWaiting()
+
+		#expect(!state.isFinalizing)
+		#expect(state.finalizingStatusText.isEmpty)
+		#expect(state.isSessionActive, "the new session owns the words window again")
+		#expect(wordsWindowWantsVisible(state, hasShownWordsThisSession: false))
+	}
+
+	@Test func resetClearsThePendingPolish() {
+		let state = LiveTranscriptionState()
+		state.beginFinalizing(statusText: "Polishing…")
+
+		state.reset()
+
+		#expect(!state.isFinalizing)
+		#expect(state.finalizingStatusText.isEmpty)
+	}
+
+	/// The session gate itself, pinned directly: mid-session statuses keep the
+	/// words window alive, the finalize pass does not.
+	@Test func isSessionActiveExcludesTheFinalizePass() {
+		let state = LiveTranscriptionState()
+		#expect(!state.isSessionActive)
+
+		state.isTranscribing = true
+		#expect(state.isSessionActive)
+
+		state.isTranscribing = false
+		state.isWaitingForModel = true
+		#expect(state.isSessionActive, "reconnecting and waiting-for-model hold the session open")
+
+		state.isWaitingForModel = false
+		state.isFinalizing = true
+		#expect(!state.isSessionActive)
+	}
+}
