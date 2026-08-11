@@ -30,6 +30,14 @@ final class LiveTranscriptionState {
 	var isTranscribing: Bool = false
 	var isWaitingForModel: Bool = false
 	var waitingForModelStatusText: String = ""
+	/// The stopped dictation's finalize pass (the two-pass "Polishing…" wait) is
+	/// still running. Deliberately a separate channel from `isWaitingForModel`:
+	/// that one belongs to the words window for mid-session statuses (waiting for
+	/// model, reconnecting), while this one belongs to the listening pill alone —
+	/// routing the polish through the waiting channel made both surfaces collapse
+	/// into identical "Polishing…" chips at once.
+	var isFinalizing: Bool = false
+	var finalizingStatusText: String = ""
 	var shouldShowDebugWindow: Bool = false
 	/// The last failure that needs the user to do something. Presented as an
 	/// `.alert()`, never inline: the HUD is one line and the recovery step does not
@@ -53,11 +61,23 @@ final class LiveTranscriptionState {
 	/// output as more audio arrives, so confirming it early duplicates words.
 	static let requiredSegmentsForConfirmation = 2
 
+	/// A dictation session is running: the engine is transcribing, or holding
+	/// the session open behind a status line (waiting for model, reconnecting).
+	/// The words window keys its visibility off this. The post-stop finalize
+	/// pass is deliberately not part of it — the dictation is over and its words
+	/// are final, so the words window must not linger (or come back) to show the
+	/// polish; the listening pill is the surface that announces it.
+	var isSessionActive: Bool {
+		isTranscribing || isWaitingForModel
+	}
+
 	// MARK: - Session boundaries
 
 	func reset() {
 		isWaitingForModel = false
 		waitingForModelStatusText = ""
+		isFinalizing = false
+		finalizingStatusText = ""
 		pendingText = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
@@ -85,9 +105,29 @@ final class LiveTranscriptionState {
 		// left over from the previous session would silently swallow the first
 		// segments of this one.
 		lastConfirmedSegmentCount = 0
+		// A new dictation supersedes any pass still pending from the previous
+		// one; its status must not survive into this session's pill.
+		isFinalizing = false
+		finalizingStatusText = ""
 		shouldShowLiveTranscriptionWindow = true
 		isWaitingForModel = true
 		waitingForModelStatusText = "Waiting for model..."
+	}
+
+	/// Marks the post-stop finalize pass as running. It touches neither
+	/// `isWaitingForModel` nor `shouldShowLiveTranscriptionWindow` on purpose:
+	/// the words window has already dismissed at stop, exactly as it does with
+	/// the finalizer off, and only the pill renders this channel.
+	func beginFinalizing(statusText: String) {
+		isFinalizing = true
+		finalizingStatusText = statusText
+	}
+
+	/// The pass ended — pasted or fell back to the draft — so the pill resumes
+	/// its normal end-of-dictation dismissal.
+	func endFinalizing() {
+		isFinalizing = false
+		finalizingStatusText = ""
 	}
 
 	/// Promotes whatever is still pending at the end of a session.

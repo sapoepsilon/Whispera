@@ -147,10 +147,11 @@ class LiveTranscriptionWindow: NSWindow {
 		coordinator.overlayError != nil
 	}
 
-	/// A dictation is running: the engine is transcribing, or holding the
-	/// session open behind a status line (waiting for model, reconnecting).
+	/// A dictation is running — see `LiveTranscriptionState.isSessionActive`.
+	/// The post-stop finalize pass is not a session: this window dismisses at
+	/// stop and the listening pill alone announces the polish.
 	private var isSessionActive: Bool {
-		live.isTranscribing || live.isWaitingForModel
+		live.isSessionActive
 	}
 
 	/// Repositions above the pill whenever the pill itself moves (a drag) or
