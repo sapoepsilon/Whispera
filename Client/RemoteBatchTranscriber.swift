@@ -96,7 +96,9 @@ final class RemoteBatchTranscriber: SpeechTranscribing {
 
 	/// Wraps mono float samples in a 16-bit PCM WAV container. The upload
 	/// endpoints want a file, and the capture path hands us a raw buffer.
-	static func wav(from samples: [Float], sampleRate: Int = 16000) -> Data {
+	/// Nonisolated because the two-pass finalizer wraps up to ten minutes of
+	/// audio off the main actor, where a per-sample loop has no business.
+	nonisolated static func wav(from samples: [Float], sampleRate: Int = 16000) -> Data {
 		let bitsPerSample = 16
 		let channels = 1
 		let byteRate = sampleRate * channels * bitsPerSample / 8

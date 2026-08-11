@@ -320,6 +320,12 @@ final class AutoTranscriber: SpeechTranscribing {
 	@discardableResult
 	func stopStreaming() async -> String { await delegate.stopStreaming() }
 
+	/// Forwarded, not re-resolved: the pass belongs to the session the current
+	/// delegate just stopped, and resolution only ever moves at dictation start.
+	func finalizeDictation(draft: String) async -> String? {
+		await delegate.finalizeDictation(draft: draft)
+	}
+
 	// MARK: - Resolution
 
 	/// A one-line caption for Settings: what `auto` currently resolves to,

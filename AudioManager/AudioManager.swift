@@ -871,8 +871,15 @@ extension AudioManager {
 		// back down in bounded time.
 		isTranscribing = true
 		Task {
-			let transcript = await engine.stopStreaming()
-			guard let toPaste = Self.textToPaste(afterLiveDictationFinished: transcript) else {
+			let draft = await engine.stopStreaming()
+			// The two-pass finalizer, when the engine retained audio for one. It
+			// answers nil with no real suspension on the instant path, so a
+			// finalizer set to off pastes exactly as fast as before; when it is
+			// on, this is the bounded "polishing" wait, and isTranscribing holds
+			// the spinner up until the paste lands — the semantics it already had.
+			let polished = await engine.finalizeDictation(draft: draft)
+			guard let toPaste = Self.textToPaste(afterLiveDictationFinished: polished ?? draft)
+			else {
 				isTranscribing = false
 				return
 			}
