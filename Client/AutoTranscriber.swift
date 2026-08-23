@@ -124,6 +124,45 @@ enum AutoEngineResolution: Equatable {
 /// from the network and the caching around it so the whole decision table is
 /// exercisable without a backend — see `AutoEnginePolicyTests`.
 enum AutoEnginePolicy {
+	/// Which engine family `auto` prefers, ranked ahead of granularity.
+	///
+	/// This is the WHI-74 pin, and it is deliberately blunt. Ranking on
+	/// granularity alone picks the best *advertised* delta quality, which against
+	/// the live backend means nemo-stream — the one engine whose delta contract
+	/// is known to be broken (WHI-67): it re-sends revised text without saying
+	/// so, and until WHI-68 lands the client cannot tell a fragment from a
+	/// hypothesis coming from it. A fresh install would therefore auto-select the
+	/// worst version of the product. Owner's call, 2026-08-18: "default =
+	/// on-device WhisperKit, auto prefers speaches over nemo-stream".
+	///
+	/// The list is matched against the server id, case-insensitively, and read as
+	/// an ordering: an id containing an earlier fragment outranks one containing
+	/// a later one. `nil` is the slot every id that matches nothing falls into —
+	/// so an unknown server is neither promoted over the flagged default nor
+	/// demoted alongside the pinned-down one, and every existing ranking case
+	/// behaves exactly as it did.
+	///
+	/// Temporary by construction, not by intent: remove it once the delta
+	/// contract is verified end to end and granularity is trustworthy again.
+	static let engineFamilyPreference: [String?] = ["speaches", nil, "nemo"]
+
+	/// Lower sorts first. See `engineFamilyPreference`.
+	static func familyRank(of serverId: String) -> Int {
+		let id = serverId.lowercased()
+		// The `nil` entry is the fallback, so it is recorded and not returned:
+		// taking it the moment it is reached would stop the scan before the
+		// demoted families below it were ever considered.
+		var unmatched = engineFamilyPreference.count
+		for (index, fragment) in engineFamilyPreference.enumerated() {
+			guard let fragment else {
+				unmatched = index
+				continue
+			}
+			if id.contains(fragment) { return index }
+		}
+		return unmatched
+	}
+
 	static func resolve(
 		serverURLConfigured: Bool,
 		pinnedServerId: String,
@@ -152,6 +191,13 @@ enum AutoEnginePolicy {
 		// picking the best granularity among what is usable, tie-broken by the
 		// backend's own default flag and then id, so the choice is deterministic.
 		let best = usable.sorted { lhs, rhs in
+			// The pin outranks granularity on purpose — see
+			// `engineFamilyPreference`. With no pinned family on offer every
+			// server ties here and the granularity ordering below decides, which
+			// is the pre-pin behaviour unchanged.
+			let lhsFamily = familyRank(of: lhs.id)
+			let rhsFamily = familyRank(of: rhs.id)
+			if lhsFamily != rhsFamily { return lhsFamily < rhsFamily }
 			if lhs.granularity.rank != rhs.granularity.rank {
 				return lhs.granularity.rank < rhs.granularity.rank
 			}

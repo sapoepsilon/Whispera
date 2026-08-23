@@ -47,15 +47,21 @@ struct TranscriptionRouterTests {
 		#expect(TranscriptionRouter.transcriber(for: .auto) === AutoTranscriber.shared)
 	}
 
-	/// An absent or unrecognised stored value degrades to `auto` rather than
-	/// trapping — a fresh install and a build that shipped an engine this one no
-	/// longer does land on the same default. `auto` degrades further, to
-	/// on-device, whenever nothing is configured, so the fallback is honest
-	/// either way.
-	@Test func anAbsentOrUnknownStoredEngineFallsBackToAuto() {
-		#expect((TranscriptionEngine(rawValue: "") ?? .auto) == .auto)
-		#expect((TranscriptionEngine(rawValue: "subscriptionWhisper") ?? .auto) == .auto)
-		#expect((TranscriptionEngine(rawValue: "whisperKit") ?? .auto) == .whisperKit)
+	/// An absent or unrecognised stored value degrades to the fresh-install
+	/// default rather than trapping — a fresh install and a build that shipped an
+	/// engine this one no longer does land on the same place.
+	///
+	/// That place is on-device WhisperKit, not `auto`: `auto` ranks on advertised
+	/// delta granularity and so selects nemo-stream, the engine whose delta
+	/// contract is broken (WHI-67), which would make a new user's first dictation
+	/// the worst version of the product. See WHI-74.
+	@Test func anAbsentOrUnknownStoredEngineFallsBackToOnDevice() {
+		#expect(TranscriptionEngine.stored(nil) == .whisperKit)
+		#expect(TranscriptionEngine.stored("") == .whisperKit)
+		#expect(TranscriptionEngine.stored("subscriptionWhisper") == .whisperKit)
+		#expect(TranscriptionEngine.stored("whisperKit") == .whisperKit)
+		#expect(TranscriptionEngine.stored("auto") == .auto)
+		#expect(TranscriptionEngine.fresh == .whisperKit)
 	}
 
 	@Test func onlyTheOnDeviceEngineManagesModels() {
