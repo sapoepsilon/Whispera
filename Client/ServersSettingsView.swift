@@ -35,7 +35,7 @@ struct ServersSettingsView: View {
 	/// Falls back to `auto` for the same reason `WhisperaSettings` does: a stored
 	/// engine from a build that shipped one we no longer do must degrade, not trap.
 	private var selectedEngine: TranscriptionEngine {
-		TranscriptionEngine(rawValue: transcriptionEngineRaw) ?? .auto
+		TranscriptionEngine.stored(transcriptionEngineRaw)
 	}
 
 	// Discovery list for the backend engines (auto + whisperaStreaming). Empty

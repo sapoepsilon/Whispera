@@ -5,9 +5,7 @@ import Foundation
 
 /// Where speech-to-text runs. Identity only — what each engine can do lives on
 /// the conformer as `TranscriptionCapabilities`, so adding a case never reopens
-/// a switch anywhere but here. `auto` is the default for fresh installs: it
-/// decides between the others itself, so nobody has to configure anything to
-/// get the best path available. See WHI-42, WHI-58.
+/// a switch anywhere but here. See WHI-42, WHI-58, WHI-74.
 enum TranscriptionEngine: String, CaseIterable, Sendable {
 	case auto
 	case whisperKit
@@ -29,6 +27,20 @@ enum TranscriptionEngine: String, CaseIterable, Sendable {
 		case .whisperaStreaming, .realtimeDirect: return true
 		case .auto, .whisperKit, .whisperViaBYOK: return false
 		}
+	}
+
+	/// What a fresh install runs, and what an unrecognised stored value degrades
+	/// to. See `WhisperaSettings.transcriptionEngine` for why it is on-device
+	/// rather than `auto` (WHI-74).
+	static let fresh: TranscriptionEngine = .whisperKit
+
+	/// The stored raw value, resolved. One place, so the fallback cannot drift
+	/// between the settings accessor and the two views that read the key
+	/// directly — and so the default is testable without writing to
+	/// `UserDefaults.standard`, which the host app's `@AppStorage` bindings
+	/// observe.
+	static func stored(_ raw: String?) -> TranscriptionEngine {
+		TranscriptionEngine(rawValue: raw ?? "") ?? .fresh
 	}
 
 	var displayName: String {
@@ -84,16 +96,21 @@ extension WhisperaSettings {
 	static let transcriptionServerIdKey = "whisperaTranscriptionServerId"
 	static let transcriptionDirectModelKey = "whisperaTranscriptionDirectModel"
 
-	/// Unknown or absent raw values fall back to `auto` — a fresh install and a
-	/// build that had an engine this one no longer ships land on the same
-	/// default, which is honest because `auto` degrades to on-device itself
-	/// whenever nothing is configured. Mirrors `llmMode`.
+	/// Unknown or absent raw values fall back to `whisperKit` — a fresh install
+	/// and a build that had an engine this one no longer ships land on the same
+	/// default.
+	///
+	/// On-device rather than `auto`, and that is the WHI-74 call. `auto` ranks on
+	/// advertised delta granularity, so against the live backend it selects
+	/// nemo-stream — the one engine whose delta contract is known to be broken
+	/// (WHI-67), which makes the very first dictation a new user ever runs the
+	/// worst version of the product. WhisperKit needs no server, no account and
+	/// no network, and it is already what `auto` degrades to whenever nothing is
+	/// configured, which is the common fresh-install case anyway. Owner's call,
+	/// 2026-08-18: "default = on-device WhisperKit, auto prefers speaches over
+	/// nemo-stream". Revisit once the delta contract is verified end to end.
 	static var transcriptionEngine: TranscriptionEngine {
-		get {
-			TranscriptionEngine(
-				rawValue: UserDefaults.standard.string(forKey: transcriptionEngineKey) ?? "")
-				?? .auto
-		}
+		get { .stored(UserDefaults.standard.string(forKey: transcriptionEngineKey)) }
 		set { UserDefaults.standard.set(newValue.rawValue, forKey: transcriptionEngineKey) }
 	}
 

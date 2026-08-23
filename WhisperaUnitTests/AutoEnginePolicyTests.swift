@@ -15,11 +15,13 @@ struct AutoEnginePolicyTests {
 		isOnline: Bool = true,
 		supportsRealtime: Bool = true,
 		isDefault: Bool = false,
-		granularity: StreamingGranularity = .utterance
+		granularity: StreamingGranularity = .utterance,
+		isDefaultFlag: Bool = false
 	) -> DiscoveredServer {
 		DiscoveredServer(
 			id: id, label: label ?? id, model: "", isOnline: isOnline,
-			supportsRealtime: supportsRealtime, isDefault: isDefault, granularity: granularity)
+			supportsRealtime: supportsRealtime, isDefault: isDefault || isDefaultFlag,
+			granularity: granularity)
 	}
 
 	// MARK: - No server to talk to
@@ -107,6 +109,76 @@ struct AutoEnginePolicyTests {
 			serverURLConfigured: true, pinnedServerId: "", discovery: discovery)
 
 		#expect(resolution == .server(id: "beta", label: "beta", granularity: .synthesizedDelta))
+	}
+
+	// MARK: - The engine-family pin (WHI-74)
+
+	/// The pin itself. nemo-stream advertises `native-delta`, which is the best
+	/// granularity on offer and would win the ranking outright — and it is the
+	/// one engine whose delta contract is known to be broken (WHI-67). Until that
+	/// contract is verified end to end, speaches wins even while advertising
+	/// worse deltas. Owner's call, 2026-08-18: "default = on-device WhisperKit,
+	/// auto prefers speaches over nemo-stream".
+	@Test func speachesOutranksNemoStreamDespiteWorseAdvertisedDeltas() {
+		let discovery = AutoDiscoveryOutcome.servers([
+			Self.server(id: "nemo-stream", label: "NeMo", granularity: .nativeDelta),
+			Self.server(id: "speaches-lan", label: "speaches", granularity: .synthesizedDelta),
+		])
+
+		let resolution = AutoEnginePolicy.resolve(
+			serverURLConfigured: true, pinnedServerId: "", discovery: discovery)
+
+		#expect(
+			resolution == .server(
+				id: "speaches-lan", label: "speaches", granularity: .synthesizedDelta))
+	}
+
+	/// The pin demotes nemo-stream below *every* other usable server, not just
+	/// below speaches — an unknown server matching neither fragment sits between
+	/// the two.
+	@Test func nemoStreamRanksLastAmongUsableServers() {
+		#expect(AutoEnginePolicy.familyRank(of: "speaches-lan") == 0)
+		#expect(AutoEnginePolicy.familyRank(of: "some-other-engine") == 1)
+		#expect(AutoEnginePolicy.familyRank(of: "nemo-stream") == 2)
+
+		let discovery = AutoDiscoveryOutcome.servers([
+			Self.server(id: "nemo-stream", granularity: .nativeDelta, isDefaultFlag: true),
+			Self.server(id: "unknown-engine", granularity: .utterance),
+		])
+
+		let resolution = AutoEnginePolicy.resolve(
+			serverURLConfigured: true, pinnedServerId: "", discovery: discovery)
+
+		#expect(
+			resolution == .server(id: "unknown-engine", label: "unknown-engine", granularity: .utterance))
+	}
+
+	/// nemo-stream is demoted, not banned: with nothing else reachable it is
+	/// still better than no live words at all.
+	@Test func nemoStreamIsStillChosenWhenItIsTheOnlyServer() {
+		let discovery = AutoDiscoveryOutcome.servers([
+			Self.server(id: "nemo-stream", label: "NeMo", granularity: .nativeDelta)
+		])
+
+		let resolution = AutoEnginePolicy.resolve(
+			serverURLConfigured: true, pinnedServerId: "", discovery: discovery)
+
+		#expect(resolution == .server(id: "nemo-stream", label: "NeMo", granularity: .nativeDelta))
+	}
+
+	/// A user who pinned nemo-stream by hand still gets it — the pin above is a
+	/// default, not a policy about what a user is allowed to choose.
+	@Test func anExplicitPinStillBeatsTheEngineFamilyPreference() {
+		let discovery = AutoDiscoveryOutcome.servers([
+			Self.server(id: "speaches-lan", granularity: .synthesizedDelta),
+			Self.server(id: "nemo-stream", granularity: .nativeDelta),
+		])
+
+		let resolution = AutoEnginePolicy.resolve(
+			serverURLConfigured: true, pinnedServerId: "nemo-stream", discovery: discovery)
+
+		#expect(
+			resolution == .server(id: "nemo-stream", label: "nemo-stream", granularity: .nativeDelta))
 	}
 
 	// MARK: - Pinning
