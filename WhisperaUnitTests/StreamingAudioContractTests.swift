@@ -7,13 +7,80 @@ import WhisperaDictation
 
 @testable import Whispera
 
-/// How fast the client puts audio on the wire: the two things that keep a
+/// What the client puts on the wire and how fast: the audio format it takes
+/// from the server it is pointed at (WHI-71), and the two things that keep a
 /// stalled sender from dumping a backlog into the engine at once (WHI-70).
 ///
 /// Both are driven through the shipping types rather than a copy of them — the
-/// buffering policy `MicrophoneSource.frames()` hands to its `AsyncStream` and
-/// the pacing function `DictationSession` calls.
+/// buffering policy `MicrophoneSource.frames()` hands to its `AsyncStream`, the
+/// pacing function `DictationSession` calls, and the format
+/// `DictationConfiguration` actually carries.
 struct StreamingAudioContractTests {
+	private static func server(_ json: String) throws -> DictationServer {
+		try JSONDecoder().decode(DictationServer.self, from: Data(json.utf8))
+	}
+
+	// MARK: - Per-server audio format (WHI-71)
+
+	/// The client used to decode `realtime.audio` and then hardcode 24 kHz at
+	/// every send site. It worked by luck: the one engine in play resampled
+	/// internally. A server that advertises 16 kHz now gets 16 kHz.
+	@Test func aServerAdvertising16kHzIsStreamedAt16kHz() throws {
+		let server = try Self.server(
+			"""
+			{"id":"nemo-stream","label":"NeMo","model":"parakeet",\
+			"capabilities":["realtime"],"status":"online",\
+			"realtime":{"protocol":"openai-realtime","path":"/transcription/stream?server=nemo-stream",\
+			"granularity":"native-delta",\
+			"audio":{"encoding":"pcm16","sampleRate":16000,"channels":1}}}
+			""")
+
+		#expect(server.audioFormat.sampleRate == 16_000)
+		#expect(server.audioFormat.channels == 1)
+		#expect(server.audioFormat.encoding == .pcm16)
+
+		let configuration = DictationConfiguration.backend(
+			URL(string: "http://127.0.0.1:3000")!,
+			server: server.id, model: server.model, audio: server.audioFormat)
+		#expect(configuration.audioFormat.sampleRate == 16_000)
+
+		// The capture side has to agree, or the tap converts to one rate and the
+		// session frames it at another.
+		#expect(MicrophoneSource(format: configuration.audioFormat).format.sampleRate == 16_000)
+
+		// One second of 48 kHz mono float32 — what an AVAudioEngine tap hands over
+		// — becomes one second of 16 kHz mono PCM16: 32 000 bytes, not the 48 000
+		// the 24 kHz constant would have produced.
+		var normalizer = AudioNormalizer(
+			from: DictationAudioFormat(sampleRate: 48_000, channels: 1, encoding: .float32),
+			to: configuration.audioFormat)
+		var input = Data()
+		for i in 0..<48_000 {
+			let value = Float(sin(Double(i) * 0.01))
+			input.append(withUnsafeBytes(of: value.bitPattern.littleEndian) { Data($0) })
+		}
+		let (pcm, _) = normalizer.normalize(input)
+		#expect(abs(pcm.count - 32_000) <= 64)
+	}
+
+	/// A backend that predates the field, or a server with nothing to say about
+	/// audio, keeps the 24 kHz default this client always used.
+	@Test func aServerThatAdvertisesNoFormatKeepsTheEngineDefault() throws {
+		let quiet = try Self.server(
+			"""
+			{"id":"speaches-lan","label":"speaches","model":"whisper",\
+			"capabilities":["realtime"],\
+			"realtime":{"protocol":"openai-realtime","path":"/x"}}
+			""")
+		#expect(quiet.audioFormat == .engine)
+		#expect(quiet.audioFormat.sampleRate == 24_000)
+
+		let configuration = DictationConfiguration.backend(
+			URL(string: "http://127.0.0.1:3000")!,
+			server: quiet.id, model: quiet.model, audio: quiet.audioFormat)
+		#expect(configuration.audioFormat.sampleRate == 24_000)
+	}
+
 	// MARK: - Bounded microphone stream (WHI-70)
 
 	/// `AsyncStream`'s default policy is `.unbounded`, so a consumer that stalls
