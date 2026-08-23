@@ -32,10 +32,9 @@ enum StreamingGranularity: String, Sendable, Equatable {
 	}
 }
 
-/// One server as `auto` needs to see it to rank and pick — a local mirror of
-/// `WhisperaDictation.DictationServer` plus the one field that package does not
-/// decode yet. See `ServerDiscoveryProbe` for why this exists instead of
-/// reusing the package's type.
+/// One server as `auto` needs to see it to rank and pick — the fields the
+/// policy reads, lifted off `WhisperaDictation.DictationServer` so the decision
+/// table below is a pure function of plain values with no decoder behind it.
 struct DiscoveredServer: Sendable, Equatable {
 	let id: String
 	let label: String
@@ -49,69 +48,46 @@ struct DiscoveredServer: Sendable, Equatable {
 	let granularity: StreamingGranularity
 }
 
-/// Talks to `GET /transcription/servers` directly rather than through
-/// `WhisperaDictation.DictationServerDirectory`, because that package's
-/// `DictationServer` does not decode `realtime.granularity` — the field this
-/// whole feature ranks on — and this worktree does not touch the package (see
-/// AUTOCHOOSE-RESULT.md for the one-struct change that would let this go away).
+/// `GET /transcription/servers`, mapped onto what the policy ranks on.
 ///
-/// The request is built the same way `DictationServerDirectory.servers()`
-/// builds its own — same path, same credential placement — so the two only
-/// ever drift if the backend's contract changes, not because this drifted from
-/// it by accident.
+/// This used to carry its own `Decodable` mirror of the response, because the
+/// package's `DictationServer` did not decode `realtime.granularity` — the
+/// field this whole feature ranks on — and a second decoder was the cheaper of
+/// two bad options at the time. The package decodes it now (WHI-71), so what
+/// is left here is a mapping and nothing else: one decoder, one request
+/// builder, one place for the contract to live.
 enum ServerDiscoveryProbe {
-	private struct Response: Decodable {
-		struct Server: Decodable {
-			struct Realtime: Decodable { let granularity: String? }
-			let id: String
-			let label: String
-			let model: String?
-			let capabilities: [String]
-			let status: String?
-			let realtime: Realtime?
-			let `default`: Bool?
-		}
-		let servers: [Server]
-	}
-
 	static func fetch(
 		baseURL: URL,
 		credentials: DictationCredentialProvider,
 		session: URLSession,
 		timeout: TimeInterval
 	) async throws -> [DiscoveredServer] {
-		let credential = try await credentials.credential()
+		let directory = DictationServerDirectory(
+			baseURL: baseURL, credentials: credentials, session: session)
 
-		guard
-			var components = URLComponents(
-				url: baseURL.appendingPathComponent("transcription/servers"),
-				resolvingAgainstBaseURL: false)
-		else {
-			throw StreamingTranscriberError.invalidServerURL
-		}
-		if !credential.queryItems.isEmpty {
-			components.queryItems = (components.queryItems ?? []) + credential.queryItems
-		}
-		guard let url = components.url else {
-			throw StreamingTranscriberError.invalidServerURL
-		}
-
-		var request = URLRequest(url: url, timeoutInterval: timeout)
-		for (name, value) in credential.headers { request.setValue(value, forHTTPHeaderField: name) }
-
-		let (data, response) = try await session.data(for: request)
-		if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-			throw StreamingTranscriberError.engineUnreachable(baseURL.host ?? baseURL.absoluteString)
+		// Bounded here rather than on the session: `auto` resolves at the top of
+		// every dictation, and a backend that is merely slow must cost the user a
+		// few seconds and then fall back on-device, not hold the microphone open
+		// for whatever the URLSession default happens to be.
+		let servers = try await withThrowingTaskGroup(of: [DictationServer].self) { group in
+			group.addTask { try await directory.servers() }
+			group.addTask {
+				try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+				throw StreamingTranscriberError.engineUnreachable(
+					baseURL.host ?? baseURL.absoluteString)
+			}
+			defer { group.cancelAll() }
+			return try await group.next() ?? []
 		}
 
-		let decoded = try JSONDecoder().decode(Response.self, from: data)
-		return decoded.servers.map {
+		return servers.map {
 			DiscoveredServer(
 				id: $0.id,
 				label: $0.label,
-				model: $0.model ?? "",
-				isOnline: $0.status == nil || $0.status == "online",
-				supportsRealtime: $0.capabilities.contains("realtime"),
+				model: $0.model,
+				isOnline: $0.isOnline,
+				supportsRealtime: $0.supportsRealtime,
 				isDefault: $0.default ?? false,
 				granularity: .from($0.realtime?.granularity))
 		}
@@ -148,6 +124,45 @@ enum AutoEngineResolution: Equatable {
 /// from the network and the caching around it so the whole decision table is
 /// exercisable without a backend — see `AutoEnginePolicyTests`.
 enum AutoEnginePolicy {
+	/// Which engine family `auto` prefers, ranked ahead of granularity.
+	///
+	/// This is the WHI-74 pin, and it is deliberately blunt. Ranking on
+	/// granularity alone picks the best *advertised* delta quality, which against
+	/// the live backend means nemo-stream — the one engine whose delta contract
+	/// is known to be broken (WHI-67): it re-sends revised text without saying
+	/// so, and until WHI-68 lands the client cannot tell a fragment from a
+	/// hypothesis coming from it. A fresh install would therefore auto-select the
+	/// worst version of the product. Owner's call, 2026-08-18: "default =
+	/// on-device WhisperKit, auto prefers speaches over nemo-stream".
+	///
+	/// The list is matched against the server id, case-insensitively, and read as
+	/// an ordering: an id containing an earlier fragment outranks one containing
+	/// a later one. `nil` is the slot every id that matches nothing falls into —
+	/// so an unknown server is neither promoted over the flagged default nor
+	/// demoted alongside the pinned-down one, and every existing ranking case
+	/// behaves exactly as it did.
+	///
+	/// Temporary by construction, not by intent: remove it once the delta
+	/// contract is verified end to end and granularity is trustworthy again.
+	static let engineFamilyPreference: [String?] = ["speaches", nil, "nemo"]
+
+	/// Lower sorts first. See `engineFamilyPreference`.
+	static func familyRank(of serverId: String) -> Int {
+		let id = serverId.lowercased()
+		// The `nil` entry is the fallback, so it is recorded and not returned:
+		// taking it the moment it is reached would stop the scan before the
+		// demoted families below it were ever considered.
+		var unmatched = engineFamilyPreference.count
+		for (index, fragment) in engineFamilyPreference.enumerated() {
+			guard let fragment else {
+				unmatched = index
+				continue
+			}
+			if id.contains(fragment) { return index }
+		}
+		return unmatched
+	}
+
 	static func resolve(
 		serverURLConfigured: Bool,
 		pinnedServerId: String,
@@ -176,6 +191,13 @@ enum AutoEnginePolicy {
 		// picking the best granularity among what is usable, tie-broken by the
 		// backend's own default flag and then id, so the choice is deterministic.
 		let best = usable.sorted { lhs, rhs in
+			// The pin outranks granularity on purpose — see
+			// `engineFamilyPreference`. With no pinned family on offer every
+			// server ties here and the granularity ordering below decides, which
+			// is the pre-pin behaviour unchanged.
+			let lhsFamily = familyRank(of: lhs.id)
+			let rhsFamily = familyRank(of: rhs.id)
+			if lhsFamily != rhsFamily { return lhsFamily < rhsFamily }
 			if lhs.granularity.rank != rhs.granularity.rank {
 				return lhs.granularity.rank < rhs.granularity.rank
 			}

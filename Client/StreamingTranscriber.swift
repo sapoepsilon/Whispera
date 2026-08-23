@@ -85,6 +85,10 @@ final class StreamingTranscriber: SpeechTranscribing {
 	/// The options the running session started with, for the second pass to
 	/// transcribe under the same language and mode.
 	private var sessionOptions = TranscriptionOptions()
+	/// The PCM format the running session streams in — the server's own, from its
+	/// discovery entry. Held for the second pass, which reads the retained audio
+	/// back and has to know what rate it is in. See WHI-71.
+	private var sessionAudioFormat: DictationAudioFormat = .engine
 	/// Everything the second pass needs, snapshotted by `stopStreaming` with no
 	/// suspension in between, so no newer dictation can slip in before the
 	/// snapshot exists. Consumed by `finalizeDictation`.
@@ -286,6 +290,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 			// Retention costs memory (the package caps it at ten minutes), so it
 			// is paid only when a second pass will read the audio back.
 			configuration.retainAudio = sessionTwoPassMode.isOn
+			sessionAudioFormat = configuration.audioFormat
 
 			// The input device the user picked has to be the system default before
 			// the package opens its own capture, which follows the default.
@@ -295,7 +300,8 @@ final class StreamingTranscriber: SpeechTranscribing {
 			wordTracker?.startNewSession()
 
 			let session = DictationSession(
-				configuration: configuration, credentials: credentials, audio: MicrophoneSource())
+				configuration: configuration, credentials: credentials,
+				audio: MicrophoneSource(format: configuration.audioFormat))
 			self.session = session
 
 			eventTask = Task { @MainActor [weak self] in
@@ -405,6 +411,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 			// point — so the pass can never bind to a newer dictation's session.
 			pendingTwoPass = TwoPassContext(
 				session: session,
+				audioFormat: sessionAudioFormat,
 				closing: closingTask,
 				mode: sessionTwoPassMode,
 				options: sessionOptions,
@@ -474,6 +481,10 @@ final class StreamingTranscriber: SpeechTranscribing {
 	private func finalizeOperation(for pending: TwoPassContext) -> @Sendable () async -> TwoPassOutcome {
 		let session = pending.session
 		let closing = pending.closing
+		// The retained audio is in whatever format that session streamed in, which
+		// is the server's, not the package default. Reading it back at 24 kHz when
+		// the server asked for 16 would hand the second pass time-stretched audio.
+		let audioFormat = pending.audioFormat
 		let mode = pending.mode
 		let options = pending.options
 		let direct = isDirect()
@@ -503,7 +514,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 
 			let samples = PCM16Resampler.float32Samples(
 				fromPCM16LittleEndian: audio,
-				sourceHz: DictationAudioFormat.engine.sampleRate,
+				sourceHz: audioFormat.sampleRate,
 				targetHz: 16_000)
 
 			switch mode {
@@ -556,6 +567,15 @@ final class StreamingTranscriber: SpeechTranscribing {
 			// growing it (nemo-stream QA, WHI-58). The accumulated draft also lands
 			// in `pendingText`, which is what stop pastes for words still in flight.
 			utteranceDraft.append(delta)
+			live.ingest(committed: live.confirmedText, draft: utteranceDraft.draft)
+
+		case .revisedTranscript(let hypothesis):
+			// The engine re-sent the whole utterance rather than the fragment since
+			// the last event, and said so. Replacing is the only correct move:
+			// appending a string that already contains the draft renders the
+			// sentence's own prefix twice, in the HUD and then in the paste. See
+			// WHI-67/69 and `UtteranceDraftAccumulator`.
+			utteranceDraft.replace(with: hypothesis)
 			live.ingest(committed: live.confirmedText, draft: utteranceDraft.draft)
 
 		case .finalTranscript:
@@ -849,8 +869,13 @@ final class StreamingTranscriber: SpeechTranscribing {
 			return .directEngine(baseURL, model: model, language: options.language)
 		}
 		let server = try await resolveServer()
+		// The format the server advertised, not a constant. Two engines behind one
+		// backend need not agree on a sample rate, and one that disagrees is not
+		// rejected — speaches silently time-compresses mismatched audio, so the
+		// transcript still reads plausibly while being wrong. See WHI-71.
 		return .backend(
-			baseURL, server: server.id, model: server.model, language: options.language)
+			baseURL, server: server.id, model: server.model, language: options.language,
+			audio: server.audioFormat)
 	}
 }
 
@@ -861,6 +886,8 @@ final class StreamingTranscriber: SpeechTranscribing {
 /// owns, the same rule the close epilogue follows.
 private struct TwoPassContext {
 	let session: DictationSession
+	/// The PCM format that session streamed in — the server's, per WHI-71.
+	let audioFormat: DictationAudioFormat
 	let closing: Task<Void, Never>?
 	let mode: TwoPassFinalizerMode
 	let options: TranscriptionOptions
