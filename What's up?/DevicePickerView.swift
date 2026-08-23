@@ -9,7 +9,7 @@ extension Notification.Name {
 enum PillPage: String { case root, input, action }
 
 /// One wire format for `.pillControlsToggled` payloads, shared by every poster
-/// (pill controls button, device icon) and the window that hosts the panel, so
+/// (the pill's two control glyphs) and the window that hosts the panel, so
 /// an unknown or missing page hint always degrades to the root page.
 enum PillControlsRouting {
 	static let showKey = "show"
@@ -27,6 +27,35 @@ enum PillControlsRouting {
 
 	static func page(in userInfo: [AnyHashable: Any]?) -> PillPage {
 		(userInfo?[pageKey] as? String).flatMap(PillPage.init(rawValue:)) ?? .root
+	}
+}
+
+/// The pill controls' open/closed state and which page they are showing, as a
+/// plain value the pill owns. Each control glyph taps its own page: tapping the
+/// page already on screen dismisses the panel, tapping the other one swaps to it
+/// without closing. Kept out of the view so the toggle rule is testable. WHI-50.
+struct PillControlsState: Equatable {
+	private(set) var isOpen = false
+	/// Retained across a dismissal so re-tapping the same glyph re-opens where the
+	/// user left off.
+	private(set) var page: PillPage = .root
+
+	mutating func tap(_ target: PillPage) {
+		if isOpen && page == target {
+			isOpen = false
+		} else {
+			isOpen = true
+			page = target
+		}
+	}
+
+	/// The panel closed itself (a selection, "Add your own…", a click outside).
+	mutating func dismissed() {
+		isOpen = false
+	}
+
+	var routingUserInfo: [String: Any] {
+		PillControlsRouting.userInfo(show: isOpen, page: isOpen ? page : nil)
 	}
 }
 
@@ -76,6 +105,9 @@ struct PillControlsView: View {
 	@AppStorage("whisperaDefaultCommandId") private var defaultCommandId = ""
 	@State private var page: PillPage
 	@State private var heights: [PillPage: CGFloat] = [:]
+	/// The panel opens straight onto the page whose glyph was tapped, so there is
+	/// a root to go back to only when root is where it started.
+	private let canGoBack: Bool
 
 	init(
 		audioManager: AudioManager,
@@ -84,6 +116,7 @@ struct PillControlsView: View {
 	) {
 		self.audioManager = audioManager
 		self.presenter = presenter
+		self.canGoBack = initialPage == .root
 		_page = State(initialValue: initialPage)
 	}
 
@@ -103,7 +136,14 @@ struct PillControlsView: View {
 		withAnimation(pageAnimation) { page = destination }
 	}
 
+	/// Where a selection returns to: the root list when the panel opened there,
+	/// and otherwise straight out — a page opened from its own pill glyph has
+	/// nothing above it to go back to.
 	private func back() {
+		guard canGoBack else {
+			NotificationCenter.default.post(name: .pillControlsDismissed, object: nil)
+			return
+		}
 		withAnimation(pageAnimation) { page = .root }
 	}
 
@@ -236,7 +276,7 @@ struct PillControlsView: View {
 
 	private var inputPage: some View {
 		VStack(alignment: .leading, spacing: 2) {
-			revealRow(0) { header(icon: "mic.fill", title: "Input Device", showBack: true) }
+			revealRow(0) { header(icon: "mic.fill", title: "Input Device", showBack: canGoBack) }
 			Rectangle().fill(dividerGray).frame(height: 1)
 			revealRow(1) {
 				optionRow(icon: "mic.fill", title: "System Default", selected: selectedUID == AudioDeviceManager.systemDefaultUID) {
@@ -257,7 +297,7 @@ struct PillControlsView: View {
 
 	private var actionPage: some View {
 		VStack(alignment: .leading, spacing: 2) {
-			revealRow(0) { header(icon: "list.clipboard", title: "Post-dictation Action", showBack: true) }
+			revealRow(0) { header(icon: "list.clipboard", title: "Post-dictation Action", showBack: canGoBack) }
 			Rectangle().fill(dividerGray).frame(height: 1)
 			revealRow(1) {
 				noneRow(selected: defaultCommandId.isEmpty) {
