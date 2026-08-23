@@ -340,6 +340,10 @@ class ListeningWindow: NSWindow {
 		// (Re)host the requested picker each time so one floating panel serves both
 		// the device picker and the post-action picker (WHI-50).
 		guard let picker = pickerWindow else { return }
+		// Captured before the re-host: a panel already on screen means the user
+		// tapped the *other* control glyph, which is a page swap rather than a
+		// fresh open.
+		let wasVisible = picker.isVisible && !isDismissingPicker
 		picker.contentView = NSHostingView(rootView: rootView)
 
 		// One synchronous measurement at show time; every later size change arrives
@@ -358,6 +362,23 @@ class ListeningWindow: NSWindow {
 		isDismissingPicker = false
 
 		let target = pickerFrame(size: controlsPresenter.size, pillFrame: frame)
+
+		// A page swap: glide to the new size on the structural curve instead of
+		// replaying the growth out of the pill, which would read as a flicker.
+		if wasVisible {
+			picker.alphaValue = 1
+			guard !Motion.systemReduceMotion else {
+				picker.setFrame(target, display: true)
+				return
+			}
+			NSAnimationContext.runAnimationGroup { context in
+				context.duration = Motion.structuralDuration
+				context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+				context.allowsImplicitAnimation = true
+				picker.animator().setFrame(target, display: true)
+			}
+			return
+		}
 
 		guard !Motion.systemReduceMotion else {
 			picker.alphaValue = 1

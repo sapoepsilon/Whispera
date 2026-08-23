@@ -22,11 +22,22 @@ enum PillPhase: Equatable {
 struct PillLayout: Equatable {
 	var phase: PillPhase
 	var controlsOpen: Bool
+	/// Which page the panel was last opened on, so each control glyph can show
+	/// whether it is the one currently presenting.
+	var controlsPage: PillPage
 	var showCancel: Bool
 	var typeScale: CGFloat
 	/// Affects the pill's width, so it belongs to the layout rather than being
 	/// read straight off the device manager.
 	var deviceIcon: String
+	/// The armed post-dictation action's identity. Sits beside `deviceIcon` for
+	/// the same reason: it is the second glyph in the row, so it is part of what
+	/// determines the pill's width.
+	var actionIcon: String
+	/// Whether a post-dictation action is armed at all, which drives the pill's
+	/// tint. Distinct from `actionIcon != noActionGlyph` so the tint has one
+	/// authority rather than a glyph comparison.
+	var actionArmed: Bool
 
 	/// Dynamic-Type scale factor applied to the pill's fixed height so larger
 	/// text sizes grow the pill instead of clipping it.
@@ -50,7 +61,7 @@ struct ListeningView: View {
 	@State private var whisperKit = WhisperKitTranscriber.shared
 	@State private var live = LiveTranscriptionState.shared
 	@State private var coordinator = DictationCoordinator.shared
-	@State private var showControls = false
+	@State private var controls = PillControlsState()
 	@State private var showCancel = false
 	@State private var deviceManager = AudioDeviceManager.shared
 	@State private var recipeStore = RecipeStore.shared
@@ -116,13 +127,22 @@ struct ListeningView: View {
 		}
 	}
 
+	private var postAction: String {
+		ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes)
+	}
+
 	private var layout: PillLayout {
 		PillLayout(
 			phase: phase,
-			controlsOpen: showControls,
+			controlsOpen: controls.isOpen,
+			controlsPage: controls.page,
 			showCancel: showCancel,
 			typeScale: PillLayout.scale(for: dynamicTypeSize),
-			deviceIcon: activeDeviceIcon
+			deviceIcon: activeDeviceIcon,
+			actionIcon: ListeningPostAction.glyph(
+				defaultCommandId: defaultCommandId, recipes: recipeStore.recipes),
+			actionArmed: ListeningPostAction.isArmed(
+				defaultCommandId: defaultCommandId, recipes: recipeStore.recipes)
 		)
 	}
 
@@ -147,7 +167,7 @@ struct ListeningView: View {
 	private var micLiveRow: some View {
 		HStack(spacing: PillSpacing.sm) {
 			if layout.phase == .recording {
-				controlsButton
+				actionIcon
 			} else {
 				ZStack {
 					ProgressView()
@@ -174,33 +194,72 @@ struct ListeningView: View {
 		}
 	}
 
-	/// Which microphone is live. Uses the id + transition swap that the menu bar
-	/// status glyph uses (MenuBarView StatusGlyph) rather than
+	/// Icon A: which microphone is live. Uses the id + transition swap that the
+	/// menu bar status glyph uses (MenuBarView StatusGlyph) rather than
 	/// `.contentTransition(.symbolEffect(.replace))`, which never fired here.
-	/// Tapping it opens the controls panel straight on the input-device page;
-	/// the controls button next to it keeps its root-page toggle.
 	private var deviceIcon: some View {
-		Button {
-			showControls = true
-			NotificationCenter.default.post(
-				name: .pillControlsToggled,
-				object: nil,
-				userInfo: PillControlsRouting.userInfo(show: true, page: .input)
-			)
+		controlIcon(
+			glyph: layout.deviceIcon,
+			page: .input,
+			help: "Input device — \(activeDeviceName). Click to switch."
+		)
+	}
+
+	/// Icon B: the armed post-dictation action, wearing that action's own glyph
+	/// so the pill says what is about to happen to the words. See WHI-50.
+	private var actionIcon: some View {
+		controlIcon(
+			glyph: layout.actionIcon,
+			page: .action,
+			help: "Post-dictation action — \(postAction). Click to change."
+		)
+	}
+
+	/// One pill control: a glyph that morphs when its identity changes, on a chip
+	/// that lights up while its page is the one the panel is showing. Tapping it
+	/// opens that page, or dismisses the panel when it is already there.
+	///
+	/// Both animations are scoped to this glyph rather than hung off the pill's
+	/// root, so a device switch or an action change cannot restart every other
+	/// animation in the view.
+	private func controlIcon(glyph: String, page: PillPage, help: String) -> some View {
+		let active = layout.controlsOpen && layout.controlsPage == page
+		return Button {
+			toggleControls(page)
 		} label: {
 			ZStack {
-				Image(systemName: layout.deviceIcon)
+				Image(systemName: glyph)
 					.font(.system(size: 11))
 					.foregroundColor(.secondary)
-					.id(layout.deviceIcon)
+					.id(glyph)
 					.transition(
 						reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
 			}
-			.animation(reduceMotion ? nil : Motion.iconMorph, value: layout.deviceIcon)
+			.frame(width: 14, height: 14)
+			.animation(reduceMotion ? nil : Motion.iconMorph, value: glyph)
+			.padding(.horizontal, 5)
+			.padding(.vertical, 3)
+			.background(
+				RoundedRectangle(cornerRadius: 5)
+					.fill(Color.blue.opacity(active ? 0.18 : 0))
+					.animation(reduceMotion ? nil : Motion.iconMorphTint, value: active)
+			)
 			.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain)
-		.help("Input device - \(activeDeviceName). Click to switch.")
+		.help(help)
+	}
+
+	/// Open the panel on `page`, or close it when that page is already up. The
+	/// panel's own state follows the same notification, so the chip highlight and
+	/// what is on screen cannot disagree.
+	private func toggleControls(_ page: PillPage) {
+		controls.tap(page)
+		NotificationCenter.default.post(
+			name: .pillControlsToggled,
+			object: nil,
+			userInfo: controls.routingUserInfo
+		)
 	}
 
 	/// The post-dictation action, running inside the pill. It takes its final
@@ -215,56 +274,6 @@ struct ListeningView: View {
 					.foregroundColor(.blue)
 			}
 		}
-	}
-
-	/// Single pill control that opens the Control-Center-style dropdown
-	/// (Input Device + Post-dictation Action). See WHI-50.
-	private var controlsButton: some View {
-		Button {
-			showControls.toggle()
-			NotificationCenter.default.post(
-				name: .pillControlsToggled,
-				object: nil,
-				userInfo: PillControlsRouting.userInfo(show: showControls)
-			)
-		} label: {
-			controlsSwitch
-				.padding(.horizontal, 5)
-				.padding(.vertical, 3)
-				.background(
-					RoundedRectangle(cornerRadius: 5)
-						.fill(Color.blue.opacity(0.15))
-				)
-				.foregroundColor(.secondary)
-		}
-		.buttonStyle(.plain)
-		.help("Input device & post-dictation action — \(ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes))")
-	}
-
-	/// The panel's state read as a switch: flipped on while it is presented, off
-	/// while it is hidden. Driven by `layout.controlsOpen` — the same state the
-	/// panel itself follows, including the `.pillControlsDismissed` reset — so the
-	/// glyph cannot say "on" over a closed panel.
-	///
-	/// Both glyphs stay in the hierarchy and cross-fade. The id + transition swap
-	/// the device icon uses removes one view and inserts another, and the removal
-	/// runs slightly ahead of the insertion, so the switch visibly blinked out
-	/// before it came back. The fixed frame keeps the button's hit area and the
-	/// pill's width identical across the flip.
-	private var controlsSwitch: some View {
-		ZStack {
-			switchGlyph("lightswitch.off", shown: !layout.controlsOpen)
-			switchGlyph("lightswitch.on", shown: layout.controlsOpen)
-		}
-		.frame(width: 14, height: 14)
-		.animation(reduceMotion ? nil : Motion.iconMorph, value: layout.controlsOpen)
-	}
-
-	private func switchGlyph(_ name: String, shown: Bool) -> some View {
-		Image(systemName: name)
-			.font(.system(size: 11))
-			.opacity(shown ? 1 : 0)
-			.scaleEffect(reduceMotion ? 1 : (shown ? 1 : 0.9))
 	}
 
 	private var pillContent: some View {
@@ -290,7 +299,7 @@ struct ListeningView: View {
 					.frame(height: 50 * layout.typeScale)
 			}
 		}
-		.pillChrome(cornerRadius: cornerRadius)
+		.pillChrome(cornerRadius: cornerRadius, tinted: layout.actionArmed)
 		// The pill reports its natural laid-out size and the window assigns it once
 		// per real change, mirroring the popover's measurement bridge.
 		.onGeometryChange(for: CGSize.self) { proxy in
@@ -306,19 +315,67 @@ struct ListeningView: View {
 			if !Task.isCancelled && coordinator.isRunning { showCancel = true }
 		}
 		.onReceive(NotificationCenter.default.publisher(for: .pillControlsDismissed)) { _ in
-			showControls = false
+			controls.dismissed()
 		}
 	}
 }
 
-/// Resolves the human-readable label for the current post-action selection.
-/// Falls back to "No action" when unset or pointing at a deleted command.
+/// Resolves what the pill says about the current post-action selection: its
+/// label, its glyph, and whether anything is armed at all. Every one of them
+/// falls back to "no action" when the selection is unset or points at a command
+/// that has since been deleted.
 enum ListeningPostAction {
+	/// Shown on icon B while nothing is armed. The pill stays neutral here.
+	static let noActionGlyph = "nosign"
+	/// An armed command whose name matches none of the keywords below. Commands
+	/// carry no symbol of their own, so this is the generic "something runs".
+	static let genericGlyph = "sparkles"
+
+	/// First match wins, so the more specific words come first.
+	private static let glyphKeywords: [(word: String, glyph: String)] = [
+		("translat", "globe"),
+		("summar", "text.alignleft"),
+		("proofread", "wand.and.stars"),
+		("grammar", "wand.and.stars"),
+		("polish", "wand.and.stars"),
+		("email", "envelope"),
+		("mail", "envelope"),
+		("code", "chevron.left.forwardslash.chevron.right"),
+		("checklist", "checklist"),
+		("todo", "checklist"),
+		("task", "checklist"),
+		("meeting", "person.2"),
+		("note", "note.text"),
+		("question", "questionmark.bubble"),
+	]
+
+	static func recipe(defaultCommandId: String, recipes: [Recipe]) -> Recipe? {
+		guard !defaultCommandId.isEmpty else { return nil }
+		return recipes.first(where: { $0.id == defaultCommandId })
+	}
+
+	static func isArmed(defaultCommandId: String, recipes: [Recipe]) -> Bool {
+		recipe(defaultCommandId: defaultCommandId, recipes: recipes) != nil
+	}
+
 	static func label(defaultCommandId: String, recipes: [Recipe]) -> String {
-		guard !defaultCommandId.isEmpty,
-			let recipe = recipes.first(where: { $0.id == defaultCommandId })
+		guard let recipe = recipe(defaultCommandId: defaultCommandId, recipes: recipes)
 		else { return "No action" }
 		return recipe.name.isEmpty ? "Untitled" : recipe.name
+	}
+
+	static func glyph(defaultCommandId: String, recipes: [Recipe]) -> String {
+		guard let recipe = recipe(defaultCommandId: defaultCommandId, recipes: recipes)
+		else { return noActionGlyph }
+		return glyph(for: recipe)
+	}
+
+	static func glyph(for recipe: Recipe) -> String {
+		let haystack = "\(recipe.name) \(recipe.description ?? "")".lowercased()
+		for entry in glyphKeywords where haystack.contains(entry.word) {
+			return entry.glyph
+		}
+		return genericGlyph
 	}
 }
 
