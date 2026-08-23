@@ -259,6 +259,18 @@ final class LiveTranscriptionState {
 struct UtteranceDraftAccumulator {
 	private var fragments = ""
 
+	/// How much of a delta has to overlap the draft's tail before the overlap is
+	/// read as a revision rather than a coincidence.
+	///
+	/// A real append-only delta is a token or two — `"ing"`, `" the"`, `"."` —
+	/// and short strings collide by accident all the time: a draft ending
+	/// `"…on the"` followed by a genuine `" the mat"` shares four characters and
+	/// means nothing by it. A re-sent revised tail is a clause. Eight characters
+	/// is comfortably above the one and below the other; it is a threshold, not a
+	/// measurement, and it exists so the splice below cannot eat a legitimate
+	/// fragment.
+	private static let revisionOverlapFloor = 8
+
 	/// The utterance so far, trimmed only at the edges. A fragment often opens
 	/// with the space that separates it from the previous one, and a leading
 	/// space here would double up against the separator
@@ -268,11 +280,77 @@ struct UtteranceDraftAccumulator {
 		fragments.trimmingCharacters(in: .whitespaces)
 	}
 
+	/// The engine sent the whole utterance as it now hears it, so the draft is
+	/// replaced outright.
+	///
+	/// This is the path a `DictationEvent.revisedTranscript` takes — the engine
+	/// itself said which of the two things it meant, which is always better
+	/// evidence than the shape of the text. `append` is the fallback for an
+	/// engine that revises without saying so.
+	mutating func replace(with hypothesis: String) {
+		fragments = hypothesis
+	}
+
 	mutating func append(_ delta: String) {
-		fragments += delta
+		fragments = Self.merging(fragments, with: delta)
 	}
 
 	mutating func clear() {
 		fragments = ""
+	}
+
+	/// What the draft becomes when `delta` arrives — append, replace, or splice.
+	///
+	/// Append-only was the whole contract this used to assume: `fragments +=
+	/// delta`, on the strength of the OpenAI-Realtime `…transcription.delta`
+	/// frame carrying only the new fragment. Engines behind the backend do not
+	/// all honour it. One re-sends the entire utterance on every event, another
+	/// re-sends a *revised tail* — and glued on with `+=`, both render the
+	/// sentence's own prefix twice ("Eh this should be workEh this should be
+	/// working"). What reaches the user is that doubled text: `stopStreaming`
+	/// pastes the committed transcript plus this draft.
+	///
+	/// So the decision is made from the text as well as from the event type, in
+	/// three rules ordered from most to least certain. Pure and static so the
+	/// whole table is exercisable without a session — see
+	/// `LiveTranscriptionStateTests`. See WHI-67/69.
+	static func merging(_ current: String, with delta: String) -> String {
+		let existing = current.trimmingCharacters(in: .whitespaces)
+		let incoming = delta.trimmingCharacters(in: .whitespaces)
+		guard !incoming.isEmpty else { return current }
+		guard !existing.isEmpty else { return delta }
+
+		// 1. A full hypothesis by shape: everything the draft holds is this
+		//    delta's own prefix, so the delta *is* the utterance and appending it
+		//    would say the prefix twice.
+		if incoming.hasPrefix(existing) { return delta }
+
+		// 2. The same tail sent twice — an engine repeating its last frame after a
+		//    reconnect, or a proxy replaying it. Nothing to add.
+		if existing.hasSuffix(incoming), incoming.count >= revisionOverlapFloor { return current }
+
+		// 3. A revised tail: the delta re-states the end of the draft and carries
+		//    on past it. Splice at the overlap so the shared clause is rendered
+		//    once. Gated by `revisionOverlapFloor` so an ordinary short fragment
+		//    that happens to start the way the draft ends is still appended.
+		let overlap = overlapLength(tailOf: existing, headOf: incoming)
+		if overlap >= revisionOverlapFloor {
+			return existing + String(incoming.dropFirst(overlap))
+		}
+
+		return current + delta
+	}
+
+	/// The length of the longest string that is both a suffix of `tail` and a
+	/// prefix of `head`.
+	private static func overlapLength(tailOf tail: String, headOf head: String) -> Int {
+		let tail = Array(tail)
+		let head = Array(head)
+		var length = min(tail.count, head.count)
+		while length > 0 {
+			if tail.suffix(length).elementsEqual(head.prefix(length)) { return length }
+			length -= 1
+		}
+		return 0
 	}
 }
