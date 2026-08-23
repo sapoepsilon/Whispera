@@ -560,9 +560,11 @@ final class StreamingTranscriber: SpeechTranscribing {
 
 		case .revisedTranscript(let hypothesis):
 			// The engine re-sent the whole utterance rather than the fragment since
-			// the last event, so it replaces the draft instead of extending it.
-			utteranceDraft.clear()
-			utteranceDraft.append(hypothesis)
+			// the last event, and said so. Replacing is the only correct move:
+			// appending a string that already contains the draft renders the
+			// sentence's own prefix twice, in the HUD and then in the paste. See
+			// WHI-67/69 and `UtteranceDraftAccumulator`.
+			utteranceDraft.replace(with: hypothesis)
 			live.ingest(committed: live.confirmedText, draft: utteranceDraft.draft)
 
 		case .finalTranscript:
