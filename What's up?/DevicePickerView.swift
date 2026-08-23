@@ -1,124 +1,5 @@
 import SwiftUI
 
-struct DevicePickerView: View {
-	let audioManager: AudioManager
-	@State private var deviceManager = AudioDeviceManager.shared
-	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
-
-	private let selectedBlue = Color(nsColor: NSColor(red: 0.45, green: 0.72, blue: 1.0, alpha: 1.0))
-	private let unselectedGray = Color(nsColor: NSColor(red: 0.78, green: 0.78, blue: 0.8, alpha: 1.0))
-
-	private func isDeviceSelected(_ device: AudioInputDevice) -> Bool {
-		if selectedUID == AudioDeviceManager.systemDefaultUID {
-			return device.isDefault
-		}
-		return device.uid == selectedUID
-	}
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 2) {
-			HStack(spacing: 6) {
-				Image(systemName: "mic.fill")
-					.font(.system(size: 11))
-					.foregroundColor(Color(nsColor: NSColor(red: 0.55, green: 0.55, blue: 0.58, alpha: 1.0)))
-				Text("Switch Input Device")
-					.font(.system(size: 11, weight: .medium, design: .rounded))
-					.foregroundColor(Color(nsColor: NSColor(red: 0.55, green: 0.55, blue: 0.58, alpha: 1.0)))
-			}
-			.padding(.bottom, 4)
-
-			Rectangle()
-				.fill(Color(nsColor: NSColor(red: 0.25, green: 0.25, blue: 0.28, alpha: 1.0)))
-				.frame(height: 1)
-
-			Button {
-				Task {
-					await audioManager.switchInputDevice(to: AudioDeviceManager.systemDefaultUID)
-					NotificationCenter.default.post(name: .devicePickerDismissed, object: nil)
-				}
-			} label: {
-				let selected = selectedUID == AudioDeviceManager.systemDefaultUID
-				HStack(spacing: 8) {
-					Image(systemName: "mic.fill")
-						.font(.system(size: 12))
-						.frame(width: 20)
-						.foregroundColor(selected ? selectedBlue : .secondary)
-
-					Text("System Default")
-						.font(.system(size: 13, weight: selected ? .medium : .regular, design: .rounded))
-						.foregroundColor(selected ? selectedBlue : unselectedGray)
-						.lineLimit(1)
-
-					Spacer()
-
-					if selected {
-						Image(systemName: "checkmark.circle.fill")
-							.font(.system(size: 14))
-							.foregroundColor(.blue)
-					}
-				}
-				.padding(.horizontal, 8)
-				.padding(.vertical, 5)
-				.background(
-					RoundedRectangle(cornerRadius: 6)
-						.fill(selected ? Color(nsColor: NSColor(red: 0.2, green: 0.45, blue: 0.9, alpha: 0.25)) : Color.clear)
-				)
-				.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-
-			ForEach(deviceManager.availableDevices) { device in
-				let selected = isDeviceSelected(device)
-				Button {
-					Task {
-						await audioManager.switchInputDevice(to: device.uid)
-						NotificationCenter.default.post(name: .devicePickerDismissed, object: nil)
-					}
-				} label: {
-					HStack(spacing: 8) {
-						Image(systemName: device.iconName)
-							.font(.system(size: 12))
-							.frame(width: 20)
-							.foregroundColor(selected ? selectedBlue : .secondary)
-
-						Text(device.name)
-							.font(.system(size: 13, weight: selected ? .medium : .regular, design: .rounded))
-							.foregroundColor(selected ? selectedBlue : unselectedGray)
-							.lineLimit(1)
-
-						Spacer()
-
-						if selected {
-							Image(systemName: "checkmark.circle.fill")
-								.font(.system(size: 14))
-								.foregroundColor(.blue)
-						}
-					}
-					.padding(.horizontal, 8)
-					.padding(.vertical, 5)
-					.background(
-						RoundedRectangle(cornerRadius: 6)
-							.fill(selected ? Color(nsColor: NSColor(red: 0.2, green: 0.45, blue: 0.9, alpha: 0.25)) : Color.clear)
-					)
-					.contentShape(Rectangle())
-				}
-				.buttonStyle(.plain)
-			}
-		}
-		.padding(8)
-		.background(
-			RoundedRectangle(cornerRadius: 12)
-				.fill(Color(nsColor: NSColor(red: 0.15, green: 0.15, blue: 0.17, alpha: 0.95)))
-				.overlay(
-					RoundedRectangle(cornerRadius: 12)
-						.strokeBorder(Color(nsColor: NSColor(red: 0.3, green: 0.3, blue: 0.35, alpha: 1.0)), lineWidth: 0.5)
-				)
-		)
-		.shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
-		.frame(minWidth: 220)
-	}
-}
-
 extension Notification.Name {
 	static let pillControlsToggled = Notification.Name("PillControlsToggled")
 	static let pillControlsDismissed = Notification.Name("PillControlsDismissed")
@@ -128,7 +9,7 @@ extension Notification.Name {
 enum PillPage: String { case root, input, action }
 
 /// One wire format for `.pillControlsToggled` payloads, shared by every poster
-/// (pill controls button, device icon) and the window that hosts the panel, so
+/// (the pill's two control glyphs) and the window that hosts the panel, so
 /// an unknown or missing page hint always degrades to the root page.
 enum PillControlsRouting {
 	static let showKey = "show"
@@ -146,6 +27,35 @@ enum PillControlsRouting {
 
 	static func page(in userInfo: [AnyHashable: Any]?) -> PillPage {
 		(userInfo?[pageKey] as? String).flatMap(PillPage.init(rawValue:)) ?? .root
+	}
+}
+
+/// The pill controls' open/closed state and which page they are showing, as a
+/// plain value the pill owns. Each control glyph taps its own page: tapping the
+/// page already on screen dismisses the panel, tapping the other one swaps to it
+/// without closing. Kept out of the view so the toggle rule is testable. WHI-50.
+struct PillControlsState: Equatable {
+	private(set) var isOpen = false
+	/// Retained across a dismissal so re-tapping the same glyph re-opens where the
+	/// user left off.
+	private(set) var page: PillPage = .root
+
+	mutating func tap(_ target: PillPage) {
+		if isOpen && page == target {
+			isOpen = false
+		} else {
+			isOpen = true
+			page = target
+		}
+	}
+
+	/// The panel closed itself (a selection, "Add your own…", a click outside).
+	mutating func dismissed() {
+		isOpen = false
+	}
+
+	var routingUserInfo: [String: Any] {
+		PillControlsRouting.userInfo(show: isOpen, page: isOpen ? page : nil)
 	}
 }
 
@@ -195,6 +105,9 @@ struct PillControlsView: View {
 	@AppStorage("whisperaDefaultCommandId") private var defaultCommandId = ""
 	@State private var page: PillPage
 	@State private var heights: [PillPage: CGFloat] = [:]
+	/// The panel opens straight onto the page whose glyph was tapped, so there is
+	/// a root to go back to only when root is where it started.
+	private let canGoBack: Bool
 
 	init(
 		audioManager: AudioManager,
@@ -203,6 +116,7 @@ struct PillControlsView: View {
 	) {
 		self.audioManager = audioManager
 		self.presenter = presenter
+		self.canGoBack = initialPage == .root
 		_page = State(initialValue: initialPage)
 	}
 
@@ -222,7 +136,14 @@ struct PillControlsView: View {
 		withAnimation(pageAnimation) { page = destination }
 	}
 
+	/// Where a selection returns to: the root list when the panel opened there,
+	/// and otherwise straight out — a page opened from its own pill glyph has
+	/// nothing above it to go back to.
 	private func back() {
+		guard canGoBack else {
+			NotificationCenter.default.post(name: .pillControlsDismissed, object: nil)
+			return
+		}
 		withAnimation(pageAnimation) { page = .root }
 	}
 
@@ -355,7 +276,7 @@ struct PillControlsView: View {
 
 	private var inputPage: some View {
 		VStack(alignment: .leading, spacing: 2) {
-			revealRow(0) { header(icon: "mic.fill", title: "Input Device", showBack: true) }
+			revealRow(0) { header(icon: "mic.fill", title: "Input Device", showBack: canGoBack) }
 			Rectangle().fill(dividerGray).frame(height: 1)
 			revealRow(1) {
 				optionRow(icon: "mic.fill", title: "System Default", selected: selectedUID == AudioDeviceManager.systemDefaultUID) {
@@ -376,7 +297,7 @@ struct PillControlsView: View {
 
 	private var actionPage: some View {
 		VStack(alignment: .leading, spacing: 2) {
-			revealRow(0) { header(icon: "list.clipboard", title: "Post-dictation Action", showBack: true) }
+			revealRow(0) { header(icon: "list.clipboard", title: "Post-dictation Action", showBack: canGoBack) }
 			Rectangle().fill(dividerGray).frame(height: 1)
 			revealRow(1) {
 				noneRow(selected: defaultCommandId.isEmpty) {

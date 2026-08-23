@@ -137,16 +137,57 @@ struct PillWordFlow: View {
 	}
 }
 
+/// The wash laid over the pill while a post-dictation action is armed. A hue of
+/// its own rather than a stronger blue, so "your words will be run through
+/// something" reads at a glance and is never mistaken for the neutral chrome.
+/// See WHI-50.
+enum PillTint {
+	static let armed = Color.purple
+	static let fillStrong = 0.24
+	static let fillSoft = 0.10
+	static let border = 0.45
+}
+
 /// The pill's background: on macOS 26 the system Liquid Glass, and before that
 /// the hand-built material + soft blue border + shadow pair every pill-family
 /// surface used to reimplement on its own. One definition, so the listening
 /// pill and the live-words HUD cannot visually drift apart again.
 struct PillChrome: ViewModifier {
 	var cornerRadius: CGFloat = PillCornerRadius.standard
+	/// True while a post-dictation action is armed. Neutral chrome otherwise.
+	var tinted: Bool = false
+
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	/// Always in the hierarchy, cross-fading on its opacity rather than being
+	/// inserted and removed: the animation stays scoped to this one overlay, so
+	/// arming an action cannot restart the pill's other animations.
+	private var tintWash: some View {
+		RoundedRectangle(cornerRadius: cornerRadius)
+			.fill(
+				LinearGradient(
+					colors: [
+						PillTint.armed.opacity(PillTint.fillStrong),
+						PillTint.armed.opacity(PillTint.fillSoft),
+					],
+					startPoint: .topLeading,
+					endPoint: .bottomTrailing
+				)
+			)
+			.overlay(
+				RoundedRectangle(cornerRadius: cornerRadius)
+					.strokeBorder(PillTint.armed.opacity(PillTint.border), lineWidth: 1)
+			)
+			.opacity(tinted ? 1 : 0)
+			.allowsHitTesting(false)
+			.animation(reduceMotion ? nil : Motion.iconMorphTint, value: tinted)
+	}
 
 	func body(content: Content) -> some View {
 		if #available(macOS 26.0, *) {
-			content.glassEffect()
+			content
+				.glassEffect()
+				.overlay(tintWash)
 		} else {
 			content
 				.background(
@@ -180,6 +221,7 @@ struct PillChrome: ViewModifier {
 							lineWidth: 1
 						)
 				)
+				.overlay(tintWash)
 				.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
 				.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
 		}
@@ -188,8 +230,10 @@ struct PillChrome: ViewModifier {
 
 extension View {
 	/// Applies the shared pill chrome (materials, border, shadow / Liquid Glass)
-	/// at the given corner radius.
-	func pillChrome(cornerRadius: CGFloat = PillCornerRadius.standard) -> some View {
-		modifier(PillChrome(cornerRadius: cornerRadius))
+	/// at the given corner radius, tinted while a post-dictation action is armed.
+	func pillChrome(cornerRadius: CGFloat = PillCornerRadius.standard, tinted: Bool = false)
+		-> some View
+	{
+		modifier(PillChrome(cornerRadius: cornerRadius, tinted: tinted))
 	}
 }
