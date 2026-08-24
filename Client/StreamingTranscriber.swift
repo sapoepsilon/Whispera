@@ -23,8 +23,16 @@ final class StreamingTranscriber: SpeechTranscribing {
 	static let shared = StreamingTranscriber()
 	/// Same conformer, addressed straight at an engine. Separate instance because
 	/// each holds its own socket and resolved server.
+	///
+	/// Addressed at the direct engine's own URL rather than at
+	/// `transcriptionServerURL`: this conformer is direct by construction, so it
+	/// must not resolve its base through whichever engine happens to be selected
+	/// right now. `transcriptionDirectURL` is the normalised one — a base typed
+	/// as `192.168.50.140:8000` reaches the socket as
+	/// `http://192.168.50.140:8000/v1`, which is what makes the realtime path
+	/// `/v1/realtime` instead of the `/realtime` speaches refuses with 403.
 	static let direct = StreamingTranscriber(
-		baseURLProvider: { WhisperaSettings.transcriptionServerURL },
+		baseURLProvider: { WhisperaSettings.transcriptionDirectURL },
 		directProvider: { true })
 
 	private let engineCase: TranscriptionEngine
