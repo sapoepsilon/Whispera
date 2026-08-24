@@ -970,7 +970,7 @@
 		D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sapoepsilon/whispera-components";
-			requirement = { kind = exactVersion; version = 0.1.1; };
+			requirement = { kind = exactVersion; version = 0.1.2; };
 		};
 		D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
