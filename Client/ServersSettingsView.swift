@@ -3,6 +3,7 @@
 
 import SwiftUI
 import WhisperaDictation
+import WhisperaOpenAI
 
 extension StreamingGranularity {
 	/// Plain words for the server list — a user choosing a server should not
@@ -17,17 +18,16 @@ extension StreamingGranularity {
 }
 
 /// The Servers tab: every remote endpoint Whispera talks to, in one place —
-/// speech servers (the transcription engine and whatever URL/model it needs)
-/// and LLM servers (where recipe steps run). Grew out of the engine picker
-/// that used to hide inside General → Transcription and the separate "AI Mode"
-/// tab; the user-visible model is now "these are my servers".
+/// the speech server (whatever runs speech-to-text) and the LLM server (where
+/// recipe steps run). Both are the same shape now: a base URL, an optional key
+/// and a model, edited through `ServerEntrySettingsView`. The Local/BYOK mode
+/// picker that used to sit under "LLM Servers" is gone (WHI-91), and so is the
+/// separate direct-engine URL block that duplicated it on the speech side.
 struct ServersSettingsView: View {
 	@AppStorage(WhisperaSettings.transcriptionEngineKey) private var transcriptionEngineRaw =
 		TranscriptionEngine.auto.rawValue
 	@AppStorage(WhisperaSettings.transcriptionBackendURLKey) private var backendURL = ""
-	@AppStorage(WhisperaSettings.transcriptionDirectURLKey) private var directURL = ""
 	@AppStorage(WhisperaSettings.transcriptionServerIdKey) private var pinnedServerId = ""
-	@AppStorage(WhisperaSettings.transcriptionDirectModelKey) private var directModel = ""
 	@AppStorage("enableStreaming") private var enableStreaming = Constants.enableStreamingDefault
 	@AppStorage(WhisperaSettings.twoPassFinalizerKey) private var twoPassFinalizerRaw =
 		TwoPassFinalizerMode.off.rawValue
@@ -41,20 +41,12 @@ struct ServersSettingsView: View {
 	// Discovery list for the backend engines (auto + whisperaStreaming). Empty
 	// with no error means "not fetched yet"; a failed fetch keeps the pin row
 	// visible so a stale pin stays clearable even when the backend is down.
-	@State private var discoveredServers: [DiscoveredServer] = []
+	@State private var discoveredServers: [DictationServer] = []
 	@State private var isFetchingServers = false
 	@State private var serverFetchError: String?
 
-	// Direct-mode ("realtimeDirect") model list: fetched from the engine's own
-	// /models endpoint rather than typed by hand. Empty + no error means "not
-	// fetched yet", which is also the state a failed fetch falls back to, so the
-	// free-text field underneath stays reachable either way.
-	@State private var directModelOptions: [TranscriptionModelInfo] = []
-	@State private var isFetchingDirectModels = false
-	@State private var directModelFetchError: String?
-
 	// Automatic engine: what it currently resolves to, refreshed whenever the
-	// picker lands on it. Same shape as the model fetches above.
+	// picker lands on it.
 	@State private var autoResolutionCaption = "Deciding…"
 	@State private var isResolvingAutoEngine = false
 
@@ -80,7 +72,12 @@ struct ServersSettingsView: View {
 						.foregroundColor(.secondary)
 						backendServerConfig
 					case .realtimeDirect:
-						directEngineConfig
+						Text(
+							"Streams audio straight to an OpenAI-Realtime engine, with no Whispera backend in between. The engine holds its own credentials, so use this only on a network you trust."
+						)
+						.font(.caption)
+						.foregroundColor(.secondary)
+						speechServerConfig
 					case .whisperKit:
 						Text(
 							"Runs entirely on this Mac with the model chosen under General → Whisper Model. No server and no network involved."
@@ -89,10 +86,11 @@ struct ServersSettingsView: View {
 						.foregroundColor(.secondary)
 					case .whisperViaBYOK:
 						Text(
-							"Sends each recording to OpenAI's transcription API with your own key, straight from this Mac. No Whispera server involved."
+							"Uploads each finished recording to the speech server below and pastes what comes back. Any OpenAI-compatible transcription endpoint works — a cloud with your own key, or a server on your own network."
 						)
 						.font(.caption)
 						.foregroundColor(.secondary)
+						speechServerConfig
 					}
 
 					// `auto` is included alongside the server engines: it may resolve to
@@ -116,11 +114,11 @@ struct ServersSettingsView: View {
 
 				SettingsSection("LLM Servers") {
 					Text(
-						"Where recipe steps run when a dictation matches a recipe or a default command post-processes it."
+						"Where recipe steps run when a dictation matches a recipe or a default command post-processes it. Any OpenAI-compatible server: a local runtime (ollama, llama-server, vLLM, LM Studio) or a cloud with your own key."
 					)
 					.font(.caption)
 					.foregroundColor(.secondary)
-					LLMServersGroupView()
+					ServerEntrySettingsView(capability: .llm)
 				}
 			}
 			.padding(20)
@@ -156,7 +154,7 @@ struct ServersSettingsView: View {
 			"Engine",
 			description: "Where speech-to-text runs. On-device needs no network."
 		) {
-			Picker("Transcription engine", selection: $transcriptionEngineRaw) {
+			Picker("Transcription engine", selection: engineSelection) {
 				ForEach(TranscriptionEngine.allCases, id: \.rawValue) { engine in
 					Text(engine.displayName).tag(engine.rawValue)
 				}
@@ -164,19 +162,21 @@ struct ServersSettingsView: View {
 			.labelsHidden()
 			.frame(width: 240)
 			.accessibilityIdentifier("transcriptionEnginePicker")
-			// A server engine with live transcription off records first and
-			// transcribes at the end, which reads as the engine not working.
-			// Choosing one turns it on; the box below says so, and the
-			// toggle stays the user's.
-			.onChange(of: transcriptionEngineRaw) { _, raw in
-				guard TranscriptionEngine(rawValue: raw)?.streamsFromAServer == true,
-					!enableStreaming
-				else { return }
-				enableStreaming = true
-				AppLogger.shared.general.info(
-					"Live transcription turned on because a server engine was selected: \(raw)")
-			}
 		}
+	}
+
+	/// Writes the engine and nothing else.
+	///
+	/// It used to turn Live Transcription Mode on whenever the chosen engine
+	/// streamed from a server — a Settings picker mutating a global dictation
+	/// mode, which is what made the app start behaving like a dictation session
+	/// while the user was only trying to configure one (WHI-86). The info box
+	/// above still explains the consequence; explaining is the settings window's
+	/// job, switching is not.
+	private var engineSelection: Binding<String> {
+		Binding(
+			get: { transcriptionEngineRaw },
+			set: { WhisperaSettings.selectEngine(TranscriptionEngine.stored($0)) })
 	}
 
 	private var autoCaption: some View {
@@ -206,6 +206,23 @@ struct ServersSettingsView: View {
 		}
 	}
 
+	// MARK: - Speech server (realtimeDirect + whisperViaBYOK)
+
+	/// One entry for both, because they are one address. Batch upload used to
+	/// carry its own `https://api.openai.com/v1/audio/transcriptions`, pinned as
+	/// an initialiser default with no settings key and no UI behind it, so it
+	/// could never point at speaches, whisper.cpp or LM Studio (WHI-92).
+	private var speechServerConfig: some View {
+		VStack(alignment: .leading, spacing: 8) {
+			ServerEntrySettingsView(capability: .speech)
+			Text(
+				"The URL is the server's OpenAI-compatible base, ending in /v1. Refresh lists the speech-to-text models it has installed; type one directly if it cannot be reached right now."
+			)
+			.font(.caption)
+			.foregroundColor(.secondary)
+		}
+	}
+
 	// MARK: - Backend engines (auto + whisperaStreaming)
 
 	private var backendServerConfig: some View {
@@ -217,10 +234,11 @@ struct ServersSettingsView: View {
 				)
 				.textFieldStyle(.roundedBorder)
 				.autocorrectionDisabled()
+				.onSubmit { refreshDiscoveredServers() }
 				.accessibilityIdentifier("transcriptionServerURLField")
 
 				Button {
-					refreshDiscoveredServers()
+					refreshDiscoveredServers(explicit: true)
 				} label: {
 					Image(systemName: "arrow.clockwise")
 				}
@@ -249,11 +267,18 @@ struct ServersSettingsView: View {
 		}
 		.animation(.easeInOut(duration: 0.2), value: serverFetchError)
 		.animation(.easeInOut(duration: 0.2), value: discoveredServers)
-		// One task keyed on engine + URL: switching to a backend engine fetches,
-		// and editing the URL re-fetches after a short pause so we do not probe
-		// on every keystroke.
+		// Cleared before anything can re-probe, so a warning never outlives the
+		// URL it was about (WHI-86).
+		.onChange(of: backendURL) { _, _ in
+			serverFetchError = nil
+			discoveredServers = []
+		}
+		// One task keyed on engine + URL. The sleep is cancelled by the next
+		// keystroke, so only a pause of at least the debounce reaches the fetch.
+		// It used to be 400 ms, which is inside normal typing cadence — the
+		// backend field probed half-typed addresses too.
 		.task(id: "\(transcriptionEngineRaw)|\(backendURL)") {
-			try? await Task.sleep(for: .milliseconds(400))
+			try? await Task.sleep(for: .milliseconds(ServerProbePolicy.debounceMilliseconds))
 			guard !Task.isCancelled else { return }
 			refreshDiscoveredServers()
 		}
@@ -297,7 +322,7 @@ struct ServersSettingsView: View {
 		}
 	}
 
-	private func serverDetail(for server: DiscoveredServer) -> String {
+	private func serverDetail(for server: DictationServer) -> String {
 		var parts: [String] = []
 		if !server.model.isEmpty { parts.append(server.model) }
 		parts.append("words \(server.granularity.plainWords)")
@@ -371,8 +396,13 @@ struct ServersSettingsView: View {
 		}
 	}
 
-	private func refreshDiscoveredServers() {
+	/// `explicit` is the Refresh button, and it is the only caller that probes an
+	/// address the automatic path would leave alone — pressing Refresh on a URL
+	/// that cannot be reached should say so, which is exactly the case the
+	/// automatic path must stay quiet about.
+	private func refreshDiscoveredServers(explicit: Bool = false) {
 		guard usesBackendServers else { return }
+		guard explicit || WhisperaSettings.transcriptionBackendURL != nil else { return }
 		isFetchingServers = true
 		serverFetchError = nil
 		Task { @MainActor in
@@ -380,14 +410,11 @@ struct ServersSettingsView: View {
 				guard let baseURL = WhisperaSettings.transcriptionBackendURL else {
 					throw StreamingTranscriberError.invalidServerURL
 				}
-				// Same credential shape the dictation socket uses; an empty token is
+				// The same credential the dictation socket uses; an empty token is
 				// fine against a self-hosted backend that requires none.
-				let credentials = RefreshingCredential.refreshingBearer {
-					(try? AuthTokenStore.shared.load()).flatMap { $0.isEmpty ? nil : $0 } ?? ""
-				}
-				discoveredServers = try await ServerDiscoveryProbe.fetch(
+				discoveredServers = try await discoverServers(
 					baseURL: baseURL,
-					credentials: credentials,
+					credentials: BackendCredentials.shared,
 					session: .shared,
 					timeout: 5)
 				serverFetchError = nil
@@ -398,114 +425,6 @@ struct ServersSettingsView: View {
 				serverFetchError = "Server unreachable — check the URL."
 			}
 			isFetchingServers = false
-		}
-	}
-
-	// MARK: - Direct engine (realtimeDirect)
-
-	private var directEngineConfig: some View {
-		VStack(alignment: .leading, spacing: 8) {
-			Text(
-				"Streams audio straight to an OpenAI-Realtime engine, with no Whispera backend in between. The engine holds its own credentials, so use this only on a network you trust."
-			)
-			.font(.caption)
-			.foregroundColor(.secondary)
-			TextField("http://192.168.0.10:8000/v1", text: $directURL)
-				.textFieldStyle(.roundedBorder)
-				.autocorrectionDisabled()
-				.accessibilityIdentifier("directEngineURLField")
-
-			HStack(spacing: 8) {
-				if isFetchingDirectModels {
-					ProgressView()
-						.scaleEffect(0.6)
-					Text("Checking the engine for installed models…")
-						.font(.caption)
-						.foregroundColor(.secondary)
-				} else if !directModelOptions.isEmpty {
-					Picker("Model", selection: $directModel) {
-						ForEach(directModelOptions) { model in
-							Text(model.displayName).tag(model.id)
-						}
-					}
-					.labelsHidden()
-					.frame(width: 260)
-					.accessibilityIdentifier("directEngineModelPicker")
-				} else {
-					// Fallback: the fetch never ran or it failed. Typing a
-					// model by hand keeps the engine reachable even when
-					// Whispera cannot list what it has installed.
-					TextField(
-						"Model (e.g. Systran/faster-distil-whisper-large-v3)",
-						text: $directModel
-					)
-					.textFieldStyle(.roundedBorder)
-					.autocorrectionDisabled()
-					.accessibilityIdentifier("directEngineModelField")
-				}
-
-				Button {
-					refreshDirectModels()
-				} label: {
-					Image(systemName: "arrow.clockwise")
-				}
-				.buttonStyle(.bordered)
-				.controlSize(.small)
-				.disabled(isFetchingDirectModels)
-				.accessibilityIdentifier("directEngineModelsRefreshButton")
-				.help("Ask the engine what speech-to-text models it has installed")
-			}
-			.animation(.easeInOut(duration: 0.2), value: isFetchingDirectModels)
-			.animation(.easeInOut(duration: 0.2), value: directModelOptions)
-
-			if let directModelFetchError {
-				HStack(spacing: 6) {
-					Image(systemName: "exclamationmark.triangle.fill")
-						.foregroundColor(.orange)
-						.font(.caption)
-					Text(directModelFetchError)
-						.font(.caption)
-						.foregroundColor(.orange)
-				}
-				.transition(.opacity)
-			}
-
-			Text(
-				"The URL is the engine's OpenAI-compatible base, ending in /v1. Refresh to list the models it already has installed, or type one directly if it cannot be reached right now."
-			)
-			.font(.caption)
-			.foregroundColor(.secondary)
-		}
-		.animation(.easeInOut(duration: 0.2), value: directModelFetchError)
-		.task(id: transcriptionEngineRaw) {
-			guard directModelOptions.isEmpty, directModelFetchError == nil else { return }
-			refreshDirectModels()
-		}
-	}
-
-	/// Asks the directly-addressed engine what speech-to-text models it has
-	/// installed. A failure keeps whatever model string is already saved and
-	/// falls back to the free-text field rather than clearing the selection —
-	/// an engine that is briefly unreachable should not cost the user their
-	/// configured model.
-	private func refreshDirectModels() {
-		isFetchingDirectModels = true
-		directModelFetchError = nil
-		Task { @MainActor in
-			do {
-				let models = try await StreamingTranscriber.direct.models()
-				directModelOptions = models
-				isFetchingDirectModels = false
-			} catch {
-				AppLogger.shared.general.error(
-					"Failed to list direct-engine models: \(error.localizedDescription)")
-				directModelOptions = []
-				// StreamingTranscriberError distinguishes "unreachable" from
-				// "reachable but no speech models", and both messages already say
-				// what to check — keep them instead of flattening to one line.
-				directModelFetchError = error.localizedDescription
-				isFetchingDirectModels = false
-			}
 		}
 	}
 }
