@@ -164,7 +164,35 @@ extension WhisperaSettings {
 			: transcriptionBackendURLString
 	}
 
-	static var transcriptionServerURL: URL? { url(from: transcriptionServerURLString) }
+	/// Resolved through the same two properties the string above picks between,
+	/// never by re-parsing the string itself.
+	///
+	/// The string form loses which side it came from, and the two sides parse
+	/// differently: a direct engine's base has to go through
+	/// `ServerURLNormalizer` so `192.168.50.140:8000` becomes
+	/// `http://192.168.50.140:8000/v1`, while the backend proxy must be left
+	/// exactly as typed. Parsing the merged string with the raw `url(from:)`
+	/// gave the direct engine a base with no `/v1`, so the realtime socket
+	/// opened `GET /realtime` and speaches answered 403 — the settings field
+	/// showed a normalised URL that nothing streaming ever used.
+	static var transcriptionServerURL: URL? {
+		transcriptionServerURL(
+			engine: transcriptionEngine,
+			backendURLString: transcriptionBackendURLString,
+			directURLString: transcriptionDirectURLString)
+	}
+
+	/// The routing itself, pure — so the guarantee that a direct base is
+	/// normalised and a backend base is not can be asserted without writing to
+	/// `UserDefaults.standard`, which the host app's `@AppStorage` bindings
+	/// observe.
+	static func transcriptionServerURL(
+		engine: TranscriptionEngine, backendURLString: String, directURLString: String
+	) -> URL? {
+		engine == .realtimeDirect
+			? ServerURLNormalizer.normalize(directURLString)
+			: url(from: backendURLString)
+	}
 
 	private static func url(from string: String) -> URL? {
 		let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -209,8 +237,7 @@ struct TranscriptionRouter {
 
 	private let engineProvider: () -> TranscriptionEngine
 
-	init(engineProvider: @escaping () -> TranscriptionEngine = { WhisperaSettings.transcriptionEngine })
-	{
+	init(engineProvider: @escaping () -> TranscriptionEngine = { WhisperaSettings.transcriptionEngine }) {
 		self.engineProvider = engineProvider
 	}
 
