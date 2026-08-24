@@ -47,7 +47,7 @@ struct RecipesView: View {
 		}
 		// Solid content background so the header isn't the window's gray material.
 		.background(Color(nsColor: .textBackgroundColor))
-		.task { await store.sync() }
+		.task { await store.reload() }
 		.sheet(isPresented: $isCreating) {
 			RecipeEditor(
 				recipe: Recipe(name: "", steps: [RecipeStep(config: LLMStepConfig(prompt: "{{input}}"))])

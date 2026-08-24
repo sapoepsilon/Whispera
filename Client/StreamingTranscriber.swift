@@ -2,7 +2,9 @@
 // Copyright (c) 2025-2026 Ismatulla Mansurov
 
 import Foundation
+import WhisperaBackend
 import WhisperaDictation
+import WhisperaOpenAI
 
 /// The streaming conformer: a WebSocket to the Whispera transcription proxy,
 /// behind the same interface as the on-device model.
@@ -108,8 +110,8 @@ final class StreamingTranscriber: SpeechTranscribing {
 		// hold the engine's credentials. Useful on a trusted network, and the only
 		// shape available to a host that has no backend at all.
 		directProvider: @escaping () -> Bool = { false },
-		modelProvider: @escaping () -> String = { WhisperaSettings.transcriptionDirectModel },
-		tokenStore: AuthTokenStore = .shared,
+		modelProvider: @escaping () -> String = { WhisperaSettings.speechServer.model },
+		credentials: any DictationCredentialProvider = BackendCredentials.shared,
 		urlSession: URLSession = .shared
 	) {
 		self.baseURLProvider = baseURLProvider
@@ -118,15 +120,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 		self.directModel = modelProvider
 		self.urlSession = urlSession
 		self.engineCase = directProvider() ? .realtimeDirect : .whisperaStreaming
-		// Read at connect time and dropped afterwards, and re-read on the one
-		// unauthorized retry, so a short-lived session token survives it.
-		// A missing token is not fatal: a self-hosted proxy on a trusted network
-		// may not require one, and refusing to connect would make the app harder
-		// to bring up than the server it talks to. If the server does want a
-		// credential it answers 4401, which surfaces as a real error.
-		self.credentials = .refreshingBearer {
-			(try? tokenStore.load()).flatMap { $0.isEmpty ? nil : $0 } ?? ""
-		}
+		self.credentials = credentials
 	}
 
 	// MARK: - Lifecycle
@@ -161,54 +155,41 @@ final class StreamingTranscriber: SpeechTranscribing {
 			.map { TranscriptionModelInfo(id: $0.id, displayName: "\($0.label) — \($0.model)") }
 	}
 
-	private struct DirectModelsResponse: Decodable {
-		struct Model: Decodable {
-			let id: String
-			let task: String?
-		}
-		let data: [Model]
-	}
-
-	/// `GET <baseURL>/models`, OpenAI-compatible. The endpoint lists every model
-	/// the engine serves — LLMs, TTS, embeddings on a multi-purpose host — so this
-	/// filters to the ones that can transcribe, the same way backend mode filters
-	/// servers to ones that support realtime. No credentials: direct mode is
-	/// deliberately for a trusted network with no proxy in front to hold one.
+	/// `GET <baseURL>/models`, OpenAI-compatible, through the package client.
+	///
+	/// The endpoint lists every model the engine serves — LLMs, TTS, embeddings
+	/// on a multi-purpose host — so it is filtered to the ones that can
+	/// transcribe, the same way backend mode filters servers to ones that support
+	/// realtime. The request, the decoding and the filter are `WhisperaOpenAI`
+	/// (WHI-93); what stays here is the mapping of its two failure shapes onto
+	/// the messages this engine already shows.
+	///
+	/// A key is sent when the speech server has one. Direct mode used to send
+	/// none on principle, which made "an OpenAI-compatible cloud" unreachable
+	/// through a field labelled for a LAN engine — the same closed shape WHI-91
+	/// removes from the LLM side.
 	private func directModels() async throws -> [TranscriptionModelInfo] {
 		guard let baseURL = baseURLProvider() else {
 			throw StreamingTranscriberError.invalidServerURL
 		}
 		let destination = baseURL.host ?? baseURL.absoluteString
-
-		let data: Data
-		let response: URLResponse
+		let client = OpenAICompatibleClient(
+			baseURL: baseURL,
+			apiKeyProvider: WhisperaSettings.speechServer.keyProvider,
+			session: urlSession,
+			logger: .whispera)
 		do {
-			(data, response) = try await urlSession.data(
-				for: URLRequest(url: baseURL.appendingPathComponent("models")))
-		} catch {
-			throw StreamingTranscriberError.engineUnreachable(destination)
-		}
-		guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-			throw StreamingTranscriberError.engineUnreachable(destination)
-		}
-
-		let decoded: DirectModelsResponse
-		do {
-			decoded = try JSONDecoder().decode(DirectModelsResponse.self, from: data)
-		} catch {
-			throw StreamingTranscriberError.engineUnreachable(destination)
-		}
-
-		let asrModels = decoded.data.filter { $0.task == "automatic-speech-recognition" }
-		guard !asrModels.isEmpty else {
+			return try await client.transcriptionModels().map { TranscriptionModelInfo(id: $0.id) }
+		} catch OpenAIError.noModelsAvailable {
 			throw StreamingTranscriberError.noModelsInstalled(destination)
+		} catch {
+			throw StreamingTranscriberError.engineUnreachable(destination)
 		}
-		return asrModels.map { TranscriptionModelInfo(id: $0.id) }
 	}
 
 	func selectModel(_ id: String) async throws {
 		if isDirect() {
-			WhisperaSettings.transcriptionDirectModel = id
+			UserDefaults.standard.set(id, forKey: ServerEntry.Capability.speech.modelKey)
 			return
 		}
 		WhisperaSettings.transcriptionServerId = id
@@ -492,8 +473,9 @@ final class StreamingTranscriber: SpeechTranscribing {
 		// main-actor hops: the transcription backend is where discovery
 		// advertises the batch capability, and its batch endpoint is the
 		// existing POST /transcribe plumbing.
-		let batchUploader = RemoteTranscriber(
-			serverURLProvider: { WhisperaSettings.transcriptionBackendURL })
+		let batchUploader = BackendTranscriber(
+			baseURLProvider: { WhisperaSettings.transcriptionBackendURL },
+			credentials: credentials)
 
 		return {
 			// The microphone half of the close is what stops frames being
@@ -536,10 +518,8 @@ final class StreamingTranscriber: SpeechTranscribing {
 					return .failed("the direct engine has no backend batch endpoint")
 				}
 				do {
-					let wav = RemoteBatchTranscriber.wav(from: samples)
-					let text = try await batchUploader.transcribeViaWhispera(
-						audio: wav, filename: "dictation.wav", mimetype: "audio/wav",
-						language: options.language)
+					let text = try await batchUploader.transcribe(
+						samples: samples, language: options.language)
 					return .finalized(text)
 				} catch {
 					return .failed("the batch upload failed: \(error.localizedDescription)")

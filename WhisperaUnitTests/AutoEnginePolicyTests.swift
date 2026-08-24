@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025-2026 Ismatulla Mansurov
 
+import Foundation
 import Testing
+import WhisperaDictation
 
 @testable import Whispera
 
@@ -9,19 +11,35 @@ import Testing
 /// what discovery found — no network, no backend, no MainActor. See WHI-58
 /// and AUTOCHOOSE-RESULT.md for the decision table this pins.
 struct AutoEnginePolicyTests {
+	/// `DictationServer` is `Decodable` with no memberwise initialiser — it is a
+	/// wire type, and the package deliberately does not offer a way to
+	/// hand-assemble one. Building fixtures through the decoder is therefore not
+	/// a workaround: it also pins that the JSON shape the backend sends is the
+	/// one the policy ranks.
 	private static func server(
 		id: String,
 		label: String? = nil,
 		isOnline: Bool = true,
 		supportsRealtime: Bool = true,
-		isDefault: Bool = false,
 		granularity: StreamingGranularity = .utterance,
-		isDefaultFlag: Bool = false
-	) -> DiscoveredServer {
-		DiscoveredServer(
-			id: id, label: label ?? id, model: "", isOnline: isOnline,
-			supportsRealtime: supportsRealtime, isDefault: isDefault || isDefaultFlag,
-			granularity: granularity)
+		isDefault: Bool = false
+	) -> DictationServer {
+		let realtime =
+			supportsRealtime
+			? #"{"protocol":"openai-realtime","path":"/s","granularity":"\#(granularity.rawValue)"}"#
+			: "null"
+		let json = """
+			{
+				"id": "\(id)",
+				"label": "\(label ?? id)",
+				"model": "",
+				"capabilities": [\(supportsRealtime ? "\"realtime\"" : "")],
+				"status": "\(isOnline ? "online" : "offline")",
+				"realtime": \(realtime),
+				"default": \(isDefault)
+			}
+			"""
+		return try! JSONDecoder().decode(DictationServer.self, from: Data(json.utf8))
 	}
 
 	// MARK: - No server to talk to
@@ -101,8 +119,8 @@ struct AutoEnginePolicyTests {
 
 	@Test func aTieInGranularityPrefersTheBackendsOwnDefault() {
 		let discovery = AutoDiscoveryOutcome.servers([
-			Self.server(id: "alpha", isDefault: false, granularity: .synthesizedDelta),
-			Self.server(id: "beta", isDefault: true, granularity: .synthesizedDelta),
+			Self.server(id: "alpha", granularity: .synthesizedDelta, isDefault: false),
+			Self.server(id: "beta", granularity: .synthesizedDelta, isDefault: true),
 		])
 
 		let resolution = AutoEnginePolicy.resolve(
@@ -142,7 +160,7 @@ struct AutoEnginePolicyTests {
 		#expect(AutoEnginePolicy.familyRank(of: "nemo-stream") == 2)
 
 		let discovery = AutoDiscoveryOutcome.servers([
-			Self.server(id: "nemo-stream", granularity: .nativeDelta, isDefaultFlag: true),
+			Self.server(id: "nemo-stream", granularity: .nativeDelta, isDefault: true),
 			Self.server(id: "unknown-engine", granularity: .utterance),
 		])
 

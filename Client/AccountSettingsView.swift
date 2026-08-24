@@ -6,7 +6,7 @@ import SwiftUI
 /// Settings tab for connecting the Mac client to the Whispera backend and
 /// signing in for Subscription mode. See WHI-24 / WHI-45.
 struct AccountSettingsView: View {
-	@State private var auth = AuthManager.shared
+	@State private var auth = AccountManager.shared
 	@AppStorage("whisperaServerURL") private var serverURL = WhisperaSettings.defaultServerURL
 	@State private var token = ""
 
