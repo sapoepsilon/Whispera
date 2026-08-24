@@ -262,6 +262,11 @@ struct ServerEntrySettingsView: View {
 		let entry = self.entry
 		guard let url = entry.url else { return }
 		probedURL = entry.urlString
+		// The moment the user has committed to a LAN address is the moment the
+		// local-network prompt makes sense — and the only way to raise it at all,
+		// since URLSession answers a missing grant with a bare -1009 instead.
+		// A no-op for loopback and for anything off the LAN. See WHI-67 QA.
+		LocalNetworkPrimer.shared.prime(for: url)
 		isFetchingModels = true
 		fetchError = nil
 		defer { isFetchingModels = false }
@@ -281,7 +286,10 @@ struct ServerEntrySettingsView: View {
 			}
 		} catch {
 			modelOptions = []
-			fetchError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+			let described = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+			fetchError =
+				LocalNetworkAccess.advice(forFailure: described, destination: url.absoluteString)
+				?? described
 		}
 	}
 
