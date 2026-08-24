@@ -190,6 +190,12 @@ final class StreamingTranscriber: SpeechTranscribing {
 			return try await client.transcriptionModels().map { TranscriptionModelInfo(id: $0.id) }
 		} catch OpenAIError.noModelsAvailable {
 			throw StreamingTranscriberError.noModelsInstalled(destination)
+		} catch OpenAIError.http(let status, _) where status == 401 || status == 403 {
+			// A server that answered is not an unreachable one, and saying so sends
+			// the user to check whether it is running instead of at the thing that
+			// is actually wrong. Same class of misdirection as the dictation path's
+			// "sign in again" — see `failure(for:destination:reachedVia:)`.
+			throw StreamingTranscriberError.engineRefused(destination, status: status)
 		} catch {
 			throw StreamingTranscriberError.engineUnreachable(destination)
 		}
@@ -653,9 +659,14 @@ final class StreamingTranscriber: SpeechTranscribing {
 	}
 
 	/// What to call the thing on the other end, in a sentence a user reads.
+	///
+	/// The whole base URL for a direct engine, not just its host: the address is
+	/// the thing the user typed and the thing they have to correct, and the part
+	/// that was wrong in QA on 2026-08-23 was the missing `/v1` — invisible in a
+	/// message that names only `192.168.50.140`.
 	private var destinationName: String {
 		if isDirect() {
-			return baseURLProvider()?.host ?? "the transcription server"
+			return baseURLProvider()?.absoluteString ?? "the transcription server"
 		}
 		let requested = serverIdProvider()
 		if !requested.isEmpty { return requested }
@@ -668,24 +679,63 @@ final class StreamingTranscriber: SpeechTranscribing {
 	/// ended, and got what they wanted from, would be noise.
 	private func report(_ error: Error) {
 		guard !(isStopping && didTranscribeAnything) else { return }
-		let failure = Self.failure(for: error, destination: destinationName)
+		let failure = Self.failure(
+			for: error, destination: destinationName, reachedVia: isDirect() ? .direct : .backend)
 		live.failure = failure
 		AppLogger.shared.transcriber.error(
 			"Surfacing dictation failure: \(failure.title) — \(failure.message)")
 		NotificationCenter.default.post(name: .transcriptionFailureRaised, object: nil)
 	}
 
-	static func failure(for error: Error, destination: String) -> TranscriptionFailure {
+	/// How the failed connection was addressed, which is what decides whether an
+	/// authorization failure has anything to do with the user's account.
+	///
+	/// A direct engine is reached with its own key, or with none at all — there
+	/// is no Whispera account in the path — so telling its user to "sign in again
+	/// under Account settings" points at a screen that cannot fix anything. QA on
+	/// 2026-08-23 hit exactly that: a credential-less LAN speaches answered 403
+	/// because the base URL had lost its `/v1` and the socket asked for
+	/// `/realtime`, and the app blamed the user's credentials for it.
+	enum FailureRoute {
+		/// Through the Whispera backend, which does authenticate the account.
+		case backend
+		/// Straight at a server the user configured, with its own key or none.
+		case direct
+	}
+
+	static func failure(
+		for error: Error, destination: String, reachedVia route: FailureRoute = .backend
+	) -> TranscriptionFailure {
 		let title = "Dictation stopped"
 		if let dictationError = error as? DictationError {
 			switch dictationError {
 			case .unauthorized, .credentialUnavailable:
-				return TranscriptionFailure(
-					title: title,
-					message:
-						"\(destination) rejected your credentials. Sign in again under Account settings, then start dictation again."
-				)
-			case .connectionFailed:
+				switch route {
+				case .backend:
+					return TranscriptionFailure(
+						title: title,
+						message:
+							"\(destination) rejected your credentials. Sign in again under Account settings, then start dictation again."
+					)
+				case .direct:
+					return TranscriptionFailure(
+						title: title,
+						message:
+							"\(destination) refused the connection with an authorization error (HTTP 401 or 403). "
+							+ "Whispera sends no account credential to a server you address directly, so this is that "
+							+ "server's own refusal: check that the base URL ends in /v1 — the realtime socket opens "
+							+ "at /v1/realtime — and that the key saved for it under Settings › Servers is the one it expects."
+					)
+				}
+			case .connectionFailed(let why):
+				// A LAN address that cannot be reached is far more often the
+				// local-network grant than a stopped server, and macOS reports the
+				// refusal as the same -1009 it uses for "this Mac is offline" — so
+				// the ordinary message sent QA to check a server that was running
+				// fine. See `LocalNetworkAccess`.
+				if let advice = LocalNetworkAccess.advice(forFailure: why, destination: destination) {
+					return TranscriptionFailure(title: title, message: advice)
+				}
 				return TranscriptionFailure(
 					title: title,
 					message:
@@ -852,6 +902,11 @@ final class StreamingTranscriber: SpeechTranscribing {
 		}
 		if isDirect() {
 			let model = directModel()
+			// Belt and braces with the settings probe: a server configured before
+			// this build shipped, or on another Mac and synced, has never been
+			// touched, and the first dictation must not be where the user meets the
+			// silent -1009.
+			LocalNetworkPrimer.shared.prime(for: baseURL)
 			AppLogger.shared.transcriber.info(
 				"Streaming direct to \(baseURL.absoluteString) (\(model)); no backend in the path")
 			return .directEngine(baseURL, model: model, language: options.language)
@@ -908,6 +963,7 @@ enum StreamingTranscriberError: LocalizedError, Equatable {
 	case serverCannotStream(String)
 	case captureTimedOut
 	case engineUnreachable(String)
+	case engineRefused(String, status: Int)
 	case noModelsInstalled(String)
 
 	var errorDescription: String? {
@@ -927,6 +983,9 @@ enum StreamingTranscriberError: LocalizedError, Equatable {
 		case .engineUnreachable(let destination):
 			return
 				"Could not reach \(destination) to list its models. Check that the engine is running and reachable at the configured URL."
+		case .engineRefused(let destination, let status):
+			return
+				"\(destination) refused the request with HTTP \(status). Check that the base URL ends in /v1 and that the key saved for this server is the one it expects."
 		case .noModelsInstalled(let destination):
 			return "\(destination) is reachable but reports no installed speech-to-text models."
 		}
