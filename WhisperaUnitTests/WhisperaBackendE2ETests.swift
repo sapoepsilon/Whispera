@@ -1,5 +1,9 @@
 import Foundation
 import Testing
+import WhisperaBackend
+import WhisperaDictation
+import WhisperaOpenAI
+import WhisperaRecipes
 
 @testable import Whispera
 
@@ -15,7 +19,7 @@ struct WhisperaBackendE2ETests {
 	private let devToken = "whisperae2e"
 
 	private func client(_ store: AuthTokenStore) -> WhisperaAPIClient {
-		WhisperaAPIClient(tokenStore: store, serverURLProvider: { self.baseURL })
+		WhisperaAPIClient(baseURL: baseURL, credentials: store.credentialProvider)
 	}
 
 	@Test func authMeReturnsClerkIdForDevToken() async throws {
@@ -54,9 +58,9 @@ struct WhisperaBackendE2ETests {
 	/// Local executor runs against any OpenAI-compatible server. Points at
 	/// VibeProxy (:8317) since no local model is pulled here.
 	@Test func localExecutorRunsRecipeAgainstOpenAICompatibleServer() async throws {
-		let executor = LocalLLMExecutor(
-			serverURLProvider: { URL(string: "http://localhost:8317/v1") },
-			defaultModelProvider: { "gpt-5.4-mini" })
+		let executor = RecipePipeline.openAI(
+			client: OpenAICompatibleClient(baseURL: URL(string: "http://localhost:8317/v1")!),
+			defaultModel: { "gpt-5.4-mini" })
 		let recipe = Recipe(
 			name: "echo",
 			steps: [
@@ -89,7 +93,7 @@ struct WhisperaBackendE2ETests {
 					])))
 		defer { Task { try? await api.deleteRecipe(id: created.id) } }
 
-		let executor = BackendExecutor(providerKey: nil, api: api)
+		let executor = BackendExecutor(api: api)
 		let output = try await executor.run(
 			recipe: created, input: "hey send me the file by tomorrow")
 		#expect(!output.isEmpty)
@@ -122,7 +126,7 @@ struct WhisperaBackendE2ETests {
 		#expect(match?.recipe.id == created.id)
 		#expect(match?.remainder == "hey can you send me the file by tomorrow")
 
-		let output = try await BackendExecutor(providerKey: nil, api: api).run(
+		let output = try await BackendExecutor(api: api).run(
 			recipe: created, input: match!.remainder)
 		#expect(!output.isEmpty)
 		// The polished output should not be the raw spoken phrase verbatim.
@@ -154,12 +158,12 @@ struct WhisperaBackendE2ETests {
 		let recipeURL = FileManager.default.temporaryDirectory.appendingPathComponent(
 			"e2e-\(UUID().uuidString).json")
 		defer { try? FileManager.default.removeItem(at: recipeURL) }
-		let recipeStore = RecipeStore(auth: AuthManager(), fileURL: recipeURL)
+		let recipeStore = Whispera.RecipeStore(fileURL: recipeURL)
 		await recipeStore.create(created)
 
 		let coordinator = DictationCoordinator(store: recipeStore, defaultCommandId: { created.id }) {
 			recipe, input in
-			try await BackendExecutor(providerKey: nil, api: api).run(recipe: recipe, input: input)
+			try await BackendExecutor(api: api).run(recipe: recipe, input: input)
 		}
 
 		let result = await coordinator.process("um so like i wanted to say hi there")
