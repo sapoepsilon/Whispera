@@ -1,44 +1,66 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2025-2026 Ismatulla Mansurov
+
 import Foundation
 import Testing
+import WhisperaBackend
+import WhisperaDictation
+import WhisperaRecipes
 
 @testable import Whispera
 
+/// What is left of the router once `LLMMode` is gone: reading the configured
+/// LLM server and pointing the package pipeline at it. The two-arm
+/// `executor(for:)` switch that both arms of returned the same executor is the
+/// thing this ticket deleted. See WHI-91.
 @MainActor
-@Suite(.serialized)
 struct RecipeRouterTests {
-
-	private func recipe(provider: String? = nil) -> Recipe {
-		Recipe(
-			name: "r",
-			steps: [RecipeStep(config: LLMStepConfig(prompt: "{{input}}", provider: provider))])
+	private func entry(url: String, model: String = "m") -> ServerEntry {
+		ServerEntry(capability: .llm, urlString: url, model: model)
 	}
 
-	@Test func localModeReturnsLocalExecutor() throws {
-		let router = RecipeRouter(auth: AuthManager(), modeProvider: { .local })
-		#expect(try router.executor(for: recipe()) is LocalLLMExecutor)
+	@Test func aConfiguredServerYieldsAnExecutor() throws {
+		let router = RecipeRouter(entryProvider: { entry(url: "http://localhost:11434/v1") })
+		#expect(throws: Never.self) { _ = try router.executor() }
 	}
 
-	@Test func byokModeRequiresSignIn() {
-		let router = RecipeRouter(auth: AuthManager(), modeProvider: { .byok })
-		#expect(throws: RecipeRouterError.self) { _ = try router.executor(for: recipe()) }
+	/// The only failure the router itself can produce now. Everything else — a
+	/// missing model, an unreachable host, an HTTP error — belongs to the
+	/// package client and is reported by it.
+	@Test func noServerConfiguredIsTheOnlyRouterFailure() {
+		let router = RecipeRouter(entryProvider: { entry(url: "") })
+		#expect(throws: RecipeRouterError.noServerConfigured) { _ = try router.executor() }
 	}
 
-	@Test func providerSelectionFromStepConfig() {
-		#expect(RecipeRouter.provider(for: recipe(provider: "claude")) == .anthropic)
-		#expect(RecipeRouter.provider(for: recipe(provider: "anthropic")) == .anthropic)
-		#expect(RecipeRouter.provider(for: recipe(provider: "openai")) == .openai)
-		#expect(RecipeRouter.provider(for: recipe(provider: nil)) == .openai)
+	/// A bare host is not a server yet, and the router treats it the same as an
+	/// empty field rather than building a client around an unusable URL.
+	@Test func aHalfTypedAddressIsNotAServer() {
+		let router = RecipeRouter(entryProvider: { entry(url: "http://") })
+		#expect(throws: RecipeRouterError.noServerConfigured) { _ = try router.executor() }
+	}
+
+	/// The point of the collapse: an arbitrary cloud base URL is reachable
+	/// without a provider enum, a mode switch, or a code change.
+	@Test func anArbitraryCloudBaseURLIsJustAServer() throws {
+		for url in [
+			"https://api.groq.com/openai/v1",
+			"https://openrouter.ai/api/v1",
+			"https://api.anthropic.com/v1",
+			"http://192.168.50.140:8000/v1",
+		] {
+			let router = RecipeRouter(entryProvider: { entry(url: url) })
+			#expect(throws: Never.self) { _ = try router.executor() }
+		}
 	}
 }
 
+/// The backend execute path, now `WhisperaBackend.BackendExecutor`. Parked in
+/// the app — nothing constructs it while there is no account — but still the
+/// contract the client and the backend agreed on.
 struct BackendExecutorTests {
-
-	private func api(mock: MockURLProtocol.Mock) -> (WhisperaAPIClient, AuthTokenStore) {
-		let store = AuthTokenStore(service: "com.whispera.clerk.test.\(UUID().uuidString)")
-		try? store.save("t")
-		let api = WhisperaAPIClient(
-			session: mock.session, tokenStore: store, serverURLProvider: { mock.baseURL })
-		return (api, store)
+	private func api(mock: MockURLProtocol.Mock) -> WhisperaAPIClient {
+		WhisperaAPIClient(
+			baseURL: mock.baseURL, credentials: StaticCredential(.bearer("t")), session: mock.session)
 	}
 
 	private func recipe() -> Recipe {
@@ -46,18 +68,18 @@ struct BackendExecutorTests {
 	}
 
 	@Test func completedStatusReturnsOutput() async throws {
-		let mock = MockURLProtocol.make(status: 200, json: #"{"status":"completed","output":"done","error":null}"#)
-		let (client, store) = api(mock: mock)
-		defer { try? store.delete() }
-		let executor = BackendExecutor(providerKey: nil, api: client)
+		let mock = MockURLProtocol.make(
+			status: 200, json: #"{"status":"completed","output":"done","error":null}"#)
+		let executor = BackendExecutor(api: api(mock: mock))
 		#expect(try await executor.run(recipe: recipe(), input: "x") == "done")
 	}
 
 	@Test func failedStatusThrows() async throws {
-		let mock = MockURLProtocol.make(status: 200, json: #"{"status":"failed","output":null,"error":"boom"}"#)
-		let (client, store) = api(mock: mock)
-		defer { try? store.delete() }
-		let executor = BackendExecutor(providerKey: nil, api: client)
-		await #expect(throws: RecipeRouterError.self) { _ = try await executor.run(recipe: recipe(), input: "x") }
+		let mock = MockURLProtocol.make(
+			status: 200, json: #"{"status":"failed","output":null,"error":"boom"}"#)
+		let executor = BackendExecutor(api: api(mock: mock))
+		await #expect(throws: BackendExecutorError.self) {
+			_ = try await executor.run(recipe: recipe(), input: "x")
+		}
 	}
 }

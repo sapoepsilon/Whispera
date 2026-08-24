@@ -144,7 +144,14 @@ extension WhisperaSettings {
 		set { UserDefaults.standard.set(newValue, forKey: transcriptionDirectURLKey) }
 	}
 
-	static var transcriptionDirectURL: URL? { url(from: transcriptionDirectURLString) }
+	/// Normalised, unlike the backend URL below it: this is the speech server
+	/// entry's address, and a base typed as `192.168.50.140` has to become
+	/// `http://192.168.50.140/v1` before anything is sent to it. The backend
+	/// proxy is deliberately left alone — it is not an OpenAI-compatible base
+	/// and appending /v1 to it would 404. See WHI-86, WHI-92.
+	static var transcriptionDirectURL: URL? {
+		ServerURLNormalizer.normalize(transcriptionDirectURLString)
+	}
 
 	/// The URL for whichever engine is currently selected. Read-only and routed
 	/// by engine: the streaming conformers' default `baseURLProvider` closures
@@ -166,20 +173,27 @@ extension WhisperaSettings {
 
 	/// Which engine on that backend to stream through. Empty means "let the
 	/// backend's own `/transcription/servers` listing pick its default".
-	/// The model to ask a directly-addressed engine for. Only consulted in
-	/// `.realtimeDirect`: with no backend there is no `/transcription/servers`
-	/// to name one, so the host has to.
-	static var transcriptionDirectModel: String {
-		get {
-			let stored = UserDefaults.standard.string(forKey: transcriptionDirectModelKey) ?? ""
-			return stored.isEmpty ? "Systran/faster-distil-whisper-large-v3" : stored
-		}
-		set { UserDefaults.standard.set(newValue, forKey: transcriptionDirectModelKey) }
-	}
-
+	///
+	/// The direct engine's model moved onto the speech `ServerEntry`
+	/// (`WhisperaSettings.speechServer.model`, same defaults key) so that batch
+	/// upload and live streaming name one model for one server instead of two —
+	/// see WHI-91, WHI-92.
 	static var transcriptionServerId: String {
 		get { UserDefaults.standard.string(forKey: transcriptionServerIdKey) ?? "" }
 		set { UserDefaults.standard.set(newValue, forKey: transcriptionServerIdKey) }
+	}
+
+	/// Writes the engine, and only the engine.
+	///
+	/// The settings picker used to also flip `enableStreaming` on whenever the
+	/// chosen engine streamed from a server, so choosing "OpenAI-Realtime server
+	/// (direct)" in order to *configure* it silently switched the app into live
+	/// dictation mode (WHI-86). Selecting an engine describes a consequence; it
+	/// does not cause one. Defaults-injected so the guarantee is testable
+	/// without writing to `UserDefaults.standard`, which the host app's
+	/// `@AppStorage` bindings observe.
+	static func selectEngine(_ engine: TranscriptionEngine, in defaults: UserDefaults = .standard) {
+		defaults.set(engine.rawValue, forKey: transcriptionEngineKey)
 	}
 }
 

@@ -3,6 +3,7 @@
 
 import Foundation
 import Testing
+import WhisperaOpenAI
 
 @testable import Whispera
 
@@ -103,36 +104,54 @@ struct RemoteBatchTranscriberTests {
 		}
 	}
 
-	@Test func samplesAreWrappedInAReadableWavContainer() {
+	/// The WAV encoder moved into `WhisperaOpenAI` with the multipart builder —
+	/// one place for one wire format (WHI-92, WHI-94). Its own round-trip cases
+	/// run in the package's `WAV` check group; what still matters here is that
+	/// this conformer hands the encoder the samples it was given.
+	@Test func samplesAreEncodedThroughThePackageWavEncoder() {
 		let samples: [Float] = [0, 0.5, -0.5, 1.0, -1.0]
 
-		let wav = RemoteBatchTranscriber.wav(from: samples, sampleRate: 16000)
+		let payload = AudioPayload.wav(samples: samples)
 
-		#expect(wav.count == 44 + samples.count * 2)
-		#expect(String(decoding: wav[0..<4], as: UTF8.self) == "RIFF")
-		#expect(String(decoding: wav[8..<12], as: UTF8.self) == "WAVE")
-		#expect(String(decoding: wav[12..<16], as: UTF8.self) == "fmt ")
-		#expect(String(decoding: wav[36..<40], as: UTF8.self) == "data")
-
-		let sampleRate = wav[24..<28].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
-		#expect(UInt32(littleEndian: sampleRate) == 16000)
-
-		let dataBytes = wav[40..<44].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
-		#expect(UInt32(littleEndian: dataBytes) == UInt32(samples.count * 2))
+		#expect(payload.mimetype == "audio/wav")
+		#expect(payload.data.count == 44 + samples.count * 2)
+		#expect(String(decoding: payload.data[0..<4], as: UTF8.self) == "RIFF")
 	}
 
-	@Test func fullScaleSamplesClipRatherThanWrap() {
-		let wav = RemoteBatchTranscriber.wav(from: [1.0, -1.0, 2.0], sampleRate: 16000)
-		let pcm = wav[44...]
+	/// WHI-92: no absolute provider URL remains in the transcription path. With
+	/// nothing configured the engine says so instead of quietly uploading to a
+	/// cloud the user never named.
+	@Test func nothingConfiguredIsAnErrorRatherThanAPinnedProvider() async {
+		// A model but no address: the model check comes first, so this isolates
+		// the one thing being asserted — that with no server there is no request.
+		let transcriber = RemoteBatchTranscriber(
+			entryProvider: { ServerEntry(capability: .speech, urlString: "", model: "whisper-1") })
 
-		let first = pcm[pcm.startIndex..<pcm.startIndex + 2].withUnsafeBytes {
-			Int16(littleEndian: $0.loadUnaligned(as: Int16.self))
+		#expect(
+			transcriber.state
+				== .unavailable(RemoteBatchTranscriberError.noServerConfigured.errorDescription ?? ""))
+		await #expect(throws: RemoteBatchTranscriberError.noServerConfigured) {
+			try await transcriber.transcribe(
+				samples: [0, 0, 0], options: TranscriptionOptions(mode: .transcribe))
 		}
-		let third = pcm[pcm.startIndex + 4..<pcm.startIndex + 6].withUnsafeBytes {
-			Int16(littleEndian: $0.loadUnaligned(as: Int16.self))
-		}
+	}
 
-		#expect(first == Int16.max)
-		#expect(third == Int16.max)
+	/// And with a server configured it uploads there — any OpenAI-compatible
+	/// base, not `api.openai.com`.
+	@Test func theUploadGoesToTheConfiguredSpeechServer() async throws {
+		let mock = MockURLProtocol.make(status: 200, json: #"{"text":"hello"}"#)
+		let transcriber = RemoteBatchTranscriber(
+			entryProvider: {
+				ServerEntry(capability: .speech, urlString: mock.baseURL.absoluteString, model: "whisper-1")
+			},
+			session: mock.session)
+
+		let text = try await transcriber.transcribe(
+			samples: [0, 0.1, -0.1], options: TranscriptionOptions(mode: .transcribe))
+
+		#expect(text == "hello")
+		let request = MockURLProtocol.lastRequest(host: mock.host)
+		#expect(request?.url?.host == mock.host)
+		#expect(request?.url?.path == "/v1/audio/transcriptions")
 	}
 }
