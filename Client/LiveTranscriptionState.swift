@@ -131,17 +131,110 @@ final class LiveTranscriptionState {
 	}
 
 	/// Promotes whatever is still pending at the end of a session.
+	///
+	/// The promotion used to be `confirmedText = pendingText`, on the reasoning
+	/// that "the engine hands back its complete transcription history in
+	/// pendingText". That is true of a server engine and false of WhisperKit,
+	/// where `ingest(segmentTexts:)` deliberately keeps only the *last two*
+	/// segments pending and has already confirmed everything before them — so the
+	/// blind replace threw away the whole body of the dictation and pasted its
+	/// tail. QA on 2026-08-23 lost about 40% of an on-device transcript to it,
+	/// with `DictationWordTracker` logging "Text filtering logic failed" as the
+	/// tracked words stopped being a prefix of what had just been confirmed.
+	///
+	/// `promoting` keeps the replace where a replace is right and appends where
+	/// the pending text is a tail the confirmed text does not already hold, so
+	/// both engines end on the whole transcript.
 	func confirmPending() {
 		guard !pendingText.isEmpty else { return }
 
-		// Sync all display properties before confirming to prevent double transcription
-		stableDisplayText = pendingText
-		lastDisplayedPendingText = pendingText
+		let whole = Self.promoting(confirmed: confirmedText, pending: pendingText)
 
-		// The engine hands back its complete transcription history in pendingText,
-		// so we replace confirmedText entirely rather than appending
-		confirmedText = pendingText
+		// Synced before confirming, so the display cannot briefly disagree with
+		// what is about to be pasted.
+		stableDisplayText = whole
+		lastDisplayedPendingText = whole
+
+		confirmedText = whole
 		pendingText = ""
+	}
+
+	/// How many words of the confirmed tail and the pending head have to agree
+	/// before the overlap is read as a restatement rather than a coincidence.
+	///
+	/// Two, because one repeated word is ordinary English ("the the" across a
+	/// segment boundary is a coincidence; "on the mat" repeated is a
+	/// restatement). It mirrors `UtteranceDraftAccumulator.revisionOverlapFloor`,
+	/// in words rather than characters because segments are whole words.
+	static let promotionOverlapFloor = 2
+
+	/// What `confirmedText` becomes when a dictation ends with `pending` still in
+	/// flight — the on-device equivalent of the draft accumulator's
+	/// replace-not-append rules, and deliberately the same shape.
+	///
+	/// Ordered from most to least certain, and compared on normalised words
+	/// rather than raw characters: WhisperKit re-transcribes its whole buffer
+	/// every pass, so the same audio comes back with different punctuation and
+	/// casing between passes and a character comparison would call two spellings
+	/// of one sentence two different sentences.
+	static func promoting(confirmed: String, pending: String) -> String {
+		let confirmedWords = words(of: confirmed)
+		let pendingWords = words(of: pending)
+		let confirmedKeys = confirmedWords.map(normalized)
+		let pendingKeys = pendingWords.map(normalized)
+
+		guard !pendingKeys.isEmpty else { return confirmed }
+		guard !confirmedKeys.isEmpty else { return pending }
+
+		// 1. A full hypothesis: the pending text restates everything already
+		//    confirmed and carries on past it, which is what a server engine
+		//    hands over. Replace, or the prefix is said twice.
+		if pendingKeys.count >= confirmedKeys.count,
+			Array(pendingKeys.prefix(confirmedKeys.count)) == confirmedKeys
+		{
+			return pending
+		}
+
+		// 2. Already confirmed — a pending tail that was promoted once and is
+		//    being promoted again. Nothing to add.
+		if confirmedKeys.count >= pendingKeys.count,
+			Array(confirmedKeys.suffix(pendingKeys.count)) == pendingKeys
+		{
+			return confirmed
+		}
+
+		// 3. A revised tail: the pending text restates the end of the confirmed
+		//    text and continues. Splice, so the shared clause is rendered once.
+		let overlap = overlappingWords(tail: confirmedKeys, head: pendingKeys)
+		if overlap >= promotionOverlapFloor {
+			let remainder = pendingWords.dropFirst(overlap)
+			return remainder.isEmpty ? confirmed : confirmed + " " + remainder.joined(separator: " ")
+		}
+
+		// 4. The WhisperKit case: pending is the last segments, confirmed is
+		//    everything before them, and neither contains the other.
+		return confirmed + " " + pending
+	}
+
+	private static func words(of text: String) -> [String] {
+		text.split(whereSeparator: \.isWhitespace).map(String.init)
+	}
+
+	/// Casing and punctuation removed, because they are the parts a
+	/// re-transcription is free to change.
+	private static func normalized(_ word: String) -> String {
+		word.lowercased().filter { $0.isLetter || $0.isNumber }
+	}
+
+	/// The number of words that are both a suffix of `tail` and a prefix of
+	/// `head`.
+	private static func overlappingWords(tail: [String], head: [String]) -> Int {
+		var length = min(tail.count, head.count)
+		while length > 0 {
+			if Array(tail.suffix(length)) == Array(head.prefix(length)) { return length }
+			length -= 1
+		}
+		return 0
 	}
 
 	// MARK: - Ingest
