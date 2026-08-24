@@ -77,6 +77,9 @@
 		D6SOFTUPD2ED700000000005 /* SoftwareUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */; };
 		D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D6SPARKLE2ED700000000002 /* Sparkle */; };
 		D6WDICTBLD00000000000003 /* WhisperaDictation in Frameworks */ = {isa = PBXBuildFile; productRef = D6WDICTPRD00000000000002 /* WhisperaDictation */; };
+		D6WPKGBLD00000000000011 /* WhisperaOpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000010 /* WhisperaOpenAI */; };
+		D6WPKGBLD00000000000021 /* WhisperaRecipes in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000020 /* WhisperaRecipes */; };
+		D6WPKGBLD00000000000031 /* WhisperaBackend in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000030 /* WhisperaBackend */; };
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
 		D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */; };
 		D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */; };
@@ -194,6 +197,9 @@
 				D63900CF2E3D77B4005B5623 /* YouTubeKit in Frameworks */,
 				D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */,
 				D6WDICTBLD00000000000003 /* WhisperaDictation in Frameworks */,
+				D6WPKGBLD00000000000011 /* WhisperaOpenAI in Frameworks */,
+				D6WPKGBLD00000000000021 /* WhisperaRecipes in Frameworks */,
+				D6WPKGBLD00000000000031 /* WhisperaBackend in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -484,7 +490,7 @@
 				D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */,
 				D6D486302EA49C1F00C1D5FA /* XCRemoteSwiftPackageReference "WhisperKit" */,
 				D6SPARKLE2ED700000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				D6WDICTPKG00000000000001 /* XCLocalSwiftPackageReference "whispera-components apple" */,
+				D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */,
 			);
 			productRefGroup = 8A8A8A8A8A8A8A8A8A8A8A8A /* Products */;
 			projectDirPath = "";
@@ -960,14 +966,12 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		D6WDICTPKG00000000000001 /* XCLocalSwiftPackageReference "whispera-components apple" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../whispera-components-worktrees/dictation/apple;
-		};
-/* End XCLocalSwiftPackageReference section */
-
 /* Begin XCRemoteSwiftPackageReference section */
+		D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sapoepsilon/whispera-components";
+			requirement = { kind = exactVersion; version = 0.1.1; };
+		};
 		D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/alexeichhorn/YouTubeKit";
@@ -1043,8 +1047,23 @@
 		};
 		D6WDICTPRD00000000000002 /* WhisperaDictation */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = D6WDICTPKG00000000000001 /* XCLocalSwiftPackageReference "whispera-components apple" */;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
 			productName = WhisperaDictation;
+		};
+		D6WPKGPRD00000000000010 /* WhisperaOpenAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
+			productName = WhisperaOpenAI;
+		};
+		D6WPKGPRD00000000000020 /* WhisperaRecipes */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
+			productName = WhisperaRecipes;
+		};
+		D6WPKGPRD00000000000030 /* WhisperaBackend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
+			productName = WhisperaBackend;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
