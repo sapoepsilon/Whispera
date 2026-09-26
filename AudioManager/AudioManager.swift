@@ -49,6 +49,8 @@ final class AudioManager: NSObject {
 	}
 	var lastTranscription: String?
 	var transcriptionError: String?
+	/// Shown on the listening pill when the recording had to change microphones.
+	var inputNotice: String?
 	var currentRecordingMode: RecordingMode = .text
 	var isMicrophoneInitializing = false {
 		didSet {
@@ -108,6 +110,8 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	private var outputMuteTask: Task<Void, Never>?
 	@ObservationIgnored
+	private var deviceLostObserver: NSObjectProtocol?
+	@ObservationIgnored
 	private var inputChannelSelection = InputChannelSelection.mixAllChannels
 
 	@ObservationIgnored
@@ -123,6 +127,14 @@ final class AudioManager: NSObject {
 			// WhisperKit delivers per-buffer chunks; cap the window so level
 			// math stays cheap even if a large backlog arrives at once
 			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
+		}
+		deviceLostObserver = NotificationCenter.default.addObserver(
+			forName: .activeInputDeviceLost, object: nil, queue: .main
+		) { [weak self] notification in
+			let name = notification.userInfo?["name"] as? String ?? "Microphone"
+			MainActor.assumeIsolated {
+				self?.handleInputDeviceLost(name: name)
+			}
 		}
 	}
 
@@ -147,7 +159,22 @@ final class AudioManager: NSObject {
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
 		deviceManager.selectDevice(uid: uid)
+		reactivateInputDuringRecording()
+	}
 
+	/// Keeps the recording alive on the system default input when its microphone
+	/// is unplugged; audio captured so far is kept.
+	func handleInputDeviceLost(name: String) {
+		guard isRecording || isMicrophoneInitializing else { return }
+		AppLogger.shared.audioManager.info("Falling back to system default input after losing \(name)")
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+		deviceManager.beginFallbackToSystemDefault()
+		inputNotice = "\(name) disconnected. Using the system default microphone."
+		reactivateInputDuringRecording()
+	}
+
+	private func reactivateInputDuringRecording() {
 		guard isRecording || isMicrophoneInitializing else { return }
 
 		isMicrophoneInitializing = true
@@ -208,6 +235,7 @@ final class AudioManager: NSObject {
 extension AudioManager {
 	fileprivate func startRecording() {
 		detectAndSetKeyboardLanguage()
+		inputNotice = nil
 
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
 		case .authorized:
@@ -304,6 +332,7 @@ extension AudioManager {
 		restoreSystemOutput()
 		playFeedbackSound(start: false)
 		deviceManager.restoreSystemDefault()
+		deviceManager.endRecordingSession()
 
 		if let audioFileURL {
 			Task {
@@ -378,6 +407,7 @@ extension AudioManager {
 
 		engineController.cleanup()
 		deviceManager.restoreSystemDefault()
+		deviceManager.endRecordingSession()
 
 		AppLogger.shared.audioManager.info("Streaming recording stopped")
 
@@ -481,6 +511,7 @@ extension AudioManager {
 		playFeedbackSound(start: false)
 
 		whisperKitTranscriber.stopLiveStream()
+		deviceManager.endRecordingSession()
 		levelMonitor.reset()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 

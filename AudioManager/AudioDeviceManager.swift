@@ -67,6 +67,7 @@ extension Notification.Name {
 	static let audioInputDeviceChanged = Notification.Name("AudioInputDeviceChanged")
 	static let devicePickerToggled = Notification.Name("DevicePickerToggled")
 	static let devicePickerDismissed = Notification.Name("DevicePickerDismissed")
+	static let activeInputDeviceLost = Notification.Name("ActiveInputDeviceLost")
 }
 
 @MainActor
@@ -77,6 +78,10 @@ final class AudioDeviceManager {
 
 	private(set) var availableDevices: [AudioInputDevice] = []
 	private(set) var selectedDevice: AudioInputDevice?
+	/// True while a recording runs on the system default because its device vanished.
+	private(set) var isUsingFallbackInput = false
+	@ObservationIgnored
+	private(set) var activeSessionDevice: AudioInputDevice?
 
 	@ObservationIgnored
 	@AppStorage("selectedAudioInputDeviceUID") var persistedDeviceUID = AudioDeviceManager.systemDefaultUID
@@ -127,14 +132,29 @@ final class AudioDeviceManager {
 			persistedUID: persistedDeviceUID,
 			clamshellUID: clamshellDeviceUID,
 			isLidClosed: !clamshellDeviceUID.isEmpty && ClamshellDetector.isLidClosed(),
+			fallbackToSystemDefault: isUsingFallbackInput,
 			availableUIDs: Set(availableDevices.map(\.uid))
 		)
+	}
+
+	/// Moves the current recording to the system default input without touching
+	/// the saved device choice, which comes back for the next recording.
+	func beginFallbackToSystemDefault() {
+		isUsingFallbackInput = true
+		activeSessionDevice = nil
+		restoreSystemDefault()
+	}
+
+	func endRecordingSession() {
+		isUsingFallbackInput = false
+		activeSessionDevice = nil
 	}
 
 	func activateSelectedDevice() async {
 		let effectiveUID = effectiveDeviceUID
 		guard effectiveUID != AudioDeviceManager.systemDefaultUID else {
 			AppLogger.shared.deviceManager.debug("activateSelectedDevice: system default selected, skipping")
+			activeSessionDevice = nil
 			restoreSystemDefault()
 			return
 		}
@@ -152,6 +172,7 @@ final class AudioDeviceManager {
 		if savedSystemDefaultDeviceID == nil {
 			savedSystemDefaultDeviceID = currentDefault
 		}
+		activeSessionDevice = device
 
 		let targetDeviceID = device.id
 		let targetDeviceName = device.name
@@ -216,6 +237,7 @@ final class AudioDeviceManager {
 		}
 
 		AppLogger.shared.deviceManager.info("resolveActiveDeviceID → \(device.name) (ID: \(device.id), UID: \(device.uid))")
+		activeSessionDevice = device
 		return device.id
 	}
 
@@ -430,8 +452,10 @@ final class AudioDeviceManager {
 
 		let devicesBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
 			Task { @MainActor in
-				self?.refreshDevices()
+				guard let self else { return }
+				self.refreshDevices()
 				NotificationCenter.default.post(name: .audioDevicesChanged, object: nil)
+				self.reportLostSessionDevice()
 			}
 		}
 		deviceListListenerBlock = devicesBlock
@@ -462,6 +486,15 @@ final class AudioDeviceManager {
 			DispatchQueue.main,
 			defaultBlock
 		)
+	}
+
+	private func reportLostSessionDevice() {
+		guard let device = activeSessionDevice,
+			!availableDevices.contains(where: { $0.uid == device.uid })
+		else { return }
+		AppLogger.shared.deviceManager.error("Input device disconnected mid-recording: \(device.name)")
+		NotificationCenter.default.post(
+			name: .activeInputDeviceLost, object: nil, userInfo: ["name": device.name])
 	}
 
 	private func removeDeviceChangeListeners() {
@@ -504,8 +537,10 @@ enum InputDeviceResolver {
 		persistedUID: String,
 		clamshellUID: String,
 		isLidClosed: Bool,
+		fallbackToSystemDefault: Bool = false,
 		availableUIDs: Set<String>
 	) -> String {
+		if fallbackToSystemDefault { return AudioDeviceManager.systemDefaultUID }
 		if isLidClosed, !clamshellUID.isEmpty, availableUIDs.contains(clamshellUID) {
 			return clamshellUID
 		}
