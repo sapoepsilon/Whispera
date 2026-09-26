@@ -982,6 +982,9 @@ struct StatusCardView: View {
 		if modelName.isEmpty {
 			return "No Model"
 		}
+		if !WhisperKitTranscriber.isStandardWhisperKitModel(modelName) {
+			return WhisperKitTranscriber.getModelDisplayName(for: modelName)
+		}
 		let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
 
 		switch cleanName {

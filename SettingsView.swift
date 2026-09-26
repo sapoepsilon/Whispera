@@ -435,6 +435,8 @@ struct SettingsView: View {
 								.foregroundColor(.secondary)
 						}
 
+						ParakeetSettingsNote(modelID: whisperKit.selectedModel ?? selectedModel)
+
 						Text(
 							"Choose your Whisper model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions."
 						)
@@ -446,6 +448,8 @@ struct SettingsView: View {
 						}
 
 						ModelMemorySettingsView()
+
+						CustomModelsSettingsView(whisperKit: whisperKit)
 					}
 					Divider()
 
@@ -519,17 +523,7 @@ struct SettingsView: View {
 					Divider()
 
 					SettingsSection("Performance") {
-						InfoBox(style: .info) {
-							VStack(alignment: .leading, spacing: 4) {
-								Text("Optimized Compute Configuration")
-									.font(.subheadline)
-								Text(
-									"Audio processing uses CPU + GPU, text decoding uses CPU + Neural Engine for optimal performance on Apple Silicon."
-								)
-								.font(.caption)
-								.foregroundColor(.secondary)
-							}
-						}
+						ComputeUnitSettingsView(whisperKit: whisperKit)
 					}
 
 					Divider()

@@ -186,7 +186,9 @@ final class AudioManager: NSObject {
 		let postProcessing = PostProcessingSettings()
 		// Post-processing rewrites the whole transcript, so that session must run in text mode.
 		let forceTextMode = postProcess && postProcessing.isEnabled
-		currentRecordingMode = enableStreaming && !forceTextMode ? .liveTranscription : .text
+		currentRecordingMode =
+			enableStreaming && whisperKitTranscriber.supportsLiveTranscription && !forceTextMode
+			? .liveTranscription : .text
 		postProcessCurrentSession = postProcessing.shouldPostProcess(
 			requestedByShortcut: postProcess, isLiveMode: currentRecordingMode == .liveTranscription)
 		startRecording()
