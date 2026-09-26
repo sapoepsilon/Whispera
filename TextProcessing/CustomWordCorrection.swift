@@ -8,6 +8,7 @@ extension TranscriptTextProcessor {
 
 	private static let maxNgramLength = 4
 	private static let maxCandidateLength = 50
+	private static let ambiguityMargin = 0.03
 
 	static func applyCustomWords(_ text: String, customWords: [String], threshold: Double) -> String {
 		let words = customWords.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter {
@@ -23,7 +24,7 @@ extension TranscriptTextProcessor {
 		var i = 0
 
 		while i < tokens.count {
-			var best: (length: Int, replacement: String, score: Double)?
+			var best: (length: Int, replacement: String, score: Double, possessive: String)?
 
 			for n in 1...maxNgramLength where i + n <= tokens.count {
 				let ngram = Array(tokens[i..<(i + n)])
@@ -31,13 +32,19 @@ extension TranscriptTextProcessor {
 				if ngram.dropLast().contains(where: { !extractPunctuation($0).suffix.isEmpty }) {
 					continue
 				}
-				let candidate = ngram.map(matchKey).joined()
-				guard let match = bestMatch(for: candidate, words: words, keys: keys, threshold: threshold)
-				else { continue }
-				// Iterating shortest first and requiring a strictly better score means ties keep the
-				// shorter n-gram, so an ordinary trailing word is not swallowed.
-				if best == nil || match.score < best!.score {
-					best = (n, match.word, match.score)
+				for form in candidateForms(ngram) {
+					let key = form.parts.joined()
+					guard let match = bestMatch(for: key, words: words, keys: keys, threshold: threshold)
+					else { continue }
+					// Ordinary words Whisper heard correctly ("motion", "whisper by") are far more likely
+					// than a custom term misheard as exactly those words. A spelled-out part such as the
+					// "B" in "Charge B" is not a word, so those merges still happen.
+					if match.score > 0, form.parts.allSatisfy(CommonWords.contains) { continue }
+					// Iterating shortest first and requiring a strictly better score means ties keep the
+					// shorter n-gram, so an ordinary trailing word is not swallowed.
+					if best == nil || match.score < best!.score {
+						best = (n, match.word, match.score, form.possessive)
+					}
 				}
 			}
 
@@ -48,7 +55,8 @@ extension TranscriptTextProcessor {
 				let suffix = extractPunctuation(last).suffix
 				let core = String(first.dropFirst(prefix.count))
 				output.append(
-					prefix + preserveCasePattern(original: core, replacement: best.replacement) + suffix)
+					prefix + preserveCasePattern(original: core, replacement: best.replacement) + best.possessive
+						+ suffix)
 				i += best.length
 			} else {
 				output.append(tokens[i])
@@ -57,6 +65,21 @@ extension TranscriptTextProcessor {
 		}
 
 		return output.joined(separator: " ")
+	}
+
+	/// The n-gram as spoken, plus the same n-gram without a trailing possessive so "Corvin's"
+	/// can become "Quorvyn's" rather than losing its "'s". The plain form comes first, so a custom
+	/// word that itself ends in "'s" still wins on a tie.
+	private static func candidateForms(_ ngram: [String]) -> [(parts: [String], possessive: String)] {
+		let plain = ngram.map(matchKey)
+		guard let last = ngram.last else { return [(plain, "")] }
+		let punctuation = extractPunctuation(last)
+		let core = last.dropFirst(punctuation.prefix.count).dropLast(punctuation.suffix.count)
+		guard core.count > 2,
+			let possessive = ["'s", "\u{2019}s"].first(where: { core.lowercased().hasSuffix($0) })
+		else { return [(plain, "")] }
+		let stem = plain.dropLast() + [matchKey(String(core.dropLast(possessive.count)))]
+		return [(plain, ""), (Array(stem), String(core.suffix(possessive.count)))]
 	}
 
 	private static func matchKeys(for word: String, index: Int) -> [MatchKey] {
@@ -82,6 +105,7 @@ extension TranscriptTextProcessor {
 
 		var bestWord: String?
 		var bestScore = Double.greatestFiniteMagnitude
+		var runnerUpScore = Double.greatestFiniteMagnitude
 		let candidateSoundex = supportsSoundex(candidate) ? soundex(candidate) : nil
 
 		for key in keys {
@@ -100,12 +124,19 @@ extension TranscriptTextProcessor {
 				candidateSoundex != nil && supportsSoundex(key.key) && candidateSoundex == soundex(key.key)
 			let score = phoneticMatch ? editScore * 0.3 : editScore
 
-			if score < threshold && score < bestScore {
-				bestWord = words[key.wordIndex]
+			guard score < threshold else { continue }
+			let word = words[key.wordIndex]
+			if score < bestScore {
+				if let bestWord, bestWord != word { runnerUpScore = bestScore }
+				bestWord = word
 				bestScore = score
+			} else if word != bestWord {
+				runnerUpScore = min(runnerUpScore, score)
 			}
 		}
 
+		// Two different custom words fitting almost equally well is a guess, not a correction.
+		if bestScore > 0, runnerUpScore - bestScore < ambiguityMargin { return nil }
 		return bestWord.map { ($0, bestScore) }
 	}
 
@@ -192,5 +223,18 @@ extension TranscriptTextProcessor {
 			}
 		}
 		return code.padding(toLength: 4, withPad: "0", startingAt: 0)
+	}
+}
+
+/// Lowercase entries of the system word list (Webster's Second, present on every macOS install),
+/// used to leave correctly transcribed ordinary words alone. Mapped, not loaded, and only
+/// consulted once words already fuzzy-matched a custom term.
+enum CommonWords {
+	private static let list: Data? = try? Data(
+		contentsOf: URL(fileURLWithPath: "/usr/share/dict/words"), options: .alwaysMapped)
+
+	static func contains(_ key: String) -> Bool {
+		guard key.count >= 2, key.allSatisfy({ $0.isASCII && $0.isLowercase }), let list else { return false }
+		return list.range(of: Data("\n\(key)\n".utf8)) != nil
 	}
 }

@@ -71,6 +71,64 @@ struct CustomWordCorrectionTests {
 		#expect(apply("I use whisper a daily", ["Whispera"], threshold: 0.18) == "I use Whispera daily")
 	}
 
+	/// The G05 QA sentence: the custom word must not touch its neighbours.
+	@Test(arguments: [
+		"Please forward the Zyntrax invoice to Corvin tomorrow.",
+		"Please forward the Zyntrak's invoice to Quorvyn tomorrow.",
+	])
+	func neighbouringWordsAreLeftAlone(text: String) {
+		#expect(apply(text, ["Quorvyn"], threshold: 0.18) == text)
+	}
+
+	@Test func possessiveIsKeptOnTheCorrectedWord() {
+		#expect(apply("Send it to Corvin's desk", ["Quorvyn"]) == "Send it to Quorvyn's desk")
+		#expect(apply("Charge Bee's plan", ["ChargeBee"], threshold: 0.18) == "ChargeBee's plan")
+		#expect(apply("CHARGE BEE\u{2019}S plan", ["ChargeBee"], threshold: 0.18) == "CHARGEBEE\u{2019}S plan")
+		#expect(apply("ask Corvin's team.", ["Quorvyn"]) == "ask Quorvyn's team.")
+	}
+
+	@Test func possessiveIsNeverInvented() {
+		#expect(apply("Corvin sent it", ["Quorvyn"]) == "Quorvyn sent it")
+		#expect(apply("lunch at McDonald's", ["McDonald's"], threshold: 0.18) == "lunch at McDonald's")
+	}
+
+	/// Every one of these used to be rewritten at the default threshold: the phonetic discount let
+	/// "motion" become "Notion", "slick" become "Slack", "whisper" become "Whispera".
+	@Test func ordinaryWordsAreNotTurnedIntoCustomWords() {
+		let words = ["Notion", "Slack", "Linear", "Whispera", "Handy", "ChargeBee"]
+		let text = "The motion passed, a slick liner, I whisper by hand, the fee is chargeable."
+		#expect(apply(text, words, threshold: 0.18) == text)
+		// Only exact merges of ordinary words count; a near miss made of real words is left as heard.
+		#expect(apply("Charge Bees plan", ["ChargeBee"], threshold: 0.18) == "Charge Bees plan")
+	}
+
+	@Test func commonWordGuardKeepsExactAndMultiWordMatches() {
+		let words = ["Notion", "Whispera", "ChargeBee"]
+		#expect(apply("open notion now", words, threshold: 0.18) == "open Notion now")
+		#expect(apply("I use whisper a daily", words, threshold: 0.18) == "I use Whispera daily")
+		#expect(apply("pay with Charge B today", words, threshold: 0.18) == "pay with ChargeBee today")
+	}
+
+	@Test func exactWordOfAnotherEntryIsKept() {
+		#expect(
+			apply("the zyntrax invoice for Quorvyn", ["Quorvyn", "Zyntrax"], threshold: 0.18)
+				== "the Zyntrax invoice for Quorvyn")
+	}
+
+	@Test func ambiguousMatchBetweenTwoCustomWordsIsLeftAlone() {
+		#expect(apply("ask Corvan", ["Corvin", "Corvon"], threshold: 0.18) == "ask Corvan")
+		#expect(apply("ask corvin", ["Corvin", "Corvon"], threshold: 0.18) == "ask Corvin")
+		#expect(apply("ask Corvan", ["Corvin", "Quorvyn"], threshold: 0.18) == "ask Corvin")
+	}
+
+	@Test func systemWordListIsAvailable() {
+		#expect(CommonWords.contains("motion"))
+		#expect(CommonWords.contains("whisper"))
+		#expect(!CommonWords.contains("zyntrax"))
+		#expect(!CommonWords.contains("corvin"))
+		#expect(!CommonWords.contains("Motion"))
+	}
+
 	@Test func preserveCasePattern() {
 		#expect(TranscriptTextProcessor.preserveCasePattern(original: "HELLO", replacement: "world") == "WORLD")
 		#expect(TranscriptTextProcessor.preserveCasePattern(original: "Hello", replacement: "world") == "World")
