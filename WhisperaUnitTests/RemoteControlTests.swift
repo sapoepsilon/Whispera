@@ -67,8 +67,10 @@ struct RemoteCommandParsingTests {
 final class FakeDictationController: DictationControlling {
 	var isRecording = false
 	var isMicrophoneInitializing = false
+	var isTranscribing = false
 	var toggles = 0
 	var postProcessToggles = 0
+	var stops = 0
 	var cancels = 0
 
 	func toggleRecording(postProcess: Bool) {
@@ -77,9 +79,16 @@ final class FakeDictationController: DictationControlling {
 		isRecording.toggle()
 	}
 
+	func requestStop() {
+		stops += 1
+		isRecording = false
+		isMicrophoneInitializing = false
+	}
+
 	func cancelRecording() {
 		cancels += 1
 		isRecording = false
+		isTranscribing = false
 	}
 }
 
@@ -134,7 +143,32 @@ struct RemoteControlCenterTests {
 		#expect(controller.isRecording)
 		#expect(await center.handle(.stop, source: .intent) == .performed)
 		#expect(!controller.isRecording)
-		#expect(controller.toggles == 2)
+		#expect(controller.toggles == 1)
+		#expect(controller.stops == 1)
+	}
+
+	@Test func stopDuringMicrophoneStartupIsForwardedForDeferral() async throws {
+		let (center, defaults, suite) = try makeCenter()
+		defer { defaults.removePersistentDomain(forName: suite) }
+		let controller = FakeDictationController()
+		controller.isMicrophoneInitializing = true
+		center.register(controller: controller)
+
+		#expect(await center.handle(.stop, source: .url) == .performed)
+		#expect(controller.stops == 1)
+		#expect(controller.toggles == 0)
+	}
+
+	@Test func cancelReachesATranscriptionInFlight() async throws {
+		let (center, defaults, suite) = try makeCenter()
+		defer { defaults.removePersistentDomain(forName: suite) }
+		let controller = FakeDictationController()
+		controller.isTranscribing = true
+		center.register(controller: controller)
+
+		#expect(await center.handle(.cancel, source: .cli) == .performed)
+		#expect(controller.cancels == 1)
+		#expect(await center.handle(.stop, source: .cli) == .ignored("Not recording"))
 	}
 
 	@Test func startIsIgnoredWhileMicrophoneInitializes() async throws {

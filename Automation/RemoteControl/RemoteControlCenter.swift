@@ -5,7 +5,9 @@ import Foundation
 protocol DictationControlling: AnyObject {
 	var isRecording: Bool { get }
 	var isMicrophoneInitializing: Bool { get }
+	var isTranscribing: Bool { get }
 	func toggleRecording(postProcess: Bool)
+	func requestStop()
 	func cancelRecording()
 }
 
@@ -140,11 +142,13 @@ final class RemoteControlCenter: NSObject {
 			controller.toggleRecording(postProcess: false)
 			return .performed
 		case .stop:
-			guard controller.isRecording else { return .ignored("Not recording") }
-			controller.toggleRecording(postProcess: false)
+			// A stop during microphone startup is deferred by the controller, like a hotkey release
+			guard isActive else { return .ignored("Not recording") }
+			controller.requestStop()
 			return .performed
 		case .cancel:
-			guard isActive else { return .ignored("Not recording") }
+			// Matches Escape and the pill, which can also abandon a transcription in flight
+			guard isActive || controller.isTranscribing else { return .ignored("Not recording") }
 			controller.cancelRecording()
 			return .performed
 		case .setLanguage, .setModel:
