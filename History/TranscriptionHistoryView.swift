@@ -306,7 +306,7 @@ struct TranscriptionHistoryView: View {
 			do {
 				try await store.retranscribe(entry)
 			} catch {
-				errorMessage = "Re-transcription failed: \(error.localizedDescription)"
+				errorMessage = String(localized: "Re-transcription failed: \(error.localizedDescription)")
 			}
 		}
 	}
@@ -316,7 +316,7 @@ struct TranscriptionHistoryView: View {
 			do {
 				try await store.reprocess(entry)
 			} catch {
-				errorMessage = "Post-processing failed: \(error.localizedDescription)"
+				errorMessage = String(localized: "Post-processing failed: \(error.localizedDescription)")
 			}
 		}
 	}

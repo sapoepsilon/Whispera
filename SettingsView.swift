@@ -289,7 +289,7 @@ struct SettingsView: View {
 							SettingRow("Start Sound") {
 								Picker("Start Sound", selection: $startSound) {
 									ForEach(getAvailableSounds(), id: \.self) { sound in
-										Text(sound).tag(sound)
+										Text(Self.soundDisplayName(sound)).tag(sound)
 									}
 								}
 								.labelsHidden()
@@ -302,7 +302,7 @@ struct SettingsView: View {
 							SettingRow("Stop Sound") {
 								Picker("Stop Sound", selection: $stopSound) {
 									ForEach(getAvailableSounds(), id: \.self) { sound in
-										Text(sound).tag(sound)
+										Text(Self.soundDisplayName(sound)).tag(sound)
 									}
 								}
 								.labelsHidden()
@@ -1466,6 +1466,15 @@ struct SettingsView: View {
 					localized: "Failed to switch to model \(modelName): \(error.localizedDescription)")
 				showingError = true
 			}
+		}
+	}
+
+	/// "None" and "Custom" are choices rather than system sound names, so only they are translated.
+	static func soundDisplayName(_ sound: String) -> String {
+		switch sound {
+		case "None": return String(localized: "None")
+		case "Custom": return String(localized: "Custom")
+		default: return sound
 		}
 	}
 

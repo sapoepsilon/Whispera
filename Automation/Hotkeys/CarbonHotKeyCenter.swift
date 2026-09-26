@@ -73,9 +73,9 @@ enum CarbonHotKeyError: LocalizedError, Equatable {
 
 	var errorDescription: String? {
 		switch self {
-		case .unsupportedKey: return "Fn/Globe shortcuts cannot be registered as a system hotkey"
-		case .alreadyTaken: return "Another app already owns this shortcut"
-		case .failed(let status): return "RegisterEventHotKey failed (\(status))"
+		case .unsupportedKey: return String(localized: "Fn/Globe shortcuts cannot be registered as a system hotkey")
+		case .alreadyTaken: return String(localized: "Another app already owns this shortcut")
+		case .failed(let status): return String(localized: "RegisterEventHotKey failed (\(Int(status)))")
 		}
 	}
 }

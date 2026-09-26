@@ -15,9 +15,9 @@ enum TranscriptionHistoryError: LocalizedError {
 
 	var errorDescription: String? {
 		switch self {
-		case .audioUnavailable: return "The recording for this entry is no longer available."
-		case .storeUnavailable: return "Transcription history could not be opened."
-		case .nothingToPostProcess: return "This entry has no transcript to post-process."
+		case .audioUnavailable: return String(localized: "The recording for this entry is no longer available.")
+		case .storeUnavailable: return String(localized: "Transcription history could not be opened.")
+		case .nothingToPostProcess: return String(localized: "This entry has no transcript to post-process.")
 		}
 	}
 }
