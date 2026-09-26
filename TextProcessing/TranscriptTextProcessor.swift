@@ -75,7 +75,7 @@ extension TranscriptTextProcessor {
 	/// Whisper labels silence, noise and music with bracketed markers such as [BLANK_AUDIO].
 	/// They are not speech, and pasted into a document they read as garbage.
 	static func removeNonSpeechMarkers(_ text: String) -> String {
-		let pattern = #"\[\s*(BLANK[_ ]AUDIO|NO[_ ]SPEECH|SILENCE|MUSIC|INAUDIBLE)\s*\]|\(\s*(silence|music|inaudible)\s*\)"#
+		let pattern = #"\[\s*(BLANK[_ ]AUDIO|NO[_ ]AUDIO|NO[_ ]SPEECH|SILENCE|MUSIC|INAUDIBLE)\s*\]|\(\s*(silence|music|inaudible)\s*\)"#
 		guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return text }
 		let range = NSRange(text.startIndex..., in: text)
 		guard regex.firstMatch(in: text, range: range) != nil else { return text }
