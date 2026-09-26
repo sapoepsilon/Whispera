@@ -28,12 +28,16 @@ enum OutputLanguageEvidence: Equatable {
 }
 
 struct TextProcessingConfiguration: Equatable {
+	static let defaultWordCorrectionThreshold = 0.18
+
+	var customWords: [String] = []
+	var wordCorrectionThreshold: Double = defaultWordCorrectionThreshold
 	var fillerWordRemovalEnabled = true
 	var customFillerWords: [String] = []
 }
 
-/// Post-transcription text pipeline: filler removal plus stutter and whitespace cleanup.
-/// Pure and synchronous so it can be unit tested without WhisperKit.
+/// Post-transcription text pipeline: filler removal, stutter and whitespace cleanup,
+/// and custom-word correction. Pure and synchronous so it can be unit tested without WhisperKit.
 struct TranscriptTextProcessor {
 	let configuration: TextProcessingConfiguration
 
@@ -47,6 +51,11 @@ struct TranscriptTextProcessor {
 			result = Self.removeFillerWords(
 				result, language: language, additionalFillerWords: configuration.customFillerWords)
 			result = Self.normalize(result)
+		}
+		if !configuration.customWords.isEmpty {
+			result = Self.applyCustomWords(
+				result, customWords: configuration.customWords,
+				threshold: configuration.wordCorrectionThreshold)
 		}
 		return result
 	}

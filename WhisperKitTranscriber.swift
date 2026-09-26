@@ -801,7 +801,8 @@ import WhisperKit
 					skipSpecialTokens: savedSkipSpecialTokens,
 					withoutTimestamps: savedWithoutTimestamps,
 					wordTimestamps: savedWordTimestamps,
-					clipTimestamps: [0]
+					clipTimestamps: [0],
+					promptTokens: options.promptTokens
 				)
 
 				let transcriptionResults = try await whisperKit.transcribe(
@@ -834,7 +835,8 @@ import WhisperKit
 			skipSpecialTokens: savedSkipSpecialTokens,
 			withoutTimestamps: savedWithoutTimestamps,
 			wordTimestamps: savedWordTimestamps,
-			clipTimestamps: [0]
+			clipTimestamps: [0],
+			promptTokens: customWordPromptTokens()
 		)
 	}
 
@@ -843,9 +845,11 @@ import WhisperKit
 		let languageParameters = Self.languageDecodingParameters(
 			selectedLanguage: selectedLanguage, enableTranslation: enableTranslation)
 		let languageCode = languageParameters.language
+		let promptTokens = customWordPromptTokens()
 
 		AppLogger.shared.transcriber.log(
-			"Creating decoding options - mode: \(task.description) language: \(languageCode ?? "auto")")
+			"Creating decoding options - mode: \(task.description) language: \(languageCode ?? "auto") promptTokens: \(promptTokens?.count ?? 0)"
+		)
 		return DecodingOptions(
 			verbose: false,
 			task: task,
@@ -859,7 +863,8 @@ import WhisperKit
 			skipSpecialTokens: savedSkipSpecialTokens,
 			withoutTimestamps: savedWithoutTimestamps,
 			wordTimestamps: savedWordTimestamps,
-			clipTimestamps: [0]
+			clipTimestamps: [0],
+			promptTokens: promptTokens
 		)
 	}
 
@@ -869,6 +874,23 @@ import WhisperKit
 	{
 		let language = Constants.decodingLanguageCode(for: selectedLanguage)
 		return (language, enableTranslation || language == nil)
+	}
+
+	func refreshDecodingOptions() {
+		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation ?? false)
+	}
+
+	private func customWordPromptTokens() -> [Int]? {
+		let defaults = UserDefaults.standard
+		guard TextProcessingSettings.biasDecodingWithCustomWords(from: defaults),
+			let prompt = TextProcessingSettings.decoderPrompt(
+				for: TextProcessingSettings.customWords(from: defaults)),
+			let tokenizer = whisperKit?.tokenizer
+		else { return nil }
+		let tokens = tokenizer.encode(text: prompt).filter {
+			$0 < tokenizer.specialTokens.specialTokenBegin
+		}
+		return tokens.isEmpty ? nil : tokens
 	}
 
 	private func processTranscriptText(
@@ -1091,7 +1113,8 @@ import WhisperKit
 						skipSpecialTokens: savedSkipSpecialTokens,
 						withoutTimestamps: savedWithoutTimestamps,
 						wordTimestamps: savedWordTimestamps,
-						clipTimestamps: [0]
+						clipTimestamps: [0],
+						promptTokens: decodingOptions?.promptTokens
 					)
 
 					do {
