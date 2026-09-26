@@ -37,6 +37,12 @@ final class AudioEngineController {
 
 	var onRouteChange: (() async -> Void)?
 
+	/// Reflects the engine itself, which stops on its own after a configuration change,
+	/// unlike `isRunning` which only tracks setup and cleanup.
+	var isEngineRunning: Bool {
+		engine?.isRunning ?? false
+	}
+
 	var inputNode: AVAudioInputNode? {
 		engine?.inputNode
 	}

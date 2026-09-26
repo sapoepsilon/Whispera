@@ -131,7 +131,7 @@ import WhisperKit
 
 			if let modelToLoad = chooseDownloadedModelToLoad(downloaded: refreshedDownloaded) {
 				updateWaitingStatusText()
-				try await loadModel(modelToLoad)
+				try await loadModelCoalesced(modelToLoad)
 			}
 		}
 
@@ -166,7 +166,7 @@ import WhisperKit
 			}
 
 			if let modelToLoad = chooseDownloadedModelToLoad(downloaded: refreshedDownloaded) {
-				try await loadModel(modelToLoad)
+				try await loadModelCoalesced(modelToLoad)
 			}
 		}
 
@@ -410,6 +410,14 @@ import WhisperKit
 
 	private var currentChunks: [Int: (chunkText: [String], fallbacks: Int)] = [:]
 
+	// MARK: - Idle Model Unload State
+	@ObservationIgnored private let idleUnloadTimer = DeferredAction()
+	@ObservationIgnored private var activeModelUses = 0
+	@ObservationIgnored private var liveStreamHoldsModel = false
+	@ObservationIgnored private var pendingLoadTask: Task<Void, Error>?
+	@ObservationIgnored private var lastObservedUnloadTimeout: ModelUnloadTimeout?
+	private(set) var isIdleUnloaded = false
+
 	// Swift 6 compliant singleton pattern
 	static let shared: WhisperKitTranscriber = {
 		let instance = WhisperKitTranscriber()
@@ -498,6 +506,7 @@ import WhisperKit
 		isInitializing = false
 		AppLogger.shared.transcriber.log("WhisperKit framework initialized - ready for transcription")
 		initializationTask = nil
+		scheduleIdleUnload()
 	}
 
 	private func autoLoadLastModel() async throws {
@@ -550,6 +559,10 @@ import WhisperKit
 	func liveStream() async throws {
 		AppLogger.shared.transcriber.info("Starting live stream...")
 		beginLiveTranscriptionWaitingUI()
+		if !liveStreamHoldsModel {
+			liveStreamHoldsModel = true
+			beginModelUse()
+		}
 
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = Task { @MainActor in
@@ -637,6 +650,7 @@ import WhisperKit
 		isLiveTranscriptionMode = false
 		dictationWordTracker?.endSession()
 		transcriptionTask?.cancel()
+		releaseLiveStreamModelUse()
 		AppLogger.shared.transcriber.info("Live streaming stopped")
 	}
 	/// Hands the finished live session to history once, then forgets it so the audio is freed.
@@ -656,6 +670,35 @@ import WhisperKit
 
 	nonisolated static let liveWaitingPlaceholder = "Waiting for speech..."
 
+
+	/// Stops live dictation without committing the pending (unconfirmed) text.
+	/// Text already confirmed and typed into the focused app stays where it is.
+	func cancelLiveStream() {
+		liveStreamStartupTask?.cancel()
+		liveStreamStartupTask = nil
+		transcriptionTask?.cancel()
+		transcriptionTask = nil
+		isWaitingForModel = false
+		waitingForModelStatusText = ""
+		isTranscribing = false
+		shouldShowLiveTranscriptionWindow = false
+		whisperKit?.audioProcessor.stopRecording()
+		AudioDeviceManager.shared.restoreSystemDefault()
+
+		pendingText = ""
+		stableDisplayText = ""
+		lastDisplayedPendingText = ""
+		isLiveTranscriptionMode = false
+		dictationWordTracker?.endSession()
+		releaseLiveStreamModelUse()
+		AppLogger.shared.transcriber.info("Live streaming cancelled")
+	}
+
+	private func releaseLiveStreamModelUse() {
+		guard liveStreamHoldsModel else { return }
+		liveStreamHoldsModel = false
+		endModelUse()
+	}
 	private func realtimeLoop() {
 		transcriptionTask = Task {
 			while isTranscribing {
@@ -1014,6 +1057,8 @@ import WhisperKit
 	private func performTranscription(
 		input: TranscriptionInput, enableTranslation: Bool, logPrefix: String
 	) async throws -> String {
+		beginModelUse()
+		defer { endModelUse() }
 		try await waitForReadyForTranscription()
 		guard isWhisperKitReady() else { throw WhisperKitError.notReady }
 		let maxRetries = 3
@@ -1211,6 +1256,8 @@ import WhisperKit
 	{
 		AppLogger.shared.transcriber.log(
 			"Starting timestamped file transcription for: \(url.lastPathComponent)")
+		beginModelUse()
+		defer { endModelUse() }
 		try await waitForReadyForTranscription()
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
@@ -1264,6 +1311,8 @@ import WhisperKit
 				userInfo: [NSLocalizedDescriptionKey: "Invalid time range"])
 		}
 
+		beginModelUse()
+		defer { endModelUse() }
 		try await waitForReadyForTranscription()
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
@@ -1421,25 +1470,42 @@ import WhisperKit
 		}
 	}
 
+	/// Races `operation` against a deadline. Unlike a task group, this returns at the
+	/// deadline even if the operation ignores cancellation (the model list fetch can),
+	/// which otherwise leaves initialization waiting forever.
 	private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T)
 		async throws -> T
 	{
-		try await withThrowingTaskGroup(of: T.self) { group in
-			group.addTask {
-				try await operation()
+		let gate = ResumeGate()
+		return try await withCheckedThrowingContinuation { continuation in
+			let work = Task {
+				do {
+					let value = try await operation()
+					if gate.claim() { continuation.resume(returning: value) }
+				} catch {
+					if gate.claim() { continuation.resume(throwing: error) }
+				}
 			}
-
-			group.addTask {
-				try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-				throw TimeoutError()
+			Task {
+				try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+				if gate.claim() {
+					work.cancel()
+					continuation.resume(throwing: TimeoutError())
+				}
 			}
+		}
+	}
 
-			guard let result = try await group.next() else {
-				throw TimeoutError()
-			}
+	private final class ResumeGate: @unchecked Sendable {
+		private let lock = NSLock()
+		private var claimed = false
 
-			group.cancelAll()
-			return result
+		func claim() -> Bool {
+			lock.lock()
+			defer { lock.unlock() }
+			if claimed { return false }
+			claimed = true
+			return true
 		}
 	}
 
@@ -1538,6 +1604,7 @@ import WhisperKit
 			currentModel = modelName
 			selectedModel = modelName
 			lastUsedModel = modelName
+			isIdleUnloaded = false
 
 			if UserDefaults.standard.object(forKey: "decodingSampleLength") == nil {
 				UserDefaults.standard.removeObject(forKey: "decodingSampleLength")
@@ -1557,6 +1624,96 @@ import WhisperKit
 
 		isModelLoading = false
 		loadProgress = 0.0
+		scheduleIdleUnload()
+	}
+
+	private func loadModelCoalesced(_ modelName: String) async throws {
+		if let pendingLoadTask {
+			try await pendingLoadTask.value
+			return
+		}
+		let task = Task { @MainActor in
+			try await self.loadModel(modelName)
+		}
+		pendingLoadTask = task
+		defer { pendingLoadTask = nil }
+		try await task.value
+	}
+
+	// MARK: - Idle Model Unload
+
+	/// Marks the model as in use so the idle timer cannot unload it mid-transcription.
+	/// Every call must be balanced by `endModelUse()`.
+	func beginModelUse() {
+		activeModelUses += 1
+		idleUnloadTimer.cancel()
+	}
+
+	func endModelUse() {
+		activeModelUses = max(0, activeModelUses - 1)
+		scheduleIdleUnload()
+	}
+
+	/// Starts loading a model that was released by the idle timer, so it is ready by the
+	/// time a recording stops.
+	func preloadModelIfIdleUnloaded() {
+		guard isIdleUnloaded, whisperKit == nil, pendingLoadTask == nil else { return }
+		AppLogger.shared.transcriber.info("Reloading model released by the idle timer")
+		Task { @MainActor in
+			do {
+				try await waitForReadyForTranscription()
+			} catch {
+				AppLogger.shared.transcriber.error("Failed to reload idle-unloaded model: \(error)")
+			}
+		}
+	}
+
+	var canUnloadModel: Bool {
+		whisperKit != nil && activeModelUses == 0 && !isLiveTranscriptionMode
+			&& modelOperationTask == nil && pendingLoadTask == nil && initializationTask == nil
+			&& !isModelLoading && !isDownloadingModel
+	}
+
+	func scheduleIdleUnload() {
+		guard let interval = RecordingControlSettings().modelUnloadTimeout.interval else {
+			idleUnloadTimer.cancel()
+			return
+		}
+		guard activeModelUses == 0, whisperKit != nil else { return }
+		idleUnloadTimer.schedule(after: interval) { [weak self] in
+			await self?.unloadModelIfIdle()
+		}
+	}
+
+	private func unloadModelIfIdle() async {
+		guard whisperKit != nil, activeModelUses == 0, !isLiveTranscriptionMode else { return }
+		guard canUnloadModel else {
+			// A model operation or load is still settling; try again once it has.
+			idleUnloadTimer.schedule(after: 2) { [weak self] in
+				await self?.unloadModelIfIdle()
+			}
+			return
+		}
+		AppLogger.shared.transcriber.info("Unloading model after idle timeout")
+		await unloadModel()
+	}
+
+	/// Releases the loaded model's memory. The next transcription reloads it on demand.
+	func unloadModel() async {
+		guard canUnloadModel, let instance = whisperKit else {
+			AppLogger.shared.transcriber.info("Model unload skipped: model busy or not loaded")
+			return
+		}
+		idleUnloadTimer.cancel()
+		// Detach first so a transcription that starts during the unload loads a fresh
+		// instance instead of reusing one whose models are being torn down.
+		instance.modelStateCallback = nil
+		whisperKit = nil
+		isIdleUnloaded = true
+		handleModelStateChange(from: instance.modelState, to: .unloaded)
+		await instance.unloadModels()
+		AppLogger.shared.transcriber.info(
+			"Unloaded model \(currentModel ?? "unknown"); it will reload on next use")
 	}
 
 	private func createSilentAudioFile() -> URL {
@@ -1601,7 +1758,7 @@ import WhisperKit
 	}
 
 	func hasAnyModel() -> Bool {
-		return whisperKit != nil
+		return whisperKit != nil || isIdleUnloaded
 	}
 
 	private func getApplicationSupportDirectory() -> URL {
@@ -1728,6 +1885,12 @@ import WhisperKit
 		if lastObservedTranslation != currentTranslation {
 			lastObservedTranslation = currentTranslation
 			handleTranslationSettingsChanged()
+		}
+
+		let currentUnloadTimeout = RecordingControlSettings().modelUnloadTimeout
+		if lastObservedUnloadTimeout != currentUnloadTimeout {
+			lastObservedUnloadTimeout = currentUnloadTimeout
+			scheduleIdleUnload()
 		}
 	}
 

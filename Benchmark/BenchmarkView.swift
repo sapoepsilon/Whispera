@@ -132,7 +132,9 @@ struct BenchmarkView: View {
 					.frame(maxWidth: .infinity)
 				}
 				.buttonStyle(.borderedProminent)
-				.disabled(selectedFiles.isEmpty || runner.isRunning || !transcriber.isCurrentModelLoaded())
+				.disabled(
+					selectedFiles.isEmpty || runner.isRunning
+						|| !(transcriber.isCurrentModelLoaded() || transcriber.isIdleUnloaded))
 			}
 			.padding(.vertical, 4)
 		}

@@ -46,7 +46,7 @@ class BenchmarkRunner: ObservableObject {
 			return nil
 		}
 
-		guard transcriber.isCurrentModelLoaded() else {
+		guard transcriber.isCurrentModelLoaded() || transcriber.isIdleUnloaded else {
 			error = "No model loaded"
 			return nil
 		}

@@ -332,6 +332,9 @@ struct SettingsView: View {
 					}
 					Divider()
 
+					RecordingControlSettingsView()
+					Divider()
+
 					SettingsSection("Microphone") {
 						SettingRow(
 							"Input Device",
@@ -439,6 +442,8 @@ struct SettingsView: View {
 						SettingRow("Auto Download") {
 							Toggle("", isOn: $autoDownloadModel)
 						}
+
+						ModelMemorySettingsView()
 					}
 					Divider()
 
