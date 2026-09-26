@@ -133,10 +133,43 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		return isLoopback(host: url.host ?? "")
 	}
 
+	/// Numeric loopback addresses only, parsed rather than prefix-matched: "127.evil.example" is a
+	/// DNS name that can point anywhere.
 	static func isLoopback(host: String) -> Bool {
 		let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-		return host == "localhost" || host.hasSuffix(".localhost") || host == "::1"
-			|| host.hasPrefix("127.")
+		if host == "localhost" { return true }
+		var v4 = in_addr()
+		if inet_pton(AF_INET, host, &v4) == 1 {
+			return UInt32(bigEndian: v4.s_addr) >> 24 == 127
+		}
+		var v6 = in6_addr()
+		if inet_pton(AF_INET6, host, &v6) == 1 {
+			let bytes = withUnsafeBytes(of: v6) { Array($0) }
+			if bytes == [UInt8](repeating: 0, count: 15) + [1] { return true }
+			// IPv4-mapped (::ffff:127.x.x.x)
+			return bytes[0..<10].allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff
+				&& bytes[12] == 127
+		}
+		return false
+	}
+
+	/// URLSession copies custom headers, Authorization included, onto a redirected request. The
+	/// key may only follow a redirect that stays on the same scheme, host and port.
+	static func redirectedRequest(_ proposed: URLRequest, from original: URLRequest?) -> URLRequest {
+		guard proposed.value(forHTTPHeaderField: "Authorization") != nil else { return proposed }
+		if let from = original?.url, let to = proposed.url, isSameOrigin(from, to), canSendKey(to: to) {
+			return proposed
+		}
+		var stripped = proposed
+		stripped.setValue(nil, forHTTPHeaderField: "Authorization")
+		AppLogger.shared.general.info("Dropped the API key from a redirect to \(proposed.url?.host ?? "another host")")
+		return stripped
+	}
+
+	static func isSameOrigin(_ lhs: URL, _ rhs: URL) -> Bool {
+		func port(_ url: URL) -> Int? { url.port ?? (url.scheme?.lowercased() == "https" ? 443 : 80) }
+		return lhs.scheme?.lowercased() == rhs.scheme?.lowercased()
+			&& lhs.host?.lowercased() == rhs.host?.lowercased() && port(lhs) == port(rhs)
 	}
 
 	/// For the settings screen, so the problem shows up before the first dictation fails.
@@ -165,7 +198,7 @@ struct OpenAICompatibleClient: TextPostProcessor {
 	}
 
 	private func send(_ request: URLRequest) async throws -> Data {
-		let (data, response) = try await session.data(for: request)
+		let (data, response) = try await session.data(for: request, delegate: AuthorizationRedirectGuard())
 		guard let http = response as? HTTPURLResponse else { throw PostProcessingError.malformedResponse }
 		guard (200..<300).contains(http.statusCode) else {
 			let message = Self.redacting(apiKey, in: Self.errorMessage(from: data))
@@ -195,6 +228,15 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		let text = String(decoding: data.prefix(300), as: UTF8.self)
 			.trimmingCharacters(in: .whitespacesAndNewlines)
 		return text.isEmpty ? "no details" : text
+	}
+}
+
+private final class AuthorizationRedirectGuard: NSObject, URLSessionTaskDelegate {
+	func urlSession(
+		_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+		newRequest request: URLRequest
+	) async -> URLRequest? {
+		OpenAICompatibleClient.redirectedRequest(request, from: task.originalRequest)
 	}
 }
 

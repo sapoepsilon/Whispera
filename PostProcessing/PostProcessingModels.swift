@@ -42,6 +42,29 @@ struct PostProcessingProvider: Identifiable, Hashable, Sendable {
 		all.first { $0.id == id }
 	}
 
+	/// Consent copy for the enable toggle: names who receives the transcript.
+	func consentText(baseURL: String) -> String {
+		switch kind {
+		case .appleIntelligence:
+			return String(
+				localized:
+					"Clean up the transcript with Apple Intelligence on this Mac before it is pasted. History keeps the original text."
+			)
+		case .openAICompatible:
+			if allowsBaseURLEdit {
+				let host = OpenAICompatibleClient.endpoint(baseURL: baseURL, path: "models")?.host ?? baseURL
+				return String(
+					localized:
+						"Send each transcript to the server at \(host) to clean it up before it is pasted. History keeps the original text."
+				)
+			}
+			return String(
+				localized:
+					"Send each transcript to \(label) to clean it up before it is pasted. \(label) receives everything you dictate while this is on. History keeps the original text."
+			)
+		}
+	}
+
 	private static func openAI(
 		_ id: String, _ label: String, _ baseURL: String, structuredOutput: Bool = false
 	) -> PostProcessingProvider {
