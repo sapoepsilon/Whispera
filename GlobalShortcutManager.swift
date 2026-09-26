@@ -14,6 +14,8 @@ class GlobalShortcutManager: ObservableObject {
 	private var queueManager: TranscriptionQueueManager?
 	private var isProcessingFileOperation = false
 	private let logger = AppLogger.shared.general
+	@MainActor private var cancelMonitor: CancelShortcutMonitor?
+	private var recordingStateObserver: NSObjectProtocol?
 	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
 	var fileSelectionShortcut: String =
 		UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
@@ -54,6 +56,34 @@ class GlobalShortcutManager: ObservableObject {
 		self.audioManager = manager
 		logger.info("AudioManager set, checking accessibility status...")
 		checkAccessibilityStatus()
+		observeRecordingStateForCancel()
+	}
+
+	private func observeRecordingStateForCancel() {
+		guard recordingStateObserver == nil else { return }
+		recordingStateObserver = NotificationCenter.default.addObserver(
+			forName: NSNotification.Name("RecordingStateChanged"),
+			object: nil,
+			queue: .main
+		) { [weak self] _ in
+			Task { @MainActor in self?.updateCancelMonitor() }
+		}
+	}
+
+	@MainActor
+	private func updateCancelMonitor() {
+		guard let audioManager else { return }
+		let sessionActive =
+			audioManager.isRecording || audioManager.isMicrophoneInitializing
+			|| audioManager.isTranscribing
+		let shouldListen = sessionActive && RecordingControlSettings().cancelShortcutEnabled
+		if shouldListen && cancelMonitor == nil {
+			cancelMonitor = CancelShortcutMonitor { [weak self] in
+				self?.logger.info("Cancel shortcut pressed")
+				self?.audioManager?.cancelRecording()
+			}
+		}
+		cancelMonitor?.setActive(shouldListen)
 	}
 
 	func setFileTranscriptionManager(_ manager: FileTranscriptionManager) {
@@ -756,6 +786,9 @@ class GlobalShortcutManager: ObservableObject {
 	}
 
 	deinit {
+		if let recordingStateObserver {
+			NotificationCenter.default.removeObserver(recordingStateObserver)
+		}
 		if let monitor = globalMonitor {
 			NSEvent.removeMonitor(monitor)
 		}

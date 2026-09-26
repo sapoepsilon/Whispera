@@ -39,6 +39,7 @@ enum ModelUnloadTimeout: String, CaseIterable, Identifiable {
 
 struct RecordingControlSettings {
 	enum Key {
+		static let cancelShortcutEnabled = "cancelShortcutEnabled"
 		static let modelUnloadTimeout = "modelUnloadTimeout"
 	}
 
@@ -46,6 +47,10 @@ struct RecordingControlSettings {
 
 	init(defaults: UserDefaults = .standard) {
 		self.defaults = defaults
+	}
+
+	var cancelShortcutEnabled: Bool {
+		defaults.object(forKey: Key.cancelShortcutEnabled) as? Bool ?? true
 	}
 
 	var modelUnloadTimeout: ModelUnloadTimeout {

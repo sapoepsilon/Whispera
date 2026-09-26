@@ -647,6 +647,29 @@ import WhisperKit
 		AppLogger.shared.transcriber.info("Live streaming stopped")
 	}
 
+	/// Stops live dictation without committing the pending (unconfirmed) text.
+	/// Text already confirmed and typed into the focused app stays where it is.
+	func cancelLiveStream() {
+		liveStreamStartupTask?.cancel()
+		liveStreamStartupTask = nil
+		transcriptionTask?.cancel()
+		transcriptionTask = nil
+		isWaitingForModel = false
+		waitingForModelStatusText = ""
+		isTranscribing = false
+		shouldShowLiveTranscriptionWindow = false
+		whisperKit?.audioProcessor.stopRecording()
+		AudioDeviceManager.shared.restoreSystemDefault()
+
+		pendingText = ""
+		stableDisplayText = ""
+		lastDisplayedPendingText = ""
+		isLiveTranscriptionMode = false
+		dictationWordTracker?.endSession()
+		releaseLiveStreamModelUse()
+		AppLogger.shared.transcriber.info("Live streaming cancelled")
+	}
+
 	private func releaseLiveStreamModelUse() {
 		guard liveStreamHoldsModel else { return }
 		liveStreamHoldsModel = false

@@ -332,6 +332,9 @@ struct SettingsView: View {
 					}
 					Divider()
 
+					RecordingControlSettingsView()
+					Divider()
+
 					SettingsSection("Microphone") {
 						SettingRow(
 							"Input Device",

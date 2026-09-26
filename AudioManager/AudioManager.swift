@@ -8,6 +8,12 @@ enum RecordingMode {
 	case liveTranscription
 }
 
+enum CapturePath {
+	case live
+	case file
+	case stream
+}
+
 enum AudioState {
 	case idle
 	case initializing
@@ -108,6 +114,14 @@ final class AudioManager: NSObject {
 	private var sessionID = 0
 	@ObservationIgnored
 	private var sessionsHoldingModel: Set<Int> = []
+	@ObservationIgnored
+	private var activeCapturePath: CapturePath?
+	@ObservationIgnored
+	private var transcriptionTask: Task<Void, Never>?
+	@ObservationIgnored
+	private var transcribingSession: Int?
+	@ObservationIgnored
+	private var cancelledSessions: Set<Int> = []
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -139,6 +153,57 @@ final class AudioManager: NSObject {
 			currentRecordingMode = enableStreaming ? .liveTranscription : .text
 			startRecording()
 		}
+	}
+
+	/// Discards the current recording: no transcription, no paste. A transcription
+	/// that is already running is abandoned and its result dropped.
+	func cancelRecording() {
+		let capturing = isRecording || isMicrophoneInitializing
+		guard capturing || isTranscribing else { return }
+
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+
+		if capturing {
+			cancelledSessions.insert(sessionID)
+			switch activeCapturePath {
+			case .live:
+				whisperKitTranscriber.cancelLiveStream()
+			case .file:
+				stopMeteringTimer()
+				audioRecorder?.stop()
+				audioRecorder = nil
+				if let audioFileURL {
+					try? FileManager.default.removeItem(at: audioFileURL)
+				}
+				audioFileURL = nil
+			case .stream:
+				audioBuffer.removeAll()
+				engineController.cleanup()
+			case nil:
+				break
+			}
+			activeCapturePath = nil
+			deviceManager.restoreSystemDefault()
+			releaseModel(for: sessionID)
+			playFeedbackSound(start: false)
+		}
+
+		if let transcribingSession {
+			cancelledSessions.insert(transcribingSession)
+			transcriptionTask?.cancel()
+			transcriptionTask = nil
+			releaseModel(for: transcribingSession)
+			self.transcribingSession = nil
+		}
+
+		isMicrophoneInitializing = false
+		isRecording = false
+		isTranscribing = false
+		timer.stop()
+		levelMonitor.reset()
+		scheduleTimerReset()
+		AppLogger.shared.audioManager.info("Recording cancelled; audio discarded")
 	}
 
 	func switchInputDevice(to uid: String) {
@@ -254,6 +319,7 @@ extension AudioManager {
 
 extension AudioManager {
 	fileprivate func startFileBasedRecording() {
+		activeCapturePath = .file
 		isMicrophoneInitializing = true
 
 		deviceActivationTask = Task {
@@ -306,9 +372,10 @@ extension AudioManager {
 		playFeedbackSound(start: false)
 		deviceManager.restoreSystemDefault()
 
+		activeCapturePath = nil
 		let session = sessionID
 		if let audioFileURL {
-			Task {
+			transcriptionTask = Task {
 				await transcribeAudio(
 					fileURL: audioFileURL, enableTranslation: enableTranslation, session: session)
 			}
@@ -343,6 +410,7 @@ extension AudioManager {
 extension AudioManager {
 	fileprivate func startStreamingRecording() {
 		AppLogger.shared.audioManager.info("Starting streaming recording")
+		activeCapturePath = .stream
 		audioBuffer.removeAll()
 		isMicrophoneInitializing = true
 
@@ -353,6 +421,10 @@ extension AudioManager {
 				let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
 				try engineController.installTap { [weak self] buffer, format in
 					self?.processAudioBuffer(buffer, originalFormat: format)
+				}
+				guard !Task.isCancelled else {
+					engineController.cleanup()
+					return
 				}
 
 				isMicrophoneInitializing = false
@@ -383,9 +455,10 @@ extension AudioManager {
 
 		AppLogger.shared.audioManager.info("Streaming recording stopped")
 
+		activeCapturePath = nil
 		let session = sessionID
 		if !capturedAudio.isEmpty {
-			Task {
+			transcriptionTask = Task {
 				await transcribeAudioBuffer(
 					audioArray: capturedAudio, enableTranslation: enableTranslation, session: session)
 			}
@@ -449,6 +522,7 @@ extension AudioManager {
 // MARK: - Live Transcription
 extension AudioManager {
 	fileprivate func startLiveTranscription() {
+		activeCapturePath = .live
 		isMicrophoneInitializing = true
 		isRecording = true
 		timer.start()
@@ -479,6 +553,7 @@ extension AudioManager {
 		timer.stop()
 		playFeedbackSound(start: false)
 
+		activeCapturePath = nil
 		whisperKitTranscriber.stopLiveStream()
 		levelMonitor.reset()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
@@ -492,56 +567,51 @@ extension AudioManager {
 	fileprivate func transcribeAudioBuffer(audioArray: [Float], enableTranslation: Bool, session: Int)
 		async
 	{
-		defer { releaseModel(for: session) }
-		isTranscribing = true
-		transcriptionError = nil
-
-		do {
-			let transcription = try await whisperKitTranscriber.transcribeAudioArray(
+		await runTranscription(session: session) {
+			try await self.whisperKitTranscriber.transcribeAudioArray(
 				audioArray, enableTranslation: enableTranslation)
-
-			await MainActor.run {
-				lastTranscription = transcription
-				isTranscribing = false
-
-				if currentRecordingMode == .text {
-					pasteToFocusedApp(transcription)
-				}
-			}
-		} catch {
-			await MainActor.run {
-				transcriptionError = error.localizedDescription
-				lastTranscription = "Transcription failed: \(error.localizedDescription)"
-				isTranscribing = false
-			}
 		}
 	}
+
 	fileprivate func transcribeAudio(fileURL: URL, enableTranslation: Bool, session: Int) async {
-		defer { releaseModel(for: session) }
+		await runTranscription(session: session) {
+			try await self.whisperKitTranscriber.transcribe(
+				audioURL: fileURL, enableTranslation: enableTranslation)
+		}
+		try? FileManager.default.removeItem(at: fileURL)
+	}
+
+	private func runTranscription(session: Int, _ work: () async throws -> String) async {
+		defer {
+			releaseModel(for: session)
+			cancelledSessions.remove(session)
+			if transcribingSession == session {
+				transcribingSession = nil
+				transcriptionTask = nil
+			}
+		}
+		transcribingSession = session
 		isTranscribing = true
 		transcriptionError = nil
 
 		do {
-			let transcription = try await whisperKitTranscriber.transcribe(
-				audioURL: fileURL, enableTranslation: enableTranslation)
+			let transcription = try await work()
+			guard !cancelledSessions.contains(session) else {
+				AppLogger.shared.audioManager.info("Discarding transcription of a cancelled recording")
+				return
+			}
+			lastTranscription = transcription
+			isTranscribing = false
 
-			await MainActor.run {
-				lastTranscription = transcription
-				isTranscribing = false
-
-				if currentRecordingMode == .text {
-					pasteToFocusedApp(transcription)
-				}
+			if currentRecordingMode == .text {
+				pasteToFocusedApp(transcription)
 			}
 		} catch {
-			await MainActor.run {
-				transcriptionError = error.localizedDescription
-				lastTranscription = "Transcription failed: \(error.localizedDescription)"
-				isTranscribing = false
-			}
+			guard !cancelledSessions.contains(session) else { return }
+			transcriptionError = error.localizedDescription
+			lastTranscription = "Transcription failed: \(error.localizedDescription)"
+			isTranscribing = false
 		}
-
-		try? FileManager.default.removeItem(at: fileURL)
 	}
 }
 

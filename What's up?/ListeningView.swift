@@ -58,9 +58,12 @@ struct ListeningView: View {
 						.lineLimit(1)
 				}
 			} else {
-				Text("Transcribing...")
-					.font(.system(.caption, design: .rounded))
-					.foregroundColor(.secondary)
+				HStack(spacing: 8) {
+					Text("Transcribing...")
+						.font(.system(.caption, design: .rounded))
+						.foregroundColor(.secondary)
+					cancelButton
+				}
 			}
 		case .recording:
 			HStack(spacing: 8) {
@@ -90,6 +93,8 @@ struct ListeningView: View {
 
 				AudioMeterView(levels: audioManager.audioLevels)
 
+				cancelButton
+
 				Button(action: {
 					audioManager.toggleRecording()
 				}) {
@@ -101,6 +106,19 @@ struct ListeningView: View {
 				.help("Stop recording")
 			}
 		}
+	}
+
+	private var cancelButton: some View {
+		Button(action: {
+			audioManager.cancelRecording()
+		}) {
+			Image(systemName: "xmark.circle.fill")
+				.font(.system(size: 16))
+				.foregroundColor(.secondary)
+		}
+		.buttonStyle(.plain)
+		.help("Cancel and discard (Esc)")
+		.accessibilityIdentifier("cancelRecordingButton")
 	}
 
 	private var pillContent: some View {
