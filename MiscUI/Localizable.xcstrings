@@ -1,6 +1,29 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "\"Allow whispera:// links\" is off, so the commands that control Whispera will only tell you to turn it on. Turn it on in Settings > Automation.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„whispera://-Links erlauben“ ist aus, daher weisen die Befehle, die Whispera steuern, nur darauf hin, es einzuschalten. Schalte es unter Einstellungen > Automatisierung ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Permitir enlaces whispera://» está desactivado, así que los comandos que controlan Whispera solo te pedirán que lo actives. Actívalo en Ajustes > Automatización."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« Autoriser les liens whispera:// » est désactivé : les commandes qui contrôlent Whispera vous demanderont seulement de l'activer. Activez-le dans Réglages > Automatisation."
+          }
+        }
+      }
+    },
     "${output} is replaced with the transcript. Without it, the prompt becomes the instructions.": {
       "extractionState": "manual",
       "localizations": {
@@ -1427,6 +1450,52 @@
         }
       }
     },
+    "Already in the dictionary": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bereits im Wörterbuch"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya está en el diccionario"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déjà dans le dictionnaire"
+          }
+        }
+      }
+    },
+    "Already recording": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufnahme läuft bereits"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya se está grabando"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrement déjà en cours"
+          }
+        }
+      }
+    },
     "Also apply to the main shortcut. Live Transcription Mode types as you speak, so its sessions are never post-processed; use the shortcut above for those.": {
       "extractionState": "manual",
       "localizations": {
@@ -1538,6 +1607,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Une erreur inconnue s'est produite"
+          }
+        }
+      }
+    },
+    "Another app already owns this shortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eine andere App verwendet diesen Kurzbefehl bereits"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Otra app ya usa este atajo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une autre app utilise déjà ce raccourci"
           }
         }
       }
@@ -3635,6 +3727,29 @@
         }
       }
     },
+    "Control dictation, copy the last transcript, open history, add dictionary words, switch language or model, and transcribe a file from Raycast. Apart from stop, cancel, listing models and transcribing a file, they need \"Allow whispera:// links\" turned on above. Pick the folder you added under Raycast > Extensions > Script Commands.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diktat steuern, das letzte Transkript kopieren, den Verlauf öffnen, Wörter zum Wörterbuch hinzufügen, Sprache oder Modell wechseln und eine Datei transkribieren – direkt aus Raycast. Außer Stoppen, Abbrechen, Modelle auflisten und Datei transkribieren brauchen sie das oben aktivierte „whispera://-Links erlauben“. Wähle den Ordner, den du unter Raycast > Extensions > Script Commands hinzugefügt hast."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Controla el dictado, copia la última transcripción, abre el historial, añade palabras al diccionario, cambia de idioma o de modelo y transcribe un archivo desde Raycast. Salvo detener, cancelar, listar modelos y transcribir un archivo, necesitan «Permitir enlaces whispera://» activado arriba. Elige la carpeta que añadiste en Raycast > Extensions > Script Commands."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contrôlez la dictée, copiez la dernière transcription, ouvrez l'historique, ajoutez des mots au dictionnaire, changez de langue ou de modèle et transcrivez un fichier depuis Raycast. Hormis arrêter, annuler, lister les modèles et transcrire un fichier, elles nécessitent « Autoriser les liens whispera:// » activé ci-dessus. Choisissez le dossier ajouté dans Raycast > Extensions > Script Commands."
+          }
+        }
+      }
+    },
     "Control-Return": {
       "extractionState": "manual",
       "localizations": {
@@ -3727,6 +3842,29 @@
         }
       }
     },
+    "Copied the last transcript": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letztes Transkript kopiert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Última transcripción copiada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dernière transcription copiée"
+          }
+        }
+      }
+    },
     "Copies the most recent Whispera transcript to the clipboard and returns it.": {
       "extractionState": "manual",
       "localizations": {
@@ -3769,6 +3907,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copier"
+          }
+        }
+      }
+    },
+    "Copy Last": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letztes kopieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar última"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier la dernière"
           }
         }
       }
@@ -3888,6 +4049,29 @@
         }
       }
     },
+    "Copy the most recent transcript to the clipboard": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopiert das neueste Transkript in die Zwischenablage"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copia la transcripción más reciente al portapapeles"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copie la transcription la plus récente dans le presse-papiers"
+          }
+        }
+      }
+    },
     "Copy to Clipboard": {
       "extractionState": "manual",
       "localizations": {
@@ -3976,6 +4160,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "Impossible de récupérer les modèles"
+          }
+        }
+      }
+    },
+    "Could not load the model": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Modell konnte nicht geladen werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo cargar el modelo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de charger le modèle"
+          }
+        }
+      }
+    },
+    "Could not reset the token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Token konnte nicht zurückgesetzt werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo restablecer el token"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de réinitialiser le jeton"
+          }
+        }
+      }
+    },
+    "Could not switch to %@: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wechsel zu %@ nicht möglich: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo cambiar a %@: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de passer à %@ : %@"
           }
         }
       }
@@ -4578,6 +4831,29 @@
         }
       }
     },
+    "Delete older history?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Älteren Verlauf löschen?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar el historial antiguo?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer l'historique ancien ?"
+          }
+        }
+      }
+    },
     "Delete saved history?": {
       "extractionState": "manual",
       "localizations": {
@@ -4850,6 +5126,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Documents"
+          }
+        }
+      }
+    },
+    "Done": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fertig"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hecho"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminé"
           }
         }
       }
@@ -5245,25 +5544,25 @@
         }
       }
     },
-    "Drop um, uh, hmm and repeated stutters from dictation": {
+    "Drop um, uh, hmm and repeated stutters, and squeeze extra spaces, in dictation and file transcripts. Dictation also joins line breaks into spaces; file transcripts keep them.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Entfernt „äh“, „ähm“, „hm“ und wiederholtes Stottern aus Diktaten"
+            "value": "Entfernt Füllwörter wie „äh“ und „hmm“, Wiederholungen und doppelte Leerzeichen beim Diktieren und in Datei-Transkripten. Beim Diktieren werden Zeilenumbrüche außerdem zu Leerzeichen; Datei-Transkripte behalten sie."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quita «eh», «em», «mmm» y los tartamudeos repetidos del dictado"
+            "value": "Quita muletillas como «eh» o «hmm», repeticiones y espacios de más en el dictado y en las transcripciones de archivos. El dictado además convierte los saltos de línea en espacios; las transcripciones de archivos los conservan."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Supprime « euh », « hum », « bah » et les bégaiements répétés de la dictée"
+            "value": "Supprime les mots de remplissage comme « euh » ou « hmm », les répétitions et les espaces en trop dans la dictée et les transcriptions de fichiers. La dictée remplace aussi les retours à la ligne par des espaces ; les transcriptions de fichiers les conservent."
           }
         }
       }
@@ -6303,6 +6602,29 @@
         }
       }
     },
+    "Fn/Globe shortcuts cannot be registered as a system hotkey": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kurzbefehle mit Fn/Globus können nicht als systemweiter Hotkey registriert werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los atajos con Fn/Globo no se pueden registrar como atajo del sistema"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les raccourcis Fn/Globe ne peuvent pas être enregistrés comme raccourci système"
+          }
+        }
+      }
+    },
     "Follow Caret Position": {
       "extractionState": "manual",
       "localizations": {
@@ -6483,6 +6805,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Commencer"
+          }
+        }
+      }
+    },
+    "Give up to %lld comma-separated words of at most %lld characters": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gib bis zu %lld durch Kommas getrennte Wörter mit höchstens %lld Zeichen an"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indica hasta %lld palabras separadas por comas de %lld caracteres como máximo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indiquez jusqu'à %lld mots séparés par des virgules, de %lld caractères au maximum"
           }
         }
       }
@@ -9339,6 +9684,29 @@
         }
       }
     },
+    "Model %@ is not downloaded. Download it in Settings first.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Modell %@ ist nicht geladen. Lade es zuerst in den Einstellungen herunter."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modelo %@ no está descargado. Descárgalo antes en Ajustes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le modèle %@ n'est pas téléchargé. Téléchargez-le d'abord dans les Réglages."
+          }
+        }
+      }
+    },
     "Model Memory": {
       "extractionState": "manual",
       "localizations": {
@@ -9404,6 +9772,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le modèle est déchargé et se chargera à la prochaine utilisation"
+          }
+        }
+      }
+    },
+    "Model switching is not available yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modellwechsel ist noch nicht verfügbar"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no se puede cambiar de modelo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le changement de modèle n'est pas encore disponible"
           }
         }
       }
@@ -10052,6 +10443,29 @@
         }
       }
     },
+    "No transcript yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch kein Transkript"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no hay transcripción"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune transcription pour l'instant"
+          }
+        }
+      }
+    },
     "No transcriptions yet": {
       "extractionState": "manual",
       "localizations": {
@@ -10144,6 +10558,29 @@
         }
       }
     },
+    "Not a dictation command": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Diktierbefehl"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No es un comando de dictado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce n'est pas une commande de dictée"
+          }
+        }
+      }
+    },
     "Not granted": {
       "extractionState": "manual",
       "localizations": {
@@ -10163,6 +10600,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Non accordé"
+          }
+        }
+      }
+    },
+    "Not recording": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Aufnahme aktiv"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se está grabando"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun enregistrement en cours"
           }
         }
       }
@@ -11340,25 +11800,25 @@
         }
       }
     },
-    "Press it while recording or transcribing to discard the dictation without pasting": {
+    "Press it while recording or transcribing to discard the dictation without pasting. In Live Transcription Mode the text is typed as you speak, so it only stops the stream; what was already typed stays.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drücke ihn während der Aufnahme oder Transkription, um das Diktat zu verwerfen, ohne es einzufügen"
+            "value": "Drücke ihn während der Aufnahme oder Transkription, um das Diktat ohne Einfügen zu verwerfen. Im Live-Transkriptionsmodus wird der Text beim Sprechen getippt, daher stoppt er nur den Stream; bereits Getipptes bleibt."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Púlsalo mientras grabas o transcribes para descartar el dictado sin pegarlo"
+            "value": "Púlsalo mientras grabas o transcribes para descartar el dictado sin pegarlo. En el modo de transcripción en vivo el texto se escribe mientras hablas, así que solo detiene la transmisión; lo ya escrito se queda."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Appuyez dessus pendant l'enregistrement ou la transcription pour abandonner la dictée sans la coller"
+            "value": "Appuyez pendant l'enregistrement ou la transcription pour abandonner la dictée sans coller. En mode Transcription en direct, le texte est saisi pendant que vous parlez : le raccourci arrête seulement le flux et ce qui est déjà saisi reste."
           }
         }
       }
@@ -11846,6 +12306,29 @@
         }
       }
     },
+    "Queued until Whispera finishes launching": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In der Warteschlange, bis Whispera fertig gestartet ist"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En cola hasta que Whispera termine de abrirse"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de la fin du lancement de Whispera"
+          }
+        }
+      }
+    },
     "Quick Tips:": {
       "extractionState": "manual",
       "localizations": {
@@ -12026,6 +12509,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Retranscription..."
+          }
+        }
+      }
+    },
+    "Re-transcription failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneute Transkription fehlgeschlagen: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error al volver a transcribir: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de la nouvelle transcription : %@"
           }
         }
       }
@@ -12490,25 +12996,48 @@
         }
       }
     },
-    "Registers a system hotkey. The front app never sees the shortcut. Fn/Globe cannot be used.": {
+    "RegisterEventHotKey failed (%lld)": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Registriert einen System-Hotkey. Die App im Vordergrund sieht den Kurzbefehl nie. Fn/Globus kann nicht verwendet werden."
+            "value": "RegisterEventHotKey fehlgeschlagen (%lld)"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Registra un atajo del sistema. La app en primer plano nunca recibe el atajo. No se puede usar Fn/Globo."
+            "value": "RegisterEventHotKey falló (%lld)"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enregistre un raccourci système. L'app au premier plan ne reçoit jamais le raccourci. Fn/Globe n'est pas utilisable."
+            "value": "Échec de RegisterEventHotKey (%lld)"
+          }
+        }
+      }
+    },
+    "Registers the dictation shortcut as a system hotkey, so the front app never sees it. Fn/Globe cannot be used. The file shortcut is still only observed, so it keeps working in other apps.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registriert den Diktier-Kurzbefehl als systemweiten Hotkey, sodass die App im Vordergrund ihn nie erhält. Fn/Globus kann nicht verwendet werden. Der Datei-Kurzbefehl wird weiterhin nur beobachtet und funktioniert daher in anderen Apps weiter."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registra el atajo de dictado como atajo del sistema, así la app en primer plano nunca lo recibe. No se puede usar Fn/Globo. El atajo de archivos solo se observa, así que sigue funcionando en otras apps."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistre le raccourci de dictée comme raccourci système : l'app au premier plan ne le reçoit jamais. Fn/Globe ne peut pas être utilisé. Le raccourci de fichier est seulement observé et continue donc de fonctionner dans les autres apps."
           }
         }
       }
@@ -13019,25 +13548,25 @@
         }
       }
     },
-    "Restore puts back whatever you had copied once the transcript is pasted": {
+    "Restore puts back what you had copied once the transcript is pasted. Exceptions: passwords and other concealed items are cleared rather than restored, anything larger than 16 MB per item or 32 MB in total is lost and the transcript stays, and files or images another app only promised to provide may come back incomplete.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "„Wiederherstellen“ legt nach dem Einsetzen zurück, was du vorher kopiert hattest"
+            "value": "Wiederherstellen legt nach dem Einfügen des Transkripts zurück, was du kopiert hattest. Ausnahmen: Passwörter und andere verborgene Inhalte werden gelöscht statt wiederhergestellt, alles über 16 MB pro Element oder 32 MB insgesamt geht verloren und das Transkript bleibt, und Dateien oder Bilder, die eine andere App nur zugesagt hat, kommen eventuell unvollständig zurück."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Restaurar devuelve lo que tenías copiado una vez pegada la transcripción"
+            "value": "Restaurar vuelve a poner lo que habías copiado una vez pegada la transcripción. Excepciones: las contraseñas y otros elementos ocultos se borran en lugar de restaurarse, todo lo que supere 16 MB por elemento o 32 MB en total se pierde y la transcripción se queda, y los archivos o imágenes que otra app solo prometió proporcionar pueden volver incompletos."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Restaurer remet ce que vous aviez copié une fois la transcription collée"
+            "value": "Restaurer remet ce que vous aviez copié une fois la transcription collée. Exceptions : les mots de passe et autres éléments masqués sont effacés au lieu d'être restaurés, tout ce qui dépasse 16 Mo par élément ou 32 Mo au total est perdu et la transcription reste, et les fichiers ou images qu'une autre app a seulement promis de fournir peuvent revenir incomplets."
           }
         }
       }
@@ -14169,25 +14698,25 @@
         }
       }
     },
-    "Shortcuts and Spotlight also list Toggle, Start, Stop and Cancel Dictation, Set Dictation Language and Transcribe Audio File actions. They work even when links are off.": {
+    "Shortcuts and Spotlight also list Toggle, Start, Stop and Cancel Dictation, Set Dictation Language, Copy Last Transcript, Open Transcription History, Add Word to Dictionary and Transcribe Audio File actions. They work even when links are off.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kurzbefehle und Spotlight bieten außerdem Aktionen zum Umschalten, Starten, Stoppen und Abbrechen von Diktaten, zum Festlegen der Diktiersprache und zum Transkribieren von Audiodateien. Sie funktionieren auch, wenn Links aus sind."
+            "value": "Kurzbefehle und Spotlight bieten außerdem die Aktionen Diktat umschalten, starten, stoppen und abbrechen, Diktiersprache festlegen, Letztes Transkript kopieren, Transkriptionsverlauf öffnen, Wort zum Wörterbuch hinzufügen und Audiodatei transkribieren. Sie funktionieren auch, wenn Links aus sind."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atajos y Spotlight también muestran las acciones para alternar, iniciar, detener y cancelar el dictado, definir el idioma de dictado y transcribir un archivo de audio. Funcionan aunque los enlaces estén desactivados."
+            "value": "Atajos y Spotlight también ofrecen las acciones Alternar, Iniciar, Detener y Cancelar dictado, Definir idioma de dictado, Copiar última transcripción, Abrir historial de transcripciones, Añadir palabra al diccionario y Transcribir archivo de audio. Funcionan aunque los enlaces estén desactivados."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Raccourcis et Spotlight proposent aussi des actions pour basculer, démarrer, arrêter et annuler la dictée, définir la langue de dictée et transcrire un fichier audio. Elles fonctionnent même si les liens sont désactivés."
+            "value": "Raccourcis et Spotlight proposent aussi les actions Basculer, Démarrer, Arrêter et Annuler la dictée, Définir la langue de dictée, Copier la dernière transcription, Ouvrir l'historique des transcriptions, Ajouter un mot au dictionnaire et Transcrire un fichier audio. Elles fonctionnent même si les liens sont désactivés."
           }
         }
       }
@@ -15756,6 +16285,29 @@
         }
       }
     },
+    "That key can't be used in a shortcut. Try a letter, number or F-key.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Taste kann nicht in einem Kurzbefehl verwendet werden. Versuche einen Buchstaben, eine Zahl oder eine F-Taste."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esa tecla no se puede usar en un atajo. Prueba con una letra, un número o una tecla F."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette touche ne peut pas servir de raccourci. Essayez une lettre, un chiffre ou une touche F."
+          }
+        }
+      }
+    },
     "The app binary doubles as a headless CLI. It uses models you already downloaded and never opens a window.": {
       "extractionState": "manual",
       "localizations": {
@@ -15940,6 +16492,29 @@
         }
       }
     },
+    "The old token still works, so links and scripts that carry it keep working. %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das alte Token gilt weiterhin, daher funktionieren Links und Skripte, die es enthalten, weiter. %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El token anterior sigue siendo válido, así que los enlaces y scripts que lo llevan siguen funcionando. %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'ancien jeton reste valide : les liens et scripts qui le contiennent continuent de fonctionner. %@"
+          }
+        }
+      }
+    },
     "The on-device model is still downloading": {
       "extractionState": "manual",
       "localizations": {
@@ -16005,6 +16580,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le fournisseur a renvoyé une liste de modèles vide."
+          }
+        }
+      }
+    },
+    "The recording for this entry is no longer available.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Aufnahme dieses Eintrags ist nicht mehr verfügbar."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La grabación de esta entrada ya no está disponible."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'enregistrement de cette entrée n'est plus disponible."
           }
         }
       }
@@ -16120,6 +16718,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cette version a été compilée sans FoundationModels"
+          }
+        }
+      }
+    },
+    "This deletes %lld entries and their recordings now. Starred entries are kept.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dadurch werden jetzt %lld Einträge und ihre Aufnahmen gelöscht. Markierte Einträge bleiben erhalten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se eliminarán ahora %lld entradas y sus grabaciones. Las entradas destacadas se conservan."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cela supprime maintenant %lld entrées et leurs enregistrements. Les entrées favorites sont conservées."
+          }
+        }
+      }
+    },
+    "This entry has no transcript to post-process.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Eintrag hat kein Transkript zum Nachbearbeiten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta entrada no tiene transcripción que posprocesar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette entrée n'a pas de transcription à post-traiter."
           }
         }
       }
@@ -16373,29 +17017,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Basculer la dictée"
-          }
-        }
-      }
-    },
-    "Toggle, start, stop and cancel dictation, switch language or model, and transcribe a file from Raycast. Pick the folder you added under Raycast > Extensions > Script Commands.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Diktate umschalten, starten, stoppen und abbrechen, Sprache oder Modell wechseln und Dateien transkribieren – direkt aus Raycast. Wähle den Ordner, den du unter Raycast > Extensions > Script Commands hinzugefügt hast."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alterna, inicia, detén y cancela el dictado, cambia de idioma o de modelo y transcribe un archivo desde Raycast. Elige la carpeta que añadiste en Raycast > Extensions > Script Commands."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Basculez, démarrez, arrêtez et annulez la dictée, changez de langue ou de modèle et transcrivez un fichier depuis Raycast. Choisissez le dossier ajouté dans Raycast > Extensions > Script Commands."
           }
         }
       }
@@ -17090,6 +17711,29 @@
         }
       }
     },
+    "Transcription history could not be opened.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Transkriptionsverlauf konnte nicht geöffnet werden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo abrir el historial de transcripciones."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'ouvrir l'historique des transcriptions."
+          }
+        }
+      }
+    },
     "Transcription:": {
       "extractionState": "manual",
       "localizations": {
@@ -17523,6 +18167,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Inconnu"
+          }
+        }
+      }
+    },
+    "Unknown language: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unbekannte Sprache: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idioma desconocido: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Langue inconnue : %@"
           }
         }
       }
@@ -18217,25 +18884,25 @@
         }
       }
     },
-    "What appears on screen while dictating": {
+    "What appears on screen while dictating. Not shown in Live Transcription Mode.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Was beim Diktieren auf dem Bildschirm erscheint"
+            "value": "Was beim Diktieren auf dem Bildschirm erscheint. Wird im Live-Transkriptionsmodus nicht angezeigt."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lo que aparece en pantalla mientras dictas"
+            "value": "Lo que aparece en pantalla mientras dictas. No se muestra en el modo de transcripción en vivo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ce qui s'affiche à l'écran pendant la dictée"
+            "value": "Ce qui s'affiche à l'écran pendant la dictée. Non affiché en mode Transcription en direct."
           }
         }
       }
