@@ -13,6 +13,9 @@ final class PostProcessShortcutMonitor {
 	private var parser: ShortcutParser?
 	private var defaultsObserver: NSObjectProtocol?
 	private var installedSignature: String?
+	private let carbonHotKey = CarbonHotKey()
+	@MainActor private var activation = ActivationStateMachine(
+		mode: .toggle, holdThreshold: TimeInterval(RecordingControlSettings.defaultHoldThresholdMs) / 1000)
 	private let settings: PostProcessingSettings
 	private let logger = AppLogger.shared.general
 
@@ -51,36 +54,91 @@ final class PostProcessShortcutMonitor {
 
 	private func reinstallIfChanged() {
 		let shortcut = settings.shortcut
-		let signature = "\(settings.isEnabled)|\(shortcut)|\(AXIsProcessTrusted())"
+		let backend = HotkeyBackend.preferred()
+		let signature = "\(settings.isEnabled)|\(shortcut)|\(AXIsProcessTrusted())|\(backend.rawValue)"
 		guard signature != installedSignature, let parser else { return }
 		installedSignature = signature
 		removeMonitors()
+		// A release in flight is lost when the monitors are replaced
+		Task { @MainActor [weak self] in self?.activation.reset() }
 
 		guard settings.isEnabled, Self.isUsableShortcut(shortcut) else { return }
 		let (modifiers, keyCode) = parser(shortcut)
+
+		if backend == .carbon, let spec = CarbonHotKeyMapping.spec(keyCode: keyCode, modifiers: modifiers) {
+			carbonHotKey.action = { [weak self] in self?.handlePress(isRepeat: false) }
+			carbonHotKey.releaseAction = { [weak self] in self?.handleRelease() }
+			if carbonHotKey.register(spec) {
+				logger.info("Post-processing shortcut registered as a system hotkey for \(shortcut)")
+				return
+			}
+			logger.error("Post-processing system hotkey unavailable, using event monitors")
+		}
+
 		let matches: (NSEvent) -> Bool = { event in
 			event.keyCode == keyCode
 				&& event.modifierFlags.intersection([.command, .option, .control, .shift]) == modifiers
 		}
 
-		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-			if matches(event) { self?.trigger() }
+		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+			if event.type == .keyUp {
+				if event.keyCode == keyCode { self?.handleRelease() }
+				return
+			}
+			if matches(event) { self?.handlePress(isRepeat: event.isARepeat) }
 		}
-		localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+		localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+			if event.type == .keyUp {
+				if event.keyCode == keyCode { self?.handleRelease() }
+				return event
+			}
 			guard matches(event) else { return event }
-			self?.trigger()
+			self?.handlePress(isRepeat: event.isARepeat)
 			return nil
 		}
 		logger.info("Post-processing shortcut installed for \(shortcut)")
 	}
 
-	private func trigger() {
-		logger.info("Post-processing shortcut detected")
+	/// Follows the same activation mode as the dictation shortcut, so push-to-talk and
+	/// hold-or-toggle work here too and key repeat never re-toggles recording.
+	private func handlePress(isRepeat: Bool) {
+		let pressedAt = Date()
+		if !isRepeat {
+			logger.info("Post-processing shortcut detected")
+		}
 		Task { @MainActor [weak self] in
-			if UserDefaults.standard.bool(forKey: "shortcutHapticFeedback") {
-				NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
-			}
-			self?.audioManager?.toggleRecording(postProcess: true)
+			guard let self, let audioManager = self.audioManager else { return }
+			let recording = RecordingControlSettings()
+			self.activation.mode = recording.activationMode
+			self.activation.holdThreshold = recording.holdThreshold
+			let action = self.activation.keyDown(
+				at: pressedAt, isRepeat: isRepeat, isSessionActive: audioManager.isSessionActive)
+			self.perform(action, on: audioManager)
+		}
+	}
+
+	private func handleRelease() {
+		let releasedAt = Date()
+		Task { @MainActor [weak self] in
+			guard let self, let audioManager = self.audioManager else { return }
+			let action = self.activation.keyUp(at: releasedAt, isSessionActive: audioManager.isSessionActive)
+			self.perform(action, on: audioManager)
+		}
+	}
+
+	@MainActor
+	private func perform(_ action: ActivationAction, on audioManager: AudioManager) {
+		guard action != .none else { return }
+		if UserDefaults.standard.bool(forKey: "shortcutHapticFeedback") {
+			NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+		}
+		switch action {
+		case .start:
+			audioManager.startRecordingSession(postProcess: true)
+		case .stop:
+			audioManager.requestStop()
+		case .none:
+			break
 		}
 	}
 
@@ -89,5 +147,6 @@ final class PostProcessShortcutMonitor {
 		if let localMonitor { NSEvent.removeMonitor(localMonitor) }
 		globalMonitor = nil
 		localMonitor = nil
+		carbonHotKey.unregister()
 	}
 }
