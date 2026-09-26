@@ -871,6 +871,24 @@ import WhisperKit
 		return (language, enableTranslation || language == nil)
 	}
 
+	private func processTranscriptText(
+		_ text: String, detectedLanguage: String?, enableTranslation: Bool
+	) -> String {
+		let configuration = TextProcessingSettings.configuration()
+		let evidence = TranscriptTextProcessor.languageEvidence(
+			selectedLanguageCode: Constants.decodingLanguageCode(for: selectedLanguage),
+			translating: enableTranslation,
+			modelDetectedLanguage: detectedLanguage,
+			text: text
+		)
+		let processed = TranscriptTextProcessor(configuration: configuration).process(text, language: evidence)
+		if processed != text {
+			AppLogger.shared.transcriber.log(
+				"Text processing changed transcript (language evidence: \(evidence))")
+		}
+		return processed
+	}
+
 	func updateDecodingOptions(
 		temperature: Float? = nil,
 		temperatureFallbackCount: Int? = nil,
@@ -1031,8 +1049,11 @@ import WhisperKit
 				}.value
 
 				if !result.isEmpty {
-					let transcription = result.compactMap { $0.text }.joined(separator: " ")
+					let rawTranscription = result.compactMap { $0.text }.joined(separator: " ")
 						.trimmingCharacters(in: .whitespacesAndNewlines)
+					let transcription = processTranscriptText(
+						rawTranscription, detectedLanguage: result.first?.language,
+						enableTranslation: enableTranslation)
 
 					if !transcription.isEmpty {
 						AppLogger.shared.transcriber.log(
@@ -1089,8 +1110,12 @@ import WhisperKit
 						}.value
 
 						if !fallbackResult.isEmpty {
-							let transcription = fallbackResult.compactMap { $0.text }.joined(separator: " ")
+							let rawTranscription = fallbackResult.compactMap { $0.text }
+								.joined(separator: " ")
 								.trimmingCharacters(in: .whitespacesAndNewlines)
+							let transcription = processTranscriptText(
+								rawTranscription, detectedLanguage: fallbackResult.first?.language,
+								enableTranslation: enableTranslation)
 							if !transcription.isEmpty {
 								AppLogger.shared.transcriber.log(
 									"WhisperKit \(logPrefix) transcription completed with fallback: \(transcription)")
@@ -1219,7 +1244,10 @@ import WhisperKit
 			// WhisperKit returns [TranscriptionResult], we need to extract segments from each result
 			let allSegments = result.flatMap { transcriptionResult in
 				transcriptionResult.segments.compactMap { whisperSegment -> TranscriptionSegment? in
-					let text = whisperSegment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+					let text = processTranscriptText(
+						whisperSegment.text.trimmingCharacters(in: .whitespacesAndNewlines),
+						detectedLanguage: transcriptionResult.language,
+						enableTranslation: enableTranslation)
 					guard !text.isEmpty else {
 						return nil
 					}
@@ -1272,8 +1300,11 @@ import WhisperKit
 		}.value
 
 		if !result.isEmpty {
-			let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(
-				in: .whitespacesAndNewlines)
+			let transcription = processTranscriptText(
+				result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(
+					in: .whitespacesAndNewlines),
+				detectedLanguage: result.first?.language,
+				enableTranslation: enableTranslation)
 
 			if !transcription.isEmpty {
 				AppLogger.shared.transcriber.log(

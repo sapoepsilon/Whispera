@@ -179,6 +179,7 @@
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D63850CC2E179188000FD465 /* WhisperaUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUITests; sourceTree = "<group>"; };
+		D6TXTPROC2F00000000000001 /* TextProcessing */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = TextProcessing; sourceTree = "<group>"; };
 		D63850DF2E1791AF000FD465 /* WhisperaUnitTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUnitTests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
@@ -221,6 +222,7 @@
 				D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */,
 				D60F53F42EA468710063C008 /* What's up? */,
 				D6282B1F2E41879900E78C68 /* FileTranscription */,
+				D6TXTPROC2F00000000000001 /* TextProcessing */,
 				D620E44E2E3C79C6006AF5E0 /* Logger */,
 				D604F4C02E356D07006D71D1 /* GlassBeta.swift */,
 				D63851172E184572000FD465 /* Whispera.xctestplan */,
@@ -391,6 +393,9 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D6TXTPROC2F00000000000001 /* TextProcessing */,
 			);
 			name = Whispera;
 			productName = MacWhisper;

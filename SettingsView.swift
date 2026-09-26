@@ -508,6 +508,9 @@ struct SettingsView: View {
 					}
 					Divider()
 
+					TextProcessingSettingsSection()
+					Divider()
+
 					SettingsSection("Performance") {
 						InfoBox(style: .info) {
 							VStack(alignment: .leading, spacing: 4) {
