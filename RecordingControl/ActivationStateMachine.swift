@@ -1,5 +1,13 @@
 import Foundation
 
+/// Where a shortcut press was observed. One physical press can reach the app through more
+/// than one source around a secure input transition, but never twice through the same one.
+enum ShortcutSource: Equatable, Sendable {
+	case eventMonitor
+	case systemHotKey
+	case secureInputFallback
+}
+
 enum ActivationAction: Equatable {
 	case start
 	case stop
@@ -16,6 +24,7 @@ struct ActivationStateMachine {
 	private(set) var isPressed = false
 	private var pressStartedAt: Date?
 	private var pressStartedSession = false
+	private var lastPress: (time: Date, source: ShortcutSource)?
 
 	init(mode: ActivationMode, holdThreshold: TimeInterval) {
 		self.mode = mode
@@ -23,14 +32,20 @@ struct ActivationStateMachine {
 	}
 
 	/// Two hotkey sources (the Carbon fallback and the event monitors) can report the
-	/// same press around a secure input transition.
+	/// same press around a secure input transition. Only a press from a different source is
+	/// treated as a duplicate, so a genuine quick second press still stops the recording.
 	static let duplicatePressWindow: TimeInterval = 0.3
 
-	mutating func keyDown(at time: Date, isRepeat: Bool, isSessionActive: Bool) -> ActivationAction {
+	mutating func keyDown(
+		at time: Date, isRepeat: Bool, isSessionActive: Bool, source: ShortcutSource = .eventMonitor
+	) -> ActivationAction {
 		guard !isRepeat else { return .none }
-		if let startedAt = pressStartedAt, time.timeIntervalSince(startedAt) < Self.duplicatePressWindow {
+		if let last = lastPress, last.source != source,
+			time.timeIntervalSince(last.time) < Self.duplicatePressWindow
+		{
 			return .none
 		}
+		lastPress = (time, source)
 		if isPressed {
 			// A fresh press while still "pressed" means the previous release was never
 			// delivered (secure input, a re-registered hotkey); treat it as a new press

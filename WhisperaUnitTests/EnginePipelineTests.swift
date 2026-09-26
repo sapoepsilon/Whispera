@@ -261,4 +261,43 @@ struct ParakeetPipelineTests {
 		standard.set(savedSelected, forKey: "selectedModel")
 		standard.set(savedLastUsed, forKey: "lastUsedModel")
 	}
+
+	/// Picking another model while a Parakeet transcription runs used to tear the engine down under it.
+	@Test(.timeLimit(.minutes(10)))
+	func swappingModelsKeepsAnInFlightParakeetEngineUsable() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		try await waitForInitialization(transcriber)
+		guard let previousModel = transcriber.currentModel, !ParakeetModel.isParakeetID(previousModel) else {
+			return
+		}
+		let standard = UserDefaults.standard
+		let savedSelected = standard.string(forKey: "selectedModel")
+		let savedLastUsed = standard.string(forKey: "lastUsedModel")
+		defer {
+			standard.set(savedSelected, forKey: "selectedModel")
+			standard.set(savedLastUsed, forKey: "lastUsedModel")
+		}
+
+		let directory = FileManager.default.temporaryDirectory
+			.appendingPathComponent("ParakeetSwap-\(UUID().uuidString)", isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let audio = try SpeechFixture.make("The fox runs into the forest.", in: directory)
+		let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: audio.path)
+
+		try await transcriber.switchModel(to: ParakeetModel.v3.rawValue)
+		let engine = try #require(transcriber.parakeetEngine)
+
+		transcriber.beginModelUse()
+		var holdReleased = false
+		defer { if !holdReleased { transcriber.endModelUse() } }
+		try await transcriber.switchModel(to: previousModel)
+		#expect(transcriber.parakeetEngine == nil)
+		#expect(transcriber.whisperKit != nil)
+
+		let transcript = try await engine.transcribe(samples: samples)
+		#expect(transcript.text.lowercased().contains("forest"), "got \(transcript.text)")
+		transcriber.endModelUse()
+		holdReleased = true
+		#expect(transcriber.isCurrentModelLoaded(), "state: \(transcriber.getCurrentModelState())")
+	}
 }
