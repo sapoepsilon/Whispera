@@ -2,7 +2,7 @@ import AppKit
 import Sparkle
 import SwiftUI
 
-@main
+// Launched from WhisperaMain, which diverts CLI invocations before NSApplication starts.
 struct WhisperaApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	private let softwareUpdater = SoftwareUpdater()
