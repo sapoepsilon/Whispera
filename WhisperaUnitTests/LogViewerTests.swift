@@ -262,6 +262,18 @@ struct TranscriptLogRedactionTests {
 		#expect(!summary.contains("4321"))
 	}
 
+	@Test func urlsLoseQueryFragmentAndCredentials() throws {
+		let signed = try #require(
+			URL(string: "https://user:pw@cdn.example.com/media/2026/talk.mp3?X-Amz-Signature=abc123&token=s3cr3t#t=10"))
+		let redacted = ExtendedLogger.redactedURL(signed)
+		#expect(redacted == "https://cdn.example.com/.../talk.mp3")
+		for secret in ["abc123", "s3cr3t", "pw", "user", "2026", "t=10"] {
+			#expect(!redacted.contains(secret), "\(secret) leaked")
+		}
+		#expect(ExtendedLogger.redactedURL(try #require(URL(string: "https://youtu.be"))) == "https://youtu.be")
+		#expect(ExtendedLogger.redactedURL(URL(fileURLWithPath: "/Users/me/secret/call.m4a")) == "call.m4a")
+	}
+
 	@Test func defaultLevelKeepsTranscriptLinesOutOfTheFile() {
 		#expect(LogLevel.info.allows(.info))
 		#expect(!LogLevel.info.allows(.debug), "userText writes the text itself only at Debug")
