@@ -42,6 +42,30 @@ enum PasteMethod: String, CaseIterable, Identifiable, Sendable {
 	}
 }
 
+enum AutoSubmitKey: String, CaseIterable, Identifiable, Sendable {
+	case returnKey
+	case controlReturn
+	case commandReturn
+
+	var id: String { rawValue }
+
+	var displayName: String {
+		switch self {
+		case .returnKey: return "Return"
+		case .controlReturn: return "Control-Return"
+		case .commandReturn: return "Command-Return"
+		}
+	}
+
+	var flags: CGEventFlags {
+		switch self {
+		case .returnKey: return []
+		case .controlReturn: return .maskControl
+		case .commandReturn: return .maskCommand
+		}
+	}
+}
+
 enum InsertionContext: Sendable {
 	case finalTranscript
 	case liveSegment
@@ -54,6 +78,8 @@ struct TextInsertionSettings: Equatable, Sendable {
 		static let pasteDelayAfterMs = "pasteDelayAfterMs"
 		static let pasteMethod = "pasteMethod"
 		static let externalScriptPath = "externalScriptPath"
+		static let autoSubmit = "autoSubmit"
+		static let autoSubmitKey = "autoSubmitKey"
 	}
 
 	static let defaultPasteDelayMs = 60
@@ -64,6 +90,8 @@ struct TextInsertionSettings: Equatable, Sendable {
 	var pasteDelayAfterMs: Int = defaultPasteDelayMs
 	var pasteMethod: PasteMethod = .commandV
 	var externalScriptPath = ""
+	var autoSubmit = false
+	var autoSubmitKey: AutoSubmitKey = .returnKey
 
 	init() {}
 
@@ -83,6 +111,12 @@ struct TextInsertionSettings: Equatable, Sendable {
 			pasteMethod = value
 		}
 		externalScriptPath = defaults.string(forKey: Keys.externalScriptPath) ?? ""
+		autoSubmit = defaults.bool(forKey: Keys.autoSubmit)
+		if let raw = defaults.string(forKey: Keys.autoSubmitKey),
+			let value = AutoSubmitKey(rawValue: raw)
+		{
+			autoSubmitKey = value
+		}
 	}
 
 	static var current: TextInsertionSettings {
@@ -95,6 +129,13 @@ struct TextInsertionSettings: Equatable, Sendable {
 		defaults.set(Self.clampedDelay(pasteDelayAfterMs), forKey: Keys.pasteDelayAfterMs)
 		defaults.set(pasteMethod.rawValue, forKey: Keys.pasteMethod)
 		defaults.set(externalScriptPath, forKey: Keys.externalScriptPath)
+		defaults.set(autoSubmit, forKey: Keys.autoSubmit)
+		defaults.set(autoSubmitKey.rawValue, forKey: Keys.autoSubmitKey)
+	}
+
+	// Live segments arrive mid-sentence, so submitting after each one would send half a message
+	func shouldAutoSubmit(for context: InsertionContext) -> Bool {
+		autoSubmit && context == .finalTranscript && effectiveMethod(for: context) != .copyOnly
 	}
 
 	// Live dictation must land in the focused app as it streams, so non-inserting methods fall back to Cmd-V

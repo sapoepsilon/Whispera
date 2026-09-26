@@ -448,3 +448,68 @@ struct ExternalScriptRunnerTests {
 		#expect(pasteboard.string(forType: .string) == "rescued")
 	}
 }
+
+@MainActor
+struct AutoSubmitTests {
+	private func run(
+		_ context: InsertionContext = .finalTranscript,
+		_ configure: @escaping (inout TextInsertionSettings) -> Void
+	) async -> RecordingKeyPoster {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, settingsProvider: { fastSettings(configure) })
+		await inserter.insert("send this", context: context).value
+		return poster
+	}
+
+	@Test func offByDefault() async {
+		let poster = await run { _ in }
+		#expect(poster.events.map(\.keyCode) == [KeyCode.v])
+	}
+
+	@Test(arguments: AutoSubmitKey.allCases)
+	func pressesTheChosenKeyAfterPasting(key: AutoSubmitKey) async {
+		let poster = await run {
+			$0.autoSubmit = true
+			$0.autoSubmitKey = key
+		}
+		#expect(poster.events.count == 2)
+		#expect(poster.events.last?.keyCode == KeyCode.returnKey)
+		#expect(poster.events.last?.flags == key.flags)
+	}
+
+	@Test func submitsAfterTypedText() async {
+		let poster = await run {
+			$0.autoSubmit = true
+			$0.pasteMethod = .typeCharacters
+		}
+		#expect(poster.typedChunks.joined() == "send this")
+		#expect(poster.events.map(\.keyCode) == [KeyCode.returnKey])
+	}
+
+	@Test func neverSubmitsLiveSegmentsOrCopyOnly() async {
+		let live = await run(.liveSegment) { $0.autoSubmit = true }
+		#expect(live.events.map(\.keyCode) == [KeyCode.v])
+
+		let copyOnly = await run { $0.autoSubmit = true; $0.pasteMethod = .copyOnly }
+		#expect(copyOnly.events.isEmpty)
+	}
+
+	@Test func settingsRoundTrip() {
+		let suite = "AutoSubmitTests.roundtrip.\(UUID().uuidString)"
+		let defaults = UserDefaults(suiteName: suite)!
+		defer { defaults.removePersistentDomain(forName: suite) }
+		#expect(!TextInsertionSettings(defaults: defaults).autoSubmit)
+
+		var settings = TextInsertionSettings()
+		settings.autoSubmit = true
+		settings.autoSubmitKey = .commandReturn
+		settings.save(to: defaults)
+
+		let loaded = TextInsertionSettings(defaults: defaults)
+		#expect(loaded.autoSubmit)
+		#expect(loaded.autoSubmitKey == .commandReturn)
+	}
+}

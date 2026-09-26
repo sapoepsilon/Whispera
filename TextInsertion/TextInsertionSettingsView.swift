@@ -5,6 +5,10 @@ struct TextInsertionSettingsView: View {
 	private var pasteMethod: PasteMethod = .commandV
 	@AppStorage(TextInsertionSettings.Keys.externalScriptPath)
 	private var externalScriptPath = ""
+	@AppStorage(TextInsertionSettings.Keys.autoSubmit)
+	private var autoSubmit = false
+	@AppStorage(TextInsertionSettings.Keys.autoSubmitKey)
+	private var autoSubmitKey: AutoSubmitKey = .returnKey
 	@AppStorage(TextInsertionSettings.Keys.clipboardHandling)
 	private var clipboardHandling: ClipboardHandling = .restore
 	@AppStorage(TextInsertionSettings.Keys.pasteDelayBeforeMs)
@@ -38,6 +42,25 @@ struct TextInsertionSettingsView: View {
 								Button("Choose…") { chooseScript() }
 									.buttonStyle(.bordered)
 							}
+						}
+					}
+
+					SettingRow(
+						"Auto-Submit",
+						description: "Press a key after inserting so chat boxes send the message"
+					) {
+						Toggle("", isOn: $autoSubmit)
+					}
+
+					if autoSubmit {
+						SettingRow("Submit With") {
+							Picker("", selection: $autoSubmitKey) {
+								ForEach(AutoSubmitKey.allCases) { key in
+									Text(key.displayName).tag(key)
+								}
+							}
+							.labelsHidden()
+							.frame(width: 240)
 						}
 					}
 

@@ -45,6 +45,7 @@ final class TextInserter {
 	private let keyPoster: KeyEventPosting
 	private let logger = AppLogger.shared.general
 	private let typingStepDelayMs = 4
+	private let autoSubmitDelayMs = 50
 	private var pendingInsertion: Task<Void, Never>?
 
 	init(
@@ -89,6 +90,11 @@ final class TextInserter {
 			method == .typeCharacters || method == .externalScript
 		{
 			ClipboardWriter.write(text, to: pasteboard, transient: false)
+		}
+
+		if settings.shouldAutoSubmit(for: context) {
+			await sleep(milliseconds: autoSubmitDelayMs)
+			keyPoster.postKey(KeyCode.returnKey, flags: settings.autoSubmitKey.flags)
 		}
 	}
 
