@@ -127,4 +127,68 @@ struct ModelIdleUnloadIntegrationTests {
 		transcriber.endModelUse()
 		#expect(transcriber.canUnloadModel)
 	}
+
+	private func withUnloadTimeout<T>(_ timeout: ModelUnloadTimeout, _ body: () async throws -> T) async rethrows -> T {
+		let defaults = UserDefaults.standard
+		let key = RecordingControlSettings.Key.modelUnloadTimeout
+		let saved = defaults.object(forKey: key)
+		defaults.set(timeout.rawValue, forKey: key)
+		defer { defaults.set(saved, forKey: key) }
+		return try await body()
+	}
+
+	private func waitFor(
+		_ what: String, seconds: TimeInterval = 150, _ condition: () -> Bool
+	) async throws {
+		let deadline = Date().addingTimeInterval(seconds)
+		while Date() < deadline {
+			if condition() { return }
+			try await Task.sleep(nanoseconds: 100_000_000)
+		}
+		Issue.record("Timed out waiting for \(what)")
+		throw CancellationError()
+	}
+
+	/// Handy #2106: a recording whose audio came to nothing ends without a transcription, and
+	/// with "Immediately" the model must still be released instead of staying warm.
+	@Test(.enabled(if: hasDownloadedModel), .timeLimit(.minutes(10)))
+	func recordingWithNoAudioStillUnloadsImmediately() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		try await waitUntilIdleAndLoaded(transcriber)
+		// What AudioManager does for a recording: hold on start, release when it is dropped
+		transcriber.beginModelUse()
+		try await withUnloadTimeout(.immediately) {
+			try await Task.sleep(nanoseconds: 300_000_000)
+			#expect(transcriber.whisperKit != nil, "The model must stay loaded while a recording holds it")
+			transcriber.endModelUse()
+			try await waitFor("the idle unload", seconds: 30) { transcriber.whisperKit == nil }
+			#expect(transcriber.isIdleUnloaded)
+		}
+		try await transcriber.waitForReadyForTranscription(timeoutSeconds: 120)
+	}
+
+	/// A recording that starts after an idle unload reloads the model ahead of time. When that
+	/// recording turns out to have no audio, the reload it triggered must not keep the model warm.
+	@Test(.enabled(if: hasDownloadedModel), .timeLimit(.minutes(10)))
+	func emptyRecordingAfterIdleUnloadDoesNotKeepThePreloadedModel() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		try await waitUntilIdleAndLoaded(transcriber)
+		try await withUnloadTimeout(.immediately) {
+			// Nothing holds the model, so choosing Immediately releases it on its own
+			try await waitFor("the idle unload", seconds: 30) { transcriber.whisperKit == nil }
+			try #require(transcriber.isIdleUnloaded)
+
+			transcriber.beginModelUse()
+			transcriber.preloadModelIfIdleUnloaded()
+			try await waitFor("the preload to start") { transcriber.isModelLoading || transcriber.whisperKit != nil }
+			transcriber.endModelUse()
+
+			try await waitFor("the preloaded model to be released") {
+				!transcriber.isModelLoading && transcriber.whisperKit == nil && transcriber.isIdleUnloaded
+			}
+			#expect(transcriber.isIdleUnloaded)
+		}
+		try await transcriber.waitForReadyForTranscription(timeoutSeconds: 120)
+	}
 }
+
