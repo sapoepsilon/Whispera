@@ -104,6 +104,10 @@ final class AudioManager: NSObject {
 	private var meteringTimer: Timer?
 	@ObservationIgnored
 	private var deviceActivationTask: Task<Void, Never>?
+	@ObservationIgnored
+	private var sessionID = 0
+	@ObservationIgnored
+	private var sessionsHoldingModel: Set<Int> = []
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -170,6 +174,7 @@ final class AudioManager: NSObject {
 					AppLogger.shared.audioManager.error("Failed to switch device: \(error)")
 					isRecording = false
 					timer.stop()
+					releaseModel(for: sessionID)
 				}
 			} else {
 				deviceManager.restoreSystemDefault()
@@ -222,6 +227,10 @@ extension AudioManager {
 		}
 	}
 	fileprivate func beginRecording() {
+		sessionID += 1
+		if currentRecordingMode != .liveTranscription {
+			holdModel(for: sessionID)
+		}
 		if currentRecordingMode == .liveTranscription {
 			startLiveTranscription()
 		} else if useStreamingTranscription {
@@ -283,6 +292,7 @@ extension AudioManager {
 			} catch {
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start recording: \(error)")
+				releaseModel(for: sessionID)
 				showRecordingErrorAlert(error)
 			}
 		}
@@ -296,10 +306,14 @@ extension AudioManager {
 		playFeedbackSound(start: false)
 		deviceManager.restoreSystemDefault()
 
+		let session = sessionID
 		if let audioFileURL {
 			Task {
-				await transcribeAudio(fileURL: audioFileURL, enableTranslation: enableTranslation)
+				await transcribeAudio(
+					fileURL: audioFileURL, enableTranslation: enableTranslation, session: session)
 			}
+		} else {
+			releaseModel(for: session)
 		}
 
 		scheduleTimerReset()
@@ -369,12 +383,15 @@ extension AudioManager {
 
 		AppLogger.shared.audioManager.info("Streaming recording stopped")
 
+		let session = sessionID
 		if !capturedAudio.isEmpty {
 			Task {
-				await transcribeAudioBuffer(audioArray: capturedAudio, enableTranslation: enableTranslation)
+				await transcribeAudioBuffer(
+					audioArray: capturedAudio, enableTranslation: enableTranslation, session: session)
 			}
 		} else {
 			AppLogger.shared.audioManager.info("No audio captured")
+			releaseModel(for: session)
 		}
 
 		scheduleTimerReset()
@@ -472,7 +489,10 @@ extension AudioManager {
 
 // MARK: - Transcription
 extension AudioManager {
-	fileprivate func transcribeAudioBuffer(audioArray: [Float], enableTranslation: Bool) async {
+	fileprivate func transcribeAudioBuffer(audioArray: [Float], enableTranslation: Bool, session: Int)
+		async
+	{
+		defer { releaseModel(for: session) }
 		isTranscribing = true
 		transcriptionError = nil
 
@@ -496,7 +516,8 @@ extension AudioManager {
 			}
 		}
 	}
-	fileprivate func transcribeAudio(fileURL: URL, enableTranslation: Bool) async {
+	fileprivate func transcribeAudio(fileURL: URL, enableTranslation: Bool, session: Int) async {
+		defer { releaseModel(for: session) }
 		isTranscribing = true
 		transcriptionError = nil
 
@@ -521,6 +542,22 @@ extension AudioManager {
 		}
 
 		try? FileManager.default.removeItem(at: fileURL)
+	}
+}
+
+// MARK: - Model Hold
+extension AudioManager {
+	/// Keeps the idle-unload timer from releasing the model between the start of a
+	/// recording and the end of its transcription, and reloads it if it was released.
+	fileprivate func holdModel(for session: Int) {
+		guard sessionsHoldingModel.insert(session).inserted else { return }
+		whisperKitTranscriber.beginModelUse()
+		whisperKitTranscriber.preloadModelIfIdleUnloaded()
+	}
+
+	fileprivate func releaseModel(for session: Int) {
+		guard sessionsHoldingModel.remove(session) != nil else { return }
+		whisperKitTranscriber.endModelUse()
 	}
 }
 
