@@ -52,7 +52,7 @@ struct TranscriptTextProcessor {
 	}
 
 	func process(_ text: String, language: OutputLanguageEvidence) -> String {
-		var result = text
+		var result = Self.removeNonSpeechMarkers(text)
 		if configuration.fillerWordRemovalEnabled {
 			result = Self.removeFillerWords(
 				result, language: language, additionalFillerWords: configuration.customFillerWords)
@@ -72,6 +72,20 @@ struct TranscriptTextProcessor {
 }
 
 extension TranscriptTextProcessor {
+	/// Whisper labels silence, noise and music with bracketed markers such as [BLANK_AUDIO].
+	/// They are not speech, and pasted into a document they read as garbage.
+	static func removeNonSpeechMarkers(_ text: String) -> String {
+		let pattern = #"\[\s*(BLANK[_ ]AUDIO|NO[_ ]SPEECH|SILENCE|MUSIC|INAUDIBLE)\s*\]|\(\s*(silence|music|inaudible)\s*\)"#
+		guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return text }
+		let range = NSRange(text.startIndex..., in: text)
+		guard regex.firstMatch(in: text, range: range) != nil else { return text }
+		let stripped = regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+		let lines = stripped.components(separatedBy: "\n").map { line in
+			line.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+		}
+		return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+	}
+
 	/// Correction re-joins words with single spaces, so a transcript that keeps its line
 	/// breaks is corrected one line at a time. A custom word never spans a line break.
 	static func applyCustomWords(
