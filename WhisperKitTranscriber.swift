@@ -126,7 +126,7 @@ import WhisperKit
 		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
 		downloadedModels = refreshedDownloaded
 
-		try await waitForInFlightLoadIfNoEngine()
+		try await waitForInFlightLoadIfNoEngine(timeoutSeconds: timeoutSeconds)
 
 		if whisperKit == nil && parakeetEngine == nil {
 			guard !refreshedDownloaded.isEmpty else {
@@ -159,12 +159,32 @@ import WhisperKit
 	}
 
 	/// With no engine loaded, a load already in flight is the model the user just picked, so
-	/// wait for it instead of loading the previously used model next to it.
-	private func waitForInFlightLoadIfNoEngine() async throws {
-		while whisperKit == nil && parakeetEngine == nil && loadingModelName != nil {
+	/// wait for it instead of loading the previously used model next to it. Bounded by the same
+	/// readiness timeout as the rest of the wait, so a hung load fails the dictation with a
+	/// message instead of holding it until the user cancels.
+	private func waitForInFlightLoadIfNoEngine(timeoutSeconds: TimeInterval) async throws {
+		let pending = loadingModelName.map(Self.shortModelName(for:))
+		try await Self.waitWhileLoading(timeoutSeconds: timeoutSeconds, modelName: pending) { [weak self] in
+			guard let self else { return false }
+			self.updateWaitingStatusText()
+			return self.whisperKit == nil && self.parakeetEngine == nil && self.loadingModelName != nil
+		}
+	}
+
+	static func waitWhileLoading(
+		timeoutSeconds: TimeInterval, pollNanoseconds: UInt64 = 200_000_000, modelName: String?,
+		isLoading: @MainActor () -> Bool
+	) async throws {
+		let start = Date()
+		while isLoading() {
 			try Task.checkCancellation()
-			updateWaitingStatusText()
-			try await Task.sleep(nanoseconds: 200_000_000)
+			if Date().timeIntervalSince(start) > timeoutSeconds {
+				AppLogger.shared.transcriber.error(
+					"Model load still running after \(Int(timeoutSeconds)) s with no engine loaded; failing dictation"
+				)
+				throw WhisperKitError.modelLoadTimedOut(modelName)
+			}
+			try await Task.sleep(nanoseconds: pollNanoseconds)
 		}
 	}
 
@@ -176,7 +196,7 @@ import WhisperKit
 		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
 		downloadedModels = refreshedDownloaded
 
-		try await waitForInFlightLoadIfNoEngine()
+		try await waitForInFlightLoadIfNoEngine(timeoutSeconds: timeoutSeconds)
 
 		if whisperKit == nil && parakeetEngine == nil {
 			guard !refreshedDownloaded.isEmpty else {
@@ -2555,6 +2575,8 @@ enum WhisperKitError: LocalizedError {
 	case audioConversionFailed
 	case transcriptionFailed(String)
 	case liveModeUnsupported
+	/// Carries the display name, resolved when thrown.
+	case modelLoadTimedOut(String?)
 
 	var errorDescription: String? {
 		let description: String
@@ -2574,6 +2596,18 @@ enum WhisperKitError: LocalizedError {
 		case .liveModeUnsupported:
 			description =
 				"Live Transcription Mode needs a Whisper model. Parakeet transcribes after you stop recording."
+		case .modelLoadTimedOut(let modelName):
+			if let modelName {
+				description = String(
+					localized:
+						"\(modelName) is still loading, so this dictation could not be transcribed. Try again once it is ready, or pick another model in Settings."
+				)
+			} else {
+				description = String(
+					localized:
+						"The model is still loading, so this dictation could not be transcribed. Try again once it is ready, or pick another model in Settings."
+				)
+			}
 		}
 
 		AppLogger.shared.transcriber.error("WhisperKitError: \(description)")

@@ -1066,6 +1066,7 @@ extension AudioManager {
 				deviceManager.endRecordingSession()
 				levelMonitor.reset()
 				scheduleTimerReset()
+				transcriptionError = error.localizedDescription
 				AppLogger.shared.audioManager.error("Failed to start live transcription: \(error)")
 			}
 		}
