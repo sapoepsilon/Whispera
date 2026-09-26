@@ -303,14 +303,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 	/// Shows the menu, first bringing back a hidden icon so the popover has somewhere to anchor.
 	private func showPopoverFromReopen() {
-		if menuBarIcon.revealForReopen() {
+		let revealed = menuBarIcon.revealForReopen()
+		if revealed {
 			applyMenuBarIconVisibility()
 		}
-		// The revealed button gets its window on the next pass of the run loop
+		// The revealed button gets its window on the next pass of the run loop, and only reaches
+		// its menu bar slot after the status bar lays it out
 		DispatchQueue.main.async { [weak self] in
-			guard let self, self.statusItem?.button != nil, !self.popover.isShown else { return }
-			self.togglePopover()
+			self?.showPopoverOnceStatusItemSettles(poll: revealed ? 0 : StatusItemPlacement.maxPolls, previousFrame: nil)
 		}
+	}
+
+	private func showPopoverOnceStatusItemSettles(poll: Int, previousFrame: NSRect?) {
+		guard let button = statusItem?.button, !popover.isShown else { return }
+		let frame = button.window?.frame
+		if poll < StatusItemPlacement.maxPolls, let frame,
+			!StatusItemPlacement.isSettled(
+				windowFrame: frame, previousFrame: previousFrame, screenFrames: NSScreen.screens.map(\.frame))
+		{
+			DispatchQueue.main.asyncAfter(deadline: .now() + StatusItemPlacement.pollInterval) { [weak self] in
+				self?.showPopoverOnceStatusItemSettles(poll: poll + 1, previousFrame: frame)
+			}
+			return
+		}
+		togglePopover()
 	}
 
 	func popoverDidClose(_ notification: Notification) {
