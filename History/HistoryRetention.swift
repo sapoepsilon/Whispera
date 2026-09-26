@@ -11,11 +11,11 @@ enum HistoryRetentionPeriod: String, CaseIterable, Identifiable, Sendable {
 
 	var displayName: String {
 		switch self {
-		case .never: return "Keep forever"
-		case .preserveLimit: return "Keep the latest entries"
-		case .days3: return "3 days"
-		case .weeks2: return "2 weeks"
-		case .months3: return "3 months"
+		case .never: return String(localized: "Keep forever")
+		case .preserveLimit: return String(localized: "Keep the latest entries")
+		case .days3: return String(localized: "3 days")
+		case .weeks2: return String(localized: "2 weeks")
+		case .months3: return String(localized: "3 months")
 		}
 	}
 

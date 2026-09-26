@@ -1059,7 +1059,8 @@ extension AudioManager {
 				finishTranscription(id)
 				return
 			}
-			let transcription = await postProcessIfRequested(rawTranscription, requested: session.postProcess)
+			let processed = await postProcessIfRequested(rawTranscription, requested: session.postProcess)
+			let transcription = processed.text
 			guard !ledger.isCancelled(id) else {
 				AppLogger.shared.audioManager.info("Discarding post-processed text of a cancelled recording")
 				return
@@ -1071,7 +1072,7 @@ extension AudioManager {
 				pasteToFocusedApp(transcription)
 			}
 			// After the paste so saving the recording never delays the text
-			recordHistory(text: transcription, audio: historyAudio)
+			recordHistory(text: rawTranscription, audio: historyAudio, postProcessing: processed.history)
 		} catch {
 			guard !ledger.isCancelled(id) else { return }
 			transcriptionError = error.localizedDescription
@@ -1087,7 +1088,8 @@ extension AudioManager {
 
 	fileprivate func recordHistory(
 		text: String, audio: TranscriptionHistoryAudio?,
-		source: TranscriptionHistorySource = .dictation, errorMessage: String? = nil
+		source: TranscriptionHistorySource = .dictation, errorMessage: String? = nil,
+		postProcessing: HistoryPostProcessing? = nil
 	) {
 		TranscriptionHistoryStore.shared.record(
 			text: text,
@@ -1095,7 +1097,8 @@ extension AudioManager {
 			source: source,
 			modelName: whisperKitTranscriber.currentModel ?? whisperKitTranscriber.selectedModel,
 			language: selectedLanguage,
-			errorMessage: errorMessage
+			errorMessage: errorMessage,
+			postProcessing: postProcessing
 		)
 	}
 }

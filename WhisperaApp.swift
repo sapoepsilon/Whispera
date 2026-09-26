@@ -315,7 +315,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			defer: false
 		)
 
-		onboardingWindow?.title = "Welcome to Whispera"
+		onboardingWindow?.title = String(localized: "Welcome to Whispera")
 		onboardingWindow?.titlebarAppearsTransparent = true
 		onboardingWindow?.isOpaque = false
 		onboardingWindow?.backgroundColor = .clear
@@ -413,8 +413,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			queue: .main
 		) { notification in
 			if let window = notification.object as? NSWindow {
-				let title = window.title.lowercased()
-				if title.contains("settings") || title.contains("preferences") {
+				if SettingsWindowLocator.isSettingsWindow(window) {
 					// Settings window is closing, revert to accessory mode
 					DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
 						NSApp.setActivationPolicy(.accessory)
@@ -439,7 +438,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				// Permission warning state - orange exclamation mark with pulse
 				button.image = NSImage(
 					systemSymbolName: "exclamationmark.triangle.fill",
-					accessibilityDescription: "Whispera - Permissions Required")
+					accessibilityDescription: String(localized: "Whispera - Permissions Required"))
 				button.image?.isTemplate = true
 				button.alphaValue = 1.0
 
@@ -449,7 +448,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			} else if whisperKit.isDownloadingModel {
 				// Downloading state - rotating download icon to indicate progress
 				button.image = NSImage(
-					systemSymbolName: "arrow.down.circle", accessibilityDescription: "Whispera - Downloading")
+					systemSymbolName: "arrow.down.circle",
+					accessibilityDescription: String(localized: "Whispera - Downloading"))
 				button.image?.isTemplate = true
 				button.alphaValue = 1.0
 
@@ -459,7 +459,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			} else if networkDownloader?.isDownloading == true {
 				// Network downloading state - arrow down with rotation
 				button.image = NSImage(
-					systemSymbolName: "arrow.down.circle", accessibilityDescription: "Whispera - Downloading")
+					systemSymbolName: "arrow.down.circle",
+					accessibilityDescription: String(localized: "Whispera - Downloading"))
 				button.image?.isTemplate = true
 				button.alphaValue = 1.0
 
@@ -471,7 +472,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			{
 				// Transcribing state - waveform icon with subtle pulse
 				button.image = NSImage(
-					systemSymbolName: "waveform", accessibilityDescription: "Whispera - Transcribing")
+					systemSymbolName: "waveform",
+					accessibilityDescription: String(localized: "Whispera - Transcribing"))
 				button.image?.isTemplate = true
 				button.alphaValue = 1.0
 
@@ -481,7 +483,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			} else if audioManager.isRecording {
 				// Recording state - filled microphone icon with stronger pulse
 				button.image = NSImage(
-					systemSymbolName: "mic.circle.fill", accessibilityDescription: "Whispera - Recording")
+					systemSymbolName: "mic.circle.fill",
+					accessibilityDescription: String(localized: "Whispera - Recording"))
 				button.image?.isTemplate = true
 
 				// Add a stronger pulsing animation to show active recording
@@ -659,11 +662,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 	private func showUpdateAvailableNotification(version: String) {
 		let alert = NSAlert()
-		alert.messageText = "Update Available"
-		alert.informativeText = "Whispera \(version) is available. Would you like to download it now?"
-		alert.addButton(withTitle: "Download")
-		alert.addButton(withTitle: "Later")
-		alert.addButton(withTitle: "View Release Notes")
+		alert.messageText = String(localized: "Update Available")
+		alert.informativeText = String(
+			localized: "Whispera \(version) is available. Would you like to download it now?")
+		alert.addButton(withTitle: String(localized: "Download"))
+		alert.addButton(withTitle: String(localized: "Later"))
+		alert.addButton(withTitle: String(localized: "View Release Notes"))
 
 		let response = alert.runModal()
 		switch response {

@@ -30,11 +30,11 @@ enum QueueItemStatus {
 
 	var displayName: String {
 		switch self {
-		case .pending: return "Pending"
-		case .processing: return "Processing"
-		case .completed: return "Completed"
-		case .failed: return "Failed"
-		case .cancelled: return "Cancelled"
+		case .pending: return String(localized: "Pending")
+		case .processing: return String(localized: "Processing")
+		case .completed: return String(localized: "Completed")
+		case .failed: return String(localized: "Failed")
+		case .cancelled: return String(localized: "Cancelled")
 		}
 	}
 

@@ -44,26 +44,45 @@ struct OpenAICompatibleClient: TextPostProcessor {
 	let model: String
 	let timeout: TimeInterval
 	let session: URLSession
+	/// Ask for `{"transcription": "..."}` via a JSON schema so chatty models cannot prepend
+	/// "Here is the cleaned text:" to what gets pasted.
+	let structuredOutput: Bool
 
 	init(
 		baseURL: String, apiKey: String?, model: String, timeout: TimeInterval = 30,
-		session: URLSession = .shared
+		session: URLSession = .shared, structuredOutput: Bool = false
 	) {
 		self.baseURL = baseURL
 		self.apiKey = apiKey
 		self.model = model
 		self.timeout = timeout
 		self.session = session
+		self.structuredOutput = structuredOutput
 	}
 
 	func process(_ messages: PostProcessingMessages) async throws -> String {
-		let raw = try await chatCompletion(systemPrompt: messages.system, userMessage: messages.user)
+		let raw: String
+		if structuredOutput {
+			do {
+				raw = StructuredTranscription.extract(
+					from: try await chatCompletion(
+						systemPrompt: messages.system, userMessage: messages.user, responseFormat: .transcription))
+			} catch PostProcessingError.httpStatus(let code, _) where code == 400 || code == 422 {
+				// The model behind a structured-output provider may still reject the schema.
+				AppLogger.shared.general.info("Structured output rejected with HTTP \(code), retrying without it")
+				raw = try await chatCompletion(systemPrompt: messages.system, userMessage: messages.user)
+			}
+		} else {
+			raw = try await chatCompletion(systemPrompt: messages.system, userMessage: messages.user)
+		}
 		let cleaned = PostProcessingText.cleanModelOutput(raw)
 		guard !cleaned.isEmpty else { throw PostProcessingError.emptyResponse }
 		return cleaned
 	}
 
-	func chatCompletion(systemPrompt: String?, userMessage: String) async throws -> String {
+	func chatCompletion(
+		systemPrompt: String?, userMessage: String, responseFormat: ResponseFormat? = nil
+	) async throws -> String {
 		var messages: [ChatMessage] = []
 		if let systemPrompt, !systemPrompt.isEmpty {
 			messages.append(ChatMessage(role: "system", content: systemPrompt))
@@ -73,7 +92,7 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		var request = try makeRequest(path: "chat/completions", method: "POST")
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		request.httpBody = try JSONEncoder().encode(
-			ChatRequest(model: model, messages: messages, stream: false))
+			ChatRequest(model: model, messages: messages, stream: false, responseFormat: responseFormat))
 
 		let data = try await send(request)
 		guard let response = try? JSONDecoder().decode(ChatResponse.self, from: data) else {
@@ -184,6 +203,74 @@ private struct ChatRequest: Encodable {
 	let model: String
 	let messages: [ChatMessage]
 	let stream: Bool
+	let responseFormat: ResponseFormat?
+
+	enum CodingKeys: String, CodingKey {
+		case model, messages, stream
+		case responseFormat = "response_format"
+	}
+
+	func encode(to encoder: Encoder) throws {
+		var container = encoder.container(keyedBy: CodingKeys.self)
+		try container.encode(model, forKey: .model)
+		try container.encode(messages, forKey: .messages)
+		try container.encode(stream, forKey: .stream)
+		try container.encodeIfPresent(responseFormat, forKey: .responseFormat)
+	}
+}
+
+/// OpenAI's `response_format` for a single required string field, the shape Handy uses.
+struct ResponseFormat: Encodable, Equatable, Sendable {
+	struct JSONSchema: Encodable, Equatable, Sendable {
+		struct Schema: Encodable, Equatable, Sendable {
+			struct Property: Encodable, Equatable, Sendable {
+				let type: String
+				let description: String
+			}
+			let type = "object"
+			let properties: [String: Property]
+			let required: [String]
+			let additionalProperties = false
+		}
+		let name: String
+		let strict: Bool
+		let schema: Schema
+	}
+
+	let type = "json_schema"
+	let jsonSchema: JSONSchema
+
+	enum CodingKeys: String, CodingKey {
+		case type
+		case jsonSchema = "json_schema"
+	}
+
+	static let transcription = ResponseFormat(
+		jsonSchema: JSONSchema(
+			name: "transcription_output",
+			strict: true,
+			schema: JSONSchema.Schema(
+				properties: [
+					StructuredTranscription.field: .init(
+						type: "string", description: "The cleaned and processed transcription text")
+				],
+				required: [StructuredTranscription.field])))
+}
+
+enum StructuredTranscription {
+	static let field = "transcription"
+
+	/// Pulls the text out of `{"transcription": "..."}`. Anything else (a model that ignored the
+	/// schema, or a leading think block) comes back as-is so the transcript is never lost.
+	static func extract(from content: String) -> String {
+		let unwrapped = PostProcessingText.stripLeadingThinkBlock(content)
+			.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard let data = unwrapped.data(using: .utf8),
+			let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+			let text = object[field] as? String
+		else { return content }
+		return text
+	}
 }
 
 private struct ChatResponse: Decodable {

@@ -67,6 +67,7 @@ struct TranscriptionHistoryView: View {
 	@AppStorage(HistorySettings.retentionKey) private var retentionRaw = HistorySettings.defaultRetention
 		.rawValue
 	@AppStorage(HistorySettings.limitKey) private var historyLimit = HistorySettings.defaultLimit
+	@AppStorage(PostProcessingSettings.Key.enabled) private var postProcessingEnabled = false
 
 	private var filteredEntries: [TranscriptionHistoryEntry] {
 		TranscriptionHistoryStore.filter(store.entries, query: searchText, starredOnly: starredOnly)
@@ -226,8 +227,11 @@ struct TranscriptionHistoryView: View {
 					isPlaying: player.playingID == entry.id,
 					isRetranscribing: store.retranscribingIDs.contains(entry.id),
 					justCopied: copiedID == entry.id,
+					canPostProcess: postProcessingEnabled,
 					onPlay: { play(entry) },
-					onCopy: { copy(entry) },
+					onCopy: { copy(entry.text, id: entry.id) },
+					onCopyOriginal: { copy(entry.transcriptText, id: entry.id) },
+					onPostProcess: { reprocess(entry) },
 					onStar: { store.toggleStar(entry) },
 					onRetranscribe: { retranscribe(entry) },
 					onReveal: { reveal(entry) },
@@ -249,11 +253,10 @@ struct TranscriptionHistoryView: View {
 		player.toggle(id: entry.id, url: url)
 	}
 
-	private func copy(_ entry: TranscriptionHistoryEntry) {
+	private func copy(_ text: String, id: UUID) {
 		NSPasteboard.general.clearContents()
-		NSPasteboard.general.setString(entry.text, forType: .string)
-		copiedID = entry.id
-		let id = entry.id
+		NSPasteboard.general.setString(text, forType: .string)
+		copiedID = id
 		Task {
 			try? await Task.sleep(nanoseconds: 1_500_000_000)
 			if copiedID == id { copiedID = nil }
@@ -270,6 +273,16 @@ struct TranscriptionHistoryView: View {
 		}
 	}
 
+	private func reprocess(_ entry: TranscriptionHistoryEntry) {
+		Task {
+			do {
+				try await store.reprocess(entry)
+			} catch {
+				errorMessage = "Post-processing failed: \(error.localizedDescription)"
+			}
+		}
+	}
+
 	private func reveal(_ entry: TranscriptionHistoryEntry) {
 		guard let url = store.audioURL(for: entry) else { return }
 		NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -282,8 +295,11 @@ private struct HistoryEntryRow: View {
 	let isPlaying: Bool
 	let isRetranscribing: Bool
 	let justCopied: Bool
+	let canPostProcess: Bool
 	let onPlay: () -> Void
 	let onCopy: () -> Void
+	let onCopyOriginal: () -> Void
+	let onPostProcess: () -> Void
 	let onStar: () -> Void
 	let onRetranscribe: () -> Void
 	let onReveal: () -> Void
@@ -324,16 +340,51 @@ private struct HistoryEntryRow: View {
 					.textSelection(.enabled)
 					.lineLimit(6)
 			}
+
+			if entry.postProcessRequested {
+				postProcessingDetails
+			}
 		}
 		.padding(.vertical, 4)
 		.contextMenu {
 			Button("Copy", action: onCopy).disabled(entry.text.isEmpty)
+			if entry.rawText != nil {
+				Button("Copy Original Transcript", action: onCopyOriginal)
+			}
 			Button(entry.isStarred ? "Unstar" : "Star", action: onStar)
 			Button(entry.didFail ? "Retry" : "Re-transcribe", action: onRetranscribe)
 				.disabled(!hasAudio || isRetranscribing)
+			Button("Post-process Again", action: onPostProcess)
+				.disabled(!canPostProcess || entry.transcriptText.isEmpty || isRetranscribing)
 			Button("Show Recording in Finder", action: onReveal).disabled(!hasAudio)
 			Divider()
 			Button("Delete", role: .destructive, action: onDelete)
+		}
+	}
+
+	@ViewBuilder
+	private var postProcessingDetails: some View {
+		if let error = entry.postProcessError {
+			Label("Post-processing failed: \(error)", systemImage: "exclamationmark.triangle")
+				.font(.caption)
+				.foregroundColor(.orange)
+		}
+		if let raw = entry.rawText, raw != entry.text {
+			DisclosureGroup {
+				Text(raw)
+					.textSelection(.enabled)
+					.lineLimit(6)
+					.foregroundColor(.secondary)
+					.frame(maxWidth: .infinity, alignment: .leading)
+			} label: {
+				Label(
+					"Original transcript, post-processed with \(entry.postProcessPromptName ?? "")",
+					systemImage: "wand.and.stars"
+				)
+				.font(.caption)
+				.foregroundColor(.secondary)
+			}
+			.help(entry.postProcessPrompt ?? "")
 		}
 	}
 

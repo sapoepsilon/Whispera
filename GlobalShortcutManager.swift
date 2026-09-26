@@ -210,7 +210,10 @@ class GlobalShortcutManager: ObservableObject {
 				logger.error("System hotkey registration failed, using event monitors: \(error.localizedDescription)")
 				publishBackend(
 					active: .eventMonitor,
-					message: "System hotkey unavailable (\(error.localizedDescription)); using the event monitor.")
+					message: String(
+						localized:
+							"System hotkey unavailable (\(error.localizedDescription)); using the event monitor."
+					))
 			}
 		} else {
 			publishBackend(active: .eventMonitor, message: nil)
@@ -694,7 +697,7 @@ class GlobalShortcutManager: ObservableObject {
 
 		// Show a notification that files were added to queue
 		let notification = NSUserNotification()
-		notification.title = "Files Added to Queue"
+		notification.title = String(localized: "Files Added to Queue")
 		notification.subtitle = "\(urls.count) file(s) queued for transcription"
 		notification.informativeText = urls.map { $0.lastPathComponent }.joined(separator: ", ")
 		NSUserNotificationCenter.default.deliver(notification)
@@ -730,7 +733,7 @@ class GlobalShortcutManager: ObservableObject {
 	private func showTranscriptionResult(for filename: String, result: String) async {
 		// Create a simple notification for now
 		let notification = NSUserNotification()
-		notification.title = "Transcription Complete"
+		notification.title = String(localized: "Transcription Complete")
 		notification.subtitle = filename
 		notification.informativeText = String(result.prefix(100)) + (result.count > 100 ? "..." : "")
 
@@ -773,7 +776,7 @@ class GlobalShortcutManager: ObservableObject {
 	@MainActor
 	private func showTranscriptionError(_ error: Error) {
 		let notification = NSUserNotification()
-		notification.title = "Transcription Failed"
+		notification.title = String(localized: "Transcription Failed")
 		notification.informativeText = error.localizedDescription
 
 		NSUserNotificationCenter.default.deliver(notification)
@@ -783,8 +786,8 @@ class GlobalShortcutManager: ObservableObject {
 	private func openFileSelectionDialog() async {
 		logger.info("Opening file selection dialog")
 		let openPanel = NSOpenPanel()
-		openPanel.title = "Select Audio or Video Files to Transcribe"
-		openPanel.message = "Choose audio or video files for transcription"
+		openPanel.title = String(localized: "Select Audio or Video Files to Transcribe")
+		openPanel.message = String(localized: "Choose audio or video files for transcription")
 		openPanel.allowsMultipleSelection = true
 		openPanel.canChooseDirectories = false
 		openPanel.canChooseFiles = true
@@ -820,7 +823,7 @@ class GlobalShortcutManager: ObservableObject {
 
 			// Show notification
 			let notification = NSUserNotification()
-			notification.title = "Files Added to Queue"
+			notification.title = String(localized: "Files Added to Queue")
 			notification.subtitle = "\(selectedURLs.count) file(s) queued for transcription"
 			notification.informativeText = selectedURLs.map { $0.lastPathComponent }.joined(
 				separator: ", ")
@@ -883,7 +886,7 @@ class GlobalShortcutManager: ObservableObject {
 
 		// Show notification
 		let notification = NSUserNotification()
-		notification.title = "URL Added to Queue"
+		notification.title = String(localized: "URL Added to Queue")
 		notification.subtitle = "Network file queued for transcription"
 		notification.informativeText = url.absoluteString
 		NSUserNotificationCenter.default.deliver(notification)

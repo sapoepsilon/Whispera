@@ -20,7 +20,7 @@ struct CustomWhisperModel: Codable, Identifiable, Equatable, Sendable {
 	var sourceDescription: String {
 		switch source {
 		case .huggingFace(let repo, let variant): return "\(repo) / \(variant)"
-		case .localFolder(let originalPath): return "Imported from \(originalPath)"
+		case .localFolder(let originalPath): return String(localized: "Imported from \(originalPath)")
 		}
 	}
 

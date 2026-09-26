@@ -11,11 +11,13 @@ enum TranscriptionHistoryAudio {
 enum TranscriptionHistoryError: LocalizedError {
 	case audioUnavailable
 	case storeUnavailable
+	case nothingToPostProcess
 
 	var errorDescription: String? {
 		switch self {
 		case .audioUnavailable: return "The recording for this entry is no longer available."
 		case .storeUnavailable: return "Transcription history could not be opened."
+		case .nothingToPostProcess: return "This entry has no transcript to post-process."
 		}
 	}
 }
@@ -23,6 +25,12 @@ enum TranscriptionHistoryError: LocalizedError {
 @MainActor
 @Observable
 final class TranscriptionHistoryStore {
+	typealias PostProcessor = @Sendable (String) async -> PostProcessingRun
+
+	static let livePostProcessor: PostProcessor = { transcript in
+		await PostProcessingService().run(transcript)
+	}
+
 	static let shared = TranscriptionHistoryStore(
 		directory: TranscriptionHistoryStore.defaultDirectory(), defaults: .standard)
 
@@ -77,7 +85,8 @@ final class TranscriptionHistoryStore {
 		source: TranscriptionHistorySource,
 		modelName: String?,
 		language: String?,
-		errorMessage: String? = nil
+		errorMessage: String? = nil,
+		postProcessing: HistoryPostProcessing? = nil
 	) -> TranscriptionHistoryEntry? {
 		let settings = self.settings
 		guard settings.isEnabled, let context else { return nil }
@@ -107,6 +116,7 @@ final class TranscriptionHistoryStore {
 			source: source,
 			errorMessage: errorMessage
 		)
+		entry.apply(transcript: trimmed, postProcessing: postProcessing)
 		context.insert(entry)
 		guard save() else {
 			if let audioFileName {
@@ -171,9 +181,10 @@ final class TranscriptionHistoryStore {
 	}
 
 	func applyTranscription(
-		_ text: String, modelName: String?, language: String?, to entry: TranscriptionHistoryEntry
+		_ text: String, modelName: String?, language: String?, to entry: TranscriptionHistoryEntry,
+		postProcessing: HistoryPostProcessing? = nil
 	) {
-		entry.text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+		entry.apply(transcript: text, postProcessing: postProcessing)
 		entry.errorMessage = nil
 		entry.modelName = modelName
 		entry.language = language
@@ -186,14 +197,18 @@ final class TranscriptionHistoryStore {
 		save()
 	}
 
+	/// Re-runs the speech model on the saved recording. `postProcess` defaults to whatever the
+	/// original dictation asked for, so a retried post-processed dictation is post-processed again.
 	func retranscribe(
 		_ entry: TranscriptionHistoryEntry,
 		transcriber: WhisperKitTranscriber? = nil,
-		enableTranslation: Bool? = nil
+		enableTranslation: Bool? = nil,
+		postProcess: Bool? = nil,
+		postProcessor: PostProcessor? = nil
 	) async throws {
 		let transcriber = transcriber ?? .shared
 		let enableTranslation = enableTranslation ?? defaults.bool(forKey: "enableTranslation")
-		try await retranscribe(entry) { url in
+		try await retranscribe(entry, postProcess: postProcess, postProcessor: postProcessor) { url in
 			let text = try await transcriber.transcribe(audioURL: url, enableTranslation: enableTranslation)
 			return (text, transcriber.currentModel ?? transcriber.selectedModel)
 		}
@@ -201,8 +216,11 @@ final class TranscriptionHistoryStore {
 
 	func retranscribe(
 		_ entry: TranscriptionHistoryEntry,
+		postProcess: Bool? = nil,
+		postProcessor: PostProcessor? = nil,
 		using transcribe: (URL) async throws -> (text: String, modelName: String?)
 	) async throws {
+		let postProcess = postProcess ?? entry.postProcessRequested
 		guard let url = audioURL(for: entry) else { throw TranscriptionHistoryError.audioUnavailable }
 		let id = entry.id
 		guard !retranscribingIDs.contains(id) else { return }
@@ -212,6 +230,11 @@ final class TranscriptionHistoryStore {
 
 		do {
 			let result = try await transcribe(url)
+			var postProcessing: HistoryPostProcessing?
+			if postProcess {
+				let run = await (postProcessor ?? Self.livePostProcessor)(result.text)
+				postProcessing = HistoryPostProcessing(run)
+			}
 			// Retention or the user may have deleted the entry while it was transcribing, and
 			// writing to a deleted SwiftData model can trap.
 			guard let live = liveEntry(id) else {
@@ -220,7 +243,8 @@ final class TranscriptionHistoryStore {
 			}
 			applyTranscription(
 				result.text, modelName: result.modelName,
-				language: defaults.string(forKey: "selectedLanguage"), to: live)
+				language: defaults.string(forKey: "selectedLanguage"), to: live,
+				postProcessing: postProcessing)
 			AppLogger.shared.database.info("Re-transcribed history entry \(id)")
 		} catch {
 			AppLogger.shared.database.error("Re-transcription failed: \(error.localizedDescription)")
@@ -229,6 +253,30 @@ final class TranscriptionHistoryStore {
 			}
 			throw error
 		}
+	}
+
+	/// Runs the LLM pass again over the speech model's original output, without re-transcribing.
+	/// Useful after changing the prompt or provider, and works for entries without audio.
+	func reprocess(_ entry: TranscriptionHistoryEntry, postProcessor: PostProcessor? = nil) async throws {
+		let transcript = entry.transcriptText
+		guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+			throw TranscriptionHistoryError.nothingToPostProcess
+		}
+		let id = entry.id
+		guard !retranscribingIDs.contains(id) else { return }
+
+		retranscribingIDs.insert(id)
+		defer { retranscribingIDs.remove(id) }
+
+		let run = await (postProcessor ?? Self.livePostProcessor)(transcript)
+		guard let live = liveEntry(id) else {
+			AppLogger.shared.database.info("History entry \(id) was deleted during post-processing")
+			return
+		}
+		live.apply(transcript: transcript, postProcessing: HistoryPostProcessing(run))
+		live.retranscribedAt = now()
+		save()
+		AppLogger.shared.database.info("Re-ran post-processing for history entry \(id)")
 	}
 
 	private func liveEntry(_ id: UUID) -> TranscriptionHistoryEntry? {
@@ -275,7 +323,8 @@ final class TranscriptionHistoryStore {
 		let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
 		return entries.filter { entry in
 			(!starredOnly || entry.isStarred)
-				&& (needle.isEmpty || entry.text.localizedCaseInsensitiveContains(needle))
+				&& (needle.isEmpty || entry.text.localizedCaseInsensitiveContains(needle)
+					|| (entry.rawText?.localizedCaseInsensitiveContains(needle) ?? false))
 		}
 	}
 

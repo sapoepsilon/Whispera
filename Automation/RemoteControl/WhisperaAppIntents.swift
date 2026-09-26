@@ -1,4 +1,5 @@
 import AppIntents
+import AppKit
 import Foundation
 
 struct RemoteCommandIntentError: LocalizedError {
@@ -77,6 +78,47 @@ struct SetDictationLanguageIntent: AppIntent {
 	}
 }
 
+struct CopyLastTranscriptIntent: AppIntent {
+	static var title: LocalizedStringResource = "Copy Last Transcript"
+	static var description = IntentDescription(
+		"Copies the most recent Whispera transcript to the clipboard and returns it.")
+	static var openAppWhenRun = false
+
+	@MainActor
+	func perform() async throws -> some IntentResult & ReturnsValue<String> {
+		let outcome = await RemoteControlCenter.shared.handle(.copyLastTranscript, source: .intent)
+		guard outcome == .performed else { throw RemoteCommandIntentError(message: outcome.message) }
+		return .result(value: NSPasteboard.general.string(forType: .string) ?? "")
+	}
+}
+
+struct OpenHistoryIntent: AppIntent {
+	static var title: LocalizedStringResource = "Open Transcription History"
+	static var description = IntentDescription("Opens the Whispera transcription history window.")
+	static var openAppWhenRun = false
+
+	@MainActor
+	func perform() async throws -> some IntentResult & ReturnsValue<String> {
+		.result(value: try await runRemoteCommand(.openHistory))
+	}
+}
+
+struct AddDictionaryWordIntent: AppIntent {
+	static var title: LocalizedStringResource = "Add Word to Dictionary"
+	static var description = IntentDescription(
+		"Adds a name or term to Whispera's custom words so transcripts spell it your way. Separate several with commas."
+	)
+	static var openAppWhenRun = false
+
+	@Parameter(title: "Word")
+	var word: String
+
+	@MainActor
+	func perform() async throws -> some IntentResult & ReturnsValue<String> {
+		.result(value: try await runRemoteCommand(.addWord(word)))
+	}
+}
+
 struct TranscribeAudioFileIntent: AppIntent {
 	static var title: LocalizedStringResource = "Transcribe Audio File"
 	static var description = IntentDescription(
@@ -136,6 +178,18 @@ struct WhisperaAppShortcuts: AppShortcutsProvider {
 			phrases: ["Cancel \(.applicationName) dictation"],
 			shortTitle: "Cancel Dictation",
 			systemImageName: "xmark.circle"
+		)
+		AppShortcut(
+			intent: CopyLastTranscriptIntent(),
+			phrases: ["Copy the last \(.applicationName) transcript"],
+			shortTitle: "Copy Last Transcript",
+			systemImageName: "doc.on.clipboard"
+		)
+		AppShortcut(
+			intent: OpenHistoryIntent(),
+			phrases: ["Open \(.applicationName) history"],
+			shortTitle: "Open History",
+			systemImageName: "clock.arrow.circlepath"
 		)
 		AppShortcut(
 			intent: TranscribeAudioFileIntent(),

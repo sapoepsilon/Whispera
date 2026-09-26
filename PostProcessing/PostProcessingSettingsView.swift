@@ -43,7 +43,7 @@ struct PostProcessingSettingsView: View {
 						Toggle("", isOn: $isEnabled).labelsHidden().toggleStyle(.switch)
 					}
 					SettingRow("Shortcut", description: "Dictate, then post-process. Always uses text mode.") {
-						Button(isRecordingShortcut ? "Press keys..." : shortcut) {
+						Button(isRecordingShortcut ? String(localized: "Press keys...") : shortcut) {
 							isRecordingShortcut ? stopRecordingShortcut() : startRecordingShortcut()
 						}
 						.disabled(!isEnabled)
@@ -244,7 +244,8 @@ struct PostProcessingSettingsView: View {
 			hasSavedKey = key != nil
 			AppLogger.shared.general.info("Post-processing API key \(key == nil ? "removed" : "saved") for \(provider.id)")
 		} catch {
-			alert = PostProcessingAlert(title: "Could not update the Keychain", message: error.localizedDescription)
+			alert = PostProcessingAlert(
+				title: String(localized: "Could not update the Keychain"), message: error.localizedDescription)
 		}
 	}
 
@@ -261,10 +262,13 @@ struct PostProcessingSettingsView: View {
 					timeout: settings.timeoutSeconds)
 				fetchedModels = try await client.listModels()
 				if fetchedModels.isEmpty {
-					alert = PostProcessingAlert(title: "No models", message: "The provider returned an empty model list.")
+					alert = PostProcessingAlert(
+						title: String(localized: "No models"),
+						message: String(localized: "The provider returned an empty model list."))
 				}
 			} catch {
-				alert = PostProcessingAlert(title: "Could not fetch models", message: error.localizedDescription)
+				alert = PostProcessingAlert(
+					title: String(localized: "Could not fetch models"), message: error.localizedDescription)
 			}
 		}
 	}
@@ -281,14 +285,15 @@ struct PostProcessingSettingsView: View {
 			case .skipped:
 				testOutput = ""
 			case .failed(_, let error):
-				alert = PostProcessingAlert(title: "Post-processing failed", message: error)
+				alert = PostProcessingAlert(title: String(localized: "Post-processing failed"), message: error)
 			}
 		}
 	}
 
 	private func addPrompt() {
 		let prompt = PostProcessingPrompt(
-			id: UUID().uuidString, name: "New prompt", template: PostProcessingPrompt.defaultCleanup.template)
+			id: UUID().uuidString, name: String(localized: "New prompt"),
+			template: PostProcessingPrompt.defaultCleanup.template)
 		prompts.append(prompt)
 		selectedPromptID = prompt.id
 		settings.prompts = prompts

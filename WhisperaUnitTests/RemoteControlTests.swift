@@ -63,7 +63,10 @@ struct RemoteCommandParsingTests {
 		#expect(RemoteControlSettings.isURLSchemeEnabled(in: defaults))
 	}
 
-	@Test func onlyMicAndModelCommandsRequireAToken() {
+	@Test func onlyMicModelAndHistoryCommandsRequireAToken() {
+		#expect(RemoteCommand.copyLastTranscript.requiresToken)
+		#expect(RemoteCommand.openHistory.requiresToken)
+		#expect(RemoteCommand.addWord("Loki").requiresToken)
 		#expect(RemoteCommand.toggle.requiresToken)
 		#expect(RemoteCommand.togglePostProcess.requiresToken)
 		#expect(RemoteCommand.start.requiresToken)
@@ -356,7 +359,10 @@ struct RemoteControlCenterTests {
 		let token = try #require(RemoteControlToken.load(in: tokenDirectory(for: suite)))
 		let wrong = String(repeating: "a", count: 64)
 
-		for command in [RemoteCommand.toggle, .togglePostProcess, .start, .setModel("m")] {
+		for command in [
+			RemoteCommand.toggle, .togglePostProcess, .start, .setModel("m"), .copyLastTranscript, .openHistory,
+			.addWord("Loki"),
+		] {
 			#expect(center.authorizeURL(command, url: command.url) == .denied("missing or invalid token"))
 			#expect(center.authorizeURL(command, url: command.url(token: wrong)) != .allowed)
 			#expect(center.authorizeURL(command, url: command.url(token: token)) == .allowed)
@@ -406,5 +412,122 @@ struct TranscribeIntentFileNameTests {
 	])
 	func keepsOnlyTheLastPathComponent(raw: String, expected: String) {
 		#expect(TranscribeAudioFileIntent.safeFileName(raw) == expected)
+	}
+}
+
+struct RemoteHistoryCommandParsingTests {
+	@Test(arguments: [
+		("whispera://copy-last", RemoteCommand.copyLastTranscript),
+		("whispera://history", .openHistory),
+		("whispera://add-word?word=Kubernetes", .addWord("Kubernetes")),
+		("whispera://add-word?word=Grafana%2C%20Loki", .addWord("Grafana, Loki")),
+		("whispera://add-word?name=Tailscale", .addWord("Tailscale")),
+	])
+	func parses(urlString: String, expected: RemoteCommand) throws {
+		#expect(RemoteCommand(url: try #require(URL(string: urlString))) == expected)
+	}
+
+	@Test func addWordNeedsAWord() throws {
+		#expect(RemoteCommand(url: try #require(URL(string: "whispera://add-word"))) == nil)
+		#expect(RemoteCommand(url: try #require(URL(string: "whispera://add-word?word=%20"))) == nil)
+	}
+
+	@Test(arguments: [RemoteCommand.copyLastTranscript, .openHistory, .addWord("São Paulo & Co")])
+	func roundTrips(command: RemoteCommand) {
+		#expect(RemoteCommand(url: command.url) == command)
+	}
+
+	@Test func wordListLimits() {
+		#expect(RemoteCommand.parseWords(" Kubernetes ,  kubernetes, Loki ") == ["Kubernetes", "Loki"])
+		#expect(RemoteCommand.parseWords(" , ") == nil)
+		#expect(RemoteCommand.parseWords(String(repeating: "a", count: RemoteCommand.maxWordLength + 1)) == nil)
+		let many = (0...RemoteCommand.maxWordsPerCommand).map { "w\($0)" }.joined(separator: ",")
+		#expect(RemoteCommand.parseWords(many) == nil)
+	}
+
+	@Test func cliFlagsMapToCommands() throws {
+		#expect(try CLIOptions.parse(["--copy-last"]).action == .remote(.copyLastTranscript))
+		#expect(try CLIOptions.parse(["--open-history"]).action == .remote(.openHistory))
+		#expect(try CLIOptions.parse(["--add-word=Loki"]).action == .remote(.addWord("Loki")))
+		#expect(throws: CLIOptions.ParseError.self) { try CLIOptions.parse(["--add-word"]) }
+		#expect(CLIOptions.isCLIInvocation(["Whispera", "--copy-last"]))
+	}
+}
+
+@MainActor
+private final class HistoryActionLog {
+	var lastTranscript: String?
+	var copied: [String] = []
+	var historyOpens = 0
+
+	var actions: RemoteHistoryActions {
+		RemoteHistoryActions(
+			lastTranscript: { _ in self.lastTranscript },
+			copyToClipboard: { self.copied.append($0) },
+			openHistory: { self.historyOpens += 1 })
+	}
+}
+
+@MainActor
+struct RemoteHistoryCommandTests {
+	private func makeCenter(_ log: HistoryActionLog) throws -> (RemoteControlCenter, UserDefaults, String) {
+		let suite = "RemoteHistoryCommandTests-\(UUID().uuidString)"
+		let defaults = try #require(UserDefaults(suiteName: suite))
+		return (RemoteControlCenter(defaults: defaults, historyActions: log.actions), defaults, suite)
+	}
+
+	@Test func copyLastCopiesTheLatestTranscript() async throws {
+		let log = HistoryActionLog()
+		let (center, defaults, suite) = try makeCenter(log)
+		defer { defaults.removePersistentDomain(forName: suite) }
+
+		#expect(await center.handle(.copyLastTranscript, source: .url) == .ignored("No transcript yet"))
+		#expect(log.copied.isEmpty)
+
+		log.lastTranscript = "Ship it on Friday."
+		#expect(await center.handle(.copyLastTranscript, source: .url) == .performed)
+		#expect(log.copied == ["Ship it on Friday."])
+	}
+
+	@Test func openHistoryOpensTheWindowWithoutAController() async throws {
+		let log = HistoryActionLog()
+		let (center, defaults, suite) = try makeCenter(log)
+		defer { defaults.removePersistentDomain(forName: suite) }
+
+		#expect(await center.handle(.openHistory, source: .intent) == .performed)
+		#expect(log.historyOpens == 1)
+	}
+
+	@Test func addWordAppendsNewWordsOnly() async throws {
+		let (center, defaults, suite) = try makeCenter(HistoryActionLog())
+		defer { defaults.removePersistentDomain(forName: suite) }
+		TextProcessingSettings.setCustomWords(["Kubernetes"], in: defaults)
+
+		#expect(await center.handle(.addWord("kubernetes, Grafana"), source: .cli) == .performed)
+		#expect(TextProcessingSettings.customWords(from: defaults) == ["Kubernetes", "Grafana"])
+
+		#expect(await center.handle(.addWord("GRAFANA"), source: .cli) == .ignored("Already in the dictionary"))
+		#expect(TextProcessingSettings.customWords(from: defaults) == ["Kubernetes", "Grafana"])
+	}
+
+	@Test func addWordRejectsOversizedInput() async throws {
+		let (center, defaults, suite) = try makeCenter(HistoryActionLog())
+		defer { defaults.removePersistentDomain(forName: suite) }
+		let outcome = await center.handle(
+			.addWord(String(repeating: "x", count: RemoteCommand.maxWordLength + 1)), source: .url)
+		guard case .rejected = outcome else {
+			Issue.record("Expected rejection, got \(outcome)")
+			return
+		}
+		#expect(TextProcessingSettings.customWords(from: defaults).isEmpty)
+	}
+
+	@Test func historyCommandsAreNotDictationCommands() async throws {
+		let (center, defaults, suite) = try makeCenter(HistoryActionLog())
+		defer { defaults.removePersistentDomain(forName: suite) }
+		let controller = FakeDictationController()
+		center.register(controller: controller)
+		#expect(await center.handle(.openHistory, source: .url) == .performed)
+		#expect(controller.toggles == 0)
 	}
 }

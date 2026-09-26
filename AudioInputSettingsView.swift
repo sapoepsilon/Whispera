@@ -203,7 +203,7 @@ struct FeedbackSoundSettingsRows: View {
 			FeedbackSoundPlayer.shared.play(start: start)
 		} catch {
 			AppLogger.shared.audioManager.error("Failed to import custom sound: \(error)")
-			importError = "\(url.lastPathComponent) could not be played as a sound."
+			importError = String(localized: "\(url.lastPathComponent) could not be played as a sound.")
 		}
 	}
 }

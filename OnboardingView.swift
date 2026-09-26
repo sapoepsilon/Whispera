@@ -62,7 +62,7 @@ struct OnboardingView: View {
 
 				Spacer()
 
-				Button(nextButtonText) {
+				Button(LocalizedStringKey(nextButtonText)) {
 					handleNextStep()
 				}
 				.buttonStyle(PrimaryButtonStyle(isRecording: false))

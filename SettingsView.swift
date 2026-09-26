@@ -9,9 +9,9 @@ enum SupportedFormat: CaseIterable {
 
 	var title: String {
 		switch self {
-		case .audio: return "Audio formats:"
-		case .video: return "Video formats:"
-		case .network: return "Network:"
+		case .audio: return String(localized: "Audio formats:")
+		case .video: return String(localized: "Video formats:")
+		case .network: return String(localized: "Network:")
 		}
 	}
 
@@ -196,7 +196,7 @@ struct SettingsView: View {
 	@State private var removingModelId: String?
 	@State private var liveTranscriptionInfoWindow: NSWindow?
 	@State private var releaseNotesWindow: NSWindow?
-	@State private var logsSize: String = "Calculating..."
+	@State private var logsSize: String = String(localized: "Calculating...")
 	@State private var showingClearLogsConfirmation = false
 
 	// Extended logging settings
@@ -261,9 +261,12 @@ struct SettingsView: View {
 									startRecording()
 								}
 							}) {
-								Text(isRecordingShortcut ? "Press keys..." : globalShortcut)
-									.font(.system(.body, design: .monospaced))
-									.frame(minWidth: 80)
+								Text(
+									isRecordingShortcut
+										? String(localized: "Press keys...") : globalShortcut
+								)
+								.font(.system(.body, design: .monospaced))
+								.frame(minWidth: 80)
 							}
 							.buttonStyle(.bordered)
 							.foregroundColor(isRecordingShortcut ? .red : .primary)
@@ -507,8 +510,10 @@ struct SettingsView: View {
 								Picker("Language", selection: $selectedLanguage) {
 									Text("Auto-detect").tag(Constants.autoDetectLanguageName)
 									Divider()
-									ForEach(Constants.sortedLanguageNames, id: \.self) { language in
-										Text(language.capitalized).tag(language)
+									ForEach(Constants.localizedSortedLanguageNames(), id: \.self) {
+										language in
+										Text(Constants.localizedLanguageName(for: language)).tag(
+											language)
 									}
 								}
 								.labelsHidden()
@@ -558,7 +563,7 @@ struct SettingsView: View {
 								)
 							) {
 								ForEach(MaterialStyle.allCases) { style in
-									Text(style.rawValue).tag(style)
+									Text(style.displayName).tag(style)
 								}
 							}
 							.labelsHidden()
@@ -1189,7 +1194,7 @@ struct SettingsView: View {
 				errorMessage = nil
 			}
 		} message: {
-			Text(errorMessage ?? "An unknown error occurred")
+			Text(errorMessage ?? String(localized: "An unknown error occurred"))
 		}
 		.alert(
 			"Update Error",
@@ -1226,7 +1231,8 @@ struct SettingsView: View {
 							try await appLibraryManager.removeAllModels()
 							confirmationStep = 0
 						} catch {
-							errorMessage = "Failed to clear models: \(error.localizedDescription)"
+							errorMessage = String(
+								localized: "Failed to clear models: \(error.localizedDescription)")
 							showingError = true
 							confirmationStep = 0
 						}
@@ -1255,7 +1261,8 @@ struct SettingsView: View {
 						try await appLibraryManager.clearLogs()
 						updateLogsSize()
 					} catch {
-						errorMessage = "Failed to clear logs: \(error.localizedDescription)"
+						errorMessage = String(
+							localized: "Failed to clear logs: \(error.localizedDescription)")
 						showingError = true
 					}
 				}
@@ -1269,9 +1276,9 @@ struct SettingsView: View {
 
 	private func showNoUpdateAlert() {
 		let alert = NSAlert()
-		alert.messageText = "No Updates Available"
-		alert.informativeText = "You're running the latest version of Whispera."
-		alert.addButton(withTitle: "OK")
+		alert.messageText = String(localized: "No Updates Available")
+		alert.informativeText = String(localized: "You're running the latest version of Whispera.")
+		alert.addButton(withTitle: String(localized: "OK"))
 		alert.runModal()
 	}
 
@@ -1328,7 +1335,8 @@ struct SettingsView: View {
 			} catch {
 				AppLogger.shared.general.error("Failed to load models: \(error)")
 				await MainActor.run {
-					errorMessage = "Failed to load available models: \(error.localizedDescription)"
+					errorMessage = String(
+						localized: "Failed to load available models: \(error.localizedDescription)")
 					showingError = true
 				}
 			}
@@ -1447,7 +1455,8 @@ struct SettingsView: View {
 		} catch {
 			AppLogger.shared.general.error("Failed to switch to model \(modelName): \(error)")
 			await MainActor.run {
-				errorMessage = "Failed to switch to model \(modelName): \(error.localizedDescription)"
+				errorMessage = String(
+					localized: "Failed to switch to model \(modelName): \(error.localizedDescription)")
 				showingError = true
 			}
 		}
@@ -1581,7 +1590,7 @@ struct SettingsView: View {
 			defer: false
 		)
 
-		window.title = "Live Transcription Information"
+		window.title = String(localized: "Live Transcription Information")
 		window.contentView = hostingView
 		window.center()
 		window.makeKeyAndOrderFront(nil)
@@ -1616,7 +1625,7 @@ struct SettingsView: View {
 			defer: false
 		)
 
-		window.title = "Release Notes - Whispera \(latestVersion)"
+		window.title = String(localized: "Release Notes - Whispera \(latestVersion)")
 		window.contentView = hostingView
 		window.center()
 		window.makeKeyAndOrderFront(nil)
@@ -1628,15 +1637,26 @@ struct SettingsView: View {
 
 	private func getModelStatusText() -> String {
 		if whisperKit.isDownloadingModel {
-			return "Downloading \(whisperKit.downloadingModelName ?? "model")..."
+			let name = whisperKit.downloadingModelName ?? String(localized: "model")
+			return String(localized: "Downloading \(name)...")
 		} else if whisperKit.isModelLoading {
-			return "Loading \(selectedModel)..."
+			return String(localized: "Loading \(selectedModel)...")
 		}
 		return ""
 	}
 
 	private func getCurrentModelStatusText() -> String {
-		return whisperKit.modelState
+		switch whisperKit.modelState.lowercased() {
+		case "unloading": return String(localized: "Unloading")
+		case "unloaded": return String(localized: "Unloaded")
+		case "loading": return String(localized: "Loading")
+		case "loaded": return String(localized: "Loaded")
+		case "prewarming": return String(localized: "Specializing")
+		case "prewarmed": return String(localized: "Specialized")
+		case "downloading": return String(localized: "Downloading")
+		case "downloaded": return String(localized: "Downloaded")
+		default: return whisperKit.modelState
+		}
 		//        if whisperKit.isDownloadingModel {
 		//            return "Downloading..."
 		//        } else if whisperKit.isModelLoading {
@@ -1696,7 +1716,7 @@ struct SettingsView: View {
 		Task {
 			let (_, formatted) = await appLibraryManager.getLogsSize()
 			await MainActor.run {
-				logsSize = formatted.isEmpty ? "No logs" : formatted
+				logsSize = formatted.isEmpty ? String(localized: "No logs") : formatted
 			}
 		}
 	}
@@ -1706,8 +1726,8 @@ struct SettingsView: View {
 		panel.canChooseFiles = false
 		panel.canChooseDirectories = true
 		panel.allowsMultipleSelection = false
-		panel.prompt = "Choose Transcription Folder"
-		panel.message = "Select where transcription files should be saved"
+		panel.prompt = String(localized: "Choose Transcription Folder")
+		panel.message = String(localized: "Select where transcription files should be saved")
 
 		if panel.runModal() == .OK {
 			if let url = panel.url {
@@ -1718,7 +1738,7 @@ struct SettingsView: View {
 
 	private func getCustomTranscriptionPath() -> String {
 		if customTranscriptionPath.isEmpty {
-			return "No folder selected"
+			return String(localized: "No folder selected")
 		}
 		return customTranscriptionPath
 	}

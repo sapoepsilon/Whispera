@@ -141,7 +141,7 @@ struct TextInsertionSettingsView: View {
 		panel.canChooseFiles = true
 		panel.canChooseDirectories = false
 		panel.allowsMultipleSelection = false
-		panel.prompt = "Use Script"
+		panel.prompt = String(localized: "Use Script")
 		if panel.runModal() == .OK, let url = panel.url {
 			externalScriptPath = url.path
 		}

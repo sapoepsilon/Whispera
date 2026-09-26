@@ -10,6 +10,16 @@ enum MaterialStyle: String, CaseIterable, Identifiable {
 
 	var id: String { rawValue }
 
+	var displayName: String {
+		switch self {
+		case .ultraThin: return String(localized: "Ultra Thin")
+		case .thin: return String(localized: "Thin")
+		case .regular: return String(localized: "Regular")
+		case .thick: return String(localized: "Thick")
+		case .ultraThick: return String(localized: "Ultra Thick")
+		}
+	}
+
 	var material: Material {
 		switch self {
 		case .ultraThin: return .ultraThinMaterial
@@ -159,6 +169,24 @@ struct Constants {
 	// Helper to get sorted language names for UI
 	public static var sortedLanguageNames: [String] {
 		return Array(languages.keys).sorted()
+	}
+
+	/// The Whisper language name shown in the app's UI language, e.g. "german" -> "Deutsch".
+	public static func localizedLanguageName(for languageName: String, locale: Locale = .current) -> String {
+		let fallback = languageName.capitalized
+		guard let code = languages[languageName.lowercased()],
+			let name = locale.localizedString(forLanguageCode: code),
+			name.lowercased() != code
+		else { return fallback }
+		// Spanish and French list language names in lowercase; menus show them capitalized.
+		return name.prefix(1).uppercased(with: locale) + name.dropFirst()
+	}
+
+	public static func localizedSortedLanguageNames(locale: Locale = .current) -> [String] {
+		languages.keys
+			.map { (key: $0, name: localizedLanguageName(for: $0, locale: locale)) }
+			.sorted { $0.name.compare($1.name, locale: locale) == .orderedAscending }
+			.map(\.key)
 	}
 
 	// Helper to get language code from name

@@ -98,11 +98,16 @@ struct RecordingControlSettingsView: View {
 			}
 
 			SettingRow(
-				"Cancel with Escape",
-				description: "Press Esc while recording or transcribing to discard it without pasting"
+				"Cancel Shortcut",
+				description: "Press it while recording or transcribing to discard the dictation without pasting"
 			) {
-				Toggle("", isOn: $cancelShortcutEnabled)
-					.accessibilityIdentifier("cancelShortcutToggle")
+				HStack(spacing: 8) {
+					CancelShortcutRecorder()
+						.disabled(!cancelShortcutEnabled)
+					Toggle("", isOn: $cancelShortcutEnabled)
+						.labelsHidden()
+						.accessibilityIdentifier("cancelShortcutToggle")
+				}
 			}
 		}
 	}

@@ -25,9 +25,9 @@ struct SettingRowView: View {
 			}
 
 			VStack(alignment: .leading, spacing: 4) {
-				Text(title)
+				Text(LocalizedStringKey(title))
 					.font(.system(.subheadline, design: .rounded, weight: .medium))
-				Text(description)
+				Text(LocalizedStringKey(description))
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}

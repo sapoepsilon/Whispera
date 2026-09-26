@@ -31,6 +31,8 @@ struct ModelUnloadTimeoutSettingTests {
 		#expect(ModelUnloadTimeout.immediately.interval == 0)
 		#expect(ModelUnloadTimeout.seconds15.interval == 15)
 		#expect(ModelUnloadTimeout.minutes1.interval == 60)
+		#expect(ModelUnloadTimeout.minutes2.interval == 120)
+		#expect(ModelUnloadTimeout.minutes10.interval == 600)
 		#expect(ModelUnloadTimeout.minutes5.interval == 300)
 		#expect(ModelUnloadTimeout.minutes15.interval == 900)
 		#expect(ModelUnloadTimeout.hour1.interval == 3600)

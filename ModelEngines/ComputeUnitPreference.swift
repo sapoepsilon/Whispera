@@ -23,10 +23,10 @@ enum ComputeUnitPreference: String, CaseIterable, Identifiable, Sendable {
 
 	var displayName: String {
 		switch self {
-		case .automatic: return "Automatic"
-		case .cpuOnly: return "CPU"
-		case .gpu: return "GPU"
-		case .neuralEngine: return "Neural Engine"
+		case .automatic: return String(localized: "Automatic")
+		case .cpuOnly: return String(localized: "CPU")
+		case .gpu: return String(localized: "GPU")
+		case .neuralEngine: return String(localized: "Neural Engine")
 		}
 	}
 
@@ -34,13 +34,18 @@ enum ComputeUnitPreference: String, CaseIterable, Identifiable, Sendable {
 		switch self {
 		case .automatic:
 			return
-				"Audio processing on CPU + GPU, text decoding on CPU + Neural Engine. Best for most Apple Silicon Macs."
+				String(
+					localized:
+						"Audio processing on CPU + GPU, text decoding on CPU + Neural Engine. Best for most Apple Silicon Macs."
+				)
 		case .cpuOnly:
-			return "Everything runs on the CPU. Slowest, but avoids GPU and Neural Engine issues."
+			return String(
+				localized: "Everything runs on the CPU. Slowest, but avoids GPU and Neural Engine issues.")
 		case .gpu:
-			return "Every stage runs on CPU + GPU."
+			return String(localized: "Every stage runs on CPU + GPU.")
 		case .neuralEngine:
-			return "Every stage runs on CPU + Neural Engine. Lowest power use on Apple Silicon."
+			return String(
+				localized: "Every stage runs on CPU + Neural Engine. Lowest power use on Apple Silicon.")
 		}
 	}
 
