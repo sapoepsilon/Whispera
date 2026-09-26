@@ -536,7 +536,8 @@ struct StatusCardView: View {
 								.font(.system(size: 8))
 								Text(
 									audioManager.enableTranslation
-										? "\(Constants.languageCode(for: selectedLanguage))" : "TXT"
+										? (Constants.isAutoDetectLanguage(selectedLanguage)
+											? "AUTO" : Constants.languageCode(for: selectedLanguage)) : "TXT"
 								)
 								.font(.system(.caption2, design: .rounded, weight: .medium))
 							}

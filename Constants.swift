@@ -164,6 +164,17 @@ struct Constants {
 		return languages[languageName.lowercased()] ?? defaultLanguageCode
 	}
 
+	public static let autoDetectLanguageName = "auto"
+
+	public static func isAutoDetectLanguage(_ languageName: String) -> Bool {
+		languageName.lowercased() == autoDetectLanguageName
+	}
+
+	/// nil means WhisperKit should detect the spoken language from the audio.
+	public static func decodingLanguageCode(for languageName: String) -> String? {
+		isAutoDetectLanguage(languageName) ? nil : languageCode(for: languageName)
+	}
+
 	// Helper to get language name from code
 	public static func languageName(for languageCode: String) -> String {
 		return languages.first { $0.value == languageCode }?.key.capitalized

@@ -797,6 +797,7 @@ import WhisperKit
 					sampleLength: 224,  // Use safe fallback
 					usePrefillPrompt: savedUsePrefillPrompt,
 					usePrefillCache: savedUsePrefillCache,
+					detectLanguage: options.detectLanguage,
 					skipSpecialTokens: savedSkipSpecialTokens,
 					withoutTimestamps: savedWithoutTimestamps,
 					wordTimestamps: savedWordTimestamps,
@@ -818,16 +819,18 @@ import WhisperKit
 
 	// MARK: - Decoding Options Management
 	private func createDefaultDecodingOptions() -> DecodingOptions {
+		let languageParameters = Self.languageDecodingParameters(
+			selectedLanguage: selectedLanguage, enableTranslation: false)
 		return DecodingOptions(
 			verbose: false,
 			task: .transcribe,
-			language: Constants.languageCode(for: selectedLanguage),
+			language: languageParameters.language,
 			temperature: savedTemperature,
 			temperatureFallbackCount: savedTemperatureFallbackCount,
 			sampleLength: savedSampleLength,
 			usePrefillPrompt: savedUsePrefillPrompt,
 			usePrefillCache: savedUsePrefillCache,
-			detectLanguage: false,
+			detectLanguage: languageParameters.detectLanguage,
 			skipSpecialTokens: savedSkipSpecialTokens,
 			withoutTimestamps: savedWithoutTimestamps,
 			wordTimestamps: savedWordTimestamps,
@@ -837,10 +840,12 @@ import WhisperKit
 
 	func createDecodingOptions(enableTranslation: Bool) -> DecodingOptions {
 		let task: DecodingTask = enableTranslation ? .translate : .transcribe
-		let languageCode = Constants.languageCode(for: selectedLanguage)
+		let languageParameters = Self.languageDecodingParameters(
+			selectedLanguage: selectedLanguage, enableTranslation: enableTranslation)
+		let languageCode = languageParameters.language
 
 		AppLogger.shared.transcriber.log(
-			"Creating decoding options - mode: \(task.description) language: \(languageCode)")
+			"Creating decoding options - mode: \(task.description) language: \(languageCode ?? "auto")")
 		return DecodingOptions(
 			verbose: false,
 			task: task,
@@ -850,12 +855,20 @@ import WhisperKit
 			sampleLength: savedSampleLength,
 			usePrefillPrompt: savedUsePrefillPrompt,
 			usePrefillCache: savedUsePrefillCache,
-			detectLanguage: enableTranslation,
+			detectLanguage: languageParameters.detectLanguage,
 			skipSpecialTokens: savedSkipSpecialTokens,
 			withoutTimestamps: savedWithoutTimestamps,
 			wordTimestamps: savedWordTimestamps,
 			clipTimestamps: [0]
 		)
+	}
+
+	/// "auto" leaves the language unset so WhisperKit detects it from the audio.
+	nonisolated static func languageDecodingParameters(selectedLanguage: String, enableTranslation: Bool)
+		-> (language: String?, detectLanguage: Bool)
+	{
+		let language = Constants.decodingLanguageCode(for: selectedLanguage)
+		return (language, enableTranslation || language == nil)
 	}
 
 	func updateDecodingOptions(
@@ -1053,6 +1066,7 @@ import WhisperKit
 						sampleLength: 224,
 						usePrefillPrompt: savedUsePrefillPrompt,
 						usePrefillCache: savedUsePrefillCache,
+						detectLanguage: decodingOptions?.detectLanguage,
 						skipSpecialTokens: savedSkipSpecialTokens,
 						withoutTimestamps: savedWithoutTimestamps,
 						wordTimestamps: savedWordTimestamps,
