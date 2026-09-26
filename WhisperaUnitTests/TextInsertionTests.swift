@@ -149,6 +149,61 @@ final class LateReadingKeyPoster: KeyEventPosting {
 	}
 }
 
+/// Polls the clipboard every couple of milliseconds like a clipboard manager, so it reads the
+/// transcript right after Whispera writes it and before Cmd-V is posted.
+@MainActor
+final class PollingClipboardWatcher {
+	private(set) var reads: [(text: String?, at: ContinuousClock.Instant)] = []
+	private var seenChangeCount: Int
+	private var task: Task<Void, Never>?
+
+	init(pasteboard: NSPasteboard) {
+		seenChangeCount = pasteboard.changeCount
+		task = Task { @MainActor [weak self] in
+			while !Task.isCancelled {
+				self?.poll(pasteboard)
+				try? await Task.sleep(nanoseconds: 2_000_000)
+			}
+		}
+	}
+
+	private func poll(_ pasteboard: NSPasteboard) {
+		guard pasteboard.changeCount != seenChangeCount else { return }
+		seenChangeCount = pasteboard.changeCount
+		reads.append((pasteboard.string(forType: .string), ContinuousClock.now))
+	}
+
+	func stop() { task?.cancel() }
+}
+
+/// The target app: reads the pasteboard `delayMs` after Cmd-V and remembers when Cmd-V came.
+@MainActor
+final class TimedReadingKeyPoster: KeyEventPosting {
+	let pasteboard: NSPasteboard
+	let delayMs: Int
+	private(set) var pastedAt: ContinuousClock.Instant?
+	private(set) var readText: String?
+	private(set) var readTask: Task<Void, Never>?
+
+	init(pasteboard: NSPasteboard, delayMs: Int) {
+		self.pasteboard = pasteboard
+		self.delayMs = delayMs
+	}
+
+	nonisolated func postUnicode(_ units: [UniChar]) {}
+
+	nonisolated func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
+		guard keyCode == KeyCode.v else { return }
+		MainActor.assumeIsolated {
+			pastedAt = ContinuousClock.now
+			readTask = Task { @MainActor [self] in
+				try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
+				readText = pasteboard.string(forType: .string)
+			}
+		}
+	}
+}
+
 @MainActor
 struct ClipboardSafetyTests {
 	@Test func slowAppStillPastesTheTranscriptNotTheOldClipboard() async {
@@ -166,6 +221,82 @@ struct ClipboardSafetyTests {
 
 		#expect(poster.readText == "hello", "A 60 ms timer would have restored the old clipboard first")
 		#expect(pasteboard.string(forType: .string) == "old private copy")
+	}
+
+	/// Reproduces the signed-app QA failure: a clipboard watcher reads the transcript 8-40 ms
+	/// after the write, before Cmd-V, and the receipt then let the old clipboard return 60 ms
+	/// after Cmd-V while the target app had not pasted yet.
+	@Test func earlyClipboardWatcherDoesNotCutTheHoldShort() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("old private copy", forType: .string)
+		let watcher = PollingClipboardWatcher(pasteboard: pasteboard)
+		defer { watcher.stop() }
+		let app = TimedReadingKeyPoster(pasteboard: pasteboard, delayMs: 300)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: app, readTimeoutMs: 3000,
+			settingsProvider: {
+				fastSettings {
+					$0.pasteDelayBeforeMs = 60
+					$0.pasteDelayAfterMs = 60
+				}
+			})
+
+		await inserter.insert("hello", context: .finalTranscript).value
+		let restoredAt = ContinuousClock.now
+		await app.readTask?.value
+
+		let watcherRead = watcher.reads.first { $0.text == "hello" }
+		guard let watcherRead, let pastedAt = app.pastedAt else {
+			Issue.record("The watcher never saw the transcript, or Cmd-V was never posted")
+			return
+		}
+		#expect(watcherRead.at < pastedAt, "The watcher must read before Cmd-V for this scenario")
+		#expect(app.readText == "hello", "The old clipboard was restored before the target app pasted")
+		#expect(restoredAt - pastedAt >= .milliseconds(TextInsertionSettings.defaultClipboardRestoreHoldMs))
+		#expect(pasteboard.string(forType: .string) == "old private copy")
+	}
+
+	/// With no early reader the receipt still holds the transcript past the minimum hold for an
+	/// app slower than the hold itself.
+	@Test func receiptStillWaitsForAnAppSlowerThanTheHold() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("old private copy", forType: .string)
+		let app = TimedReadingKeyPoster(pasteboard: pasteboard, delayMs: 900)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: app, readTimeoutMs: 3000,
+			settingsProvider: { fastSettings { $0.clipboardRestoreHoldMs = 200 } })
+
+		await inserter.insert("hello", context: .finalTranscript).value
+		await app.readTask?.value
+
+		#expect(app.readText == "hello")
+		#expect(pasteboard.string(forType: .string) == "old private copy")
+	}
+
+	@Test func concealedTextIsNotClearedBeforeTheHoldEnds() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let watcher = PollingClipboardWatcher(pasteboard: pasteboard)
+		defer { watcher.stop() }
+		let app = TimedReadingKeyPoster(pasteboard: pasteboard, delayMs: 300)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: app, readTimeoutMs: 3000, isSecureInputActive: { true },
+			settingsProvider: {
+				fastSettings {
+					$0.clipboardHandling = .keepTranscript
+					$0.pasteDelayBeforeMs = 60
+				}
+			})
+
+		await inserter.insert("hunter2", context: .finalTranscript).value
+		await app.readTask?.value
+
+		#expect(app.readText == "hunter2")
+		#expect(pasteboard.string(forType: .string) == nil, "The secret is still taken back afterwards")
 	}
 
 	@Test func restoresAfterTheTimeoutWhenNothingReads() async {
@@ -405,6 +536,21 @@ struct PasteDelaySettingsTests {
 		settings.pasteDelayBeforeMs = -20
 		settings.save(to: defaults)
 		#expect(TextInsertionSettings(defaults: defaults).pasteDelayBeforeMs == 0)
+	}
+
+	@Test func restoreHoldDefaultsRoundTripsAndClamps() {
+		let suite = "PasteDelaySettingsTests.hold.\(UUID().uuidString)"
+		let defaults = UserDefaults(suiteName: suite)!
+		defer { defaults.removePersistentDomain(forName: suite) }
+
+		#expect(TextInsertionSettings(defaults: defaults).clipboardRestoreHoldMs == 500)
+		defaults.set(9000, forKey: TextInsertionSettings.Keys.clipboardRestoreHoldMs)
+		var settings = TextInsertionSettings(defaults: defaults)
+		#expect(settings.clipboardRestoreHoldMs == 3000)
+
+		settings.clipboardRestoreHoldMs = 750
+		settings.save(to: defaults)
+		#expect(TextInsertionSettings(defaults: defaults).clipboardRestoreHoldMs == 750)
 	}
 
 	@MainActor

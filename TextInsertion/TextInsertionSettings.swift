@@ -76,6 +76,7 @@ struct TextInsertionSettings: Equatable, Sendable {
 		static let clipboardHandling = "clipboardHandling"
 		static let pasteDelayBeforeMs = "pasteDelayBeforeMs"
 		static let pasteDelayAfterMs = "pasteDelayAfterMs"
+		static let clipboardRestoreHoldMs = "clipboardRestoreHoldMs"
 		static let pasteMethod = "pasteMethod"
 		static let externalScriptPath = "externalScriptPath"
 		static let externalScriptApproval = "externalScriptApproval"
@@ -88,10 +89,17 @@ struct TextInsertionSettings: Equatable, Sendable {
 	/// Grace period after the target app reads the transcript, before the old clipboard returns.
 	static let defaultPasteDelayAfterMs = 150
 	static let delayRange: ClosedRange<Int> = 0...1000
+	/// Clipboard watchers read the transcript within milliseconds of the write, before Cmd-V is
+	/// even sent, so a read says nothing about the target app. Measured on a signed build: a
+	/// 60 ms restore pasted the old clipboard in 1 of 6 runs, a 500 ms hold in 0 of 16.
+	static let defaultClipboardRestoreHoldMs = 500
+	static let restoreHoldRange: ClosedRange<Int> = 0...3000
 
 	var clipboardHandling: ClipboardHandling = .restore
 	var pasteDelayBeforeMs: Int = defaultPasteDelayMs
 	var pasteDelayAfterMs: Int = defaultPasteDelayAfterMs
+	/// Least time between Cmd-V and putting the previous clipboard back.
+	var clipboardRestoreHoldMs: Int = defaultClipboardRestoreHoldMs
 	var pasteMethod: PasteMethod = .commandV
 	var externalScriptPath = ""
 	/// Set only when the user picks the script in Settings; see `ScriptApproval`.
@@ -113,6 +121,9 @@ struct TextInsertionSettings: Equatable, Sendable {
 		}
 		if defaults.object(forKey: Keys.pasteDelayAfterMs) != nil {
 			pasteDelayAfterMs = Self.clampedDelay(defaults.integer(forKey: Keys.pasteDelayAfterMs))
+		}
+		if defaults.object(forKey: Keys.clipboardRestoreHoldMs) != nil {
+			clipboardRestoreHoldMs = Self.clampedHold(defaults.integer(forKey: Keys.clipboardRestoreHoldMs))
 		}
 		if let raw = defaults.string(forKey: Keys.pasteMethod), let value = PasteMethod(rawValue: raw) {
 			pasteMethod = value
@@ -136,6 +147,7 @@ struct TextInsertionSettings: Equatable, Sendable {
 		defaults.set(clipboardHandling.rawValue, forKey: Keys.clipboardHandling)
 		defaults.set(Self.clampedDelay(pasteDelayBeforeMs), forKey: Keys.pasteDelayBeforeMs)
 		defaults.set(Self.clampedDelay(pasteDelayAfterMs), forKey: Keys.pasteDelayAfterMs)
+		defaults.set(Self.clampedHold(clipboardRestoreHoldMs), forKey: Keys.clipboardRestoreHoldMs)
 		defaults.set(pasteMethod.rawValue, forKey: Keys.pasteMethod)
 		defaults.set(externalScriptPath, forKey: Keys.externalScriptPath)
 		defaults.set(externalScriptApproval, forKey: Keys.externalScriptApproval)
@@ -172,5 +184,9 @@ struct TextInsertionSettings: Equatable, Sendable {
 
 	static func clampedDelay(_ value: Int) -> Int {
 		min(max(value, delayRange.lowerBound), delayRange.upperBound)
+	}
+
+	static func clampedHold(_ value: Int) -> Int {
+		min(max(value, restoreHoldRange.lowerBound), restoreHoldRange.upperBound)
 	}
 }
