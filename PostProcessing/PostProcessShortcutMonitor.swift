@@ -9,6 +9,8 @@ final class PostProcessShortcutMonitor {
 
 	private var globalMonitor: Any?
 	private var localMonitor: Any?
+	private let carbonCenter = CarbonHotKeyCenter()
+	private var carbonHotKeyID: UInt32?
 	private weak var audioManager: AudioManager?
 	private var parser: ShortcutParser?
 	private var defaultsObserver: NSObjectProtocol?
@@ -58,6 +60,20 @@ final class PostProcessShortcutMonitor {
 
 		guard settings.isEnabled, Self.isUsableShortcut(shortcut) else { return }
 		let (modifiers, keyCode) = parser(shortcut)
+
+		// A system hotkey swallows the keystroke, so Option-Shift-Space no longer types spaces into the focused app
+		do {
+			carbonHotKeyID = try carbonCenter.register(keyCode: keyCode, modifiers: modifiers) {
+				[weak self] in
+				self?.trigger()
+			}
+			logger.info("Post-processing shortcut installed for \(shortcut) as a system hotkey")
+			return
+		} catch {
+			logger.info(
+				"Post-processing system hotkey unavailable (\(error.localizedDescription)); using event monitors")
+		}
+
 		let matches: (NSEvent) -> Bool = { event in
 			event.keyCode == keyCode
 				&& event.modifierFlags.intersection([.command, .option, .control, .shift]) == modifiers
@@ -85,6 +101,8 @@ final class PostProcessShortcutMonitor {
 	}
 
 	private func removeMonitors() {
+		if let carbonHotKeyID { carbonCenter.unregister(id: carbonHotKeyID) }
+		carbonHotKeyID = nil
 		if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
 		if let localMonitor { NSEvent.removeMonitor(localMonitor) }
 		globalMonitor = nil
