@@ -134,7 +134,7 @@ final class UpdateManagerTests: XCTestCase {
 		updateManager.latestVersion = "1.0.1"
 		updateManager.downloadURL = "https://example.com/whispera.dmg"
 
-		// Mock file existence check by creating a file
+		updateManager.downloadURL = "https://127.0.0.1:1/whispera.dmg"
 		guard
 			let downloadsDir = updateManager.downloadsDirectory
 		else {
@@ -142,19 +142,19 @@ final class UpdateManagerTests: XCTestCase {
 			return
 		}
 
+		// A file planted under the expected name must not be treated as the download
 		let localURL = downloadsDir.appendingPathComponent("Whispera-1.0.1.dmg")
-
-		// Create mock file
-		FileManager.default.createFile(atPath: localURL.path, contents: Data())
+		FileManager.default.createFile(atPath: localURL.path, contents: Data("planted".utf8))
 		defer { try? FileManager.default.removeItem(at: localURL) }
 
-		// Test that download recognizes existing file
 		do {
 			try await updateManager.downloadUpdate()
-			XCTAssertNotNil(updateManager.downloadLocation)
+			XCTFail("The download itself fails, so nothing may be reported as downloaded")
 		} catch {
-			XCTFail("Download should succeed when file exists: \(error)")
+			XCTAssertEqual(error as? UpdateError, UpdateError.downloadFailed)
 		}
+		XCTAssertFalse(updateManager.isUpdateDownloaded)
+		XCTAssertNil(updateManager.downloadedUpdate)
 	}
 
 	func testConcurrentDownloadPrevention() async {
@@ -310,11 +310,11 @@ final class UpdateManagerTests: XCTestCase {
 		updateManager.latestVersion = testVersion
 		XCTAssertFalse(updateManager.isUpdateDownloaded, "Should not be downloaded before file exists")
 
-		// Create mock file
+		// A file this process did not download is not an update, whoever put it there
 		FileManager.default.createFile(atPath: localURL.path, contents: Data())
 		defer { try? FileManager.default.removeItem(at: localURL) }
 
-		XCTAssertTrue(updateManager.isUpdateDownloaded, "Should be downloaded after file exists")
+		XCTAssertFalse(updateManager.isUpdateDownloaded, "A planted file must not count as downloaded")
 	}
 
 	func testInstallDownloadedUpdate() async {
@@ -364,12 +364,12 @@ final class UpdateManagerTests: XCTestCase {
 		// Initially no file exists, should show download
 		XCTAssertFalse(updateManager.isUpdateDownloaded, "Should not be downloaded before file creation")
 
-		// Create file, should show install
+		// A file that appears on its own still shows download, never install
 		let created = FileManager.default.createFile(atPath: localURL.path, contents: Data())
 		XCTAssertTrue(created, "File should be created successfully")
 		defer { try? FileManager.default.removeItem(at: localURL) }
 
-		XCTAssertTrue(updateManager.isUpdateDownloaded, "Should be downloaded after file creation")
+		XCTAssertFalse(updateManager.isUpdateDownloaded, "Only a download from this app enables install")
 	}
 
 	// MARK: - Integration Tests
