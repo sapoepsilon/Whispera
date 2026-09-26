@@ -10,9 +10,9 @@ enum VADSensitivity: String, CaseIterable, Identifiable, Sendable {
 
 	var displayName: String {
 		switch self {
-		case .low: return "Low"
-		case .medium: return "Medium"
-		case .high: return "High"
+		case .low: return String(localized: "Low")
+		case .medium: return String(localized: "Medium")
+		case .high: return String(localized: "High")
 		}
 	}
 

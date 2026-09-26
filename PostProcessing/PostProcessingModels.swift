@@ -25,10 +25,11 @@ struct PostProcessingProvider: Identifiable, Hashable, Sendable {
 		openAI("zai", "Z.AI", "https://api.z.ai/api/paas/v4"),
 		openAI("bedrock_mantle", "AWS Bedrock (Mantle)", "https://bedrock-mantle.us-east-1.api.aws/v1"),
 		PostProcessingProvider(
-			id: appleIntelligenceID, label: "Apple Intelligence (on-device)", kind: .appleIntelligence,
+			id: appleIntelligenceID, label: String(localized: "Apple Intelligence (on-device)"),
+			kind: .appleIntelligence,
 			defaultBaseURL: "", allowsBaseURLEdit: false, requiresAPIKey: false),
 		PostProcessingProvider(
-			id: customID, label: "Custom (Ollama, LM Studio, ...)", kind: .openAICompatible,
+			id: customID, label: String(localized: "Custom (Ollama, LM Studio, ...)"), kind: .openAICompatible,
 			defaultBaseURL: "http://localhost:11434/v1", allowsBaseURLEdit: true, requiresAPIKey: false),
 	]
 

@@ -51,7 +51,9 @@ struct ListeningView: View {
 					Text(
 						whisperKit.isWaitingForModel
 							? whisperKit.waitingForModelStatusText
-							: (whisperKit.isInitializing ? whisperKit.initializationStatus : "Loading model...")
+							: (whisperKit.isInitializing
+								? whisperKit.initializationStatus
+								: String(localized: "Loading model..."))
 					)
 						.font(.system(.caption, design: .rounded))
 						.foregroundColor(.secondary)
@@ -91,7 +93,7 @@ struct ListeningView: View {
 					.foregroundColor(.secondary)
 				}
 				.buttonStyle(.plain)
-				.help(audioManager.inputNotice ?? "Choose microphone")
+				.help(audioManager.inputNotice ?? String(localized: "Choose microphone"))
 
 				AudioMeterView(levels: audioManager.audioLevels)
 

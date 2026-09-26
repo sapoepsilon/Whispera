@@ -2,22 +2,28 @@ import SwiftUI
 
 extension SecureInputMonitor {
 	var holderDescription: String {
-		if let culprit { return "\(culprit.name) has turned on Secure Input" }
-		return "Another app has turned on Secure Input"
+		if let culprit { return String(localized: "\(culprit.name) has turned on Secure Input") }
+		return String(localized: "Another app has turned on Secure Input")
 	}
 
 	var fallbackDescription: String {
 		switch fallbackStatus {
 		case .active:
-			return "Your dictation shortcut still works through a fallback hotkey."
+			return String(localized: "Your dictation shortcut still works through a fallback hotkey.")
 		case .unavailable:
 			return
-				"Your dictation shortcut cannot be detected until it ends. Pick a shortcut without the Globe key or close the password field."
+				String(
+					localized:
+						"Your dictation shortcut cannot be detected until it ends. Pick a shortcut without the Globe key or close the password field."
+				)
 		case .disabledByUser:
 			return
-				"Your dictation shortcut cannot be detected until it ends. Turn on the fallback hotkey in Settings."
+				String(
+					localized:
+						"Your dictation shortcut cannot be detected until it ends. Turn on the fallback hotkey in Settings."
+				)
 		case .inactive:
-			return "Keyboard shortcuts may not be detected until it ends."
+			return String(localized: "Keyboard shortcuts may not be detected until it ends.")
 		}
 	}
 }

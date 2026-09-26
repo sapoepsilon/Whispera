@@ -67,7 +67,10 @@ struct ModelSelectionStepView: View {
 										} catch {
 											await MainActor.run {
 												errorMessage =
-													"Failed to load model: \(error.localizedDescription)"
+													String(
+														localized:
+															"Failed to load model: \(error.localizedDescription)"
+													)
 												showingError = true
 											}
 										}
@@ -133,7 +136,7 @@ struct ModelSelectionStepView: View {
 				errorMessage = nil
 			}
 		} message: {
-			Text(errorMessage ?? "An unknown error occurred")
+			Text(errorMessage ?? String(localized: "An unknown error occurred"))
 		}
 	}
 
@@ -151,16 +154,16 @@ struct ModelSelectionStepView: View {
 
 	private func getModelStatusText() -> String {
 		if isLoadingModels {
-			return "Loading models..."
+			return String(localized: "Loading models...")
 		} else if audioManager.whisperKitTranscriber.isModelLoading {
-			return "Loading \(selectedModel)..."
+			return String(localized: "Loading \(selectedModel)...")
 		}
 		return ""
 	}
 
 	private func getModelOptions() -> [(String, String)] {
 		if availableModels.isEmpty {
-			return [("loading", "Loading models...")]
+			return [("loading", String(localized: "Loading models..."))]
 		}
 
 		return availableModels.compactMap { model in
@@ -203,7 +206,8 @@ struct ModelSelectionStepView: View {
 			} catch {
 				await MainActor.run {
 					self.loadingError = error.localizedDescription
-					self.errorMessage = "Failed to load available models: \(error.localizedDescription)"
+					self.errorMessage = String(
+						localized: "Failed to load available models: \(error.localizedDescription)")
 					self.showingError = true
 					self.isLoadingModels = false
 					// Use fallback models
@@ -242,8 +246,10 @@ struct ModelSelectionStepView: View {
 				try await audioManager.whisperKitTranscriber.downloadModel(modelId)
 			} catch {
 				await MainActor.run {
-					loadingError = "Failed to download model: \(error.localizedDescription)"
-					errorMessage = "Failed to download model: \(error.localizedDescription)"
+					loadingError = String(
+						localized: "Failed to download model: \(error.localizedDescription)")
+					errorMessage = String(
+						localized: "Failed to download model: \(error.localizedDescription)")
 					showingError = true
 				}
 			}

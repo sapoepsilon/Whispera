@@ -83,14 +83,14 @@ struct KeyboardDiagnosticPanel: View {
 
 	private func statusRow(_ label: String, _ value: String) -> some View {
 		GridRow {
-			Text(label).foregroundColor(.secondary)
-			Text(value)
+			Text(LocalizedStringKey(label)).foregroundColor(.secondary)
+			Text(LocalizedStringKey(value))
 		}
 	}
 
 	private func countRow(_ label: String, _ value: Int) -> some View {
 		GridRow {
-			Text(label).foregroundColor(.secondary)
+			Text(LocalizedStringKey(label)).foregroundColor(.secondary)
 			Text("\(value)").monospacedDigit()
 		}
 	}

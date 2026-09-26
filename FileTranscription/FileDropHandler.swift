@@ -692,12 +692,12 @@ extension FileDropHandler {
 			// Always show optimistic message during drag
 			// We can't validate file types until drop actually happens
 			if draggedItemsCount == 1 {
-				return "Drop to transcribe"
+				return String(localized: "Drop to transcribe")
 			} else {
-				return "Drop \(draggedItemsCount) items to transcribe"
+				return String(localized: "Drop \(draggedItemsCount) items to transcribe")
 			}
 		} else {
-			return "Drop audio/video files or URLs here"
+			return String(localized: "Drop audio/video files or URLs here")
 		}
 	}
 

@@ -69,8 +69,8 @@ struct TestStepView: View {
 						Spacer()
 						Picker("Language", selection: $selectedLanguage) {
 							Text("Auto-detect").tag(Constants.autoDetectLanguageName)
-							ForEach(Constants.sortedLanguageNames, id: \.self) { language in
-								Text(language.capitalized).tag(language)
+							ForEach(Constants.localizedSortedLanguageNames(), id: \.self) { language in
+								Text(Constants.localizedLanguageName(for: language)).tag(language)
 							}
 						}
 						.frame(minWidth: 120)
@@ -172,7 +172,7 @@ struct TestStepView: View {
 							Image(systemName: "arrow.right.circle.fill")
 								.foregroundColor(.green)
 							Text(
-								"Translation Mode: \(selectedLanguage.capitalized) -> English"
+								"Translation Mode: \(Constants.localizedLanguageName(for: selectedLanguage)) -> English"
 							)
 							.font(.caption)
 							.foregroundColor(.green)
@@ -181,9 +181,11 @@ struct TestStepView: View {
 						HStack(spacing: 8) {
 							Image(systemName: "doc.text.fill")
 								.foregroundColor(.blue)
-							Text("Transcription Mode: \(selectedLanguage.capitalized)")
-								.font(.caption)
-								.foregroundColor(.blue)
+							Text(
+								"Transcription Mode: \(Constants.localizedLanguageName(for: selectedLanguage))"
+							)
+							.font(.caption)
+							.foregroundColor(.blue)
 						}
 					}
 				}

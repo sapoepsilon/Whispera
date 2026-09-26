@@ -98,22 +98,15 @@ extension PermissionManager {
 
 	/// Returns a user-friendly description of missing permissions
 	var missingPermissionsDescription: String {
-		var missing: [String] = []
-
-		if !microphonePermissionGranted {
-			missing.append("Microphone access")
-		}
-
-		if !accessibilityPermissionGranted {
-			missing.append("Accessibility access")
-		}
-
-		if missing.isEmpty {
-			return "All permissions granted"
-		} else if missing.count == 1 {
-			return "\(missing[0]) required"
-		} else {
-			return "\(missing.joined(separator: " and ")) required"
+		switch (microphonePermissionGranted, accessibilityPermissionGranted) {
+		case (true, true):
+			return String(localized: "All permissions granted")
+		case (false, true):
+			return String(localized: "Microphone access required")
+		case (true, false):
+			return String(localized: "Accessibility access required")
+		case (false, false):
+			return String(localized: "Microphone access and Accessibility access required")
 		}
 	}
 
