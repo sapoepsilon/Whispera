@@ -1158,7 +1158,8 @@ struct SettingsView: View {
 			}
 		}
 		.background(DebugModeShortcut())
-		.frame(maxWidth: 600)
+		// Wide enough for every tab: SwiftUI disables the toolbar overflow menu, so hidden tabs could not be opened
+		.frame(width: 880)
 		.onAppear {
 			loadAvailableModels()
 			checkLaunchAtStartupStatus()
