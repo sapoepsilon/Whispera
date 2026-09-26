@@ -82,6 +82,7 @@
 		D6AUDIN102F0000000000001 /* AudioInputSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN202F0000000000001 /* AudioInputSettingsView.swift */; };
 		D6AUDIN103F0000000000001 /* SystemOutputMuter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN203F0000000000001 /* SystemOutputMuter.swift */; };
 		D6AUDIN104F0000000000001 /* InputChannelSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN204F0000000000001 /* InputChannelSelection.swift */; };
+		D6AUDIN105F0000000000001 /* FeedbackSoundPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN205F0000000000001 /* FeedbackSoundPlayer.swift */; };
 		D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */; };
 		D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */; };
 /* End PBXBuildFile section */
@@ -181,6 +182,7 @@
 		D6AUDIN202F0000000000001 /* AudioInputSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioInputSettingsView.swift; sourceTree = "<group>"; };
 		D6AUDIN203F0000000000001 /* SystemOutputMuter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemOutputMuter.swift; sourceTree = "<group>"; };
 		D6AUDIN204F0000000000001 /* InputChannelSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputChannelSelection.swift; sourceTree = "<group>"; };
+		D6AUDIN205F0000000000001 /* FeedbackSoundPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackSoundPlayer.swift; sourceTree = "<group>"; };
 		D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
 		D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManagerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -381,6 +383,7 @@
 				D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */,
 				D6F9D7812ED6C31C00959822 /* AudioEngineController.swift */,
 				D6F9D7822ED6C31C00959822 /* AudioLevelMonitor.swift */,
+				D6AUDIN205F0000000000001 /* FeedbackSoundPlayer.swift */,
 				D6AUDIN204F0000000000001 /* InputChannelSelection.swift */,
 				D6AUDIN203F0000000000001 /* SystemOutputMuter.swift */,
 				D6AUDIN201F0000000000001 /* VoiceActivityTrimmer.swift */,
@@ -580,6 +583,7 @@
 				D63900D82E3D77EF005B5623 /* NetworkFileDownloader.swift in Sources */,
 				D63900DF2E3D8103005B5623 /* FileTranscriptionViewModel.swift in Sources */,
 				D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */,
+				D6AUDIN105F0000000000001 /* FeedbackSoundPlayer.swift in Sources */,
 				D6AUDIN104F0000000000001 /* InputChannelSelection.swift in Sources */,
 				D6AUDIN103F0000000000001 /* SystemOutputMuter.swift in Sources */,
 				D6AUDIN102F0000000000001 /* AudioInputSettingsView.swift in Sources */,

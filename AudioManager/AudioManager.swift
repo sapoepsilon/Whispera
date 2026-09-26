@@ -652,22 +652,10 @@ extension AudioManager {
 		SystemOutputMuter.shared.restore()
 	}
 	fileprivate func startSoundDuration() -> TimeInterval {
-		guard UserDefaults.standard.bool(forKey: "soundFeedback") else { return 0 }
-		let name = UserDefaults.standard.string(forKey: "startSound") ?? "Tink"
-		guard name != "None" else { return 0 }
-		return NSSound(named: name)?.duration ?? 0
+		FeedbackSoundPlayer.shared.duration(start: true)
 	}
 	fileprivate func playFeedbackSound(start: Bool) {
-		guard UserDefaults.standard.bool(forKey: "soundFeedback") else { return }
-
-		let soundName =
-			start
-			? UserDefaults.standard.string(forKey: "startSound") ?? "Tink"
-			: UserDefaults.standard.string(forKey: "stopSound") ?? "Pop"
-
-		guard soundName != "None" else { return }
-
-		NSSound(named: soundName)?.play()
+		FeedbackSoundPlayer.shared.play(start: start)
 	}
 	fileprivate func pasteToFocusedApp(_ text: String) {
 		let pasteboard = NSPasteboard.general

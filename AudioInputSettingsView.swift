@@ -103,3 +103,96 @@ struct VoiceActivitySettingsRows: View {
 		}
 	}
 }
+
+/// Extra rows under the start/stop sound pickers in Settings.
+struct FeedbackSoundSettingsRows: View {
+	@AppStorage(FeedbackSoundSettings.startSoundKey) private var startSound = "Tink"
+	@AppStorage(FeedbackSoundSettings.stopSoundKey) private var stopSound = "Pop"
+	@AppStorage(FeedbackSoundSettings.volumeKey) private var volume = FeedbackSoundSettings.defaultVolume
+	@AppStorage(FeedbackSoundSettings.outputDeviceKey) private var outputDeviceUID = FeedbackSoundSettings
+		.systemOutputUID
+	@AppStorage(FeedbackSoundSettings.customStartPathKey) private var customStartPath = ""
+	@AppStorage(FeedbackSoundSettings.customStopPathKey) private var customStopPath = ""
+	@State private var outputDevices: [AudioOutputDevice] = []
+	@State private var importError: String?
+
+	var body: some View {
+		if startSound == FeedbackSoundSettings.customSoundName {
+			customSoundRow(start: true)
+		}
+		if stopSound == FeedbackSoundSettings.customSoundName {
+			customSoundRow(start: false)
+		}
+
+		SettingRow("Sound Volume") {
+			Slider(value: $volume, in: 0...1) { editing in
+				if !editing { FeedbackSoundPlayer.shared.play(start: true) }
+			}
+			.frame(width: 180)
+		}
+
+		SettingRow("Sound Output", description: "Where start and stop sounds play") {
+			Picker("", selection: $outputDeviceUID) {
+				Text("System Output").tag(FeedbackSoundSettings.systemOutputUID)
+				ForEach(outputDevices) { device in
+					Text(device.name).tag(device.uid)
+				}
+				if outputDeviceUID != FeedbackSoundSettings.systemOutputUID,
+					!outputDevices.contains(where: { $0.uid == outputDeviceUID })
+				{
+					Text("Unavailable device").tag(outputDeviceUID)
+				}
+			}
+			.labelsHidden()
+			.frame(width: 180)
+			.onChange(of: outputDeviceUID) {
+				FeedbackSoundPlayer.shared.play(start: true)
+			}
+		}
+		.onAppear { outputDevices = AudioOutputDeviceCatalog.outputDevices() }
+		.onReceive(NotificationCenter.default.publisher(for: .audioDevicesChanged)) { _ in
+			outputDevices = AudioOutputDeviceCatalog.outputDevices()
+		}
+		.alert(
+			"Couldn't Use Sound File",
+			isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } }),
+			presenting: importError
+		) { _ in
+			Button("OK", role: .cancel) {}
+		} message: { message in
+			Text(message)
+		}
+	}
+
+	private func customSoundRow(start: Bool) -> some View {
+		let path = start ? customStartPath : customStopPath
+		return SettingRow(
+			start ? "Custom Start Sound" : "Custom Stop Sound",
+			description: path.isEmpty ? "No file chosen" : URL(fileURLWithPath: path).lastPathComponent
+		) {
+			Button("Choose File...") { chooseSound(start: start) }
+				.buttonStyle(.bordered)
+		}
+	}
+
+	private func chooseSound(start: Bool) {
+		let panel = NSOpenPanel()
+		panel.allowedContentTypes = [.audio]
+		panel.allowsMultipleSelection = false
+		panel.canChooseDirectories = false
+		guard panel.runModal() == .OK, let url = panel.url else { return }
+
+		do {
+			let imported = try FeedbackSoundPlayer.importCustomSound(from: url, start: start)
+			let previous = start ? customStartPath : customStopPath
+			if start { customStartPath = imported.path } else { customStopPath = imported.path }
+			if !previous.isEmpty, previous != imported.path {
+				try? FileManager.default.removeItem(atPath: previous)
+			}
+			FeedbackSoundPlayer.shared.play(start: start)
+		} catch {
+			AppLogger.shared.audioManager.error("Failed to import custom sound: \(error)")
+			importError = "\(url.lastPathComponent) could not be played as a sound."
+		}
+	}
+}
