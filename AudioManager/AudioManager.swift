@@ -39,6 +39,12 @@ enum InputLossResponse: Equatable {
 		return path == .file ? .finishRecording : .followFallbackInput
 	}
 
+	/// The pill is the only place the notice shows during a text recording; live mode has no pill
+	/// and no session result to carry it.
+	static func fallbackNoticeNeedsNotification(isLive: Bool, overlay: RecordingOverlayStyle) -> Bool {
+		isLive || overlay != .pill
+	}
+
 	static func fallbackNotice(lostDevice name: String) -> String {
 		String(localized: "\(name) disconnected. Using the system default microphone.")
 	}
@@ -90,14 +96,23 @@ final class AudioManager: NSObject {
 	}
 	var lastTranscription: String?
 	var transcriptionError: String? {
-		didSet { transcriptionErrorIsNotice = transcriptionError != nil && isPostingNotice }
+		didSet {
+			transcriptionErrorIsNotice = transcriptionError != nil && isPostingNotice
+			transcriptionErrorNotifiesWhenHidden =
+				transcriptionError != nil && (!isPostingNotice || isPostingNotifyingNotice)
+		}
 	}
 	/// True when `transcriptionError` is routine information (no speech heard, a recording that
 	/// stopped early, Secure Input skipping post-processing) rather than a failure needing the user,
 	/// so it is shown in the menu bar without a system notification.
 	private(set) var transcriptionErrorIsNotice = false
+	/// Failures always raise a system notification when the menu bar is closed; notices only when
+	/// nothing else on screen could have shown them.
+	private(set) var transcriptionErrorNotifiesWhenHidden = false
 	@ObservationIgnored
 	private var isPostingNotice = false
+	@ObservationIgnored
+	private var isPostingNotifyingNotice = false
 	/// Shown on the listening pill when the recording had to change microphones.
 	var inputNotice: String?
 	var currentRecordingMode: RecordingMode = .text
@@ -158,6 +173,8 @@ final class AudioManager: NSObject {
 	private var audioFileURL: URL?
 	@ObservationIgnored
 	private var fileCaptureChannel = InputChannelSelection.mixAllChannels
+	@ObservationIgnored
+	private var fileSegments = FileRecordingSegments()
 	@ObservationIgnored
 	private let captureBuffer = StreamCaptureBuffer()
 	@ObservationIgnored
@@ -334,6 +351,7 @@ final class AudioManager: NSObject {
 					try? FileManager.default.removeItem(at: audioFileURL)
 				}
 				audioFileURL = nil
+				FileRecordingSegments.removeFiles(of: fileSegments.takeAll(current: nil))
 			case .stream:
 				captureBuffer.discard()
 				releaseStreamingEngine()
@@ -374,9 +392,13 @@ final class AudioManager: NSObject {
 		}
 	}
 
-	func postNotice(_ notice: String) {
+	func postNotice(_ notice: String, notifyWhenHidden: Bool = false) {
 		isPostingNotice = true
-		defer { isPostingNotice = false }
+		isPostingNotifyingNotice = notifyWhenHidden
+		defer {
+			isPostingNotice = false
+			isPostingNotifyingNotice = false
+		}
 		transcriptionError = notice
 	}
 
@@ -413,10 +435,13 @@ final class AudioManager: NSObject {
 		deviceManager.beginFallbackToSystemDefault()
 		let notice = InputLossResponse.fallbackNotice(lostDevice: name)
 		inputNotice = notice
-		// The pill tooltip is invisible with the Minimal or None overlay, so the notice is also
-		// posted: live mode has no session result to carry it, the other paths show it with the text
-		if activeCapturePath == .live {
-			postNotice(notice)
+		// Only the pill shows the notice while recording, so without it the user hears about the
+		// switch now, as a system notification when the menu bar is closed; with the pill it comes
+		// with the text
+		if InputLossResponse.fallbackNoticeNeedsNotification(
+			isLive: activeCapturePath == .live, overlay: RecordingOverlayStyle.stored())
+		{
+			postNotice(notice, notifyWhenHidden: true)
 		} else if pendingStopNotice == nil {
 			pendingStopNotice = notice
 		}
@@ -485,6 +510,26 @@ final class AudioManager: NSObject {
 					guard !Task.isCancelled, isCurrentCapture(session) else { return }
 					AppLogger.shared.audioManager.error("Failed to switch device: \(error)")
 					// The audio captured before the switch is still worth transcribing
+					deviceActivationTask = nil
+					finishInterruptedRecording(
+						notice: String(
+							localized: "The microphone stopped working, so the recording was stopped early. What was captured was transcribed."
+						))
+					return
+				}
+			} else if activeCapturePath == .file {
+				// AVAudioRecorder cannot move to another input: finish this part of the file and
+				// record the next one on the new microphone; stopping joins the parts
+				finishCurrentFileSegment()
+				deviceManager.restoreSystemDefault()
+				await deviceManager.activateSelectedDevice()
+				guard !Task.isCancelled, isCurrentCapture(session) else { return }
+				do {
+					try openFileRecorder()
+					isMicrophoneInitializing = false
+					AppLogger.shared.audioManager.info("Switched input device while recording to a file")
+				} catch {
+					AppLogger.shared.audioManager.error("Failed to reopen the recording on the new device: \(error)")
 					deviceActivationTask = nil
 					finishInterruptedRecording(
 						notice: String(
@@ -598,34 +643,8 @@ extension AudioManager {
 			await deviceManager.activateSelectedDevice()
 			guard !Task.isCancelled, isCurrentCapture(session) else { return }
 
-			let appSupportPath = getApplicationSupportDirectory()
-			let audioFilename =
-				appSupportPath
-				.appendingPathComponent("recordings")
-				.appendingPathComponent("recording_\(Date().timeIntervalSince1970).wav")
-			audioFileURL = audioFilename
-
-			try? FileManager.default.createDirectory(
-				at: audioFilename.deletingLastPathComponent(),
-				withIntermediateDirectories: true
-			)
-
-			let selectedChannel = InputChannelSelection.stored(in: .standard)
-			let recordedChannels = InputChannelSelection.fileRecordingChannelCount(
-				selected: selectedChannel, deviceChannels: deviceManager.effectiveInputChannelCount)
-			fileCaptureChannel = recordedChannels > 1 ? selectedChannel : InputChannelSelection.mixAllChannels
-
-			let settings: [String: Any] = [
-				AVFormatIDKey: Int(kAudioFormatLinearPCM),
-				AVSampleRateKey: 16000.0,
-				AVNumberOfChannelsKey: recordedChannels,
-				AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-			]
-
 			do {
-				audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
-				audioRecorder?.isMeteringEnabled = true
-				audioRecorder?.record()
+				try openFileRecorder()
 				isMicrophoneInitializing = false
 				isRecording = true
 				timer.start()
@@ -648,6 +667,45 @@ extension AudioManager {
 			}
 		}
 	}
+	/// Opens a new recording file on the current system input.
+	private func openFileRecorder() throws {
+		let audioFilename = getApplicationSupportDirectory()
+			.appendingPathComponent("recordings")
+			.appendingPathComponent("recording_\(Date().timeIntervalSince1970)_\(UUID().uuidString.prefix(8)).wav")
+		try? FileManager.default.createDirectory(
+			at: audioFilename.deletingLastPathComponent(),
+			withIntermediateDirectories: true
+		)
+
+		let selectedChannel = InputChannelSelection.stored(in: .standard)
+		let recordedChannels = InputChannelSelection.fileRecordingChannelCount(
+			selected: selectedChannel, deviceChannels: deviceManager.effectiveInputChannelCount)
+		let channel = recordedChannels > 1 ? selectedChannel : InputChannelSelection.mixAllChannels
+
+		let settings: [String: Any] = [
+			AVFormatIDKey: Int(kAudioFormatLinearPCM),
+			AVSampleRateKey: 16000.0,
+			AVNumberOfChannelsKey: recordedChannels,
+			AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+		]
+		let recorder = try AVAudioRecorder(url: audioFilename, settings: settings)
+		recorder.isMeteringEnabled = true
+		recorder.record()
+		audioRecorder = recorder
+		audioFileURL = audioFilename
+		fileCaptureChannel = channel
+	}
+
+	/// Closes the file being recorded and keeps it as a finished part of this recording.
+	private func finishCurrentFileSegment() {
+		audioRecorder?.stop()
+		audioRecorder = nil
+		if let audioFileURL {
+			fileSegments.finish(.init(url: audioFileURL, channel: fileCaptureChannel))
+		}
+		audioFileURL = nil
+	}
+
 	fileprivate func stopFileBasedRecording() {
 		abortDeviceActivation()
 		stopMeteringTimer()
@@ -661,16 +719,24 @@ extension AudioManager {
 		deviceManager.endRecordingSession()
 
 		activeCapturePath = nil
-		if let audioFileURL, let session = ledger.finishCapture() {
+		let segments = fileSegments.takeAll(
+			current: audioFileURL.map { .init(url: $0, channel: fileCaptureChannel) })
+		if !segments.isEmpty, let session = ledger.finishCapture() {
 			attachStopNotice(to: session)
 			let translate = enableTranslation
-			let channel = fileCaptureChannel
 			startTranscription(session) { manager in
-				await manager.transcribeAudio(
-					fileURL: audioFileURL, channel: channel, enableTranslation: translate, session: session)
+				if segments.count == 1, let only = segments.first {
+					await manager.transcribeAudio(
+						fileURL: only.url, channel: only.channel, enableTranslation: translate, session: session)
+				} else {
+					await manager.transcribeAudio(segments: segments, enableTranslation: translate, session: session)
+				}
 			}
-		} else if let dropped = ledger.dropCapture() {
-			releaseModel(for: dropped.id)
+		} else {
+			FileRecordingSegments.removeFiles(of: segments)
+			if let dropped = ledger.dropCapture() {
+				releaseModel(for: dropped.id)
+			}
 		}
 		audioFileURL = nil
 
@@ -1260,6 +1326,24 @@ extension AudioManager {
 		await runTranscription(session: session, historyAudio: .samples(audioArray, sampleRate: 16000)) {
 			try await self.whisperKitTranscriber.transcribeAudioArray(
 				audioArray, enableTranslation: enableTranslation)
+		}
+	}
+
+	/// A file recording that changed microphones part way through: its parts are joined first.
+	fileprivate func transcribeAudio(
+		segments: [FileRecordingSegments.Segment], enableTranslation: Bool, session: DictationSession
+	) async {
+		let joined = await Task.detached(priority: .userInitiated) {
+			Result { try FileRecordingSegments.loadJoined(segments) }
+		}.value
+		FileRecordingSegments.removeFiles(of: segments)
+		switch joined {
+		case .success(let samples):
+			await transcribeAudioBuffer(audioArray: samples, enableTranslation: enableTranslation, session: session)
+		case .failure(let error):
+			await runTranscription(session: session, historyAudio: .samples([], sampleRate: 16000)) {
+				throw error
+			}
 		}
 	}
 

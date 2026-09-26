@@ -86,9 +86,9 @@ struct MenuBarView: View {
 		.onAppear { registerOpenSettings { openSettings() } }
 		.onChange(of: audioManager.transcriptionError) { _, newValue in
 			if let error = newValue {
-				// Routine notices stay in the menu bar; only failures that need the user notify
+				// Routine notices stay in the menu bar; failures, and notices nothing else showed, notify
 				toastCenter.show(
-					error, type: .error, notifyWhenHidden: !audioManager.transcriptionErrorIsNotice)
+					error, type: .error, notifyWhenHidden: audioManager.transcriptionErrorNotifiesWhenHidden)
 			}
 		}
 		.onDrop(
