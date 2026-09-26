@@ -416,6 +416,8 @@ class UpdateManager: NSObject {
 
 	@MainActor
 	private func showInstallUpdateNotification(dmgPath: String) {
+		// A modal alert would block a hosted test run forever
+		guard !AppDelegate.isRunningAsTestHost else { return }
 		let alert = NSAlert()
 		alert.messageText = "Update Downloaded"
 		alert.informativeText =
