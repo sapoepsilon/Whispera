@@ -7,9 +7,9 @@ Releases are cut by `.github/workflows/release.yml`. Push a `vX.Y.Z` tag (or run
 1. runs `scripts/bump-version.sh X.Y.Z` on the runner, so the tag is the source of truth for the version,
 2. builds, signs and notarizes via `scripts/release-distribute-ci.sh`, which also writes `appcast.xml`,
 3. publishes the GitHub release with `Whispera.dmg`, `Whispera-X.Y.Z.dmg` and `Whispera.app.zip`,
-4. commits `appcast.xml` and `Casks/whispera.rb` to `main`, the cask bumped by `scripts/update-cask.sh X.Y.Z dist/Whispera-X.Y.Z.dmg`.
+4. commits `appcast.xml` to `main`, then bumps `Casks/whispera.rb` on `main` with `scripts/update-cask.sh X.Y.Z dist/Whispera-X.Y.Z.dmg` in a separate step, so a cask failure never holds back the Sparkle appcast.
 
-Keep `MARKETING_VERSION` / `CFBundleShortVersionString` in the tree at the latest released version (`./scripts/bump-version.sh X.Y.Z --commit`) so local builds report the same version as the cask and the appcast.
+Keep `MARKETING_VERSION` / `CFBundleShortVersionString` and `CURRENT_PROJECT_VERSION` / `CFBundleVersion` in the tree at the latest released version and build (the workflow uses the run number as the build, which the appcast records as `sparkle:version`), so local builds report the same version as the cask and Sparkle does not offer them the release they already are. `./scripts/bump-version.sh X.Y.Z --commit` bumps both.
 
 The manual path below (`release-distribute.sh`) builds and notarizes a DMG locally; after uploading it to a GitHub release, run `./scripts/update-cask.sh X.Y.Z` and commit the cask yourself.
 
@@ -61,6 +61,12 @@ This script will:
 - `release-distribute-ci.sh` - Env-driven variant used by the release workflow
 - `update-cask.sh` - Bumps `Casks/whispera.rb` to a released version
 - `ExportOptions-dev.plist` - Export configuration
+- `release-notes.sh` - Writes the GitHub release body that What's New shows
+
+## Release notes
+
+The GitHub release body is what the app shows in What's New after an update, so it is written for users. Put curated notes in `release-notes/vX.Y.Z.md` before tagging; `scripts/release-notes.sh X.Y.Z` (run by the release workflow) uses that file as the "What's New" section and adds the download and system requirement sections. Without the file it falls back to the `feat`, `fix` and `perf` commit subjects since the previous tag, skipping merges and developer-only scopes.
+
 ## Homebrew Cask
 
 `Casks/whispera.rb` is served straight from this repository, which doubles as a tap:

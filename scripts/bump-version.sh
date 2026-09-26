@@ -90,6 +90,6 @@ git diff "$INFO_PLIST" | grep -E "(CFBundleShortVersionString|CFBundleVersion)" 
 if [ "${2:-}" == "--commit" ]; then
     echo "📝 Committing version bump..."
     git add "$PROJECT_FILE" "$INFO_PLIST"
-    git commit -m "bump: version $VERSION (build $BUILD_NUMBER)"
+    git commit -m "chore(release): bump version to $VERSION (build $BUILD_NUMBER)"
     echo "✅ Version bump committed"
 fi
