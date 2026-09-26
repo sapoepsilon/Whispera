@@ -180,3 +180,48 @@ extension TextProcessingWhisperKitTests {
 		#expect(processed.localizedCaseInsensitiveContains("email"))
 	}
 }
+
+@MainActor
+struct CustomWordsModelTests {
+	private func makeDefaults(_ name: String = #function) -> (UserDefaults, String) {
+		let suite = "CustomWordsModelTests.\(name).\(UUID().uuidString)"
+		let defaults = UserDefaults(suiteName: suite)!
+		defaults.removePersistentDomain(forName: suite)
+		return (defaults, suite)
+	}
+
+	@Test func wordsAddedElsewhereWhileSettingsIsOpenSurviveALocalAdd() {
+		let (defaults, suite) = makeDefaults()
+		defer { defaults.removePersistentDomain(forName: suite) }
+		TextProcessingSettings.setCustomWords(["Grafana"], in: defaults)
+		let model = CustomWordsModel(defaults: defaults)
+
+		TextProcessingSettings.addCustomWords(["Kubernetes"], in: defaults)
+		#expect(model.words == ["Grafana", "Kubernetes"])
+
+		model.add("Whispera, grafana")
+		#expect(TextProcessingSettings.customWords(from: defaults) == ["Grafana", "Kubernetes", "Whispera"])
+		#expect(model.words == ["Grafana", "Kubernetes", "Whispera"])
+	}
+
+	@Test func removingAWordKeepsWordsAddedElsewhere() {
+		let (defaults, suite) = makeDefaults()
+		defer { defaults.removePersistentDomain(forName: suite) }
+		TextProcessingSettings.setCustomWords(["Grafana", "Loki"], in: defaults)
+		let model = CustomWordsModel(defaults: defaults)
+
+		TextProcessingSettings.addCustomWords(["Kubernetes"], in: defaults)
+		model.remove("Loki")
+		#expect(TextProcessingSettings.customWords(from: defaults) == ["Grafana", "Kubernetes"])
+		#expect(model.words == ["Grafana", "Kubernetes"])
+	}
+
+	@Test func addReportsOnlyNewWords() {
+		let (defaults, suite) = makeDefaults()
+		defer { defaults.removePersistentDomain(forName: suite) }
+		TextProcessingSettings.setCustomWords(["Grafana"], in: defaults)
+		#expect(TextProcessingSettings.addCustomWords(["grafana", " Loki ", "loki"], in: defaults) == ["Loki"])
+		#expect(TextProcessingSettings.addCustomWords(["GRAFANA"], in: defaults).isEmpty)
+		#expect(TextProcessingSettings.customWords(from: defaults) == ["Grafana", "Loki"])
+	}
+}

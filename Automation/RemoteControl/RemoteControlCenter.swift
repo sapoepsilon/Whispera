@@ -234,11 +234,8 @@ final class RemoteControlCenter: NSObject {
 				"Give up to \(RemoteCommand.maxWordsPerCommand) comma-separated words of at most \(RemoteCommand.maxWordLength) characters"
 			)
 		}
-		let existing = TextProcessingSettings.customWords(from: defaults)
-		let known = Set(existing.map { $0.lowercased() })
-		let added = words.filter { !known.contains($0.lowercased()) }
+		let added = TextProcessingSettings.addCustomWords(words, in: defaults)
 		guard !added.isEmpty else { return .ignored("Already in the dictionary") }
-		TextProcessingSettings.setCustomWords(existing + added, in: defaults)
 		logger.info("Added \(added.count) word(s) to the custom dictionary")
 		return .performed
 	}

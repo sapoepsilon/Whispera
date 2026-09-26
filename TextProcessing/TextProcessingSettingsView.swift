@@ -9,7 +9,7 @@ struct TextProcessingSettingsSection: View {
 	@AppStorage(TextProcessingSettings.Keys.chineseScriptConversion) private var chineseScriptRaw =
 		ChineseScriptPreference.unchanged.rawValue
 
-	@State private var customWords: [String] = TextProcessingSettings.customWords()
+	@State private var customWords = CustomWordsModel()
 	@State private var newCustomWord = ""
 	@State private var customFillerWordsText = TextProcessingSettings.customFillerWords().joined(
 		separator: ", ")
@@ -31,8 +31,8 @@ struct TextProcessingSettingsSection: View {
 				}
 			}
 
-			if !customWords.isEmpty {
-				FlowingWordList(words: customWords, onRemove: removeCustomWord)
+			if !customWords.words.isEmpty {
+				FlowingWordList(words: customWords.words, onRemove: removeCustomWord)
 			}
 
 			SettingRow(
@@ -98,22 +98,53 @@ struct TextProcessingSettingsSection: View {
 	}
 
 	private func addCustomWord() {
-		let additions = TextProcessingSettings.parseList(newCustomWord)
-		guard !additions.isEmpty else { return }
-		customWords = TextProcessingSettings.sanitizedList(customWords + additions)
-		TextProcessingSettings.setCustomWords(customWords)
+		guard !TextProcessingSettings.parseList(newCustomWord).isEmpty else { return }
+		customWords.add(newCustomWord)
 		newCustomWord = ""
 		refreshDecodingOptions()
 	}
 
 	private func removeCustomWord(_ word: String) {
-		customWords.removeAll { $0 == word }
-		TextProcessingSettings.setCustomWords(customWords)
+		customWords.remove(word)
 		refreshDecodingOptions()
 	}
 
 	private func refreshDecodingOptions() {
 		WhisperKitTranscriber.shared.refreshDecodingOptions()
+	}
+}
+
+/// The Custom Words list shown in Settings. It follows the stored list instead of caching it,
+/// because links, the CLI, Raycast and the App Intent add words while Settings stays open.
+@MainActor
+@Observable
+final class CustomWordsModel {
+	private(set) var words: [String]
+	@ObservationIgnored private let defaults: UserDefaults
+	@ObservationIgnored private var observer: DefaultsKeyObserver?
+
+	init(defaults: UserDefaults = .standard) {
+		self.defaults = defaults
+		words = TextProcessingSettings.customWords(from: defaults)
+		observer = DefaultsKeyObserver(defaults: defaults, keys: [TextProcessingSettings.Keys.customWords]) {
+			[weak self] in
+			self?.reload()
+		}
+	}
+
+	func add(_ input: String) {
+		TextProcessingSettings.addCustomWords(TextProcessingSettings.parseList(input), in: defaults)
+		reload()
+	}
+
+	func remove(_ word: String) {
+		TextProcessingSettings.removeCustomWord(word, in: defaults)
+		reload()
+	}
+
+	func reload() {
+		let stored = TextProcessingSettings.customWords(from: defaults)
+		if stored != words { words = stored }
 	}
 }
 

@@ -38,6 +38,24 @@ enum TextProcessingSettings {
 		defaults.set(sanitizedList(words), forKey: Keys.customWords)
 	}
 
+	/// Adds to whatever is stored right now rather than to a cached copy, so words added
+	/// meanwhile from a link, the CLI, Raycast or an intent survive. Returns the words that
+	/// were new.
+	@discardableResult
+	static func addCustomWords(_ words: [String], in defaults: UserDefaults = .standard) -> [String] {
+		let existing = customWords(from: defaults)
+		let known = Set(existing.map { $0.lowercased() })
+		let added = sanitizedList(words).filter { !known.contains($0.lowercased()) }
+		if !added.isEmpty {
+			setCustomWords(existing + added, in: defaults)
+		}
+		return added
+	}
+
+	static func removeCustomWord(_ word: String, in defaults: UserDefaults = .standard) {
+		setCustomWords(customWords(from: defaults).filter { $0 != word }, in: defaults)
+	}
+
 	static func customFillerWords(from defaults: UserDefaults = .standard) -> [String] {
 		defaults.stringArray(forKey: Keys.customFillerWords) ?? []
 	}
