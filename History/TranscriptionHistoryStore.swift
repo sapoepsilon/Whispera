@@ -305,7 +305,12 @@ final class TranscriptionHistoryStore {
 			if isEnabled { pendingOptOutPurge = nil }
 			return
 		}
-		guard !entries.isEmpty else { return }
+		guard !entries.isEmpty else {
+			// Nothing to ask about: Whispera cannot read or show what is set aside, and the user
+			// has just said they want no history kept
+			removeQuarantinedStores(olderThan: nil)
+			return
+		}
 		pendingOptOutPurge = entries.count
 		if visibleViews == 0 {
 			presentOptOutPrompt()
@@ -461,8 +466,8 @@ final class TranscriptionHistoryStore {
 	func applyRetention(userInitiated: Bool = true) {
 		guard context != nil else { return }
 		let settings = self.settings
-		if let maxAge = settings.retention.maxAge {
-			removeQuarantinedStores(olderThan: now().addingTimeInterval(-maxAge))
+		if let cutoff = Self.quarantineCutoff(settings: settings, liveEntryCount: entries.count, now: now()) {
+			removeQuarantinedStores(olderThan: cutoff)
 		}
 		let doomed = idsToDelete(period: settings.retention, limit: settings.limit)
 		guard !doomed.isEmpty else { return }
@@ -477,6 +482,19 @@ final class TranscriptionHistoryStore {
 			}
 		}
 		AppLogger.shared.database.info("History retention removed \(doomed.count) entries")
+	}
+
+	/// When retention should drop databases set aside as unreadable, or nil to keep them. Every
+	/// dictation in one is older than the live history, so with count-only retention they go once
+	/// the live history is full: the newest `limit` entries are all newer than them.
+	nonisolated static func quarantineCutoff(settings: HistorySettings, liveEntryCount: Int, now: Date) -> Date? {
+		if let maxAge = settings.retention.maxAge {
+			return now.addingTimeInterval(-maxAge)
+		}
+		if settings.retention == .preserveLimit, liveEntryCount >= settings.limit {
+			return .distantFuture
+		}
+		return nil
 	}
 
 	/// Databases moved aside as unreadable still hold old dictations. With `cutoff` nil every one
