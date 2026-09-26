@@ -81,6 +81,32 @@ struct LiveSegmentConfirmationTests {
 		#expect(!confirmed.lowercased().contains("basically"))
 		#expect(!confirmed.lowercased().contains("um"))
 	}
+
+	/// Stopping commits the held-back tail after the confirmed text, so the tracker types only
+	/// the tail. A long session keeps each sentence once.
+	@Test func stopAppendsTheHeldBackTailOnce() {
+		let process = fillerProcessor([])
+		let segments = [" One.", " Two.", " Three.", " Four.", " Five."]
+		let result = WhisperKitTranscriber.confirmLiveSegments(segments, alreadyConfirmed: 0, process: process)
+		let confirmed = WhisperKitTranscriber.appendingConfirmed(result.confirmedAddition, to: "")
+		let final = WhisperKitTranscriber.committingLiveTail(process(result.pendingText), to: confirmed)
+		#expect(final.hasPrefix(confirmed))
+		#expect(final == "One. Two. Three. Four. Five.")
+	}
+
+	/// A single-segment session is all tail: stopping commits the whole sentence, not the
+	/// partial text the decoder reported mid-decode.
+	@Test func stopCommitsASingleSegmentSessionWhole() {
+		let process = fillerProcessor([])
+		let result = WhisperKitTranscriber.confirmLiveSegments(
+			[" The quick brown fox jumps over the lazy dog."], alreadyConfirmed: 0, process: process)
+		let final = WhisperKitTranscriber.committingLiveTail(process(result.pendingText), to: "")
+		#expect(final == "The quick brown fox jumps over the lazy dog.")
+	}
+
+	@Test func stopWithNothingPendingKeepsConfirmedText() {
+		#expect(WhisperKitTranscriber.committingLiveTail("", to: "Already typed.") == "Already typed.")
+	}
 }
 
 struct LiveVoiceActivityTests {

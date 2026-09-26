@@ -40,6 +40,10 @@ import WhisperKit
 		}
 	}
 	private var pendingText: String = ""  // Internal working property
+	/// The held-back segments of the newest finished decode. pendingText is also overwritten by
+	/// the decoder's progress callback with the partial text of the whole window, so the stop
+	/// path commits this instead.
+	private var livePendingTail: String = ""
 	var stableDisplayText: String = ""  // UI-facing stable property
 	private var lastDisplayedPendingText: String = ""
 	var shouldShowDebugWindow: Bool = false
@@ -55,6 +59,7 @@ import WhisperKit
 		isWaitingForModel = false
 		waitingForModelStatusText = ""
 		pendingText = ""
+		livePendingTail = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
 		shouldShowLiveTranscriptionWindow = false
@@ -274,9 +279,8 @@ import WhisperKit
 		stableDisplayText = text
 		lastDisplayedPendingText = text
 
-		// pendingText can hold the whole window decoded so far (including segments already
-		// confirmed), so confirmedText is replaced and DictationWordTracker types only the new suffix
-		confirmedText = text
+		// DictationWordTracker types only what extends the text it already typed
+		confirmedText = Self.committingLiveTail(text, to: confirmedText)
 	}
 
 	private var selectedLanguage: String {
@@ -669,6 +673,7 @@ import WhisperKit
 				isTranscribing = true
 				isLiveTranscriptionMode = true
 				lastConfirmedSegmentCount = 0
+				livePendingTail = ""
 				liveDetectedLanguage = nil
 
 				await AudioDeviceManager.shared.activateSelectedDevice()
@@ -758,7 +763,7 @@ import WhisperKit
 
 	func stopLiveStream() {
 		let wasLive = isLiveTranscriptionMode
-		let finalPendingText = wasLive ? processLiveText(pendingText) : ""
+		let finalPendingText = wasLive ? processLiveText(livePendingTail) : ""
 		let fallbackSessionText = Self.liveSessionText(confirmed: confirmedText, pending: finalPendingText)
 		// A long session is tens of MB of samples, so they are copied only when history keeps them.
 		let keepsAudio = wasLive && HistorySettings(defaults: .standard).keepsAudio
@@ -775,6 +780,7 @@ import WhisperKit
 		AudioDeviceManager.shared.restoreSystemDefault()
 
 		confirmPendingText(finalPendingText)
+		livePendingTail = ""
 		if wasLive {
 			// What the tracker typed is exactly what reached the focused app
 			let typedText = dictationWordTracker?.typedText ?? ""
@@ -852,6 +858,13 @@ import WhisperKit
 			pendingText: pendingText)
 	}
 
+	/// What stopping a live session leaves in confirmedText: the processed held-back tail
+	/// appended to what was already typed. The decoder's progress text (a partial decode of the
+	/// whole window) is never committed, or the tracker would retype or truncate the session.
+	nonisolated static func committingLiveTail(_ processedTail: String, to confirmed: String) -> String {
+		processedTail.isEmpty ? confirmed : appendingConfirmed(processedTail, to: confirmed)
+	}
+
 	nonisolated static func appendingConfirmed(_ addition: String, to confirmed: String) -> String {
 		confirmed.isEmpty ? addition : confirmed + " " + addition
 	}
@@ -890,6 +903,7 @@ import WhisperKit
 		AudioDeviceManager.shared.restoreSystemDefault()
 
 		pendingText = ""
+		livePendingTail = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
 		lastLiveSession = (text: "", samples: [])
@@ -992,6 +1006,7 @@ import WhisperKit
 
 			// Always update internal pendingText for logic
 			pendingText = confirmation.pendingText
+			livePendingTail = confirmation.pendingText
 
 			// Only update UI-facing property if text has changed meaningfully
 			if shouldUpdatePendingText(newText: confirmation.pendingText) {
