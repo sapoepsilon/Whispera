@@ -526,9 +526,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		)
 
 		let hostingController = NSHostingController(rootView: onboardingView)
+		// The window is sized to the screen below; the view must not push its ideal height back
+		hostingController.sizingOptions = []
 
 		onboardingWindow = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
+			contentRect: NSRect(
+				x: 0, y: 0, width: OnboardingWindowSize.width, height: OnboardingWindowSize.preferredHeight),
 			styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
 			backing: .buffered,
 			defer: false
@@ -540,6 +543,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		onboardingWindow?.backgroundColor = .clear
 		onboardingWindow?.contentViewController = hostingController
 		onboardingWindow?.center()
+		if let window = onboardingWindow, let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+			let chrome = window.frame.height - window.contentRect(forFrameRect: window.frame).height
+			let height = OnboardingWindowSize.contentHeight(availableHeight: visible.height - chrome)
+			window.setContentSize(NSSize(width: OnboardingWindowSize.width, height: height))
+			window.setFrameOrigin(OnboardingWindowSize.origin(for: window.frame.size, in: visible))
+		}
 		onboardingWindow?.makeKeyAndOrderFront(nil)
 
 		NSApp.setActivationPolicy(.regular)

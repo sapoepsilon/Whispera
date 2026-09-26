@@ -12,7 +12,8 @@ struct SetupStepView: View {
 	@State private var errorMessage: String?
 	@State private var showingError = false
 	@State private var showingShortcutCapture = false
-	@State private var fileSelectionShortcut = "⌃F"
+	// Read and written straight through, so the shortcut recorded here is the one the app uses
+	@AppStorage(ShortcutDefaults.fileSelectionKey) private var fileSelectionShortcut = ShortcutDefaults.fileSelection
 	@State private var showingFileShortcutCapture = false
 
 	var body: some View {
