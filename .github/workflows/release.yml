@@ -143,15 +143,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish appcast.xml to main
+      - name: Publish appcast.xml and Homebrew cask to main
         if: success()
         run: |
           set -e
 
-          if [ ! -f appcast.xml ]; then
-            echo "⚠️ appcast.xml not found, skipping publish"
-            exit 0
-          fi
+          VERSION="${{ steps.version.outputs.version }}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -162,17 +159,24 @@ jobs:
           rm -rf main-worktree
           git worktree add --detach main-worktree origin/main
 
-          cp appcast.xml main-worktree/appcast.xml
+          if [ -f appcast.xml ]; then
+            cp appcast.xml main-worktree/appcast.xml
+          else
+            echo "⚠️ appcast.xml not found, publishing the cask only"
+          fi
+
+          CASK_PATH="main-worktree/Casks/whispera.rb" CASK_SKIP_STYLE=1 \
+            ./scripts/update-cask.sh "$VERSION" "dist/Whispera-$VERSION.dmg"
 
           cd main-worktree
 
-          git add appcast.xml
+          git add appcast.xml Casks/whispera.rb
           if git diff --staged --quiet; then
-            echo "No changes to appcast.xml"
+            echo "No changes to appcast.xml or the cask"
             exit 0
           fi
 
-          git commit -m "chore(release): update appcast for v${{ steps.version.outputs.version }}"
+          git commit -m "chore(release): update appcast and cask for v$VERSION"
           git push origin HEAD:main
 
           echo "✅ Appcast committed and pushed"
