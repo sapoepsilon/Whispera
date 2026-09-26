@@ -117,6 +117,16 @@ Voice command research (a Qwen2.5 + LoRA intent parser trained with MLX) lives i
 
 Press your dictation shortcut (Option-Command-R by default) to start, and again to stop; the transcript goes into the focused text field. Drop a file on the menu bar popover, or use Browse, to transcribe it.
 
+### Insertion scripts
+
+With **Settings > Text Insertion > Insert Text By** set to a script, Whispera hands each transcript to an executable you choose there:
+
+- The transcript arrives on standard input and in `WHISPERA_TRANSCRIPT`, never in the arguments.
+- Whispera runs a private copy of exactly the bytes you approved, so `$0` is that copy. The script starts in its own folder, `WHISPERA_SCRIPT_PATH` holds the original path, and `WHISPERA_SCRIPT_DIR` holds its folder. Use `"$WHISPERA_SCRIPT_DIR"` instead of `$(dirname "$0")` to find files next to the script.
+- The approval covers the script's path, owner and contents. Editing the script means choosing it again. Changing its permissions, tags or other metadata does not. The script and its folder must not be writable by other users.
+- If the script changed or was never approved, it doesn't run. The transcript goes to the clipboard and the menu bar tells you to choose the script again.
+- Scripts get a minimal environment and 10 seconds to finish.
+
 ## Known Issues
 
 - Intel Macs are not supported (see [Issue 15](https://github.com/sapoepsilon/whispera/issues/15)).

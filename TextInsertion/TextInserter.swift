@@ -73,6 +73,8 @@ enum InsertionProblem: Equatable, Sendable {
 	case accessibilityDenied(transcriptOnClipboard: Bool)
 	/// Cmd-V was sent but no app read the transcript.
 	case notPasted(transcriptOnClipboard: Bool)
+	/// The insertion script changed, or was never chosen in Settings, so it was not run.
+	case scriptNotApproved
 
 	var message: String {
 		switch self {
@@ -95,6 +97,11 @@ enum InsertionProblem: Equatable, Sendable {
 			return String(
 				localized:
 					"No app took the paste. Secure Input was on, so the text was not kept on the clipboard."
+			)
+		case .scriptNotApproved:
+			return String(
+				localized:
+					"The insertion script changed since you chose it, so it was not run and the transcript is on the clipboard. Choose the script again in Settings > Text Insertion."
 			)
 		}
 	}
@@ -119,6 +126,10 @@ final class TextInserter {
 	private var pendingInsertion: Task<Void, Never>?
 	/// Called on the main actor when a transcript could not be delivered.
 	var onProblem: ((InsertionProblem) -> Void)?
+	/// Stores a script approval re-signed in the current format.
+	var onScriptApprovalUpgraded: (String) -> Void = { upgraded in
+		UserDefaults.standard.set(upgraded, forKey: TextInsertionSettings.Keys.externalScriptApproval)
+	}
 	/// Awaited before keystrokes are posted, so Whispera's own menu-bar popover can close and
 	/// hand focus back; with it open the Cmd-V went to the popover and the transcript was lost.
 	var prepareForKeystrokes: (@MainActor () async -> Void)?
@@ -240,7 +251,8 @@ final class TextInserter {
 	private func runScript(_ text: String, settings: TextInsertionSettings, concealed: Bool) async -> Bool {
 		do {
 			try await ExternalScriptRunner.run(
-				path: settings.externalScriptPath, approval: settings.externalScriptApproval, text: text)
+				path: settings.externalScriptPath, approval: settings.externalScriptApproval, text: text,
+				onApprovalUpgraded: onScriptApprovalUpgraded)
 			logger.info("Insertion script finished for a \(text.count)-character transcript")
 			return true
 		} catch {
@@ -249,6 +261,7 @@ final class TextInserter {
 			if concealed { expireConcealedClipboard(changeCount: changeCount) }
 			logger.error(
 				"Insertion script failed, transcript copied to clipboard: \(error.localizedDescription)")
+			if error as? ExternalScriptError == .notApproved { onProblem?(.scriptNotApproved) }
 			return false
 		}
 	}

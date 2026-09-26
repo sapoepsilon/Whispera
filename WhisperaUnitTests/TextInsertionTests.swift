@@ -564,6 +564,7 @@ struct InsertionDeliveryTests {
 	@Test func problemMessagesNameTheFix() {
 		#expect(InsertionProblem.accessibilityDenied(transcriptOnClipboard: true).message.contains("Accessibility"))
 		#expect(InsertionProblem.notPasted(transcriptOnClipboard: true).message.contains("clipboard"))
+		#expect(InsertionProblem.scriptNotApproved.message.contains("Settings"))
 	}
 }
 
@@ -952,7 +953,8 @@ struct ExternalScriptRunnerTests {
 		let names = Set(output.split(separator: "\n").compactMap { $0.split(separator: "=").first.map(String.init) })
 		let allowed: Set<String> = [
 			"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
-			ExternalScriptRunner.transcriptEnvironmentKey, ExternalScriptRunner.scriptPathEnvironmentKey, "PWD", "SHLVL", "_", "OLDPWD", "__CF_USER_TEXT_ENCODING",
+			ExternalScriptRunner.transcriptEnvironmentKey, ExternalScriptRunner.scriptPathEnvironmentKey,
+			ExternalScriptRunner.scriptDirectoryEnvironmentKey, "PWD", "SHLVL", "_", "OLDPWD", "__CF_USER_TEXT_ENCODING",
 		]
 		#expect(names.subtracting(allowed).isEmpty, "Leaked: \(names.subtracting(allowed).sorted())")
 		#expect(names.contains(ExternalScriptRunner.transcriptEnvironmentKey))
@@ -1014,16 +1016,156 @@ struct ExternalScriptRunnerTests {
 		#expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("ran").path))
 	}
 
-	@Test func fingerprintCoversTheContentsAndChangeTime() throws {
+	@Test func fingerprintCoversPathOwnerAndContentsOnly() throws {
 		let (script, directory) = try makeScript("exit 0\n")
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let fingerprint = try ScriptFingerprint.read(path: script.path)
 		let expectedDigest = SHA256.hash(data: try Data(contentsOf: script))
 			.map { String(format: "%02x", $0) }.joined()
 		#expect(fingerprint.contentDigest == expectedDigest)
-		#expect(fingerprint.canonical.hasPrefix("v2|"))
-		#expect(fingerprint.canonical.hasSuffix("|\(expectedDigest)"))
-		#expect(fingerprint.canonical.contains("|\(fingerprint.changedSeconds).\(fingerprint.changedNanoseconds)|"))
+		#expect(fingerprint.canonical == "v3|\(script.path)|\(getuid())|\(expectedDigest)")
+	}
+
+	/// chmod, Finder tags, sync-tool extended attributes, a new hard link and a touch change the
+	/// inode's change time but not what runs; they used to make the approval lapse silently.
+	@Test func approvalSurvivesMetadataOnlyChanges() throws {
+		let (script, directory) = try makeScript("exit 0\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let approval = try ScriptApproval.approve(path: script.path, keyStore: keyStore)
+		let resolved = try ExternalScriptRunner.validate(path: script.path).path
+
+		try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+		let tag = Data("bplist00".utf8)
+		#expect(setxattr(script.path, "com.apple.metadata:_kMDItemUserTags", [UInt8](tag), tag.count, 0, 0) == 0)
+		#expect(setxattr(script.path, "com.dropbox.attrs", "x", 1, 0, 0) == 0)
+		#expect(link(script.path, directory.appendingPathComponent("hardlink.sh").path) == 0)
+		#expect(utimes(script.path, nil) == 0)
+
+		#expect(ScriptApproval.verdict(path: resolved, approval: approval, keyStore: keyStore) == .approved)
+	}
+
+	@Test func approvalStillLapsesWhenTheOwnerOrPathChanges() throws {
+		let (script, directory) = try makeScript("exit 0\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let approval = try ScriptApproval.approve(path: script.path, keyStore: keyStore)
+		let moved = directory.appendingPathComponent("moved.sh")
+		try FileManager.default.moveItem(at: script, to: moved)
+		#expect(ScriptApproval.verdict(path: moved.path, approval: approval, keyStore: keyStore) == .refused)
+	}
+
+	private func legacyApproval(for script: URL) throws -> String {
+		let snapshot = try ScriptFingerprint.snapshot(path: ExternalScriptRunner.validate(path: script.path).path)
+		let key = try #require(try keyStore.key(createIfMissing: true))
+		let code = HMAC<SHA256>.authenticationCode(
+			for: Data(snapshot.fingerprint.legacyV2Canonical.utf8), using: key)
+		return Data(code).base64EncodedString()
+	}
+
+	/// Approvals made before the format change keep working and are re-signed, instead of every
+	/// one of them failing after the upgrade with only a log line.
+	@Test func anUnchangedLegacyApprovalIsUpgraded() async throws {
+		let (script, directory) = try makeScript("echo ran > \"$WHISPERA_SCRIPT_DIR/out.txt\"\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let legacy = try legacyApproval(for: script)
+
+		let verdict = ScriptApproval.verdict(path: script.path, approval: legacy, keyStore: keyStore)
+		let upgraded = try #require(verdict.upgradedApproval)
+		#expect(ScriptApproval.verdict(path: script.path, approval: upgraded, keyStore: keyStore) == .approved)
+
+		var stored: String?
+		try await ExternalScriptRunner.run(
+			path: script.path, approval: legacy, text: "x", keyStore: keyStore, onApprovalUpgraded: { stored = $0 })
+		#expect(stored == upgraded)
+		#expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("out.txt").path))
+	}
+
+	@Test func aLegacyApprovalForAChangedScriptIsNotUpgraded() throws {
+		let (script, directory) = try makeScript("exit 0\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let legacy = try legacyApproval(for: script)
+		try "#!/bin/sh\nexit 1\n".write(to: script, atomically: false, encoding: .utf8)
+		#expect(ScriptApproval.verdict(path: script.path, approval: legacy, keyStore: keyStore) == .refused)
+	}
+
+	@Test func storedLegacyApprovalIsUpgradedAtLaunch() throws {
+		let (script, directory) = try makeScript("exit 0\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let suite = "script-approval-upgrade-\(UUID().uuidString)"
+		let defaults = try #require(UserDefaults(suiteName: suite))
+		defer { defaults.removePersistentDomain(forName: suite) }
+		var settings = TextInsertionSettings()
+		settings.pasteMethod = .externalScript
+		settings.externalScriptPath = script.path
+		settings.externalScriptApproval = try legacyApproval(for: script)
+		settings.save(to: defaults)
+
+		ScriptApproval.upgradeStoredApproval(in: defaults, keyStore: keyStore)
+
+		let stored = TextInsertionSettings(defaults: defaults).externalScriptApproval
+		#expect(stored != settings.externalScriptApproval)
+		#expect(ScriptApproval.verdict(path: script.path, approval: stored, keyStore: keyStore) == .approved)
+	}
+
+	/// `$0` is the private copy, so scripts that looked next to themselves get the folder here.
+	@Test func exposesTheOriginalScriptFolder() async throws {
+		let (script, directory) = try makeScript("printf '%s' \"$WHISPERA_SCRIPT_DIR\" > \"$WHISPERA_SCRIPT_DIR/dir.txt\"\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		try await approveAndRun(script, text: "x")
+
+		let reported = try String(contentsOf: directory.appendingPathComponent("dir.txt"), encoding: .utf8)
+		#expect(URL(fileURLWithPath: reported).resolvingSymlinksInPath().path
+			== directory.resolvingSymlinksInPath().path)
+	}
+
+	@Test func settingsCheckReportsStatusAndUpgradesOffTheRedrawPath() throws {
+		let (script, directory) = try makeScript("exit 0\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		#expect(TextInsertionSettingsView.checkScript(path: "", approval: "", keyStore: keyStore).description
+			== TextInsertionSettingsView.scriptUsage)
+		let refused = TextInsertionSettingsView.checkScript(path: script.path, approval: "", keyStore: keyStore)
+		#expect(refused.description == ExternalScriptError.notApproved.localizedDescription)
+		#expect(refused.upgradedApproval == nil)
+
+		let legacy = TextInsertionSettingsView.checkScript(
+			path: script.path, approval: try legacyApproval(for: script), keyStore: keyStore)
+		#expect(legacy.description == TextInsertionSettingsView.scriptUsage)
+		#expect(legacy.upgradedApproval != nil)
+	}
+
+	/// A crash while a script ran left its private copy behind.
+	@Test func leftoverCopiesAreRemovedButRunningOnesKept() throws {
+		let root = FileManager.default.temporaryDirectory.appendingPathComponent("scripts-root-\(UUID().uuidString)")
+		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(at: root) }
+		let stale = root.appendingPathComponent(UUID().uuidString)
+		let running = root.appendingPathComponent(UUID().uuidString)
+		for folder in [stale, running] {
+			try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+			try "#!/bin/sh\n".write(to: folder.appendingPathComponent("insert.sh"), atomically: true, encoding: .utf8)
+		}
+		try FileManager.default.setAttributes(
+			[.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: stale.path)
+
+		#expect(VerifiedScriptCopy.removeLeftovers(in: root) == 1)
+		#expect(!FileManager.default.fileExists(atPath: stale.path))
+		#expect(FileManager.default.fileExists(atPath: running.path))
+	}
+
+	@Test func leftoverSweepIgnoresASymlinkedRoot() throws {
+		let target = FileManager.default.temporaryDirectory.appendingPathComponent("scripts-target-\(UUID().uuidString)")
+		let old = target.appendingPathComponent("keep")
+		try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+		try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: old.path)
+		let link = FileManager.default.temporaryDirectory.appendingPathComponent("scripts-link-\(UUID().uuidString)")
+		try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+		defer {
+			try? FileManager.default.removeItem(at: link)
+			try? FileManager.default.removeItem(at: target)
+		}
+		#expect(VerifiedScriptCopy.removeLeftovers(in: link) == 0)
+		#expect(FileManager.default.fileExists(atPath: old.path))
 	}
 
 	@Test func runsTheVerifiedBytesEvenIfTheFileIsSwappedAfterTheCheck() async throws {
@@ -1137,6 +1279,30 @@ struct ExternalScriptRunnerTests {
 		#expect(throws: ExternalScriptError.notExecutable("/nonexistent/whispera-script")) {
 			try ExternalScriptRunner.validate(path: "/nonexistent/whispera-script")
 		}
+	}
+
+	@MainActor
+	@Test func anUnapprovedScriptIsReportedInTheMenuBar() async throws {
+		let (script, directory) = try makeScript("exit 0\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: RecordingKeyPoster(pasteboard: pasteboard),
+			settingsProvider: {
+				fastSettings {
+					$0.pasteMethod = .externalScript
+					$0.externalScriptPath = script.path
+					$0.externalScriptApproval = ""
+				}
+			})
+		var problems: [InsertionProblem] = []
+		inserter.onProblem = { problems.append($0) }
+
+		await inserter.insert("rescued", context: .finalTranscript).value
+
+		#expect(problems == [.scriptNotApproved])
+		#expect(pasteboard.string(forType: .string) == "rescued")
 	}
 
 	@MainActor

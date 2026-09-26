@@ -8,6 +8,9 @@ struct TextInsertionSettingsView: View {
 	@AppStorage(TextInsertionSettings.Keys.externalScriptApproval)
 	private var externalScriptApproval = ""
 	@State private var scriptError: String?
+	/// Checking the script hashes up to 32 MB and reads the Keychain, so it runs off the main
+	/// thread when the path or approval changes, never during a redraw.
+	@State private var scriptStatus: String?
 	@AppStorage(TextInsertionSettings.Keys.autoSubmit)
 	private var autoSubmit = false
 	@AppStorage(TextInsertionSettings.Keys.autoSubmitKey)
@@ -40,7 +43,7 @@ struct TextInsertionSettingsView: View {
 					if pasteMethod == .externalScript {
 						SettingRow(
 							"Script",
-							description: scriptDescription
+							description: scriptStatus ?? Self.scriptUsage
 						) {
 							// Read-only: the script must be picked with the file panel so it can be approved
 							HStack(spacing: 8) {
@@ -150,6 +153,19 @@ struct TextInsertionSettingsView: View {
 			}
 			.padding(20)
 		}
+		.task(id: "\(pasteMethod.rawValue)|\(externalScriptPath)|\(externalScriptApproval)") {
+			guard pasteMethod == .externalScript else { return }
+			let path = externalScriptPath
+			let approval = externalScriptApproval
+			let check = await Task.detached(priority: .userInitiated) {
+				Self.checkScript(path: path, approval: approval)
+			}.value
+			guard !Task.isCancelled else { return }
+			scriptStatus = check.description
+			if let upgraded = check.upgradedApproval, externalScriptApproval == approval {
+				externalScriptApproval = upgraded
+			}
+		}
 		.alert(
 			"Can't Use This Script",
 			isPresented: Binding(get: { scriptError != nil }, set: { if !$0 { scriptError = nil } }),
@@ -161,24 +177,33 @@ struct TextInsertionSettingsView: View {
 		}
 	}
 
-	private static let scriptUsage = String(
+	nonisolated static let scriptUsage = String(
 		localized:
-			"Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Whispera runs a private copy of the script, starting in the script's folder; WHISPERA_SCRIPT_PATH holds the original path. Choose the script again after editing it."
+			"Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Whispera runs a private copy of the script, so $0 is the copy: it starts in the script's folder, WHISPERA_SCRIPT_PATH holds the original path and WHISPERA_SCRIPT_DIR its folder. Choose the script again after editing it."
 	)
 
-	private var scriptDescription: String {
-		if externalScriptPath.isEmpty {
-			return Self.scriptUsage
+	struct ScriptCheck: Equatable, Sendable {
+		let description: String
+		let upgradedApproval: String?
+	}
+
+	nonisolated static func checkScript(
+		path: String, approval: String, keyStore: ScriptApprovalKeyStore = KeychainScriptApprovalKeyStore()
+	) -> ScriptCheck {
+		if path.isEmpty {
+			return ScriptCheck(description: scriptUsage, upgradedApproval: nil)
 		}
 		do {
-			let url = try ExternalScriptRunner.validate(path: externalScriptPath)
+			let url = try ExternalScriptRunner.validate(path: path)
 			try ExternalScriptRunner.checkOwnershipAndPermissions(of: url.path)
-			guard ScriptApproval.isApproved(path: url.path, approval: externalScriptApproval) else {
-				return ExternalScriptError.notApproved.localizedDescription
+			let verdict = ScriptApproval.verdict(path: url.path, approval: approval, keyStore: keyStore)
+			guard verdict.isApproved else {
+				return ScriptCheck(
+					description: ExternalScriptError.notApproved.localizedDescription, upgradedApproval: nil)
 			}
-			return Self.scriptUsage
+			return ScriptCheck(description: scriptUsage, upgradedApproval: verdict.upgradedApproval)
 		} catch {
-			return error.localizedDescription
+			return ScriptCheck(description: error.localizedDescription, upgradedApproval: nil)
 		}
 	}
 
