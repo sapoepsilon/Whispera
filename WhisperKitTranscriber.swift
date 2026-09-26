@@ -655,9 +655,11 @@ import WhisperKit
 		isTranscribing = false
 		shouldShowLiveTranscriptionWindow = false
 		if isLiveTranscriptionMode {
+			// A long session is tens of MB of samples, so they are copied only when history keeps them.
+			let keepsAudio = HistorySettings(defaults: .standard).keepsAudio
 			lastLiveSession = (
 				text: Self.liveSessionText(confirmed: confirmedText, pending: pendingText),
-				samples: Array(whisperKit?.audioProcessor.audioSamples ?? [])
+				samples: keepsAudio ? Array(whisperKit?.audioProcessor.audioSamples ?? []) : []
 			)
 		}
 		whisperKit?.audioProcessor.stopRecording()
@@ -705,6 +707,7 @@ import WhisperKit
 		pendingText = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
+		lastLiveSession = (text: "", samples: [])
 		isLiveTranscriptionMode = false
 		dictationWordTracker?.endSession()
 		releaseLiveStreamModelUse()

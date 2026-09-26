@@ -4,10 +4,12 @@ import Testing
 
 @testable import Whispera
 
-private func makeDefaults(_ name: String = #function) -> UserDefaults {
+/// Most store tests exercise saved audio, which is opt-in, so they opt in unless told not to.
+private func makeDefaults(_ name: String = #function, optInToAudio: Bool = true) -> UserDefaults {
 	let suite = "TranscriptionHistoryTests.\(name).\(UUID().uuidString)"
 	let defaults = UserDefaults(suiteName: suite)!
 	defaults.removePersistentDomain(forName: suite)
+	if optInToAudio { defaults.set(true, forKey: HistorySettings.saveAudioKey) }
 	return defaults
 }
 
@@ -90,10 +92,11 @@ struct HistoryRetentionTests {
 
 struct HistorySettingsTests {
 	@Test func emptyDefaultsUseDocumentedDefaults() {
-		let settings = HistorySettings(defaults: makeDefaults())
+		let settings = HistorySettings(defaults: makeDefaults(optInToAudio: false))
 		#expect(settings == HistorySettings())
 		#expect(settings.isEnabled)
-		#expect(settings.savesAudio)
+		#expect(!settings.savesAudio, "Saving raw audio must be opt-in for new and upgrading users")
+		#expect(!settings.keepsAudio)
 		#expect(settings.retention == .preserveLimit)
 		#expect(settings.limit == 50)
 	}
@@ -160,7 +163,7 @@ struct WAVFileWriterTests {
 
 @MainActor
 struct TranscriptionHistoryStoreTests {
-	@Test func recordsEntryWithSavedAudio() throws {
+	@Test func recordsEntryWithSavedAudio() async throws {
 		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
 		let entry = try #require(
 			store.record(
@@ -172,11 +175,12 @@ struct TranscriptionHistoryStoreTests {
 		#expect(entry.modelName == "openai_whisper-small")
 		#expect(entry.language == "english")
 		#expect(store.entries.map(\.id) == [entry.id])
+		await store.flushPendingAudioWrites()
 		let url = try #require(store.audioURL(for: entry))
 		#expect(try AVAudioFile(forReading: url).length == 32000)
 	}
 
-	@Test func skipsEmptyTextUnlessItFailed() {
+	@Test func skipsEmptyTextUnlessItFailed() async {
 		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
 		#expect(store.record(text: "   ", audio: nil, source: .dictation, modelName: nil, language: nil) == nil)
 
@@ -184,6 +188,7 @@ struct TranscriptionHistoryStoreTests {
 			text: "", audio: .samples(tone(seconds: 1), sampleRate: 16000), source: .dictation,
 			modelName: nil, language: nil, errorMessage: "Model not ready")
 		#expect(failed?.didFail == true)
+		await store.flushPendingAudioWrites()
 		#expect(failed.flatMap(store.audioURL(for:)) != nil, "Failed dictations keep audio so they can be retried")
 	}
 
@@ -222,7 +227,7 @@ struct TranscriptionHistoryStoreTests {
 		#expect(abs(entry.durationSeconds - 1.5) < 0.01)
 	}
 
-	@Test func persistsAcrossStoreInstances() throws {
+	@Test func persistsAcrossStoreInstances() async throws {
 		let directory = makeTempDirectory()
 		let defaults = makeDefaults()
 		do {
@@ -232,6 +237,7 @@ struct TranscriptionHistoryStoreTests {
 					text: "persisted", audio: .samples(tone(seconds: 1), sampleRate: 16000),
 					source: .liveDictation, modelName: "tiny", language: "english"))
 			store.toggleStar(entry)
+			await store.flushPendingAudioWrites()
 		}
 
 		let reopened = TranscriptionHistoryStore(directory: directory, defaults: defaults)
@@ -243,7 +249,7 @@ struct TranscriptionHistoryStoreTests {
 		#expect(reopened.audioURL(for: entry) != nil)
 	}
 
-	@Test func newestFirstAndLimitEnforcedOnRecord() throws {
+	@Test func newestFirstAndLimitEnforcedOnRecord() async throws {
 		let defaults = makeDefaults()
 		defaults.set(2, forKey: HistorySettings.limitKey)
 		let clock = Clock()
@@ -254,6 +260,7 @@ struct TranscriptionHistoryStoreTests {
 			store.record(
 				text: "one", audio: .samples(tone(seconds: 0.5), sampleRate: 16000), source: .dictation,
 				modelName: nil, language: nil))
+		await store.flushPendingAudioWrites()
 		let firstAudio = try #require(store.audioURL(for: first))
 		clock.advance(1)
 		store.record(text: "two", audio: nil, source: .dictation, modelName: nil, language: nil)
@@ -299,12 +306,13 @@ struct TranscriptionHistoryStoreTests {
 		#expect(reopened.entries.isEmpty)
 	}
 
-	@Test func deleteRemovesEntryAndAudio() throws {
+	@Test func deleteRemovesEntryAndAudio() async throws {
 		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
 		let entry = try #require(
 			store.record(
 				text: "bye", audio: .samples(tone(seconds: 0.5), sampleRate: 16000), source: .dictation,
 				modelName: nil, language: nil))
+		await store.flushPendingAudioWrites()
 		let url = try #require(store.audioURL(for: entry))
 		store.delete(entry)
 		#expect(store.entries.isEmpty)
@@ -331,6 +339,115 @@ struct TranscriptionHistoryStoreTests {
 		await #expect(throws: TranscriptionHistoryError.self) {
 			try await store.retranscribe(entry)
 		}
+	}
+
+	@Test func deleteAllEntriesRemovesStarredEntriesAndEveryRecording() async throws {
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
+		let starred = try #require(
+			store.record(
+				text: "starred", audio: .samples(tone(seconds: 0.5), sampleRate: 16000), source: .dictation,
+				modelName: nil, language: nil))
+		store.toggleStar(starred)
+		store.record(
+			text: "plain", audio: .samples(tone(seconds: 0.5), sampleRate: 16000), source: .dictation,
+			modelName: nil, language: nil)
+		await store.flushPendingAudioWrites()
+		#expect(try FileManager.default.contentsOfDirectory(atPath: store.audioDirectory.path).count == 2)
+
+		store.deleteAllEntries()
+		#expect(store.entries.isEmpty)
+		store.reload()
+		#expect(store.entries.isEmpty)
+		#expect(try FileManager.default.contentsOfDirectory(atPath: store.audioDirectory.path).isEmpty)
+	}
+
+	@Test func deleteAllRecordingsKeepsTheText() async throws {
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
+		let entry = try #require(
+			store.record(
+				text: "keep my words", audio: .samples(tone(seconds: 0.5), sampleRate: 16000),
+				source: .dictation, modelName: nil, language: nil))
+		await store.flushPendingAudioWrites()
+		#expect(store.hasSavedRecordings)
+
+		store.deleteAllRecordings()
+		#expect(!store.hasSavedRecordings)
+		#expect(entry.audioFileName == nil)
+		#expect(store.entries.map(\.text) == ["keep my words"])
+		#expect(try FileManager.default.contentsOfDirectory(atPath: store.audioDirectory.path).isEmpty)
+	}
+
+	@Test func recordingDeletedWhileItsFileIsBeingWrittenLeavesNoOrphan() async throws {
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
+		let entry = try #require(
+			store.record(
+				text: "short lived", audio: .samples(tone(seconds: 3), sampleRate: 16000), source: .dictation,
+				modelName: nil, language: nil))
+		store.delete(entry)
+		await store.flushPendingAudioWrites()
+		#expect(try FileManager.default.contentsOfDirectory(atPath: store.audioDirectory.path).isEmpty)
+	}
+
+	@Test func recordingsFolderIsExcludedFromBackups() throws {
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
+		let values = try store.audioDirectory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+		#expect(values.isExcludedFromBackup == true)
+	}
+
+	@Test func unstarringAnOldEntryDoesNotDeleteItImmediately() throws {
+		let defaults = makeDefaults()
+		defaults.set(1, forKey: HistorySettings.limitKey)
+		let clock = Clock()
+		let store = TranscriptionHistoryStore(
+			directory: makeTempDirectory(), defaults: defaults, now: { clock.now })
+		let old = try #require(
+			store.record(text: "old", audio: nil, source: .dictation, modelName: nil, language: nil))
+		store.toggleStar(old)
+		clock.advance(1)
+		store.record(text: "new", audio: nil, source: .dictation, modelName: nil, language: nil)
+		#expect(store.entries.count == 2)
+
+		store.toggleStar(old)
+		#expect(store.entries.map(\.text) == ["new", "old"])
+	}
+
+	@Test func retranscribingAnEntryDeletedMidFlightDoesNotTouchIt() async throws {
+		let directory = makeTempDirectory()
+		let defaults = makeDefaults()
+		let store = TranscriptionHistoryStore(directory: directory, defaults: defaults)
+		let entry = try #require(
+			store.record(
+				text: "original", audio: .samples(tone(seconds: 0.5), sampleRate: 16000), source: .dictation,
+				modelName: nil, language: nil))
+		await store.flushPendingAudioWrites()
+		let id = entry.id
+
+		try await store.retranscribe(entry) { _ in
+			store.delete(entry)
+			return ("resurrected", "tiny")
+		}
+
+		#expect(store.entries.isEmpty)
+		#expect(!store.retranscribingIDs.contains(id))
+		let reopened = TranscriptionHistoryStore(directory: directory, defaults: defaults)
+		#expect(reopened.entries.isEmpty, "A deleted entry must not come back with the new text")
+	}
+
+	@Test func failedRetranscriptionOfADeletedEntryStillThrowsWithoutWriting() async throws {
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
+		let entry = try #require(
+			store.record(
+				text: "original", audio: .samples(tone(seconds: 0.5), sampleRate: 16000), source: .dictation,
+				modelName: nil, language: nil))
+		await store.flushPendingAudioWrites()
+
+		await #expect(throws: TranscriptionHistoryError.self) {
+			try await store.retranscribe(entry) { _ in
+				store.delete(entry)
+				throw TranscriptionHistoryError.storeUnavailable
+			}
+		}
+		#expect(store.entries.isEmpty)
 	}
 
 	@Test func filterMatchesTextAndStar() throws {
@@ -408,5 +525,42 @@ struct HistoryRetranscriptionTests {
 		#expect(entry.text.localizedCaseInsensitiveContains("fox"), "Got: \(entry.text)")
 		#expect(entry.retranscribedAt != nil)
 		#expect(!store.retranscribingIDs.contains(entry.id))
+	}
+}
+
+// MARK: - Debounced retention
+
+@MainActor
+struct DebouncedActionTests {
+	@Test func burstOfSchedulesRunsOnlyTheLastActionOnce() async throws {
+		let debouncer = DebouncedAction(delay: .milliseconds(80))
+		var runs: [Int] = []
+		for value in [50, 45, 40, 35, 30] {
+			debouncer.schedule { runs.append(value) }
+			try await Task.sleep(for: .milliseconds(10))
+		}
+		#expect(runs.isEmpty, "Intermediate Stepper values must not apply retention")
+		try await Task.sleep(for: .milliseconds(300))
+		#expect(runs == [30])
+	}
+
+	@Test func flushRunsPendingActionImmediatelyAndOnlyOnce() async throws {
+		let debouncer = DebouncedAction(delay: .seconds(10))
+		var runs = 0
+		debouncer.schedule { runs += 1 }
+		#expect(debouncer.isPending)
+		debouncer.flush()
+		debouncer.flush()
+		#expect(runs == 1)
+		#expect(!debouncer.isPending)
+	}
+
+	@Test func cancelDropsPendingAction() async throws {
+		let debouncer = DebouncedAction(delay: .milliseconds(20))
+		var runs = 0
+		debouncer.schedule { runs += 1 }
+		debouncer.cancel()
+		try await Task.sleep(for: .milliseconds(100))
+		#expect(runs == 0)
 	}
 }
