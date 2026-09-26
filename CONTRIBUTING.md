@@ -9,15 +9,15 @@ Open a [GitHub issue](https://github.com/sapoepsilon/Whispera/issues) with:
 - macOS version and Mac model
 - Steps to reproduce
 - Expected vs actual behavior
-- Relevant logs (Settings > Debug > Export Logs)
+- Relevant logs (Settings > Debug, or `~/Library/Application Support/Whispera/Logs`)
 
 ## Submitting Pull Requests
 
 1. Fork the repo and create a branch from `main`.
 2. Make your changes.
-3. Run the test suite:
+3. Run the unit tests (CI runs the same target on every pull request; tests that need a downloaded model skip themselves):
    ```bash
-   xcodebuild test -scheme Whispera -project Whispera.xcodeproj
+   xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:WhisperaUnitTests
    ```
 4. Open a PR against `main` with a clear description of what you changed and why.
 
@@ -30,14 +30,14 @@ Open a [GitHub issue](https://github.com/sapoepsilon/Whispera/issues) with:
 
 ## Project Structure
 
-- **macOS app** (this repo): Swift, SwiftUI, WhisperKit. Handles transcription, command mode UI, and system integration.
-- **ML training pipeline** ([whisperaModel](https://github.com/sapoepsilon/whisperaModel)): Python, MLX. Handles dataset generation, model fine-tuning, and evaluation for the command mode intent parser.
+- **macOS app** (this repo): Swift, SwiftUI, WhisperKit, FluidAudio and Sparkle. Handles transcription, text insertion, post-processing, automation and system integration.
+- **Voice command research** ([whisperaModel](https://github.com/sapoepsilon/whisperaModel)): Python, MLX. Dataset generation, fine-tuning and evaluation for a voice command intent parser; not part of the app.
 
 ## Requirements
 
-- macOS 13.0+
+- macOS 14.0+ (Apple Intelligence post-processing needs macOS 26)
 - Apple Silicon
-- Xcode 15+
+- Xcode 26 (the macOS 26 SDK is needed for the weakly linked FoundationModels framework)
 
 ## Questions
 

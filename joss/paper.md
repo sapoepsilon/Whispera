@@ -44,7 +44,7 @@ Whispera combines WhisperKit-based transcription with a native macOS interface (
 
 # Software design
 
-Whispera is a Swift/SwiftUI application built for macOS 13+ on Apple Silicon. It runs as a menu bar application with a global keyboard shortcut for activation.
+Whispera is a Swift/SwiftUI application built for macOS 14+ on Apple Silicon. It runs as a menu bar application with a global keyboard shortcut for activation.
 
 **Transcription mode** supports four input types:
 
