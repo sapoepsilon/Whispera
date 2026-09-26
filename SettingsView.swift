@@ -1105,6 +1105,11 @@ struct SettingsView: View {
 				Label("File Transcription", systemImage: "doc.on.doc")
 			}
 
+			TranscriptionHistoryView()
+				.tabItem {
+					Label("History", systemImage: "clock.arrow.circlepath")
+				}
+
 			BenchmarkView()
 				.tabItem {
 					Label("Benchmark", systemImage: "speedometer")
