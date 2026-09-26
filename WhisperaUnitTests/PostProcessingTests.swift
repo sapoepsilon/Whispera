@@ -175,6 +175,7 @@ struct PostProcessingSettingsTests {
 		for provider in PostProcessingProvider.all where provider.kind == .openAICompatible {
 			#expect(OpenAICompatibleClient.endpoint(baseURL: provider.defaultBaseURL, path: "models") != nil)
 		}
+		#expect(ids.contains(PostProcessingProvider.appleIntelligenceID))
 	}
 }
 
@@ -370,6 +371,39 @@ struct PostProcessingServiceTests {
 		settings.providerID = "groq"
 		let service = PostProcessingService(settings: settings, secrets: InMemorySecretStore(["groq": "k"]))
 		#expect(await service.process("hello") == .failed(original: "hello", error: "No model selected for Groq"))
+	}
+
+	@Test func appleIntelligenceProviderUsesOnDeviceProcessor() throws {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		let service = PostProcessingService(settings: settings, secrets: InMemorySecretStore())
+		let provider = try #require(PostProcessingProvider.provider(withID: PostProcessingProvider.appleIntelligenceID))
+		#expect(try service.makeProcessor(for: provider) is AppleIntelligenceProcessor)
+		#expect(provider.requiresAPIKey == false)
+	}
+}
+
+// MARK: - Apple Intelligence
+
+struct AppleIntelligenceProcessorTests {
+	@Test func availabilityIsReportedWithoutCrashing() {
+		let availability = AppleIntelligenceProcessor.availability()
+		#expect(!availability.summary.isEmpty)
+	}
+
+	@Test func unavailableModelThrowsTypedError() async throws {
+		let availability = AppleIntelligenceProcessor.availability()
+		guard !availability.isAvailable else { return }
+		await #expect(throws: PostProcessingError.appleIntelligenceUnavailable(reason: availability.summary)) {
+			_ = try await AppleIntelligenceProcessor().process(PostProcessingMessages(system: nil, user: "hi"))
+		}
+	}
+
+	@Test(.enabled(if: AppleIntelligenceProcessor.availability().isAvailable, "Apple Intelligence not available here"))
+	func cleansTextOnDevice() async throws {
+		let output = try await AppleIntelligenceProcessor().process(
+			PostProcessingPrompt.defaultCleanup.messages(for: "um so uh the meeting is at three pm period"))
+		#expect(!output.isEmpty)
+		#expect(!output.localizedCaseInsensitiveContains("<think>"))
 	}
 }
 

@@ -31,6 +31,8 @@ struct PostProcessingService {
 
 	func makeProcessor(for provider: PostProcessingProvider) throws -> TextPostProcessor {
 		switch provider.kind {
+		case .appleIntelligence:
+			return AppleIntelligenceProcessor()
 		case .openAICompatible:
 			let model = settings.model(for: provider.id)
 			guard !model.isEmpty else { throw PostProcessingError.missingModel(provider: provider.label) }

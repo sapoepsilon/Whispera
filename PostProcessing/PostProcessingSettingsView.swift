@@ -68,7 +68,11 @@ struct PostProcessingSettingsView: View {
 						.frame(width: 240)
 					}
 
-					openAICompatibleRows
+					if provider.kind == .appleIntelligence {
+						appleIntelligenceRows
+					} else {
+						openAICompatibleRows
+					}
 				}
 
 				promptSection
@@ -87,6 +91,18 @@ struct PostProcessingSettingsView: View {
 			Button("OK", role: .cancel) {}
 		} message: { alert in
 			Text(alert.message)
+		}
+	}
+
+	@ViewBuilder
+	private var appleIntelligenceRows: some View {
+		let availability = AppleIntelligenceProcessor.availability()
+		SettingRow("Status", description: "Runs on this Mac. No API key and no network needed.") {
+			Label(
+				availability.summary,
+				systemImage: availability.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+			)
+			.foregroundColor(availability.isAvailable ? .green : .orange)
 		}
 	}
 
@@ -126,7 +142,7 @@ struct PostProcessingSettingsView: View {
 					.textFieldStyle(.roundedBorder)
 					.frame(width: 180)
 					.onChange(of: model) { id in
-						settings.setModel(id, for: provider.id)
+						if provider.kind == .openAICompatible { settings.setModel(id, for: provider.id) }
 					}
 				if !fetchedModels.isEmpty {
 					Menu("Pick") {
@@ -207,7 +223,7 @@ struct PostProcessingSettingsView: View {
 		baseURL = settings.baseURL(for: provider)
 		apiKeyDraft = ""
 		fetchedModels = []
-		hasSavedKey = ((try? secrets.apiKey(for: provider.id)) ?? nil) != nil
+		hasSavedKey = provider.kind == .openAICompatible && ((try? secrets.apiKey(for: provider.id)) ?? nil) != nil
 		if prompts.isEmpty {
 			prompts = settings.prompts
 			selectedPromptID = settings.selectedPromptID

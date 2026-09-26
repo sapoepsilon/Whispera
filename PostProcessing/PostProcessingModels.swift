@@ -2,6 +2,7 @@ import Foundation
 
 enum PostProcessingProviderKind: String, Codable, Sendable {
 	case openAICompatible
+	case appleIntelligence
 }
 
 struct PostProcessingProvider: Identifiable, Hashable, Sendable {
@@ -12,6 +13,7 @@ struct PostProcessingProvider: Identifiable, Hashable, Sendable {
 	let allowsBaseURLEdit: Bool
 	let requiresAPIKey: Bool
 
+	static let appleIntelligenceID = "apple_intelligence"
 	static let customID = "custom"
 
 	static let all: [PostProcessingProvider] = [
@@ -22,6 +24,9 @@ struct PostProcessingProvider: Identifiable, Hashable, Sendable {
 		openAI("cerebras", "Cerebras", "https://api.cerebras.ai/v1"),
 		openAI("zai", "Z.AI", "https://api.z.ai/api/paas/v4"),
 		openAI("bedrock_mantle", "AWS Bedrock (Mantle)", "https://bedrock-mantle.us-east-1.api.aws/v1"),
+		PostProcessingProvider(
+			id: appleIntelligenceID, label: "Apple Intelligence (on-device)", kind: .appleIntelligence,
+			defaultBaseURL: "", allowsBaseURLEdit: false, requiresAPIKey: false),
 		PostProcessingProvider(
 			id: customID, label: "Custom (Ollama, LM Studio, ...)", kind: .openAICompatible,
 			defaultBaseURL: "http://localhost:11434/v1", allowsBaseURLEdit: true, requiresAPIKey: false),

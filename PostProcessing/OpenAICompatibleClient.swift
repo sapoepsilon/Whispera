@@ -11,6 +11,7 @@ enum PostProcessingError: LocalizedError, Equatable {
 	case httpStatus(code: Int, message: String)
 	case emptyResponse
 	case malformedResponse
+	case appleIntelligenceUnavailable(reason: String)
 
 	var errorDescription: String? {
 		switch self {
@@ -26,6 +27,8 @@ enum PostProcessingError: LocalizedError, Equatable {
 			return "Provider returned no text"
 		case .malformedResponse:
 			return "Provider response could not be decoded"
+		case .appleIntelligenceUnavailable(let reason):
+			return "Apple Intelligence is unavailable: \(reason)"
 		}
 	}
 }
