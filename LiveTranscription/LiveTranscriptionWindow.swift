@@ -46,58 +46,78 @@ class LiveTranscriptionWindow: NSWindow {
 		}
 	}
 
+	// The window's gating inputs are all observable, so the app only polls the caret and text
+	// size while live transcription is on screen instead of on a timer for its whole lifetime.
 	private func setupObservation() {
-		observationTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-			Task { @MainActor in
-				guard let self = self else { return }
-
-				let shouldShow = RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
-					mode: self.audioManager.currentRecordingMode,
-					transcriberWantsWindow: self.whisperKit.shouldShowLiveTranscriptionWindow
-						&& (self.whisperKit.isTranscribing || self.whisperKit.isWaitingForModel)
-				)
-
-				if shouldShow {
-					let newSize = self.calculateDynamicSize()
-
-					if !self.isVisible {
-						self.positionNearCaret(size: newSize)
-						self.makeKeyAndOrderFront(nil)
-					} else {
-						if self.followCaret {
-							_ = AccessibilityHelper.getCaretPosition()
-						}
-
-						if let currentCaretPosition = AccessibilityHelper.getCaretPosition() {
-							if let lastPosition = self.lastCaretPosition {
-								let distance = sqrt(
-									pow(currentCaretPosition.x - lastPosition.x, 2)
-										+ pow(currentCaretPosition.y - lastPosition.y, 2))
-
-								if distance > 50 {
-									self.positionRelativeToCaret(
-										caretPosition: currentCaretPosition, windowSize: newSize)
-								}
-							}
-							self.lastCaretPosition = currentCaretPosition
-						}
-
-						let pendingText =
-							self.whisperKit.isWaitingForModel
-							? self.whisperKit.waitingForModelStatusText
-							: self.whisperKit.stableDisplayText
-
-						if pendingText != self.lastTextContent {
-							self.updateWindowSize(newSize)
-							self.lastTextContent = pendingText
-						}
-					}
-				} else {
-					if self.isVisible {
-						self.orderOut(nil)
-						self.lastTextContent = ""
-					}
+		let shouldShow = withObservationTracking {
+			self.shouldShowWindow()
+		} onChange: {
+			Task { @MainActor [weak self] in self?.setupObservation() }
+		}
+		if shouldShow {
+			if observationTimer == nil {
+				observationTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) {
+					[weak self] _ in
+					Task { @MainActor in self?.refresh() }
 				}
+			}
+		} else {
+			observationTimer?.invalidate()
+			observationTimer = nil
+		}
+		refresh()
+	}
+
+	private func shouldShowWindow() -> Bool {
+		RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
+			mode: audioManager.currentRecordingMode,
+			transcriberWantsWindow: whisperKit.shouldShowLiveTranscriptionWindow
+				&& (whisperKit.isTranscribing || whisperKit.isWaitingForModel)
+		)
+	}
+
+	private func refresh() {
+		let shouldShow = shouldShowWindow()
+
+		if shouldShow {
+			let newSize = self.calculateDynamicSize()
+
+			if !self.isVisible {
+				self.positionNearCaret(size: newSize)
+				self.makeKeyAndOrderFront(nil)
+			} else {
+				if self.followCaret {
+					_ = AccessibilityHelper.getCaretPosition()
+				}
+
+				if let currentCaretPosition = AccessibilityHelper.getCaretPosition() {
+					if let lastPosition = self.lastCaretPosition {
+						let distance = sqrt(
+							pow(currentCaretPosition.x - lastPosition.x, 2)
+								+ pow(currentCaretPosition.y - lastPosition.y, 2))
+
+						if distance > 50 {
+							self.positionRelativeToCaret(
+								caretPosition: currentCaretPosition, windowSize: newSize)
+						}
+					}
+					self.lastCaretPosition = currentCaretPosition
+				}
+
+				let pendingText =
+					self.whisperKit.isWaitingForModel
+					? self.whisperKit.waitingForModelStatusText
+					: self.whisperKit.stableDisplayText
+
+				if pendingText != self.lastTextContent {
+					self.updateWindowSize(newSize)
+					self.lastTextContent = pendingText
+				}
+			}
+		} else {
+			if self.isVisible {
+				self.orderOut(nil)
+				self.lastTextContent = ""
 			}
 		}
 	}
