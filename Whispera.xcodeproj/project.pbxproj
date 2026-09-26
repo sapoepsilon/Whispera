@@ -80,6 +80,8 @@
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
 		D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */; };
 		D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */; };
+		D6MEB956F9B6EBF33C9D4000 /* ComputeUnitPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF0A56AE07724B66CA000 /* ComputeUnitPreference.swift */; };
+		D6MEB9217152426587206000 /* ComputeUnitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEFECE03C19F60F0B7E000 /* ComputeUnitSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -175,6 +177,8 @@
 		D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdater.swift; sourceTree = "<group>"; };
 		D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
 		D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManagerTests.swift; sourceTree = "<group>"; };
+		D6MEF0A56AE07724B66CA000 /* ComputeUnitPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputeUnitPreference.swift; sourceTree = "<group>"; };
+		D6MEFECE03C19F60F0B7E000 /* ComputeUnitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputeUnitSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -216,6 +220,7 @@
 		6A6A6A6A6A6A6A6A6A6A6A6A = {
 			isa = PBXGroup;
 			children = (
+				D6MDLENG2F30000000000000 /* ModelEngines */,
 				D6BENCH032F0000000000000 /* Benchmark */,
 				D6F9D7872ED6C4B500959822 /* AudioManager */,
 				D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */,
@@ -374,6 +379,15 @@
 				D6F9D7822ED6C31C00959822 /* AudioLevelMonitor.swift */,
 			);
 			path = AudioManager;
+			sourceTree = "<group>";
+		};
+		D6MDLENG2F30000000000000 /* ModelEngines */ = {
+			isa = PBXGroup;
+			children = (
+				D6MEFECE03C19F60F0B7E000 /* ComputeUnitSettingsView.swift */,
+				D6MEF0A56AE07724B66CA000 /* ComputeUnitPreference.swift */,
+			);
+			path = ModelEngines;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -544,6 +558,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D6MEB9217152426587206000 /* ComputeUnitSettingsView.swift in Sources */,
+				D6MEB956F9B6EBF33C9D4000 /* ComputeUnitPreference.swift in Sources */,
 				D620E44D2E3C79C1006AF5E0 /* LogManager.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1A /* WhisperaApp.swift in Sources */,
 				D66E6D5A2E18495A00F55A5B /* Logger.swift in Sources */,

@@ -1753,12 +1753,27 @@ import WhisperKit
 	}
 
 	private func getOptimizedComputeOptions() -> ModelComputeOptions {
-		return ModelComputeOptions(
-			melCompute: .cpuAndGPU,
-			audioEncoderCompute: .cpuAndGPU,
-			textDecoderCompute: .cpuAndNeuralEngine,
-			prefillCompute: .cpuAndGPU
-		)
+		return ComputeUnitPreference.load().whisperKitComputeOptions
+	}
+
+	var computeUnitPreference: ComputeUnitPreference {
+		ComputeUnitPreference.load()
+	}
+
+	func applyComputeUnitPreference(_ preference: ComputeUnitPreference) async throws {
+		guard preference != ComputeUnitPreference.load() else { return }
+		preference.save()
+		AppLogger.shared.transcriber.log("Compute units changed to \(preference.rawValue)")
+
+		guard let model = currentModel else { return }
+		if let existingTask = modelOperationTask {
+			try await existingTask.value
+		}
+		modelOperationTask = Task { @MainActor in
+			try await loadModel(model)
+		}
+		defer { modelOperationTask = nil }
+		try await modelOperationTask?.value
 	}
 
 	func getComputeOptionsStatus() -> [String: String] {

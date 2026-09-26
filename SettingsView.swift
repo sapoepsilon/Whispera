@@ -507,17 +507,7 @@ struct SettingsView: View {
 					Divider()
 
 					SettingsSection("Performance") {
-						InfoBox(style: .info) {
-							VStack(alignment: .leading, spacing: 4) {
-								Text("Optimized Compute Configuration")
-									.font(.subheadline)
-								Text(
-									"Audio processing uses CPU + GPU, text decoding uses CPU + Neural Engine for optimal performance on Apple Silicon."
-								)
-								.font(.caption)
-								.foregroundColor(.secondary)
-							}
-						}
+						ComputeUnitSettingsView(whisperKit: whisperKit)
 					}
 
 					Divider()
