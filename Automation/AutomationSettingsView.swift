@@ -62,7 +62,7 @@ struct CopyableCommandRow: View {
 
 	var body: some View {
 		HStack(spacing: 8) {
-			Text(title)
+			Text(LocalizedStringKey(title))
 				.font(.caption)
 				.foregroundColor(.secondary)
 				.frame(width: 70, alignment: .leading)

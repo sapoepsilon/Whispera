@@ -193,22 +193,22 @@ struct TranscriptionQueueView: View {
 
 	private var queueStatusText: String {
 		if queueManager.isProcessing {
-			let current = queueManager.currentItem?.filename ?? "Unknown"
-			return "Processing: \(current)"
+			let current = queueManager.currentItem?.filename ?? String(localized: "Unknown")
+			return String(localized: "Processing: \(current)")
 		} else if queueManager.hasItems {
 			let pending = queueManager.pendingItems.count
 			let completed = queueManager.completedItems.count
 			let failed = queueManager.failedItems.count
 
 			if pending > 0 {
-				return "\(pending) pending, \(completed) completed"
+				return String(localized: "\(pending) pending, \(completed) completed")
 			} else if failed > 0 {
-				return "\(completed) completed, \(failed) failed"
+				return String(localized: "\(completed) completed, \(failed) failed")
 			} else {
-				return "All completed (\(completed))"
+				return String(localized: "All completed (\(completed))")
 			}
 		} else {
-			return "No items"
+			return String(localized: "No items")
 		}
 	}
 }

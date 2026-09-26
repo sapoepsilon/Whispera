@@ -15,17 +15,21 @@ enum HotkeyBackend: String, CaseIterable, Identifiable, Sendable {
 
 	var title: String {
 		switch self {
-		case .eventMonitor: return "Event monitor"
-		case .carbon: return "System hotkey"
+		case .eventMonitor: return String(localized: "Event monitor")
+		case .carbon: return String(localized: "System hotkey")
 		}
 	}
 
 	var summary: String {
 		switch self {
 		case .eventMonitor:
-			return "Default. Needs Accessibility. The shortcut also reaches the app you are typing in."
+			return String(
+				localized: "Default. Needs Accessibility. The shortcut also reaches the app you are typing in.")
 		case .carbon:
-			return "Registers a system hotkey. The front app never sees the shortcut. Fn/Globe cannot be used."
+			return String(
+				localized:
+					"Registers a system hotkey. The front app never sees the shortcut. Fn/Globe cannot be used."
+			)
 		}
 	}
 

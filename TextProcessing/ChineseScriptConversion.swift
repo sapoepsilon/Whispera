@@ -9,9 +9,9 @@ enum ChineseScriptPreference: String, CaseIterable, Identifiable {
 
 	var displayName: String {
 		switch self {
-		case .unchanged: return "As Transcribed"
-		case .simplified: return "Simplified"
-		case .traditional: return "Traditional"
+		case .unchanged: return String(localized: "As Transcribed")
+		case .simplified: return String(localized: "Simplified")
+		case .traditional: return String(localized: "Traditional")
 		}
 	}
 }

@@ -33,8 +33,8 @@ struct LauncherSettingsSection: View {
 
 	private func exportScripts() {
 		let panel = NSOpenPanel()
-		panel.title = "Choose a Raycast Script Commands Folder"
-		panel.prompt = "Export"
+		panel.title = String(localized: "Choose a Raycast Script Commands Folder")
+		panel.prompt = String(localized: "Export")
 		panel.canChooseDirectories = true
 		panel.canChooseFiles = false
 		panel.canCreateDirectories = true
@@ -46,12 +46,16 @@ struct LauncherSettingsSection: View {
 			let files = try RaycastScripts.export(to: directory, cliPath: cliPath)
 			AppLogger.shared.general.info("Exported \(files.count) Raycast scripts to \(directory.path)")
 			exportResult = ExportResult(
-				title: "Scripts Exported",
-				message: "\(files.count) script commands saved to \(directory.path). Raycast picks them up automatically."
+				title: String(localized: "Scripts Exported"),
+				message: String(
+					localized:
+						"\(files.count) script commands saved to \(directory.path). Raycast picks them up automatically."
+				)
 			)
 		} catch {
 			AppLogger.shared.general.error("Raycast script export failed: \(error.localizedDescription)")
-			exportResult = ExportResult(title: "Export Failed", message: error.localizedDescription)
+			exportResult = ExportResult(
+				title: String(localized: "Export Failed"), message: error.localizedDescription)
 		}
 	}
 }

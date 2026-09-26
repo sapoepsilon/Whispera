@@ -16,7 +16,7 @@ import WhisperKit
 	var waitingForModelStatusText: String = ""
 	var isStreamingAudio: Bool = false
 	var initializationProgress: Double = 0.0
-	var initializationStatus = "Starting..."
+	var initializationStatus = String(localized: "Starting...")
 	var availableModels: [String] = []
 	var currentModel: String?
 	var downloadedModels: Set<String> = []
@@ -70,16 +70,16 @@ import WhisperKit
 		confirmedText = ""
 		shouldShowLiveTranscriptionWindow = true
 		isWaitingForModel = true
-		waitingForModelStatusText = "Waiting for model..."
+		waitingForModelStatusText = String(localized: "Waiting for model...")
 	}
 
 	private func updateWaitingStatusText() {
 		guard isWaitingForModel else { return }
 
 		if isDownloadingModel {
-			let name = downloadingModelName ?? "model"
+			let name = downloadingModelName ?? String(localized: "model")
 			let pct = Int((downloadProgress * 100.0).rounded())
-			waitingForModelStatusText = "Downloading \(name)... \(pct)%"
+			waitingForModelStatusText = String(localized: "Downloading \(name)... \(pct)%")
 			return
 		}
 
@@ -89,13 +89,13 @@ import WhisperKit
 		}
 
 		if isModelLoading {
-			let modelName = currentModel ?? selectedModel ?? "model"
+			let modelName = currentModel ?? selectedModel ?? String(localized: "model")
 			let pct = Int((loadProgress * 100.0).rounded())
-			waitingForModelStatusText = "Loading \(modelName)... \(pct)%"
+			waitingForModelStatusText = String(localized: "Loading \(modelName)... \(pct)%")
 			return
 		}
 
-		waitingForModelStatusText = "Waiting for model..."
+		waitingForModelStatusText = String(localized: "Waiting for model...")
 	}
 
 	private func ensureInitializedIfNeeded() async {
@@ -125,7 +125,7 @@ import WhisperKit
 		if whisperKit == nil && parakeetEngine == nil {
 			guard !refreshedDownloaded.isEmpty else {
 				isWaitingForModel = true
-				waitingForModelStatusText = "No model downloaded. Download one in Settings."
+				waitingForModelStatusText = String(localized: "No model downloaded. Download one in Settings.")
 				throw WhisperKitError.noModelLoaded
 			}
 
@@ -450,7 +450,7 @@ import WhisperKit
 
 		isInitializing = true
 		initializationProgress = 0.0
-		initializationStatus = "Preparing to load Whisper models..."
+		initializationStatus = String(localized: "Preparing to load Whisper models...")
 
 		initializationTask = Task { @MainActor in
 			await initialize()
@@ -465,26 +465,26 @@ import WhisperKit
 			initializationTask = nil
 			return
 		}
-		await updateProgress(0.1, "Loading WhisperKit framework...")
+		await updateProgress(0.1, String(localized: "Loading WhisperKit framework..."))
 		try? await Task.sleep(nanoseconds: 500_000_000)  // Small delay for UI feedback
 
 		AppLogger.shared.transcriber.log("Initializing WhisperKit framework...")
-		await updateProgress(0.3, "Setting up AI framework...")
+		await updateProgress(0.3, String(localized: "Setting up AI framework..."))
 
 		// Sync our cache with what's actually on disk
-		await updateProgress(0.6, "Checking for existing models...")
+		await updateProgress(0.6, String(localized: "Checking for existing models..."))
 
 		if let last = lastUsedModel, downloadedModels.contains(last),
 			!Self.isStandardWhisperKitModel(last)
 		{
-			await updateProgress(0.9, "Loading last used model...")
+			await updateProgress(0.9, String(localized: "Loading last used model..."))
 			do {
 				try await autoLoadLastModel()
 			} catch {
 				AppLogger.shared.transcriber.log("Failed to load last used model \(last): \(error)")
 			}
 		} else if !downloadedModels.isEmpty {
-			await updateProgress(0.8, "Loading existing model...")
+			await updateProgress(0.8, String(localized: "Loading existing model..."))
 			do {
 				whisperKit = try await Task { @MainActor in
 					let config = WhisperKitConfig(
@@ -497,7 +497,7 @@ import WhisperKit
 					return whisperKitInstance
 				}.value
 				AppLogger.shared.transcriber.log("WhisperKit initialized with existing models")
-				await updateProgress(0.9, "Loading last used model...")
+				await updateProgress(0.9, String(localized: "Loading last used model..."))
 				try await autoLoadLastModel()
 
 			} catch {
@@ -510,7 +510,7 @@ import WhisperKit
 				"No models downloaded yet - WhisperKit will be initialized with first model download")
 		}
 
-		await updateProgress(1.0, "Ready for model selection!")
+		await updateProgress(1.0, String(localized: "Ready for model selection!"))
 		decodingOptions = createDecodingOptions(
 			enableTranslation: enableTranslation ?? false
 		)
@@ -583,7 +583,8 @@ import WhisperKit
 				try await ensureModelReadyForLiveTranscription()
 				try Task.checkCancellation()
 				if parakeetEngine != nil {
-					waitingForModelStatusText = "Live Transcription Mode needs a Whisper model."
+					waitingForModelStatusText = String(
+						localized: "Live Transcription Mode needs a Whisper model.")
 					throw WhisperKitError.liveModeUnsupported
 				}
 				isWaitingForModel = false
@@ -615,7 +616,7 @@ import WhisperKit
 				isWaitingForModel = false
 				isTranscribing = false
 				if waitingForModelStatusText.isEmpty {
-					waitingForModelStatusText = "Unable to start dictation."
+					waitingForModelStatusText = String(localized: "Unable to start dictation.")
 				}
 				shouldShowLiveTranscriptionWindow = true
 				AppLogger.shared.transcriber.error("Failed to start live stream: \(error)")

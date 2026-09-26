@@ -9,8 +9,8 @@ enum ClipboardHandling: String, CaseIterable, Identifiable, Sendable {
 
 	var displayName: String {
 		switch self {
-		case .restore: return "Restore previous clipboard"
-		case .keepTranscript: return "Keep transcript on clipboard"
+		case .restore: return String(localized: "Restore previous clipboard")
+		case .keepTranscript: return String(localized: "Keep transcript on clipboard")
 		}
 	}
 }
@@ -25,19 +25,19 @@ enum PasteMethod: String, CaseIterable, Identifiable, Sendable {
 
 	var displayName: String {
 		switch self {
-		case .commandV: return "Paste (Cmd-V)"
-		case .typeCharacters: return "Type characters"
-		case .copyOnly: return "Copy to clipboard only"
-		case .externalScript: return "Run script"
+		case .commandV: return String(localized: "Paste (Cmd-V)")
+		case .typeCharacters: return String(localized: "Type characters")
+		case .copyOnly: return String(localized: "Copy to clipboard only")
+		case .externalScript: return String(localized: "Run script")
 		}
 	}
 
 	var summary: String {
 		switch self {
-		case .commandV: return "Puts the transcript on the clipboard and presses Cmd-V"
-		case .typeCharacters: return "Types the text key by key, for apps that block pasting"
-		case .copyOnly: return "Leaves the transcript on the clipboard without inserting it"
-		case .externalScript: return "Runs your script with the transcript as its first argument"
+		case .commandV: return String(localized: "Puts the transcript on the clipboard and presses Cmd-V")
+		case .typeCharacters: return String(localized: "Types the text key by key, for apps that block pasting")
+		case .copyOnly: return String(localized: "Leaves the transcript on the clipboard without inserting it")
+		case .externalScript: return String(localized: "Runs your script with the transcript as its first argument")
 		}
 	}
 }
@@ -51,9 +51,9 @@ enum AutoSubmitKey: String, CaseIterable, Identifiable, Sendable {
 
 	var displayName: String {
 		switch self {
-		case .returnKey: return "Return"
-		case .controlReturn: return "Control-Return"
-		case .commandReturn: return "Command-Return"
+		case .returnKey: return String(localized: "Return")
+		case .controlReturn: return String(localized: "Control-Return")
+		case .commandReturn: return String(localized: "Command-Return")
 		}
 	}
 

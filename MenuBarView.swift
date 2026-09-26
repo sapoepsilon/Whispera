@@ -306,9 +306,9 @@ struct MenuBarView: View {
 
 	private var buttonText: String {
 		if audioManager.isRecording {
-			return "Stop Recording (\(audioManager.formattedRecordingDuration()))"
+			return String(localized: "Stop Recording (\(audioManager.formattedRecordingDuration()))")
 		} else {
-			return "Start Recording"
+			return String(localized: "Start Recording")
 		}
 	}
 
@@ -333,7 +333,9 @@ struct MenuBarView: View {
 
 						if dropHandler.isValidDrop && dropHandler.draggedItemsCount > 0 {
 							Text(
-								"\(dropHandler.draggedItemsCount) item\(dropHandler.draggedItemsCount == 1 ? "" : "s")"
+								dropHandler.draggedItemsCount == 1
+									? String(localized: "1 item")
+									: String(localized: "\(dropHandler.draggedItemsCount) items")
 							)
 							.font(.caption)
 							.foregroundColor(.secondary)
@@ -502,9 +504,11 @@ struct StatusCardView: View {
 							HStack(spacing: 4) {
 								ProgressView()
 									.scaleEffect(0.5)
-								Text("Downloading \(whisperKit.downloadingModelName ?? "model")...")
-									.font(.caption)
-									.foregroundColor(.orange)
+								Text(
+									"Downloading \(whisperKit.downloadingModelName ?? String(localized: "model"))..."
+								)
+								.font(.caption)
+								.foregroundColor(.orange)
 							}
 							Spacer()
 						}
@@ -900,15 +904,15 @@ struct StatusCardView: View {
 		downloadingModel: String? = nil, enableTranslation: Bool = false, needsPermissions: Bool = false
 	) -> String {
 		if needsPermissions {
-			return "Permissions Required"
+			return String(localized: "Permissions Required")
 		} else if isDownloading {
-			return "Downloading Model..."
+			return String(localized: "Downloading Model...")
 		} else if isTranscribing {
-			return enableTranslation ? "Translating..." : "Transcribing..."
+			return enableTranslation ? String(localized: "Translating...") : String(localized: "Transcribing...")
 		} else if isRecording {
-			return "Recording..."
+			return String(localized: "Recording...")
 		} else {
-			return "Ready"
+			return String(localized: "Ready")
 		}
 	}
 
@@ -918,29 +922,31 @@ struct StatusCardView: View {
 		needsPermissions: Bool = false, recordingDuration: String = ""
 	) -> String {
 		if needsPermissions {
-			return "Grant required permissions to continue"
+			return String(localized: "Grant required permissions to continue")
 		} else if isDownloading {
 			if let model = downloadingModel {
 				let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
-				return "Installing \(cleanName) model"
+				return String(localized: "Installing \(cleanName) model")
 			} else {
-				return "Installing Whisper model"
+				return String(localized: "Installing Whisper model")
 			}
 		} else if isTranscribing {
-			return enableTranslation ? "Converting speech to English" : "Converting speech to text"
+			return enableTranslation
+				? String(localized: "Converting speech to English")
+				: String(localized: "Converting speech to text")
 		} else if isRecording {
-			return "Recording for \(recordingDuration)"
+			return String(localized: "Recording for \(recordingDuration)")
 		} else {
-			return "Press shortcut to start recording"
+			return String(localized: "Press shortcut to start recording")
 		}
 	}
 
 	private var statusTitle: String {
 		// Prioritize file operations if active
 		if networkDownloader.isDownloading {
-			return "Downloading File..."
+			return String(localized: "Downloading File...")
 		} else if fileTranscriptionManager.isTranscribing {
-			return "Transcribing File..."
+			return String(localized: "Transcribing File...")
 		}
 
 		return StatusCardView.getStatusTitle(
@@ -957,12 +963,12 @@ struct StatusCardView: View {
 		// Prioritize file operations if active
 		if networkDownloader.isDownloading {
 			let progress = Int(networkDownloader.downloadProgress * 100)
-			return "Progress: \(progress)%"
+			return String(localized: "Progress: \(progress)%")
 		} else if fileTranscriptionManager.isTranscribing {
 			if let filename = fileTranscriptionManager.currentFileName {
-				return "Processing: \(filename)"
+				return String(localized: "Processing: \(filename)")
 			}
-			return "Processing file..."
+			return String(localized: "Processing file...")
 		}
 
 		return StatusCardView.getStatusSubtitle(
@@ -980,7 +986,7 @@ struct StatusCardView: View {
 		// Always show what WhisperKit is actually using, or fall back to settings
 		let modelName = whisperKit.currentModel ?? selectedModel
 		if modelName.isEmpty {
-			return "No Model"
+			return String(localized: "No Model")
 		}
 		if !WhisperKitTranscriber.isStandardWhisperKitModel(modelName) {
 			return WhisperKitTranscriber.getModelDisplayName(for: modelName)
@@ -988,14 +994,14 @@ struct StatusCardView: View {
 		let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
 
 		switch cleanName {
-		case "tiny.en": return "Tiny (English)"
-		case "tiny": return "Tiny (Multilingual)"
-		case "base.en": return "Base (English)"
-		case "base": return "Base (Multilingual)"
-		case "small.en": return "Small (English)"
-		case "small": return "Small (Multilingual)"
-		case "medium.en": return "Medium (English)"
-		case "medium": return "Medium (Multilingual)"
+		case "tiny.en": return String(localized: "Tiny (English)")
+		case "tiny": return String(localized: "Tiny (Multilingual)")
+		case "base.en": return String(localized: "Base (English)")
+		case "base": return String(localized: "Base (Multilingual)")
+		case "small.en": return String(localized: "Small (English)")
+		case "small": return String(localized: "Small (Multilingual)")
+		case "medium.en": return String(localized: "Medium (English)")
+		case "medium": return String(localized: "Medium (Multilingual)")
 		case "large-v2": return "Large v2"
 		case "large-v3": return "Large v3"
 		case "large-v3-turbo": return "Large v3 Turbo"
@@ -1021,7 +1027,7 @@ struct StatusCardView: View {
 		case "large-v2", "large-v3": return "1.5GB"
 		case "large-v3-turbo": return "809MB"
 		case "distil-large-v2", "distil-large-v3": return "756MB"
-		default: return "Unknown"
+		default: return String(localized: "Unknown")
 		}
 	}
 }
@@ -1597,7 +1603,7 @@ struct MicrophonePickerSection: View {
 				VStack(spacing: 2) {
 					deviceRow(
 						icon: "mic.fill",
-						name: "System Default",
+						name: String(localized: "System Default"),
 						isSelected: selectedUID == AudioDeviceManager.systemDefaultUID
 					) {
 						Task {

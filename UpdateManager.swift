@@ -419,11 +419,14 @@ class UpdateManager: NSObject {
 		// A modal alert would block a hosted test run forever
 		guard !AppDelegate.isRunningAsTestHost else { return }
 		let alert = NSAlert()
-		alert.messageText = "Update Downloaded"
+		alert.messageText = String(localized: "Update Downloaded")
 		alert.informativeText =
-			"Whispera \(latestVersion ?? "latest") has been downloaded. Would you like to install it now?"
-		alert.addButton(withTitle: "Install Now")
-		alert.addButton(withTitle: "Install Later")
+			String(
+				localized:
+					"Whispera \(latestVersion ?? "latest") has been downloaded. Would you like to install it now?"
+			)
+		alert.addButton(withTitle: String(localized: "Install Now"))
+		alert.addButton(withTitle: String(localized: "Install Later"))
 
 		let response = alert.runModal()
 		if response == .alertFirstButtonReturn {

@@ -321,14 +321,14 @@ class YouTubeTranscriptionViewModel {
 extension YouTubeTranscriptionViewModel {
 	var qualityOptions: [(String, String)] {
 		[
-			("low", "Low (128kbps)"),
-			("medium", "Medium (256kbps)"),
-			("high", "High (320kbps)"),
+			("low", String(localized: "Low (128kbps)")),
+			("medium", String(localized: "Medium (256kbps)")),
+			("high", String(localized: "High (320kbps)")),
 		]
 	}
 
 	var currentQualityDisplayName: String {
-		qualityOptions.first { $0.0 == youtubeQuality }?.1 ?? "Medium (256kbps)"
+		qualityOptions.first { $0.0 == youtubeQuality }?.1 ?? String(localized: "Medium (256kbps)")
 	}
 }
 

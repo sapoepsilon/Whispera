@@ -9,18 +9,19 @@ enum ActivationMode: String, CaseIterable, Identifiable {
 
 	var displayName: String {
 		switch self {
-		case .toggle: return "Toggle"
-		case .pushToTalk: return "Push to Talk"
-		case .holdOrToggle: return "Hold or Toggle"
+		case .toggle: return String(localized: "Toggle")
+		case .pushToTalk: return String(localized: "Push to Talk")
+		case .holdOrToggle: return String(localized: "Hold or Toggle")
 		}
 	}
 
 	var summary: String {
 		switch self {
-		case .toggle: return "Press once to start, press again to stop"
-		case .pushToTalk: return "Record while the shortcut is held down"
+		case .toggle: return String(localized: "Press once to start, press again to stop")
+		case .pushToTalk: return String(localized: "Record while the shortcut is held down")
 		case .holdOrToggle:
-			return "A short tap toggles recording; holding past the threshold records until release"
+			return String(
+				localized: "A short tap toggles recording; holding past the threshold records until release")
 		}
 	}
 }
@@ -34,21 +35,27 @@ enum MicStreamPolicy: String, CaseIterable, Identifiable {
 
 	var displayName: String {
 		switch self {
-		case .onDemand: return "Open per recording"
-		case .lazyClose: return "Keep open briefly"
-		case .alwaysOn: return "Always on"
+		case .onDemand: return String(localized: "Open per recording")
+		case .lazyClose: return String(localized: "Keep open briefly")
+		case .alwaysOn: return String(localized: "Always on")
 		}
 	}
 
 	var summary: String {
 		switch self {
-		case .onDemand: return "The microphone opens when you start and closes when you stop"
+		case .onDemand: return String(localized: "The microphone opens when you start and closes when you stop")
 		case .lazyClose:
 			return
-				"The microphone stays open for a few seconds after stopping so a quick follow-up starts instantly"
+				String(
+					localized:
+						"The microphone stays open for a few seconds after stopping so a quick follow-up starts instantly"
+				)
 		case .alwaysOn:
 			return
-				"The microphone stays open while Whispera runs for the fastest start; the mic indicator stays on"
+				String(
+					localized:
+						"The microphone stays open while Whispera runs for the fastest start; the mic indicator stays on"
+				)
 		}
 	}
 }
@@ -66,13 +73,13 @@ enum ModelUnloadTimeout: String, CaseIterable, Identifiable {
 
 	var displayName: String {
 		switch self {
-		case .never: return "Never"
-		case .immediately: return "Immediately"
-		case .seconds15: return "After 15 seconds"
-		case .minutes1: return "After 1 minute"
-		case .minutes5: return "After 5 minutes"
-		case .minutes15: return "After 15 minutes"
-		case .hour1: return "After 1 hour"
+		case .never: return String(localized: "Never")
+		case .immediately: return String(localized: "Immediately")
+		case .seconds15: return String(localized: "After 15 seconds")
+		case .minutes1: return String(localized: "After 1 minute")
+		case .minutes5: return String(localized: "After 5 minutes")
+		case .minutes15: return String(localized: "After 15 minutes")
+		case .hour1: return String(localized: "After 1 hour")
 		}
 	}
 

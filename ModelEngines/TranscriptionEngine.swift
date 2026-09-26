@@ -26,8 +26,8 @@ enum ParakeetModel: String, CaseIterable, Identifiable, Sendable {
 
 	var displayName: String {
 		switch self {
-		case .v3: return "Parakeet TDT v3 (25 languages, auto-detect) - 460MB"
-		case .v2: return "Parakeet TDT v2 (English) - 460MB"
+		case .v3: return String(localized: "Parakeet TDT v3 (25 languages, auto-detect) - 460MB")
+		case .v2: return String(localized: "Parakeet TDT v2 (English) - 460MB")
 		}
 	}
 
@@ -35,9 +35,12 @@ enum ParakeetModel: String, CaseIterable, Identifiable, Sendable {
 		switch self {
 		case .v3:
 			return
-				"Detects the spoken language automatically across 25 European languages; the Source Language setting is ignored."
+				String(
+					localized:
+						"Detects the spoken language automatically across 25 European languages; the Source Language setting is ignored."
+				)
 		case .v2:
-			return "English only; the Source Language setting is ignored."
+			return String(localized: "English only; the Source Language setting is ignored.")
 		}
 	}
 }

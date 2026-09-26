@@ -12,7 +12,7 @@ enum AppleIntelligenceAvailability: Equatable, Sendable {
 
 	var summary: String {
 		switch self {
-		case .available: return "Available"
+		case .available: return String(localized: "Available")
 		case .unavailable(let reason): return reason
 		}
 	}
@@ -28,18 +28,18 @@ struct AppleIntelligenceProcessor: TextPostProcessor {
 				case .available:
 					return .available
 				case .unavailable(.deviceNotEligible):
-					return .unavailable("This Mac does not support Apple Intelligence")
+					return .unavailable(String(localized: "This Mac does not support Apple Intelligence"))
 				case .unavailable(.appleIntelligenceNotEnabled):
-					return .unavailable("Turn on Apple Intelligence in System Settings")
+					return .unavailable(String(localized: "Turn on Apple Intelligence in System Settings"))
 				case .unavailable(.modelNotReady):
-					return .unavailable("The on-device model is still downloading")
+					return .unavailable(String(localized: "The on-device model is still downloading"))
 				case .unavailable:
-					return .unavailable("The on-device model is unavailable")
+					return .unavailable(String(localized: "The on-device model is unavailable"))
 				}
 			}
-			return .unavailable("Requires macOS 26 or later")
+			return .unavailable(String(localized: "Requires macOS 26 or later"))
 		#else
-			return .unavailable("This build was compiled without FoundationModels")
+			return .unavailable(String(localized: "This build was compiled without FoundationModels"))
 		#endif
 	}
 

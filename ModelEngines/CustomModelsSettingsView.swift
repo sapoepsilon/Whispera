@@ -118,8 +118,8 @@ struct CustomModelsSettingsView: View {
 		panel.canChooseDirectories = true
 		panel.canChooseFiles = false
 		panel.allowsMultipleSelection = false
-		panel.prompt = "Import"
-		panel.message = "Choose a WhisperKit CoreML model folder"
+		panel.prompt = String(localized: "Import")
+		panel.message = String(localized: "Choose a WhisperKit CoreML model folder")
 		guard panel.runModal() == .OK, let url = panel.url else { return }
 
 		isImporting = true
