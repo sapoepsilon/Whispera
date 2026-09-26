@@ -553,9 +553,11 @@ struct PostProcessShortcutTests {
 	}
 
 	@Test func unknownKeysAreRejectedInsteadOfBecomingR() {
-		#expect(ShortcutCombo("⌥⇧\u{F708}") == nil)
+		#expect(ShortcutCombo("⌥⇧\u{E000}") == nil)
 		#expect(ShortcutCombo("⌥⇧Å") == nil)
-		#expect(!PostProcessShortcutMonitor.isUsableShortcut("⌥⇧\u{F708}"))
+		#expect(!PostProcessShortcutMonitor.isUsableShortcut("⌥⇧\u{E000}"))
+		// AppKit's F5 character is what older recorders stored for F5, so it reads as F5, not R
+		#expect(ShortcutCombo("⌥⇧\u{F708}") == ShortcutCombo(modifiers: [.option, .shift], keyCode: 96))
 		#expect(ShortcutCombo("⌥⌘R") == ShortcutCombo(modifiers: [.option, .command], keyCode: 15))
 	}
 
