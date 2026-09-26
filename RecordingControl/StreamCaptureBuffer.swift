@@ -6,12 +6,16 @@ import Foundation
 /// actor, so every piece of shared state lives behind one lock.
 final class StreamCaptureBuffer: @unchecked Sendable {
 	static let targetSampleRate: Double = 16000
+	static let maxMinutes = 30
 
 	private struct State {
-		var samples: SampleRing
+		var samples: [Float] = []
+		let capacity: Int
+		var reachedLimit = false
 		var isCapturing = false
 		var channelSelection = InputChannelSelection.mixAllChannels
 		var converter: AVAudioConverter?
+		var onLimitReached: (@Sendable () -> Void)?
 	}
 
 	private var state: State
@@ -19,8 +23,15 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 	private let targetFormat = AVAudioFormat(
 		standardFormatWithSampleRate: StreamCaptureBuffer.targetSampleRate, channels: 1)
 
-	init(maxSamples: Int = 16000 * 1800) {
-		state = State(samples: SampleRing(capacity: maxSamples))
+	/// Called once per recording, from the audio thread, when the cap is hit. The beginning of the
+	/// recording is kept and later audio is dropped, so the owner should stop the recording.
+	var onLimitReached: (@Sendable () -> Void)? {
+		get { withState { $0.onLimitReached } }
+		set { withState { $0.onLimitReached = newValue } }
+	}
+
+	init(maxSamples: Int = 16000 * 60 * StreamCaptureBuffer.maxMinutes) {
+		state = State(capacity: max(0, maxSamples))
 	}
 
 	private func withState<R>(_ body: (inout State) -> R) -> R {
@@ -37,6 +48,10 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 		withState { $0.samples.count }
 	}
 
+	var reachedLimit: Bool {
+		withState { $0.reachedLimit }
+	}
+
 	func setCapturing(_ capturing: Bool) {
 		withState { $0.isCapturing = capturing }
 	}
@@ -48,7 +63,8 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 	/// Clears the samples and starts accepting audio for a new recording.
 	func beginCapture(channelSelection: Int) {
 		withState {
-			$0.samples.removeAll()
+			$0.samples.removeAll(keepingCapacity: true)
+			$0.reachedLimit = false
 			$0.channelSelection = channelSelection
 			$0.isCapturing = true
 		}
@@ -59,8 +75,9 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 	func finishCapture() -> [Float] {
 		withState {
 			$0.isCapturing = false
-			let captured = $0.samples.ordered()
-			$0.samples.removeAll()
+			let captured = $0.samples
+			$0.samples = []
+			$0.reachedLimit = false
 			return captured
 		}
 	}
@@ -68,18 +85,29 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 	func discard() {
 		withState {
 			$0.isCapturing = false
-			$0.samples.removeAll()
+			$0.samples = []
+			$0.reachedLimit = false
 		}
 	}
 
 	/// Appends already-converted samples; dropped when nobody is recording.
 	@discardableResult
 	func append(_ newSamples: [Float]) -> Bool {
-		withState { state in
-			guard state.isCapturing else { return false }
-			state.samples.append(contentsOf: newSamples)
-			return true
+		let (kept, limitCallback): (Bool, (@Sendable () -> Void)?) = withState { state in
+			guard state.isCapturing else { return (false, nil) }
+			let room = state.capacity - state.samples.count
+			if newSamples.count <= room {
+				state.samples.append(contentsOf: newSamples)
+				return (true, nil)
+			}
+			state.samples.append(contentsOf: newSamples.prefix(max(0, room)))
+			guard !state.reachedLimit else { return (room > 0, nil) }
+			state.reachedLimit = true
+			return (room > 0, state.onLimitReached)
 		}
+		// Outside the lock: the owner may call back into the buffer to stop
+		limitCallback?()
+		return kept
 	}
 
 	/// Called from the tap. Returns the converted samples when they were kept, for level metering.
@@ -136,61 +164,5 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 	private static func floats(from buffer: AVAudioPCMBuffer) -> [Float]? {
 		guard let channelData = buffer.floatChannelData?[0] else { return nil }
 		return Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
-	}
-}
-
-/// Keeps the newest `capacity` samples. Once full it overwrites the oldest in place, so the
-/// real-time tap never shifts the whole recording to make room.
-struct SampleRing {
-	let capacity: Int
-	private var storage: [Float] = []
-	/// Index of the oldest sample once the ring is full.
-	private var head = 0
-
-	init(capacity: Int) {
-		self.capacity = max(0, capacity)
-	}
-
-	var count: Int { storage.count }
-
-	mutating func append(contentsOf newSamples: [Float]) {
-		guard capacity > 0, !newSamples.isEmpty else { return }
-		if newSamples.count >= capacity {
-			storage = Array(newSamples.suffix(capacity))
-			head = 0
-			return
-		}
-		var remaining = newSamples[...]
-		if storage.count < capacity {
-			let room = capacity - storage.count
-			storage.append(contentsOf: remaining.prefix(room))
-			remaining = remaining.dropFirst(room)
-		}
-		guard !remaining.isEmpty else { return }
-		let capacity = capacity
-		var head = head
-		storage.withUnsafeMutableBufferPointer { ring in
-			remaining.withUnsafeBufferPointer { source in
-				let firstRun = min(source.count, capacity - head)
-				ring.baseAddress!.advanced(by: head).update(from: source.baseAddress!, count: firstRun)
-				let wrapped = source.count - firstRun
-				if wrapped > 0 {
-					ring.baseAddress!.update(from: source.baseAddress!.advanced(by: firstRun), count: wrapped)
-				}
-				head = (head + source.count) % capacity
-			}
-		}
-		self.head = head
-	}
-
-	/// The samples oldest first.
-	func ordered() -> [Float] {
-		guard head > 0 else { return storage }
-		return Array(storage[head...]) + storage[..<head]
-	}
-
-	mutating func removeAll() {
-		storage.removeAll()
-		head = 0
 	}
 }
