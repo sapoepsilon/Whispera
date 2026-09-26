@@ -1244,6 +1244,12 @@ extension AudioManager {
 			let policy = SecureDictationPolicy.resolve(
 				postProcessRequested: session.postProcess,
 				secureInput: secureBeforeProcessing || SecureDictation.isSecureInputActive)
+			if let notice = SecureDictationPolicy.skippedPostProcessingNotice(
+				postProcessRequested: session.postProcess,
+				secureInput: secureBeforeProcessing || SecureDictation.isSecureInputActive)
+			{
+				transcriptionError = notice
+			}
 			if policy.rememberAsLastTranscription {
 				lastTranscription = transcription
 			} else {

@@ -124,3 +124,12 @@ struct SecureDictationInsertionTests {
 		#expect(pasteboard.string(forType: .string) == "hello")
 	}
 }
+
+struct SecureInputPostProcessingNoticeTests {
+	@Test func onlyWhenPostProcessingWasAskedForUnderSecureInput() {
+		let notice = SecureDictationPolicy.skippedPostProcessingNotice
+		#expect(notice(true, true) != nil)
+		#expect(notice(true, false) == nil)
+		#expect(notice(false, true) == nil)
+	}
+}

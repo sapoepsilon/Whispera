@@ -11,6 +11,16 @@ struct SecureDictationPolicy: Equatable, Sendable {
 	/// Clipboard writes carry the concealed and transient markers so clipboard managers skip them.
 	let concealClipboard: Bool
 
+	/// The menu bar message for a post-processing request that Secure Input overrode, so the
+	/// raw paste is not mistaken for a broken LLM setup.
+	static func skippedPostProcessingNotice(postProcessRequested: Bool, secureInput: Bool) -> String? {
+		guard postProcessRequested, secureInput else { return nil }
+		return String(
+			localized:
+				"Secure Input was on, so this dictation was pasted as spoken: it was not post-processed or saved to history."
+		)
+	}
+
 	static func resolve(postProcessRequested: Bool, secureInput: Bool) -> SecureDictationPolicy {
 		SecureDictationPolicy(
 			postProcess: postProcessRequested && !secureInput,
