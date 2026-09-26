@@ -22,6 +22,8 @@ class GlobalShortcutManager: ObservableObject {
 	@MainActor private var activation = ActivationStateMachine(
 		mode: .toggle, holdThreshold: TimeInterval(RecordingControlSettings.defaultHoldThresholdMs) / 1000)
 	private var recordingStateObserver: NSObjectProtocol?
+	private var defaultsObserver: DefaultsKeyObserver?
+	private var monitorsKeyRelease = false
 	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
 	var fileSelectionShortcut: String =
 		UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
@@ -33,36 +35,47 @@ class GlobalShortcutManager: ObservableObject {
 
 	init() {
 		setupShortcut()
-		NotificationCenter.default.addObserver(
-			forName: UserDefaults.didChangeNotification,
-			object: nil,
-			queue: .main
-		) { [weak self] _ in
-			let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
-			let newFileShortcut = UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
-			let newBackend = HotkeyBackend.preferred()
-
-			if newBackend != self?.requestedBackend {
-				self?.logger.info("Hotkey backend changed to \(newBackend.rawValue)")
-				self?.requestedBackend = newBackend
-				self?.setupShortcut()
-			}
-
-			if newShortcut != self?.currentShortcut {
-				self?.logger.info(
-					"Text shortcut changed: \(self?.currentShortcut ?? "nil") → \(newShortcut)")
-				self?.currentShortcut = newShortcut
-				self?.setupShortcut()
-			}
-
-			if newFileShortcut != self?.fileSelectionShortcut {
-				self?.logger.info(
-					"File selection shortcut changed: \(self?.fileSelectionShortcut ?? "nil") → \(newFileShortcut)"
-				)
-				self?.fileSelectionShortcut = newFileShortcut
-				self?.setupShortcut()
-			}
+		defaultsObserver = DefaultsKeyObserver(
+			keys: [
+				"globalShortcut", "fileSelectionShortcut", HotkeyBackend.defaultsKey,
+				RecordingControlSettings.Key.activationMode,
+			]
+		) { [weak self] in
+			self?.shortcutSettingsChanged()
 		}
+	}
+
+	private func shortcutSettingsChanged() {
+		let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
+		let newFileShortcut = UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
+		let newBackend = HotkeyBackend.preferred()
+		var needsSetup = false
+
+		if newBackend != requestedBackend {
+			logger.info("Hotkey backend changed to \(newBackend.rawValue)")
+			requestedBackend = newBackend
+			needsSetup = true
+		}
+
+		if newShortcut != currentShortcut {
+			logger.info("Text shortcut changed: \(currentShortcut) → \(newShortcut)")
+			currentShortcut = newShortcut
+			needsSetup = true
+		}
+
+		if newFileShortcut != fileSelectionShortcut {
+			logger.info(
+				"File selection shortcut changed: \(fileSelectionShortcut) → \(newFileShortcut)")
+			fileSelectionShortcut = newFileShortcut
+			needsSetup = true
+		}
+
+		if RecordingControlSettings().activationMode.needsKeyRelease != monitorsKeyRelease {
+			logger.info("Activation mode changed; reinstalling shortcut monitors")
+			needsSetup = true
+		}
+
+		if needsSetup { setupShortcut() }
 	}
 
 	func setAudioManager(_ manager: AudioManager) {
@@ -162,6 +175,8 @@ class GlobalShortcutManager: ObservableObject {
 		CarbonHotKeyCenter.shared.unregisterAll()
 		// A release in flight is lost when the monitors or hotkeys are replaced
 		Task { @MainActor [weak self] in self?.activation.reset() }
+		postProcessShortcutMonitor.reinstall()
+		monitorsKeyRelease = RecordingControlSettings().activationMode.needsKeyRelease
 
 		let (textModifiers, textKeyCode) = parseShortcut(currentShortcut)
 		logger.info(
@@ -201,8 +216,11 @@ class GlobalShortcutManager: ObservableObject {
 			publishBackend(active: .eventMonitor, message: nil)
 		}
 
-		logger.info("Installing global monitors...")
-		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp]) {
+		// A global key-up monitor wakes the app on every key release in every app, so it is
+		// only installed for the activation modes that act on release.
+		let globalMask: NSEvent.EventTypeMask = monitorsKeyRelease ? [.keyDown, .keyUp] : .keyDown
+		logger.info("Installing global monitors (key release: \(monitorsKeyRelease))...")
+		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: globalMask) {
 			[weak self] event in
 			if event.type == .keyUp {
 				if event.keyCode == textKeyCode {

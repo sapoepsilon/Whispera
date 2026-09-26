@@ -142,7 +142,10 @@ final class SecureInputMonitor {
 	}
 
 	static let shared = SecureInputMonitor()
-	static let pollInterval: TimeInterval = 1
+	// Secure input only needs noticing within the sustain threshold, so a coarse, tolerant timer
+	// lets the system coalesce the wakeup with others instead of waking the app every second.
+	static let pollInterval: TimeInterval = 2
+	static let pollTolerance: TimeInterval = 1
 
 	private(set) var isEnabled = false
 	private(set) var isSustained = false
@@ -189,71 +192,88 @@ final class SecureInputMonitor {
 		let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
 			MainActor.assumeIsolated { self?.poll() }
 		}
-		timer.tolerance = 0.25
+		timer.tolerance = Self.pollTolerance
 		RunLoop.main.add(timer, forMode: .common)
 		self.timer = timer
 		logger.info("Secure input monitor started")
 	}
+
+	var isPolling: Bool { timer != nil }
 
 	func stop() {
 		timer?.invalidate()
 		timer = nil
 		hotKey.unregister()
 		stateMachine = SecureInputStateMachine()
-		isEnabled = false
-		isSustained = false
-		culprit = nil
-		fallbackStatus = .inactive
+		setIfChanged(\.isEnabled, false)
+		setIfChanged(\.isSustained, false)
+		setIfChanged(\.culprit, nil)
+		setIfChanged(\.fallbackStatus, .inactive)
 	}
 
 	func poll(now: Date = Date()) {
 		let transition = stateMachine.update(enabled: isSecureInputEnabled(), now: now)
-		isEnabled = stateMachine.isEnabled
-		isSustained = stateMachine.isSustained
+		setIfChanged(\.isEnabled, stateMachine.isEnabled)
+		setIfChanged(\.isSustained, stateMachine.isSustained)
 
 		switch transition {
 		case .none:
 			return
 		case .enabled:
-			logger.info("Secure event input enabled")
-			Task { [weak self] in
-				let culprit = await SecureInputCulpritLookup.lookup()
-				guard let self, self.isEnabled else { return }
-				self.culprit = culprit
-				if let culprit {
-					self.logger.info("Secure event input held by pid \(culprit.pid) (\(culprit.name))")
-				}
-			}
+			logger.debug("Secure event input enabled")
 		case .sustained:
 			logger.info("Secure event input sustained; global shortcut monitors are blind")
 			reconcileFallback()
+			lookUpCulprit()
 		case .disabled(let wasSustained):
-			logger.info("Secure event input disabled")
-			culprit = nil
+			logger.debug("Secure event input disabled")
+			setIfChanged(\.culprit, nil)
 			if wasSustained { reconcileFallback() }
 		}
+	}
+
+	// Browsers toggle secure input on every password-field focus; only a sustained hold is shown
+	// to the user, so the ioreg subprocess is spawned for that and not for each brief toggle.
+	private func lookUpCulprit() {
+		Task { [weak self] in
+			let culprit = await SecureInputCulpritLookup.lookup()
+			guard let self, self.isSustained else { return }
+			self.setIfChanged(\.culprit, culprit)
+			if let culprit {
+				self.logger.info("Secure event input held by pid \(culprit.pid) (\(culprit.name))")
+			}
+		}
+	}
+
+	// Assigning an unchanged value to an @Observable property still invalidates every view that
+	// reads it, which would redraw the menu bar popover and Settings on every poll.
+	private func setIfChanged<Value: Equatable>(
+		_ keyPath: ReferenceWritableKeyPath<SecureInputMonitor, Value>, _ value: Value
+	) {
+		guard self[keyPath: keyPath] != value else { return }
+		self[keyPath: keyPath] = value
 	}
 
 	func reconcileFallback() {
 		guard isSustained else {
 			hotKey.unregister()
-			fallbackStatus = .inactive
+			setIfChanged(\.fallbackStatus, .inactive)
 			return
 		}
 		guard isFallbackEnabled else {
 			hotKey.unregister()
-			fallbackStatus = .disabledByUser
+			setIfChanged(\.fallbackStatus, .disabledByUser)
 			return
 		}
 		guard let spec = hotKeySpecProvider(), hotKey.register(spec) else {
 			hotKey.unregister()
-			fallbackStatus = .unavailable
+			setIfChanged(\.fallbackStatus, .unavailable)
 			logger.error("Secure input fallback hotkey could not be registered")
 			return
 		}
 		if fallbackStatus != .active {
 			logger.info("Secure input fallback hotkey registered")
 		}
-		fallbackStatus = .active
+		setIfChanged(\.fallbackStatus, .active)
 	}
 }

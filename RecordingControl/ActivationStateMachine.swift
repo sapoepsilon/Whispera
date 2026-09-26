@@ -28,16 +28,18 @@ struct ActivationStateMachine {
 
 	mutating func keyDown(at time: Date, isRepeat: Bool, isSessionActive: Bool) -> ActivationAction {
 		guard !isRepeat else { return .none }
+		if let startedAt = pressStartedAt, time.timeIntervalSince(startedAt) < Self.duplicatePressWindow {
+			return .none
+		}
 		if isPressed {
-			if let startedAt = pressStartedAt, time.timeIntervalSince(startedAt) < Self.duplicatePressWindow {
-				return .none
-			}
 			// A fresh press while still "pressed" means the previous release was never
 			// delivered (secure input, a re-registered hotkey); treat it as a new press
 			// rather than ignoring the shortcut until relaunch.
 			reset()
 		}
-		isPressed = true
+		// Toggle mode is driven without a system-wide key-release monitor, so a press must not
+		// latch waiting for a release that may never be delivered.
+		isPressed = mode.needsKeyRelease
 		pressStartedAt = time
 
 		if isSessionActive {

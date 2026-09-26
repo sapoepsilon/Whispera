@@ -56,7 +56,14 @@ final class LogTailer {
 	private var partialLine = ""
 	private var discardLeadingFragment = false
 	private var nextID = 0
-	private var timer: Timer?
+	private var fileSource: DispatchSourceFileSystemObject?
+	private var directorySource: DispatchSourceFileSystemObject?
+	private var watchedFileURL: URL?
+	private var watchedDirectoryURL: URL?
+	private var isPollScheduled = false
+	private var coalescingDelay: TimeInterval = 0.25
+
+	private(set) var isRunning = false
 
 	init(
 		maxEntries: Int = 5000,
@@ -68,19 +75,84 @@ final class LogTailer {
 		self.fileProvider = fileProvider
 	}
 
-	func start(interval: TimeInterval = 0.5) {
+	// File system events replace a polling timer so an open, quiet log viewer never wakes the
+	// app; bursts of writes are coalesced into one read after `coalescingDelay`.
+	func start(coalescingDelay: TimeInterval = 0.25) {
+		self.coalescingDelay = coalescingDelay
+		isRunning = true
 		poll()
-		guard timer == nil else { return }
-		timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-			Task { @MainActor in
-				self?.poll()
+		updateWatches()
+	}
+
+	func stop() {
+		isRunning = false
+		fileSource?.cancel()
+		fileSource = nil
+		watchedFileURL = nil
+		directorySource?.cancel()
+		directorySource = nil
+		watchedDirectoryURL = nil
+	}
+
+	var isWatchingFile: Bool { fileSource != nil }
+
+	private func schedulePoll() {
+		guard isRunning, !isPollScheduled else { return }
+		isPollScheduled = true
+		DispatchQueue.main.asyncAfter(deadline: .now() + coalescingDelay) { [weak self] in
+			MainActor.assumeIsolated {
+				guard let self else { return }
+				self.isPollScheduled = false
+				guard self.isRunning else { return }
+				self.poll()
+				self.updateWatches()
 			}
 		}
 	}
 
-	func stop() {
-		timer?.invalidate()
-		timer = nil
+	private func updateWatches() {
+		guard isRunning else { return }
+		let url = fileProvider()
+		let directory = url?.deletingLastPathComponent()
+
+		if directory != watchedDirectoryURL {
+			directorySource?.cancel()
+			directorySource = directory.flatMap { makeSource(for: $0, events: .write, isLogFile: false) }
+			watchedDirectoryURL = directorySource == nil ? nil : directory
+		}
+
+		let fileIsGone = watchedFileURL.map { !FileManager.default.fileExists(atPath: $0.path) } ?? true
+		if url != watchedFileURL || fileIsGone {
+			fileSource?.cancel()
+			fileSource = url.flatMap {
+				makeSource(for: $0, events: [.extend, .write, .delete, .rename], isLogFile: true)
+			}
+			watchedFileURL = fileSource == nil ? nil : url
+		}
+	}
+
+	private func makeSource(
+		for url: URL, events: DispatchSource.FileSystemEvent, isLogFile: Bool
+	) -> DispatchSourceFileSystemObject? {
+		let descriptor = open(url.path, O_EVTONLY)
+		guard descriptor >= 0 else { return nil }
+		let source = DispatchSource.makeFileSystemObjectSource(
+			fileDescriptor: descriptor, eventMask: events, queue: .main)
+		source.setEventHandler { [weak self, weak source] in
+			MainActor.assumeIsolated {
+				guard let self, let source else { return }
+				if isLogFile, !source.data.isDisjoint(with: [.delete, .rename]) {
+					self.fileSource?.cancel()
+					self.fileSource = nil
+					self.watchedFileURL = nil
+					self.resetReadPosition()
+				}
+				self.schedulePoll()
+			}
+		}
+		source.setCancelHandler { close(descriptor) }
+		source.resume()
+		return source
 	}
 
 	func clearView() {
@@ -102,10 +174,7 @@ final class LogTailer {
 		else { return }
 
 		if size < offset {
-			offset = 0
-			partialLine = ""
-			discardLeadingFragment = false
-			entries.removeAll()
+			resetReadPosition()
 		}
 		if offset == 0 && size > initialReadBytes {
 			offset = size - initialReadBytes
@@ -124,6 +193,15 @@ final class LogTailer {
 		} catch {
 			AppLogger.shared.general.error("Log viewer failed to read \(url.lastPathComponent): \(error)")
 		}
+	}
+
+	// A rotated-away file is replaced by a new one at the same path, which must be read from its
+	// start even when it has already grown past the old read offset.
+	private func resetReadPosition() {
+		offset = 0
+		partialLine = ""
+		discardLeadingFragment = false
+		entries.removeAll()
 	}
 
 	private func append(_ chunk: String) {
@@ -257,7 +335,9 @@ struct LogViewerView: View {
 			.controlSize(.small)
 		}
 		.padding(20)
-		.onAppear { tailer.start() }
+		.onAppear {
+			if !isPaused { tailer.start() }
+		}
 		.onDisappear { tailer.stop() }
 	}
 

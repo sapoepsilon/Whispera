@@ -63,6 +63,28 @@ struct ActivationStateMachineTests {
 		#expect(m.keyDown(at: t0.addingTimeInterval(0.1), isRepeat: false, isSessionActive: false) == .start)
 	}
 
+	@Test func toggleWorksWithoutAnyReleaseEvents() {
+		var m = machine(.toggle)
+		#expect(m.keyDown(at: t0, isRepeat: false, isSessionActive: false) == .start)
+		#expect(!m.isPressed)
+		#expect(m.keyDown(at: t0.addingTimeInterval(2), isRepeat: false, isSessionActive: true) == .stop)
+		#expect(m.keyDown(at: t0.addingTimeInterval(4), isRepeat: false, isSessionActive: false) == .start)
+	}
+
+	@Test func releaseModesIgnoreADuplicatePressBeforeRelease() {
+		for mode in [ActivationMode.pushToTalk, .holdOrToggle] {
+			var m = machine(mode)
+			#expect(m.keyDown(at: t0, isRepeat: false, isSessionActive: false) == .start)
+			#expect(m.keyDown(at: t0.addingTimeInterval(0.1), isRepeat: false, isSessionActive: true) == .none)
+		}
+	}
+
+	@Test func onlyReleaseDrivenModesNeedKeyUpEvents() {
+		#expect(!ActivationMode.toggle.needsKeyRelease)
+		#expect(ActivationMode.pushToTalk.needsKeyRelease)
+		#expect(ActivationMode.holdOrToggle.needsKeyRelease)
+	}
+
 	// MARK: Push to talk
 
 	@Test func pushToTalkRecordsWhileHeld() {

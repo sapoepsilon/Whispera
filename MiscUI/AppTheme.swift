@@ -35,7 +35,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
 final class ThemeController {
 	static let shared = ThemeController()
 
-	private var defaultsObserver: NSObjectProtocol?
+	private var defaultsObserver: DefaultsKeyObserver?
 	private var lastApplied: AppTheme?
 
 	private init() {}
@@ -43,14 +43,9 @@ final class ThemeController {
 	func start(defaults: UserDefaults = .standard) {
 		apply(AppTheme.stored(in: defaults))
 		guard defaultsObserver == nil else { return }
-		defaultsObserver = NotificationCenter.default.addObserver(
-			forName: UserDefaults.didChangeNotification,
-			object: defaults,
-			queue: .main
-		) { [weak self] _ in
-			Task { @MainActor in
-				self?.apply(AppTheme.stored(in: defaults))
-			}
+		defaultsObserver = DefaultsKeyObserver(defaults: defaults, keys: [AppTheme.defaultsKey]) {
+			[weak self] in
+			self?.apply(AppTheme.stored(in: defaults))
 		}
 	}
 

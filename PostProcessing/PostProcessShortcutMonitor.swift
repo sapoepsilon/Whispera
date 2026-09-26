@@ -11,7 +11,7 @@ final class PostProcessShortcutMonitor {
 	private var localMonitor: Any?
 	private weak var audioManager: AudioManager?
 	private var parser: ShortcutParser?
-	private var defaultsObserver: NSObjectProtocol?
+	private var defaultsObserver: DefaultsKeyObserver?
 	private var installedSignature: String?
 	private let carbonHotKey = CarbonHotKey()
 	@MainActor private var activation = ActivationStateMachine(
@@ -21,16 +21,16 @@ final class PostProcessShortcutMonitor {
 
 	init(settings: PostProcessingSettings = PostProcessingSettings()) {
 		self.settings = settings
-		defaultsObserver = NotificationCenter.default.addObserver(
-			forName: UserDefaults.didChangeNotification, object: nil, queue: .main
-		) { [weak self] _ in
+		defaultsObserver = DefaultsKeyObserver(
+			defaults: settings.defaults,
+			keys: [PostProcessingSettings.Key.enabled, PostProcessingSettings.Key.shortcut]
+		) { [weak self] in
 			self?.reinstallIfChanged()
 		}
 	}
 
 	deinit {
 		removeMonitors()
-		if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
 	}
 
 	func attach(audioManager: AudioManager, parser: @escaping ShortcutParser) {
@@ -40,7 +40,7 @@ final class PostProcessShortcutMonitor {
 	}
 
 	/// Global monitors installed before Accessibility is granted stay deaf, so the owner calls
-	/// this again once permission arrives.
+	/// this again whenever it reinstalls its own shortcut monitors, including after permission arrives.
 	func reinstall() {
 		installedSignature = nil
 		reinstallIfChanged()
@@ -54,8 +54,8 @@ final class PostProcessShortcutMonitor {
 
 	private func reinstallIfChanged() {
 		let shortcut = settings.shortcut
-		let backend = HotkeyBackend.preferred()
-		let signature = "\(settings.isEnabled)|\(shortcut)|\(AXIsProcessTrusted())|\(backend.rawValue)"
+		let needsKeyRelease = RecordingControlSettings().activationMode.needsKeyRelease
+		let signature = "\(settings.isEnabled)|\(shortcut)|\(AXIsProcessTrusted())|\(needsKeyRelease)"
 		guard signature != installedSignature, let parser else { return }
 		installedSignature = signature
 		removeMonitors()
@@ -82,7 +82,9 @@ final class PostProcessShortcutMonitor {
 				&& event.modifierFlags.intersection([.command, .option, .control, .shift]) == modifiers
 		}
 
-		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+		// A system-wide key-up monitor wakes the app on every keystroke, so toggle mode skips it
+		let globalMask: NSEvent.EventTypeMask = needsKeyRelease ? [.keyDown, .keyUp] : .keyDown
+		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: globalMask) { [weak self] event in
 			if event.type == .keyUp {
 				if event.keyCode == keyCode { self?.handleRelease() }
 				return
