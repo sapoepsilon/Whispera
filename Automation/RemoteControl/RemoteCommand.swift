@@ -87,6 +87,9 @@ enum RemoteCommand: Equatable, Sendable {
 	static func resolveLanguageName(_ input: String) -> String? {
 		let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 		guard !normalized.isEmpty else { return nil }
+		if Constants.isAutoDetectLanguage(normalized) {
+			return Constants.autoDetectLanguageName
+		}
 		if Constants.languages[normalized] != nil {
 			return normalized
 		}

@@ -50,6 +50,7 @@ struct RemoteCommandParsingTests {
 		#expect(RemoteCommand.resolveLanguageName(" EN ") == "english")
 		#expect(RemoteCommand.resolveLanguageName("klingon") == nil)
 		#expect(RemoteCommand.resolveLanguageName("") == nil)
+		#expect(RemoteCommand.resolveLanguageName(" AUTO ") == Constants.autoDetectLanguageName)
 	}
 
 	@Test func urlSchemeDefaultsToEnabledAndHonorsOptOut() throws {
@@ -186,6 +187,9 @@ struct RemoteControlCenterTests {
 		let rejected = await center.handle(.setLanguage("klingon"), source: .url)
 		#expect(rejected == .rejected("Unknown language: klingon"))
 		#expect(defaults.string(forKey: "selectedLanguage") == "german")
+
+		#expect(await center.handle(.setLanguage("Auto"), source: .url) == .performed)
+		#expect(defaults.string(forKey: "selectedLanguage") == Constants.autoDetectLanguageName)
 	}
 
 	@Test func modelCommandOnlySwitchesToDownloadedModels() async throws {

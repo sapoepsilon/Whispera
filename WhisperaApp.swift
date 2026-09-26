@@ -199,6 +199,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			"soundFeedback": true,
 			"enableRecordingGlow": true,
 			"enableStreaming": Constants.enableStreamingDefault,
+			"autoDetectLanguageFromKeyboard": Constants.autoDetectLanguageFromKeyboardDefault,
 			"materialStyle": MaterialStyle.default.rawValue,
 		])
 	}

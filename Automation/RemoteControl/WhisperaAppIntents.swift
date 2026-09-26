@@ -65,7 +65,7 @@ struct CancelDictationIntent: AppIntent {
 struct SetDictationLanguageIntent: AppIntent {
 	static var title: LocalizedStringResource = "Set Dictation Language"
 	static var description = IntentDescription(
-		"Sets the language Whispera transcribes in, by name (German) or code (de).")
+		"Sets the language Whispera transcribes in, by name (German), code (de), or auto to detect it.")
 	static var openAppWhenRun = false
 
 	@Parameter(title: "Language")

@@ -96,7 +96,8 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	@AppStorage("enableStreaming") var enableStreaming = Constants.enableStreamingDefault
 	@ObservationIgnored
-	@AppStorage("autoDetectLanguageFromKeyboard") var autoDetectLanguageFromKeyboard = false
+	@AppStorage("autoDetectLanguageFromKeyboard") var autoDetectLanguageFromKeyboard = Constants
+		.autoDetectLanguageFromKeyboardDefault
 	@ObservationIgnored
 	@AppStorage("selectedLanguage") var selectedLanguage = Constants.defaultLanguageName
 
