@@ -65,7 +65,9 @@ enum ModelUnloadTimeout: String, CaseIterable, Identifiable {
 	case immediately
 	case seconds15
 	case minutes1
+	case minutes2
 	case minutes5
+	case minutes10
 	case minutes15
 	case hour1
 
@@ -77,7 +79,9 @@ enum ModelUnloadTimeout: String, CaseIterable, Identifiable {
 		case .immediately: return String(localized: "Immediately")
 		case .seconds15: return String(localized: "After 15 seconds")
 		case .minutes1: return String(localized: "After 1 minute")
+		case .minutes2: return String(localized: "After 2 minutes")
 		case .minutes5: return String(localized: "After 5 minutes")
+		case .minutes10: return String(localized: "After 10 minutes")
 		case .minutes15: return String(localized: "After 15 minutes")
 		case .hour1: return String(localized: "After 1 hour")
 		}
@@ -90,7 +94,9 @@ enum ModelUnloadTimeout: String, CaseIterable, Identifiable {
 		case .immediately: return 0
 		case .seconds15: return 15
 		case .minutes1: return 60
+		case .minutes2: return 120
 		case .minutes5: return 300
+		case .minutes10: return 600
 		case .minutes15: return 900
 		case .hour1: return 3600
 		}
