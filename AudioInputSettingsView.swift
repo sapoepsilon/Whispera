@@ -179,7 +179,9 @@ struct FeedbackSoundSettingsRows: View {
 		let path = start ? customStartPath : customStopPath
 		return SettingRow(
 			start ? "Custom Start Sound" : "Custom Stop Sound",
-			description: path.isEmpty ? "No file chosen" : URL(fileURLWithPath: path).lastPathComponent
+			description: path.isEmpty
+				? String(localized: "No file chosen") : URL(fileURLWithPath: path).lastPathComponent,
+			descriptionIsVerbatim: true
 		) {
 			Button("Choose File...") { chooseSound(start: start) }
 				.buttonStyle(.bordered)

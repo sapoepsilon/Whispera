@@ -46,11 +46,18 @@ struct SettingsSection<Content: View>: View {
 struct SettingRow<Content: View>: View {
 	let label: String
 	let description: String?
+	let descriptionIsVerbatim: Bool
 	let content: Content
 
-	init(_ label: String, description: String? = nil, @ViewBuilder content: () -> Content) {
+	/// Pass `descriptionIsVerbatim` for text that is not a catalog key, such as a file name, so it
+	/// is shown as is instead of being looked up and parsed as Markdown.
+	init(
+		_ label: String, description: String? = nil, descriptionIsVerbatim: Bool = false,
+		@ViewBuilder content: () -> Content
+	) {
 		self.label = label
 		self.description = description
+		self.descriptionIsVerbatim = descriptionIsVerbatim
 		self.content = content()
 	}
 
@@ -60,7 +67,7 @@ struct SettingRow<Content: View>: View {
 				Text(LocalizedStringKey(label))
 					.font(.subheadline)
 				if let description = description {
-					Text(LocalizedStringKey(description))
+					(descriptionIsVerbatim ? Text(verbatim: description) : Text(LocalizedStringKey(description)))
 						.font(.caption)
 						.foregroundColor(.secondary)
 						.fixedSize(horizontal: false, vertical: true)
