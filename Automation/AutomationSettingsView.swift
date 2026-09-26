@@ -8,6 +8,7 @@ struct AutomationSettingsView: View {
 		ScrollView {
 			VStack(alignment: .leading, spacing: 24) {
 				remoteControlSection
+				LauncherSettingsSection()
 				CommandLineSettingsSection()
 			}
 			.padding(20)
