@@ -14307,25 +14307,25 @@
         }
       }
     },
-    "Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Whispera runs a private copy of the script, starting in the script's folder; WHISPERA_SCRIPT_PATH holds the original path. Choose the script again after editing it.": {
+    "Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Whispera runs a private copy of the script, so $0 is the copy: it starts in the script's folder, WHISPERA_SCRIPT_PATH holds the original path and WHISPERA_SCRIPT_DIR its folder. Choose the script again after editing it.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Erhält das Transkript über die Standardeingabe und in WHISPERA_TRANSCRIPT. Whispera führt eine private Kopie des Skripts aus, gestartet im Ordner des Skripts; WHISPERA_SCRIPT_PATH enthält den ursprünglichen Pfad. Wähle das Skript nach jeder Änderung erneut aus."
+            "value": "Erhält das Transkript über die Standardeingabe und in WHISPERA_TRANSCRIPT. Whispera führt eine private Kopie des Skripts aus, $0 ist also die Kopie: Sie startet im Ordner des Skripts, WHISPERA_SCRIPT_PATH enthält den ursprünglichen Pfad und WHISPERA_SCRIPT_DIR dessen Ordner. Wähle das Skript nach jeder Änderung erneut aus."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recibe la transcripción por la entrada estándar y en WHISPERA_TRANSCRIPT. Whispera ejecuta una copia privada del script, empezando en la carpeta del script; WHISPERA_SCRIPT_PATH contiene la ruta original. Vuelve a elegir el script después de editarlo."
+            "value": "Recibe la transcripción por la entrada estándar y en WHISPERA_TRANSCRIPT. Whispera ejecuta una copia privada del script, así que $0 es la copia: empieza en la carpeta del script, WHISPERA_SCRIPT_PATH contiene la ruta original y WHISPERA_SCRIPT_DIR su carpeta. Vuelve a elegir el script después de editarlo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reçoit la transcription sur l'entrée standard et dans WHISPERA_TRANSCRIPT. Whispera exécute une copie privée du script, lancée dans le dossier du script ; WHISPERA_SCRIPT_PATH contient le chemin d'origine. Choisissez de nouveau le script après l'avoir modifié."
+            "value": "Reçoit la transcription sur l'entrée standard et dans WHISPERA_TRANSCRIPT. Whispera exécute une copie privée du script, donc $0 est la copie : elle est lancée dans le dossier du script, WHISPERA_SCRIPT_PATH contient le chemin d'origine et WHISPERA_SCRIPT_DIR son dossier. Choisissez de nouveau le script après l'avoir modifié."
           }
         }
       }
@@ -18677,6 +18677,29 @@
         }
       }
     },
+    "The insertion script changed since you chose it, so it was not run and the transcript is on the clipboard. Choose the script again in Settings > Text Insertion.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Einfügeskript hat sich geändert, seit du es ausgewählt hast. Es wurde daher nicht ausgeführt, und das Transkript liegt in der Zwischenablage. Wähle das Skript unter Einstellungen > Texteingabe erneut aus."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El script de inserción cambió desde que lo elegiste, así que no se ejecutó y la transcripción está en el portapapeles. Vuelve a elegir el script en Ajustes > Inserción de texto."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le script d'insertion a changé depuis que vous l'avez choisi : il n'a pas été exécuté et la transcription est dans le presse-papiers. Choisissez de nouveau le script dans Réglages > Insertion de texte."
+          }
+        }
+      }
+    },
     "The microphone kept dropping out, so the recording was stopped early. What was captured was transcribed.": {
       "extractionState": "manual",
       "localizations": {
@@ -18995,6 +19018,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le fournisseur a renvoyé une liste de modèles vide."
+          }
+        }
+      }
+    },
+    "The recording could not be read.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Aufnahme konnte nicht gelesen werden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer la grabación."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'enregistrement n'a pas pu être lu."
           }
         }
       }

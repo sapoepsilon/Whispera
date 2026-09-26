@@ -53,9 +53,14 @@ struct KeychainScriptApprovalKeyStore: ScriptApprovalKeyStore {
 	}
 }
 
-/// Identity of a script file at the moment the user chose it. Any edit, replacement or move
-/// changes it, and so invalidates the approval. The change time cannot be set by user code, and
-/// the content digest catches a same-size rewrite even if the change time were restored.
+/// Identity of a script file at the moment the user chose it: its resolved path, its owner and the
+/// SHA-256 of its bytes. Any edit, replacement or move changes it and so invalidates the approval.
+///
+/// File metadata (inode, change and modification times, permission bits) is deliberately left
+/// out. The runner executes a private copy of exactly the bytes that were hashed, so metadata adds
+/// no protection, while it changes on harmless events (chmod, Finder tags, iCloud or Dropbox
+/// extended attributes, a new hard link) and made approvals lapse for no reason. Permissions are
+/// still checked on every run by `ExternalScriptRunner.checkOwnershipAndPermissions`.
 struct ScriptFingerprint: Equatable, Sendable {
 	/// Larger files are refused rather than hashed on every dictation.
 	static let maximumSize = 32 * 1024 * 1024
@@ -141,6 +146,12 @@ struct ScriptFingerprint: Equatable, Sendable {
 	}
 
 	var canonical: String {
+		"v3|\(path)|\(owner)|\(contentDigest)"
+	}
+
+	/// The format approvals were signed with before v3. It covered strictly more than v3, so an
+	/// approval that still verifies against it can be re-signed without asking the user again.
+	var legacyV2Canonical: String {
 		"v2|\(path)|\(device)|\(inode)|\(size)|\(modifiedSeconds).\(modifiedNanoseconds)"
 			+ "|\(changedSeconds).\(changedNanoseconds)|\(owner)|\(mode)|\(contentDigest)"
 	}
@@ -156,18 +167,36 @@ enum ScriptApproval {
 		guard let key = try keyStore.key(createIfMissing: true) else {
 			throw ExternalScriptError.notApproved
 		}
-		let fingerprint = try ScriptFingerprint.read(path: url.path)
-		let code = HMAC<SHA256>.authenticationCode(for: Data(fingerprint.canonical.utf8), using: key)
-		return Data(code).base64EncodedString()
+		return sign(try ScriptFingerprint.read(path: url.path), with: key)
+	}
+
+	enum Verdict: Equatable, Sendable {
+		case approved
+		/// Signed in the older format and still valid; store `upgraded` in place of the old value.
+		case approvedLegacy(upgraded: String)
+		case refused
+
+		var isApproved: Bool { self != .refused }
+
+		var upgradedApproval: String? {
+			if case .approvedLegacy(let upgraded) = self { return upgraded }
+			return nil
+		}
 	}
 
 	static func isApproved(
 		path: String, approval: String, keyStore: ScriptApprovalKeyStore = KeychainScriptApprovalKeyStore()
 	) -> Bool {
+		verdict(path: path, approval: approval, keyStore: keyStore).isApproved
+	}
+
+	static func verdict(
+		path: String, approval: String, keyStore: ScriptApprovalKeyStore = KeychainScriptApprovalKeyStore()
+	) -> Verdict {
 		guard let resolved = try? ExternalScriptRunner.validate(path: path),
 			let snapshot = try? ScriptFingerprint.snapshot(path: resolved.path)
-		else { return false }
-		return isApproved(snapshot: snapshot, approval: approval, keyStore: keyStore)
+		else { return .refused }
+		return verdict(snapshot: snapshot, approval: approval, keyStore: keyStore)
 	}
 
 	/// Checks the bytes that were read, so what runs afterwards is exactly what was verified.
@@ -175,10 +204,49 @@ enum ScriptApproval {
 		snapshot: ScriptFingerprint.Snapshot, approval: String,
 		keyStore: ScriptApprovalKeyStore = KeychainScriptApprovalKeyStore()
 	) -> Bool {
+		verdict(snapshot: snapshot, approval: approval, keyStore: keyStore).isApproved
+	}
+
+	static func verdict(
+		snapshot: ScriptFingerprint.Snapshot, approval: String,
+		keyStore: ScriptApprovalKeyStore = KeychainScriptApprovalKeyStore()
+	) -> Verdict {
 		guard let code = Data(base64Encoded: approval), code.count == SHA256.byteCount,
 			let key = try? keyStore.key(createIfMissing: false)
-		else { return false }
-		return HMAC<SHA256>.isValidAuthenticationCode(
-			code, authenticating: Data(snapshot.fingerprint.canonical.utf8), using: key)
+		else { return .refused }
+		let fingerprint = snapshot.fingerprint
+		if HMAC<SHA256>.isValidAuthenticationCode(code, authenticating: Data(fingerprint.canonical.utf8), using: key) {
+			return .approved
+		}
+		if HMAC<SHA256>.isValidAuthenticationCode(
+			code, authenticating: Data(fingerprint.legacyV2Canonical.utf8), using: key)
+		{
+			return .approvedLegacy(upgraded: sign(fingerprint, with: key))
+		}
+		return .refused
+	}
+
+	/// Re-signs an approval stored in an older format so it keeps working; one that no longer
+	/// verifies is left alone and reported when the script is next used.
+	static func upgradeStoredApproval(
+		in defaults: UserDefaults, keyStore: ScriptApprovalKeyStore = KeychainScriptApprovalKeyStore()
+	) {
+		let settings = TextInsertionSettings(defaults: defaults)
+		guard settings.pasteMethod == .externalScript, !settings.externalScriptPath.isEmpty,
+			!settings.externalScriptApproval.isEmpty
+		else { return }
+		let verdict = verdict(
+			path: settings.externalScriptPath, approval: settings.externalScriptApproval, keyStore: keyStore)
+		if let upgraded = verdict.upgradedApproval {
+			defaults.set(upgraded, forKey: TextInsertionSettings.Keys.externalScriptApproval)
+			AppLogger.shared.general.info("Upgraded the insertion script approval to the current format")
+		} else if verdict == .refused {
+			AppLogger.shared.general.info("The insertion script approval no longer matches the script")
+		}
+	}
+
+	private static func sign(_ fingerprint: ScriptFingerprint, with key: SymmetricKey) -> String {
+		let code = HMAC<SHA256>.authenticationCode(for: Data(fingerprint.canonical.utf8), using: key)
+		return Data(code).base64EncodedString()
 	}
 }

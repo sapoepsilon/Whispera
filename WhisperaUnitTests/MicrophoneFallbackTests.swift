@@ -46,6 +46,13 @@ struct MicrophoneFallbackTests {
 		#expect(InputLossResponse.finishedNotice(lostDevice: "USB Mic").contains("USB Mic"))
 	}
 
+	@Test func fallbackNoticeNotifiesWhenNoPillCanShowIt() {
+		#expect(InputLossResponse.fallbackNoticeNeedsNotification(isLive: true, overlay: .pill))
+		#expect(InputLossResponse.fallbackNoticeNeedsNotification(isLive: false, overlay: .minimal))
+		#expect(InputLossResponse.fallbackNoticeNeedsNotification(isLive: false, overlay: .none))
+		#expect(!InputLossResponse.fallbackNoticeNeedsNotification(isLive: false, overlay: .pill))
+	}
+
 	@Test func deviceLossWithoutARecordingChangesNothing() {
 		let manager = AudioManager()
 		manager.handleInputDeviceLost(name: "USB Mic")

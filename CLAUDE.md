@@ -171,7 +171,8 @@ Versions are the ones pinned in `Whispera.xcodeproj/project.xcworkspace/xcshared
 
 ### Model Operations
 Whisper models are downloaded to `~/Library/Application Support/Whispera/models/argmaxinc/whisperkit-coreml/{model-name}/`. FluidAudio models live under `~/Library/Application Support/Whispera/models/FluidInference/`: `parakeet-tdt-0.6b-v3-coreml/` and `parakeet-tdt-0.6b-v2-coreml/` (`ParakeetEngine`) and `silero-vad-coreml/` (`NeuralVoiceActivityDetector`).
-- Operations are serialized via `modelOperationTask`
+- Downloads, loads and switches are serialized through `ModelOperationQueue` (`modelOperations` in WhisperKitTranscriber); call `runModelOperation` and load with `loadModelInOperation`, never `loadModel` directly
+- A dictation that finds the model idle-unloaded reloads it with `ModelOperationQueue.restore`: beside a download that is still in its network phase, otherwise in the queue; operations wait for that reload before loading, so the model the user picked always wins
 - Download progress tracked via callback
 - Models persist across app launches
 

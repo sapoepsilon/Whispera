@@ -30,6 +30,9 @@ enum ExternalScriptError: LocalizedError, Equatable {
 enum ExternalScriptRunner {
 	static let transcriptEnvironmentKey = "WHISPERA_TRANSCRIPT"
 	static let scriptPathEnvironmentKey = "WHISPERA_SCRIPT_PATH"
+	/// The folder the chosen script lives in. `$0` is the private copy that actually runs, so
+	/// scripts that used `$(dirname "$0")` to find files next to them use this instead.
+	static let scriptDirectoryEnvironmentKey = "WHISPERA_SCRIPT_DIR"
 	static let defaultTimeout: TimeInterval = 10
 	/// Time between SIGTERM and SIGKILL for a script that overruns its timeout.
 	static let terminationGrace: TimeInterval = 1
@@ -81,28 +84,33 @@ enum ExternalScriptRunner {
 			if let value = parent[key] { environment[key] = value }
 		}
 		environment[transcriptEnvironmentKey] = transcript
-		if let scriptPath { environment[scriptPathEnvironmentKey] = scriptPath }
+		if let scriptPath {
+			environment[scriptPathEnvironmentKey] = scriptPath
+			environment[scriptDirectoryEnvironmentKey] = (scriptPath as NSString).deletingLastPathComponent
+		}
 		return environment
 	}
 
 	/// The transcript goes to the script on standard input and in WHISPERA_TRANSCRIPT, never in
-	/// argv, which any local user can read with `ps`.
+	/// argv, which any local user can read with `ps`. `onApprovalUpgraded` receives the new value
+	/// to store when the approval was signed in an older format.
 	static func run(
 		path: String, approval: String, text: String, timeout: TimeInterval = defaultTimeout,
-		keyStore: ScriptApprovalKeyStore = KeychainScriptApprovalKeyStore()
+		keyStore: ScriptApprovalKeyStore = KeychainScriptApprovalKeyStore(),
+		onApprovalUpgraded: (String) -> Void = { _ in }
 	) async throws {
 		let url = try validate(path: path)
 		try checkOwnershipAndPermissions(of: url.path)
 		let snapshot = try ScriptFingerprint.snapshot(path: url.path)
-		guard ScriptApproval.isApproved(snapshot: snapshot, approval: approval, keyStore: keyStore) else {
-			throw ExternalScriptError.notApproved
-		}
+		let verdict = ScriptApproval.verdict(snapshot: snapshot, approval: approval, keyStore: keyStore)
+		guard verdict.isApproved else { throw ExternalScriptError.notApproved }
+		if let upgraded = verdict.upgradedApproval { onApprovalUpgraded(upgraded) }
 		try await execute(snapshot: snapshot, text: text, timeout: timeout)
 	}
 
 	/// Runs a private copy of the verified bytes, so replacing the script between the approval
 	/// check and the launch cannot change what runs. The script starts in its own folder and finds
-	/// its real path in WHISPERA_SCRIPT_PATH; `$0` is the copy.
+	/// its real path in WHISPERA_SCRIPT_PATH and its folder in WHISPERA_SCRIPT_DIR; `$0` is the copy.
 	static func execute(
 		snapshot: ScriptFingerprint.Snapshot, text: String, timeout: TimeInterval = defaultTimeout
 	) async throws {
@@ -196,6 +204,32 @@ struct VerifiedScriptCopy: Sendable {
 
 	func remove() {
 		try? FileManager.default.removeItem(at: folder)
+	}
+
+	/// Removes copies left behind when Whispera quit or crashed while a script ran. Copies younger
+	/// than `minimumAge` may belong to a script still running and are kept.
+	@discardableResult
+	static func removeLeftovers(
+		in root: URL? = nil, minimumAge: TimeInterval = 10 * 60, now: Date = Date()
+	) -> Int {
+		let root = root ?? FileManager.default.temporaryDirectory.appendingPathComponent(folderName, isDirectory: true)
+		var info = stat()
+		// Never follow a planted symlink or clean a folder that is not ours
+		guard lstat(root.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR, info.st_uid == getuid(),
+			let entries = try? FileManager.default.contentsOfDirectory(
+				at: root, includingPropertiesForKeys: [.contentModificationDateKey])
+		else { return 0 }
+		var removed = 0
+		for entry in entries {
+			let values = try? entry.resourceValues(forKeys: [.contentModificationDateKey])
+			guard let modified = values?.contentModificationDate, now.timeIntervalSince(modified) >= minimumAge
+			else { continue }
+			if (try? FileManager.default.removeItem(at: entry)) != nil { removed += 1 }
+		}
+		if removed > 0 {
+			AppLogger.shared.general.info("Removed \(removed) leftover insertion script copies")
+		}
+		return removed
 	}
 }
 

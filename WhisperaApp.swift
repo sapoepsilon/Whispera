@@ -145,6 +145,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			to: .standard,
 			stored: UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:])
 		ThemeController.shared.start()
+		DispatchQueue.global(qos: .utility).async {
+			VerifiedScriptCopy.removeLeftovers()
+			ScriptApproval.upgradeStoredApproval(in: .standard)
+		}
 
 		Task { @MainActor in
 			audioManager = AudioManager()

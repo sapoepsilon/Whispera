@@ -119,6 +119,27 @@ struct DictationNoticeTests {
 		#expect(!manager.transcriptionErrorIsNotice)
 	}
 
+	/// The microphone-loss notice is posted for users whose overlay cannot show it, so it has to
+	/// reach them as a system notification when the menu bar is closed; routine notices do not.
+	@Test func onlyFailuresAndNotifyingNoticesNotifyWhenHidden() {
+		let manager = AudioManager()
+		manager.postNotice("No speech detected")
+		#expect(!manager.transcriptionErrorNotifiesWhenHidden)
+
+		manager.postNotice("USB Mic disconnected", notifyWhenHidden: true)
+		#expect(manager.transcriptionErrorIsNotice)
+		#expect(manager.transcriptionErrorNotifiesWhenHidden)
+
+		manager.transcriptionError = "Transcription failed"
+		#expect(manager.transcriptionErrorNotifiesWhenHidden)
+
+		manager.postNotice("Recording stopped early")
+		#expect(!manager.transcriptionErrorNotifiesWhenHidden, "The notifying flag leaked into the next notice")
+
+		manager.transcriptionError = nil
+		#expect(!manager.transcriptionErrorNotifiesWhenHidden)
+	}
+
 	@Test func cancelTranscriptionsWithNothingInFlightIsANoOp() {
 		let manager = AudioManager()
 		manager.cancelTranscriptions()

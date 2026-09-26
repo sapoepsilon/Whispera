@@ -942,6 +942,58 @@ struct TranscriptionHistoryPrivacyTests {
 		#expect(remaining == [recent])
 	}
 
+	private func setAsideFiles(in directory: URL) throws -> [String] {
+		try FileManager.default.contentsOfDirectory(atPath: directory.path)
+			.filter { $0.hasPrefix(TranscriptionHistoryStore.quarantinePrefix) }
+	}
+
+	/// Count-only retention used to keep set-aside databases forever: only timed retention aged them out.
+	@Test func countRetentionDropsSetAsideDatabasesOnceHistoryIsFull() throws {
+		let directory = makeTempDirectory()
+		try Data(repeating: 0x5A, count: 8192).write(to: directory.appendingPathComponent("history.store"))
+		let defaults = makeDefaults()
+		defaults.set(HistoryRetentionPeriod.preserveLimit.rawValue, forKey: HistorySettings.retentionKey)
+		defaults.set(2, forKey: HistorySettings.limitKey)
+		let store = TranscriptionHistoryStore(directory: directory, defaults: defaults)
+		#expect(try setAsideFiles(in: directory).count == 1)
+
+		_ = store.record(text: "one", audio: nil, source: .dictation, modelName: nil, language: nil)
+		#expect(try setAsideFiles(in: directory).count == 1, "Removed while the history still had room for it")
+
+		_ = store.record(text: "two", audio: nil, source: .dictation, modelName: nil, language: nil)
+		_ = store.record(text: "three", audio: nil, source: .dictation, modelName: nil, language: nil)
+		#expect(try setAsideFiles(in: directory).isEmpty)
+	}
+
+	@Test func quarantineCutoffFollowsTheRetentionSetting() {
+		let now = Date(timeIntervalSince1970: 1_800_000_000)
+		func cutoff(_ period: HistoryRetentionPeriod, limit: Int = 5, count: Int) -> Date? {
+			TranscriptionHistoryStore.quarantineCutoff(
+				settings: HistorySettings(retention: period, limit: limit), liveEntryCount: count, now: now)
+		}
+		#expect(cutoff(.never, count: 100) == nil)
+		#expect(cutoff(.preserveLimit, count: 4) == nil)
+		#expect(cutoff(.preserveLimit, count: 5) == .distantFuture)
+		#expect(cutoff(.days3, count: 0) == now.addingTimeInterval(-3 * 86_400))
+	}
+
+	/// With no entries there was no purge prompt, so set-aside databases outlived the opt-out.
+	@Test func turningHistoryOffWithNoEntriesRemovesSetAsideDatabases() throws {
+		let directory = makeTempDirectory()
+		try Data(repeating: 0x5A, count: 8192).write(to: directory.appendingPathComponent("history.store"))
+		let defaults = makeDefaults()
+		var prompts = 0
+		let store = TranscriptionHistoryStore(
+			directory: directory, defaults: defaults, presentOptOutPrompt: { prompts += 1 })
+		#expect(store.entries.isEmpty)
+		#expect(try setAsideFiles(in: directory).count == 1)
+
+		defaults.set(false, forKey: HistorySettings.enabledKey)
+
+		#expect(try setAsideFiles(in: directory).isEmpty)
+		#expect(prompts == 0)
+	}
+
 	@Test func setAsideDateComesFromTheFileName() throws {
 		let date = try #require(
 			TranscriptionHistoryStore.quarantineDate(fileName: "history-unreadable-2026-09-26T09-14-05Z.store-wal"))

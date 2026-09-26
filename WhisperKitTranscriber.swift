@@ -525,6 +525,29 @@ import WhisperKit
 		// Sync our cache with what's actually on disk
 		await updateProgress(0.6, String(localized: "Checking for existing models..."))
 
+		// Queued like every other load, so a model the user picks while the app is still starting
+		// (onboarding) is not overwritten by this one finishing later
+		try? await runModelOperation { transcriber in
+			await transcriber.loadModelAtLaunch()
+		}
+
+		await updateProgress(1.0, String(localized: "Ready for model selection!"))
+		decodingOptions = createDecodingOptions(
+			enableTranslation: enableTranslation ?? false
+		)
+
+		isInitialized = true
+		isInitializing = false
+		AppLogger.shared.transcriber.log("WhisperKit framework initialized - ready for transcription")
+		initializationTask = nil
+		scheduleIdleUnload()
+	}
+
+	private func loadModelAtLaunch() async {
+		guard !hasLoadedEngine else {
+			AppLogger.shared.transcriber.log("A model was loaded before launch loading ran; keeping it")
+			return
+		}
 		if let last = lastUsedModel, downloadedModels.contains(last),
 			!Self.isStandardWhisperKitModel(last)
 		{
@@ -560,17 +583,6 @@ import WhisperKit
 			AppLogger.shared.transcriber.log(
 				"No models downloaded yet - WhisperKit will be initialized with first model download")
 		}
-
-		await updateProgress(1.0, String(localized: "Ready for model selection!"))
-		decodingOptions = createDecodingOptions(
-			enableTranslation: enableTranslation ?? false
-		)
-
-		isInitialized = true
-		isInitializing = false
-		AppLogger.shared.transcriber.log("WhisperKit framework initialized - ready for transcription")
-		initializationTask = nil
-		scheduleIdleUnload()
 	}
 
 	private func autoLoadLastModel() async throws {
@@ -588,7 +600,7 @@ import WhisperKit
 
 		do {
 			AppLogger.shared.transcriber.log("Auto-loading last used model: \(lastModel)")
-			try await loadModel(lastModel)
+			try await loadModelInOperation(lastModel)
 			try await refreshAvailableModels()
 			AppLogger.shared.transcriber.log("Successfully auto-loaded last used model: \(lastModel)")
 		} catch {
@@ -1238,7 +1250,9 @@ import WhisperKit
 			return
 		}
 		AppLogger.shared.transcriber.log("Reloading current model: \(currentModel)")
-		try await loadModel(currentModel)
+		try await runModelOperation { transcriber in
+			try await transcriber.loadModelInOperation(currentModel)
+		}
 	}
 
 	func updateLanguageSettings(_ newLanguage: String) {
@@ -1679,7 +1693,7 @@ import WhisperKit
 			if !downloadedModels.contains(model) {
 				try await performDownloadModel(model)
 			} else {
-				try await loadModel(model)
+				try await loadModelInOperation(model)
 			}
 			return
 		}
@@ -1688,7 +1702,7 @@ import WhisperKit
 			guard CustomModelStore.shared.isAvailable(id: model) else {
 				throw WhisperKitError.modelNotFound(model)
 			}
-			try await loadModel(model)
+			try await loadModelInOperation(model)
 			return
 		}
 
@@ -1709,7 +1723,7 @@ import WhisperKit
 		}
 
 		// Model is downloaded, just need to load it
-		try await loadModel(model)
+		try await loadModelInOperation(model)
 	}
 
 	private func updateDownloadProgress(_ progress: Double, _ status: String) async {
@@ -1869,7 +1883,10 @@ import WhisperKit
 	}
 
 	private func performDownloadModel(_ modelName: String) async throws {
-		let wasOnDisk = downloadedModels.contains(modelName)
+		// The cache can still be empty here (onboarding calls this before it is filled), and deleting
+		// on a cancel must never remove a model that was already installed
+		let wasOnDisk = Self.modelWasOnDisk(
+			cached: downloadedModels.contains(modelName), folder: whisperKitModelDirectory(for: modelName))
 		beginDownloadState(modelName)
 		// A failed download or load must not leave the app looking busy: that blocked idle unload,
 		// custom model import and the onboarding button until relaunch.
@@ -1885,7 +1902,7 @@ import WhisperKit
 				AppLogger.shared.transcriber.log("Parakeet model downloaded: \(modelName)")
 				downloadedModels.insert(modelName)
 				endDownloadState()
-				try await loadModel(modelName)
+				try await loadModelInOperation(modelName)
 				return
 			}
 
@@ -1902,7 +1919,7 @@ import WhisperKit
 			AppLogger.shared.transcriber.log("Model downloaded to: \(downloadedFolder)")
 
 			downloadedModels.insert(modelName)
-			try await loadModel(modelName)
+			try await loadModelInOperation(modelName)
 			AppLogger.shared.transcriber.log("Successfully downloaded and loaded model: \(modelName)")
 
 		} catch {
@@ -1912,6 +1929,13 @@ import WhisperKit
 			AppLogger.shared.transcriber.log("Failed to download model \(modelName): \(error)")
 			throw error
 		}
+	}
+
+	nonisolated static func modelWasOnDisk(cached: Bool, folder: URL?) -> Bool {
+		if cached { return true }
+		guard let folder else { return false }
+		var isDirectory: ObjCBool = false
+		return FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory) && isDirectory.boolValue
 	}
 
 	/// Ends the cancellable network phase; a Cancel that landed while the last bytes arrived still
@@ -2026,13 +2050,25 @@ import WhisperKit
 		return "\(model)|" + units.map { String($0.rawValue) }.joined(separator: ",")
 	}
 
+	/// Loads a model from inside a model operation, after any dictation reload running beside it.
+	private func loadModelInOperation(_ modelName: String) async throws {
+		await modelOperations.waitForRestore()
+		try await loadModel(modelName)
+	}
+
+	/// The reload a dictation triggers when no engine is loaded. It never runs next to another
+	/// load: see `ModelOperationQueue.restore`.
 	private func loadModelCoalesced(_ modelName: String) async throws {
 		if let pendingLoadTask {
 			try await pendingLoadTask.value
 			return
 		}
 		let task = Task { @MainActor in
-			try await self.loadModel(modelName)
+			try await self.modelOperations.restore(
+				canRunBesideCurrent: { [weak self] in self?.isModelDownloadCancellable ?? false },
+				isNeeded: { [weak self] in self.map { !$0.hasLoadedEngine } ?? false },
+				load: { [weak self] in try await self?.loadModel(modelName) }
+			)
 		}
 		pendingLoadTask = task
 		defer { pendingLoadTask = nil }
@@ -2585,11 +2621,9 @@ import WhisperKit
 			throw WhisperKitError.notInitialized
 		}
 
-		if let currentModel = currentModel {
-			try await loadModel(currentModel)
-		} else {
-			let recommended = getRecommendedModels()
-			try await loadModel(recommended.default)
+		let model = currentModel ?? getRecommendedModels().default
+		try await runModelOperation { transcriber in
+			try await transcriber.loadModelInOperation(model)
 		}
 	}
 
@@ -2608,7 +2642,7 @@ import WhisperKit
 
 		guard let model = currentModel else { return }
 		try await runModelOperation { transcriber in
-			try await transcriber.loadModel(model)
+			try await transcriber.loadModelInOperation(model)
 		}
 	}
 
@@ -2718,5 +2752,57 @@ final class ModelOperationQueue {
 		guard let current else { return false }
 		current.cancel()
 		return true
+	}
+
+	/// A reload of the previous model for a dictation, running beside an operation that is
+	/// still downloading. Operations call `waitForRestore()` before they load a model, so the
+	/// reload always finishes first and cannot overwrite the model the user just picked.
+	private var restoreTask: Task<Void, Error>?
+
+	var isRestoring: Bool { restoreTask != nil }
+
+	/// Brings back the model a dictation needs. With nothing running, the reload takes the slot
+	/// like any operation. While an operation is only downloading (`canRunBesideCurrent`), it runs
+	/// beside it, since waiting could mean minutes. Otherwise it waits for the operation and then
+	/// loads only if `isNeeded` still holds, because that operation usually leaves a model loaded.
+	func restore(
+		canRunBesideCurrent: @MainActor () -> Bool,
+		isNeeded: @escaping @MainActor () -> Bool,
+		load: @escaping @MainActor () async throws -> Void
+	) async throws {
+		if let restoreTask {
+			try await restoreTask.value
+			return
+		}
+		guard current != nil, canRunBesideCurrent() else {
+			try await run {
+				guard isNeeded() else { return }
+				try await load()
+			}
+			return
+		}
+		guard isNeeded() else { return }
+		let id = UUID()
+		let task = Task { @MainActor [weak self] in
+			defer {
+				if let self, self.restoreID == id {
+					self.restoreTask = nil
+					self.restoreID = nil
+				}
+			}
+			try await load()
+		}
+		restoreTask = task
+		restoreID = id
+		try await task.value
+	}
+
+	private var restoreID: UUID?
+
+	/// Called by an operation right before it loads a model.
+	func waitForRestore() async {
+		while let restoreTask {
+			_ = await restoreTask.result
+		}
 	}
 }
