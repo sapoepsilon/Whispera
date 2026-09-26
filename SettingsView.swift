@@ -266,6 +266,8 @@ struct SettingsView: View {
 							.foregroundColor(isRecordingShortcut ? .red : .primary)
 						}
 
+						SecureInputSettingsRows()
+
 						SettingRow("Sound Feedback") {
 							Toggle("", isOn: $soundFeedback)
 						}
