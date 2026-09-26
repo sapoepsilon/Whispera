@@ -1636,6 +1636,8 @@ import WhisperKit
 
 	private func updateDownloadProgress(_ progress: Double, _ status: String) async {
 		await MainActor.run {
+			// Late callbacks from a download that already ended would otherwise show a stale percentage
+			guard self.isDownloadingModel else { return }
 			self.downloadProgress = progress
 		}
 	}
@@ -1785,9 +1787,10 @@ import WhisperKit
 	}
 
 	private func performDownloadModel(_ modelName: String) async throws {
-		isDownloadingModel = true
-		downloadingModelName = modelName
-		downloadProgress = 0.0
+		beginDownloadState(modelName)
+		// A failed download or load must not leave the app looking busy: that blocked idle unload,
+		// custom model import and the onboarding button until relaunch.
+		defer { endDownloadState() }
 
 		do {
 			await updateDownloadProgress(0, "Starting download...")
@@ -1797,9 +1800,7 @@ import WhisperKit
 				try await ParakeetEngine.download(parakeet, modelsBase: base)
 				AppLogger.shared.transcriber.log("Parakeet model downloaded: \(modelName)")
 				downloadedModels.insert(modelName)
-				isDownloadingModel = false
-				downloadingModelName = nil
-				downloadProgress = 0.0
+				endDownloadState()
 				try await loadModel(modelName)
 				return
 			}
@@ -1823,7 +1824,15 @@ import WhisperKit
 			AppLogger.shared.transcriber.log("Failed to download model \(modelName): \(error)")
 			throw error
 		}
+	}
 
+	func beginDownloadState(_ modelName: String) {
+		isDownloadingModel = true
+		downloadingModelName = modelName
+		downloadProgress = 0.0
+	}
+
+	func endDownloadState() {
 		isDownloadingModel = false
 		downloadingModelName = nil
 		downloadProgress = 0.0
@@ -2296,7 +2305,13 @@ import WhisperKit
 			}
 		}
 
-		let model = try CustomModelStore.shared.registerHuggingFaceModel(reference, folder: folder)
+		let model: CustomWhisperModel
+		do {
+			model = try CustomModelStore.shared.registerHuggingFaceModel(reference, folder: folder)
+		} catch {
+			CustomModelStore.shared.discardFailedDownload(folder)
+			throw error
+		}
 		downloadedModels.insert(model.id)
 		try? await refreshAvailableModels()
 		return model

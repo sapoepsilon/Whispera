@@ -157,6 +157,9 @@ final class CustomModelStore {
 	@ObservationIgnored private let defaults: UserDefaults
 	@ObservationIgnored let importRoot: URL
 	@ObservationIgnored private let ownedRoots: [URL]
+	/// Saved entries this build cannot decode (a newer field, a damaged record). They are written
+	/// back untouched so one bad entry never erases the user's other registrations.
+	@ObservationIgnored private var undecodableEntries: [Any] = []
 
 	init(defaults: UserDefaults, importRoot: URL, ownedRoots: [URL]) {
 		self.defaults = defaults
@@ -214,7 +217,13 @@ final class CustomModelStore {
 
 		try await Task.detached(priority: .userInitiated) {
 			try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-			try FileManager.default.copyItem(at: folder, to: destination)
+			do {
+				try FileManager.default.copyItem(at: folder, to: destination)
+			} catch {
+				// A full disk leaves a half-copied model that would never be listed or cleaned up
+				try? FileManager.default.removeItem(at: destination)
+				throw error
+			}
 		}.value
 
 		let model = CustomWhisperModel(
@@ -251,6 +260,19 @@ final class CustomModelStore {
 		return model
 	}
 
+	/// Deletes a Hugging Face download that failed validation, so a rejected model does not keep
+	/// its hundreds of megabytes on disk. Folders outside Whispera's own storage are left alone.
+	func discardFailedDownload(_ folder: URL) {
+		guard isOwned(folder), !models.contains(where: { $0.folderURL.standardizedFileURL == folder.standardizedFileURL })
+		else { return }
+		do {
+			try FileManager.default.removeItem(at: folder)
+			AppLogger.shared.transcriber.log("Removed rejected custom model download at \(folder.path)")
+		} catch {
+			AppLogger.shared.transcriber.error("Could not remove rejected download \(folder.path): \(error)")
+		}
+	}
+
 	func remove(id: String) throws {
 		guard let index = models.firstIndex(where: { $0.id == id }) else {
 			throw CustomModelError.notFound(id)
@@ -274,16 +296,33 @@ final class CustomModelStore {
 
 	private func load() {
 		guard let data = defaults.data(forKey: Self.storageKey) else { return }
-		do {
-			models = try JSONDecoder().decode([CustomWhisperModel].self, from: data)
-		} catch {
-			AppLogger.shared.transcriber.error("Failed to decode custom models: \(error)")
+		guard let entries = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else {
+			// Keep the unreadable list next to the real key before any save replaces it
+			defaults.set(data, forKey: Self.storageKey + ".unreadable")
+			AppLogger.shared.transcriber.error("Saved custom model list is unreadable; kept a copy and starting empty")
+			return
+		}
+		let decoder = JSONDecoder()
+		for entry in entries {
+			if let entryData = try? JSONSerialization.data(withJSONObject: entry, options: .fragmentsAllowed),
+				let model = try? decoder.decode(CustomWhisperModel.self, from: entryData)
+			{
+				models.append(model)
+			} else {
+				undecodableEntries.append(entry)
+			}
+		}
+		if !undecodableEntries.isEmpty {
+			AppLogger.shared.transcriber.error(
+				"Skipped \(undecodableEntries.count) custom model entries that could not be decoded; they are kept")
 		}
 	}
 
 	private func save() {
 		do {
-			defaults.set(try JSONEncoder().encode(models), forKey: Self.storageKey)
+			let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(models)) as? [Any] ?? []
+			let data = try JSONSerialization.data(withJSONObject: encoded + undecodableEntries)
+			defaults.set(data, forKey: Self.storageKey)
 		} catch {
 			AppLogger.shared.transcriber.error("Failed to encode custom models: \(error)")
 		}

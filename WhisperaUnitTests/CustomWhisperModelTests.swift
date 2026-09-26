@@ -178,6 +178,77 @@ struct CustomModelStoreTests {
 		#expect(store.availableModels.isEmpty)
 	}
 
+	@Test func oneUndecodableEntryNeitherHidesNorErasesTheOthers() async throws {
+		let kept = CustomWhisperModel(
+			id: "custom:kept", displayName: "Kept", source: .localFolder(originalPath: "/tmp/kept"),
+			folderPath: root.appendingPathComponent("kept").path, addedAt: Date(timeIntervalSince1970: 0))
+		let good = try JSONSerialization.jsonObject(with: JSONEncoder().encode(kept))
+		let future: [String: Any] = ["id": "custom:future", "source": ["kind": "fromTheFuture"]]
+		defaults.set(
+			try JSONSerialization.data(withJSONObject: [good, future]), forKey: CustomModelStore.storageKey)
+
+		let store = makeStore()
+		#expect(store.models == [kept])
+
+		// Any save used to rewrite the list from the decoded models only
+		let imported = try await store.importLocalFolder(try makeModelFolder(named: "new", in: root))
+		let stored = try #require(defaults.data(forKey: CustomModelStore.storageKey))
+		let raw = try #require(JSONSerialization.jsonObject(with: stored) as? [[String: Any]])
+		#expect(raw.count == 3)
+		#expect(raw.contains { $0["id"] as? String == "custom:future" })
+		#expect(makeStore().models == [kept, imported])
+	}
+
+	@Test func unreadableListIsKeptAsideBeforeAnySave() async throws {
+		let garbage = Data("not json".utf8)
+		defaults.set(garbage, forKey: CustomModelStore.storageKey)
+		let store = makeStore()
+		#expect(store.models.isEmpty)
+		_ = try await store.importLocalFolder(try makeModelFolder(named: "fresh", in: root))
+		#expect(defaults.data(forKey: CustomModelStore.storageKey + ".unreadable") == garbage)
+	}
+
+	@Test func failedCopyLeavesNoPartialModelBehind() async throws {
+		let source = try makeModelFolder(named: "locked", in: root)
+		// An unreadable folder deep inside makes the copy fail after other files were written
+		let locked = source.appendingPathComponent("TextDecoder.mlmodelc/zz-locked", isDirectory: true)
+		try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+		try Data("x".utf8).write(to: locked.appendingPathComponent("secret.bin"))
+		try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+		defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+		let store = makeStore()
+
+		await #expect(throws: (any Error).self) {
+			_ = try await store.importLocalFolder(source)
+		}
+		let importRoot = root.appendingPathComponent("custom", isDirectory: true)
+		let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: importRoot.path)) ?? []
+		#expect(leftovers.isEmpty)
+		#expect(store.models.isEmpty)
+	}
+
+	@Test func rejectedDownloadIsRemovedOnlyFromWhisperasOwnStorage() throws {
+		let owned = try makeModelFolder(named: "rejected", in: root.appendingPathComponent("owned"), components: [])
+		try FileManager.default.createDirectory(at: owned, withIntermediateDirectories: true)
+		let foreign = try makeModelFolder(named: "elsewhere", in: root, components: [])
+		try FileManager.default.createDirectory(at: foreign, withIntermediateDirectories: true)
+		let store = makeStore()
+
+		store.discardFailedDownload(owned)
+		store.discardFailedDownload(foreign)
+
+		#expect(!FileManager.default.fileExists(atPath: owned.path))
+		#expect(FileManager.default.fileExists(atPath: foreign.path))
+	}
+
+	@Test func registeredModelFolderIsNeverDiscarded() throws {
+		let folder = try makeModelFolder(named: "variant-c", in: root.appendingPathComponent("owned"))
+		let store = makeStore()
+		_ = try store.registerHuggingFaceModel(HuggingFaceModelReference(repo: "o/r", variant: "variant-c"), folder: folder)
+		store.discardFailedDownload(folder)
+		#expect(FileManager.default.fileExists(atPath: folder.path))
+	}
+
 	@Test func slugSanitizesNames() {
 		#expect(CustomModelStore.slug(for: "Owner/Repo Name!") == "owner-repo-name")
 		#expect(CustomModelStore.slug(for: "///") == "model")
