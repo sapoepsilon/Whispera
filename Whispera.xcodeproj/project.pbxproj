@@ -77,6 +77,7 @@
 		D6LMTEST12F0000000000001 /* LargeModelTranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6LMTEST22F0000000000001 /* LargeModelTranscriptionTests.swift */; };
 		D6SOFTUPD2ED700000000005 /* SoftwareUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6SOFTUPD2ED700000000004 /* SoftwareUpdater.swift */; };
 		D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D6SPARKLE2ED700000000002 /* Sparkle */; };
+		D6FLUIDAU2F3000000000003 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = D6FLUIDAU2F3000000000002 /* FluidAudio */; };
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
 		D6DEVMGR12F0000000000001 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000001 /* AudioDeviceManager.swift */; };
 		D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */; };
@@ -84,6 +85,9 @@
 		D6MEB9217152426587206000 /* ComputeUnitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEFECE03C19F60F0B7E000 /* ComputeUnitSettingsView.swift */; };
 		D6MEB5DB8C691ED640620000 /* CustomWhisperModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF6B2D5CD48FDD65B8000 /* CustomWhisperModel.swift */; };
 		D6MEB1E5B420CF5E87F21000 /* CustomModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF4AA62C7C80EFE2CE000 /* CustomModelsSettingsView.swift */; };
+		D6MEB41479BBDDAB7053D000 /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF0255F5A4D1BC82EF000 /* TranscriptionEngine.swift */; };
+		D6MEBCAE525FEBA2D3DB0000 /* ParakeetEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF4E4C652F6D4ACDE5000 /* ParakeetEngine.swift */; };
+		D6MEBD07D33E802829E19000 /* ParakeetSettingsNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF58E48867B31EAEAE000 /* ParakeetSettingsNote.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -183,6 +187,9 @@
 		D6MEFECE03C19F60F0B7E000 /* ComputeUnitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputeUnitSettingsView.swift; sourceTree = "<group>"; };
 		D6MEF6B2D5CD48FDD65B8000 /* CustomWhisperModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomWhisperModel.swift; sourceTree = "<group>"; };
 		D6MEF4AA62C7C80EFE2CE000 /* CustomModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomModelsSettingsView.swift; sourceTree = "<group>"; };
+		D6MEF0255F5A4D1BC82EF000 /* TranscriptionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionEngine.swift; sourceTree = "<group>"; };
+		D6MEF4E4C652F6D4ACDE5000 /* ParakeetEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetEngine.swift; sourceTree = "<group>"; };
+		D6MEF58E48867B31EAEAE000 /* ParakeetSettingsNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetSettingsNote.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -201,6 +208,7 @@
 				D6B81FB42DEFF5CC00D32F2A /* WhisperKit in Frameworks */,
 				D63900CF2E3D77B4005B5623 /* YouTubeKit in Frameworks */,
 				D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */,
+				D6FLUIDAU2F3000000000003 /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -388,6 +396,9 @@
 		D6MDLENG2F30000000000000 /* ModelEngines */ = {
 			isa = PBXGroup;
 			children = (
+				D6MEF58E48867B31EAEAE000 /* ParakeetSettingsNote.swift */,
+				D6MEF4E4C652F6D4ACDE5000 /* ParakeetEngine.swift */,
+				D6MEF0255F5A4D1BC82EF000 /* TranscriptionEngine.swift */,
 				D6MEF4AA62C7C80EFE2CE000 /* CustomModelsSettingsView.swift */,
 				D6MEF6B2D5CD48FDD65B8000 /* CustomWhisperModel.swift */,
 				D6MEFECE03C19F60F0B7E000 /* ComputeUnitSettingsView.swift */,
@@ -500,6 +511,7 @@
 				D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */,
 				D6D486302EA49C1F00C1D5FA /* XCRemoteSwiftPackageReference "WhisperKit" */,
 				D6SPARKLE2ED700000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				D6FLUIDAU2F3000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 			);
 			productRefGroup = 8A8A8A8A8A8A8A8A8A8A8A8A /* Products */;
 			projectDirPath = "";
@@ -564,6 +576,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D6MEBD07D33E802829E19000 /* ParakeetSettingsNote.swift in Sources */,
+				D6MEBCAE525FEBA2D3DB0000 /* ParakeetEngine.swift in Sources */,
+				D6MEB41479BBDDAB7053D000 /* TranscriptionEngine.swift in Sources */,
 				D6MEB1E5B420CF5E87F21000 /* CustomModelsSettingsView.swift in Sources */,
 				D6MEB5DB8C691ED640620000 /* CustomWhisperModel.swift in Sources */,
 				D6MEB9217152426587206000 /* ComputeUnitSettingsView.swift in Sources */,
@@ -1019,6 +1034,14 @@
 				minimumVersion = 2.6.0;
 			};
 		};
+		D6FLUIDAU2F3000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.9.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1051,6 +1074,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D6SPARKLE2ED700000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		D6FLUIDAU2F3000000000002 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6FLUIDAU2F3000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

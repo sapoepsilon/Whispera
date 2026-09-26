@@ -132,7 +132,9 @@ final class AudioManager: NSObject {
 			// would route stop to the wrong path if the setting changed mid-recording.
 			stopRecording()
 		} else {
-			currentRecordingMode = enableStreaming ? .liveTranscription : .text
+			currentRecordingMode =
+				enableStreaming && whisperKitTranscriber.supportsLiveTranscription
+				? .liveTranscription : .text
 			startRecording()
 		}
 	}

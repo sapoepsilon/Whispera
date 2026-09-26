@@ -121,7 +121,7 @@ import WhisperKit
 		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
 		downloadedModels = refreshedDownloaded
 
-		if whisperKit == nil {
+		if whisperKit == nil && parakeetEngine == nil {
 			guard !refreshedDownloaded.isEmpty else {
 				isWaitingForModel = true
 				waitingForModelStatusText = "No model downloaded. Download one in Settings."
@@ -159,7 +159,7 @@ import WhisperKit
 		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
 		downloadedModels = refreshedDownloaded
 
-		if whisperKit == nil {
+		if whisperKit == nil && parakeetEngine == nil {
 			guard !refreshedDownloaded.isEmpty else {
 				throw WhisperKitError.noModelLoaded
 			}
@@ -400,6 +400,7 @@ import WhisperKit
 	var loadProgress: Double = 0.0
 
 	@MainActor var whisperKit: WhisperKit?
+	@MainActor private(set) var parakeetEngine: ParakeetEngine?
 	private var transcriptionTask: Task<Void, Never>?
 	@MainActor private var liveStreamStartupTask: Task<Void, Never>?
 	private var lastBufferSize: Int = 0
@@ -462,7 +463,7 @@ import WhisperKit
 		await updateProgress(0.6, "Checking for existing models...")
 
 		if let last = lastUsedModel, downloadedModels.contains(last),
-			CustomWhisperModel.isCustomID(last)
+			!Self.isStandardWhisperKitModel(last)
 		{
 			await updateProgress(0.9, "Loading last used model...")
 			do {
@@ -564,6 +565,10 @@ import WhisperKit
 			do {
 				try await ensureModelReadyForLiveTranscription()
 				try Task.checkCancellation()
+				if parakeetEngine != nil {
+					waitingForModelStatusText = "Live Transcription Mode needs a Whisper model."
+					throw WhisperKitError.liveModeUnsupported
+				}
 				isWaitingForModel = false
 				waitingForModelStatusText = ""
 
@@ -1001,6 +1006,10 @@ import WhisperKit
 	) async throws -> String {
 		try await waitForReadyForTranscription()
 		guard isWhisperKitReady() else { throw WhisperKitError.notReady }
+		if let engine = parakeetEngine {
+			return try await transcribe(
+				with: engine, input: input, enableTranslation: enableTranslation, logPrefix: logPrefix)
+		}
 		let maxRetries = 3
 		var lastError: Error?
 		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
@@ -1197,6 +1206,12 @@ import WhisperKit
 		AppLogger.shared.transcriber.log(
 			"Starting timestamped file transcription for: \(url.lastPathComponent)")
 		try await waitForReadyForTranscription()
+		if let engine = parakeetEngine {
+			let transcript = try await engine.transcribe(fileURL: url)
+			AppLogger.shared.transcriber.log(
+				"Parakeet file transcription completed with \(transcript.segments.count) segments")
+			return transcript.segments
+		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
 		let decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
@@ -1250,6 +1265,12 @@ import WhisperKit
 		}
 
 		try await waitForReadyForTranscription()
+		if let engine = parakeetEngine {
+			let samples = try AudioProcessor.loadAudioAsFloatArray(
+				fromPath: url.path, startTime: startTime, endTime: endTime)
+			let text = try await engine.transcribe(samples: samples).text
+			return text.isEmpty ? "No speech detected in segment" : text
+		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
 		var decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
@@ -1309,6 +1330,15 @@ import WhisperKit
 		// Refresh available models first to ensure we have the latest list
 		if availableModels.isEmpty {
 			try await refreshAvailableModels()
+		}
+
+		if ParakeetModel.isParakeetID(model) {
+			if !downloadedModels.contains(model) {
+				try await performDownloadModel(model)
+			} else {
+				try await loadModel(model)
+			}
+			return
 		}
 
 		if CustomWhisperModel.isCustomID(model) {
@@ -1480,6 +1510,18 @@ import WhisperKit
 		do {
 			await updateDownloadProgress(0, "Starting download...")
 
+			if let parakeet = ParakeetModel(rawValue: modelName) {
+				guard let base = baseModelCacheDirectory else { throw WhisperKitError.notInitialized }
+				try await ParakeetEngine.download(parakeet, modelsBase: base)
+				AppLogger.shared.transcriber.log("Parakeet model downloaded: \(modelName)")
+				downloadedModels.insert(modelName)
+				isDownloadingModel = false
+				downloadingModelName = nil
+				downloadProgress = 0.0
+				try await loadModel(modelName)
+				return
+			}
+
 			// Use WhisperKit's download method with default location
 			let downloadedFolder = try await WhisperKit.download(
 				variant: modelName, downloadBase: baseModelCacheDirectory
@@ -1506,6 +1548,10 @@ import WhisperKit
 	}
 
 	private func loadModel(_ modelName: String) async throws {
+		if let parakeet = ParakeetModel(rawValue: modelName) {
+			try await loadParakeetModel(parakeet)
+			return
+		}
 		isModelLoading = true
 		loadProgress = 0.0
 
@@ -1516,6 +1562,7 @@ import WhisperKit
 			AppLogger.shared.transcriber.debug("Recommended models: \(recommendedModels)")
 
 			await updateLoadProgress(0.6, "Loading \(modelName)...")
+			unloadParakeetEngine()
 			whisperKit = try await Task { @MainActor in
 				let config = try whisperKitConfig(forModel: modelName)
 				let whisperKitInstance = try await WhisperKit(config)
@@ -1582,15 +1629,15 @@ import WhisperKit
 		if !isInitialized {
 			return false
 		}
-		return whisperKit != nil && isInitialized
+		return (whisperKit != nil || parakeetEngine != nil) && isInitialized
 	}
 
 	func isReadyForTranscription() -> Bool {
-		return isInitialized && whisperKit != nil
+		return isInitialized && (whisperKit != nil || parakeetEngine != nil)
 	}
 
 	func hasAnyModel() -> Bool {
-		return whisperKit != nil
+		return whisperKit != nil || parakeetEngine != nil
 	}
 
 	private func getApplicationSupportDirectory() -> URL {
@@ -1606,8 +1653,10 @@ import WhisperKit
 	// MARK: - Model Helpers
 
 	static func getModelDisplayName(for modelName: String) -> String {
+		if let parakeet = ParakeetModel(rawValue: modelName) { return parakeet.displayName }
 		if CustomWhisperModel.isCustomID(modelName) {
-			let name = CustomModelStore.shared.model(id: modelName)?.displayName
+			let name =
+				CustomModelStore.shared.model(id: modelName)?.displayName
 				?? String(modelName.dropFirst(CustomWhisperModel.idPrefix.count))
 			return "Custom: \(name)"
 		}
@@ -1633,6 +1682,7 @@ import WhisperKit
 
 	static func getModelPriority(for modelName: String) -> Int {
 		if CustomWhisperModel.isCustomID(modelName) { return 10 }
+		if ParakeetModel.isParakeetID(modelName) { return 8 }
 		let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
 
 		switch cleanName {
@@ -1650,12 +1700,109 @@ import WhisperKit
 
 	// MARK: - Model Sources
 
+	static func isStandardWhisperKitModel(_ id: String) -> Bool {
+		!CustomWhisperModel.isCustomID(id) && !ParakeetModel.isParakeetID(id)
+	}
+
+	/// Parakeet streams nothing back while recording, so dictation falls back to record-then-transcribe.
+	var supportsLiveTranscription: Bool {
+		guard let model = currentModel ?? lastUsedModel ?? selectedModel else { return true }
+		return !ParakeetModel.isParakeetID(model)
+	}
+
 	private func additionalDownloadedModelIDs() -> Set<String> {
-		Set(CustomModelStore.shared.availableModels.map(\.id))
+		var ids = Set(CustomModelStore.shared.availableModels.map(\.id))
+		if let base = baseModelCacheDirectory {
+			for model in ParakeetModel.allCases where ParakeetEngine.isDownloaded(model, modelsBase: base) {
+				ids.insert(model.rawValue)
+			}
+		}
+		return ids
 	}
 
 	private func additionalAvailableModelIDs() -> [String] {
-		CustomModelStore.shared.availableModels.map(\.id)
+		ParakeetModel.allCases.map(\.rawValue) + CustomModelStore.shared.availableModels.map(\.id)
+	}
+
+	private func loadParakeetModel(_ model: ParakeetModel) async throws {
+		guard let base = baseModelCacheDirectory else { throw WhisperKitError.notInitialized }
+		isModelLoading = true
+		loadProgress = 0.3
+		publishEngineState(from: modelState, to: "loading")
+		defer {
+			isModelLoading = false
+			loadProgress = 0.0
+		}
+
+		do {
+			unloadParakeetEngine()
+			let engine = try await ParakeetEngine.load(
+				model, modelsBase: base,
+				computeUnits: ComputeUnitPreference.load().parakeetComputeUnits)
+			whisperKit = nil
+			parakeetEngine = engine
+			currentModel = model.rawValue
+			selectedModel = model.rawValue
+			lastUsedModel = model.rawValue
+			isModelLoaded = true
+			publishEngineState(from: "loading", to: "loaded")
+			AppLogger.shared.transcriber.log("Loaded Parakeet model \(model.rawValue) via FluidAudio")
+		} catch {
+			isModelLoaded = whisperKit != nil
+			publishEngineState(from: "loading", to: whisperKit == nil ? "unloaded" : "loaded")
+			AppLogger.shared.transcriber.error("Failed to load Parakeet model \(model.rawValue): \(error)")
+			throw WhisperKitError.transcriptionFailed(
+				"Failed to load model: \(error.localizedDescription)")
+		}
+	}
+
+	private func unloadParakeetEngine() {
+		guard let engine = parakeetEngine else { return }
+		engine.unload()
+		parakeetEngine = nil
+		AppLogger.shared.transcriber.log("Unloaded Parakeet model \(engine.modelID)")
+	}
+
+	private func publishEngineState(from oldState: String, to newState: String) {
+		modelState = newState
+		NotificationCenter.default.post(
+			name: NSNotification.Name("WhisperKitModelStateChanged"),
+			object: nil,
+			userInfo: [
+				"oldState": oldState,
+				"newState": newState,
+				"isLoading": newState == "loading",
+				"isLoaded": newState == "loaded",
+			]
+		)
+	}
+
+	private func transcribe(
+		with engine: any TranscriptionEngine, input: TranscriptionInput, enableTranslation: Bool,
+		logPrefix: String
+	) async throws -> String {
+		if enableTranslation {
+			AppLogger.shared.transcriber.log("\(engine.modelID) cannot translate; transcribing instead")
+		}
+		do {
+			let transcript: EngineTranscript
+			switch input {
+			case .audioPath(let path):
+				transcript = try await engine.transcribe(fileURL: URL(fileURLWithPath: path))
+			case .audioArray(let samples):
+				transcript = try await engine.transcribe(samples: samples)
+			}
+			guard !transcript.text.isEmpty else {
+				AppLogger.shared.transcriber.log("\(engine.modelID) returned empty text")
+				return "No speech detected"
+			}
+			AppLogger.shared.transcriber.log(
+				"\(engine.modelID) \(logPrefix) transcription completed: \(transcript.text)")
+			return transcript.text
+		} catch {
+			AppLogger.shared.transcriber.error("\(engine.modelID) transcription failed: \(error)")
+			throw WhisperKitError.transcriptionFailed(error.localizedDescription)
+		}
 	}
 
 	private func whisperKitConfig(forModel modelName: String) throws -> WhisperKitConfig {
@@ -1780,6 +1927,7 @@ import WhisperKit
 	}
 
 	func getCurrentModelState() -> String {
+		if parakeetEngine != nil { return "loaded" }
 		guard let whisperKit = whisperKit else { return "unloaded" }
 		return String(describing: whisperKit.modelState)
 	}
@@ -1842,12 +1990,13 @@ import WhisperKit
 	}
 
 	func isCurrentModelLoaded() -> Bool {
+		if parakeetEngine != nil { return true }
 		guard let whisperKit = whisperKit else { return false }
 		return whisperKit.modelState == .loaded || whisperKit.modelState == .prewarmed
 	}
 
 	func loadCurrentModel() async throws {
-		guard whisperKit != nil else {
+		guard whisperKit != nil || parakeetEngine != nil else {
 			throw WhisperKitError.notInitialized
 		}
 
@@ -1911,6 +2060,7 @@ enum WhisperKitError: LocalizedError {
 	case modelNotFound(String)
 	case audioConversionFailed
 	case transcriptionFailed(String)
+	case liveModeUnsupported
 
 	var errorDescription: String? {
 		let description: String
@@ -1927,6 +2077,9 @@ enum WhisperKitError: LocalizedError {
 			description = "Failed to convert audio to required format."
 		case .transcriptionFailed(let error):
 			description = "Transcription failed: \(error)"
+		case .liveModeUnsupported:
+			description =
+				"Live Transcription Mode needs a Whisper model. Parakeet transcribes after you stop recording."
 		}
 
 		AppLogger.shared.transcriber.error("WhisperKitError: \(description)")

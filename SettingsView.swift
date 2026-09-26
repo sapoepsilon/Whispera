@@ -430,6 +430,8 @@ struct SettingsView: View {
 								.foregroundColor(.secondary)
 						}
 
+						ParakeetSettingsNote(modelID: whisperKit.selectedModel ?? selectedModel)
+
 						Text(
 							"Choose your Whisper model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions."
 						)
