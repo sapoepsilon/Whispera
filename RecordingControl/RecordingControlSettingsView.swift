@@ -23,11 +23,13 @@ struct RecordingControlSettingsView: View {
 		ActivationMode(rawValue: activationModeRaw) ?? .toggle
 	}
 
-	private var micStreamPolicyDescription: String {
-		if micStreamPolicy != .onDemand && (liveTranscriptionEnabled || !useStreamingTranscription) {
-			return "Only applies to streaming transcription with Live Transcription Mode off"
-		}
-		return micStreamPolicy.summary
+	private var transcriber = WhisperKitTranscriber.shared
+
+	private var captureRoute: CaptureRoute {
+		CaptureRoute.resolve(
+			liveTranscriptionEnabled: liveTranscriptionEnabled,
+			modelSupportsLive: transcriber.supportsLiveTranscription,
+			useStreamingTranscription: useStreamingTranscription)
 	}
 
 	var body: some View {
@@ -73,15 +75,25 @@ struct RecordingControlSettingsView: View {
 				.accessibilityIdentifier("extraRecordingBufferStepper")
 			}
 
-			SettingRow("Microphone Stream", description: micStreamPolicyDescription) {
-				Picker("Microphone stream", selection: $micStreamPolicyRaw) {
-					ForEach(MicStreamPolicy.allCases) { policy in
-						Text(policy.displayName).tag(policy.rawValue)
+			SettingRow(
+				"Microphone Stream", description: micStreamPolicy.settingsDescription(on: captureRoute)
+			) {
+				HStack(spacing: 6) {
+					if micStreamPolicy.inactiveReason(on: captureRoute) != nil {
+						Image(systemName: "exclamationmark.triangle.fill")
+							.foregroundStyle(.orange)
+							.help(micStreamPolicy.settingsDescription(on: captureRoute))
+							.accessibilityLabel("Has no effect in the current recording mode")
 					}
+					Picker("Microphone stream", selection: $micStreamPolicyRaw) {
+						ForEach(MicStreamPolicy.allCases) { policy in
+							Text(policy.displayName).tag(policy.rawValue)
+						}
+					}
+					.labelsHidden()
+					.frame(width: 180)
+					.accessibilityIdentifier("micStreamPolicyPicker")
 				}
-				.labelsHidden()
-				.frame(width: 180)
-				.accessibilityIdentifier("micStreamPolicyPicker")
 			}
 
 			if micStreamPolicy == .lazyClose {

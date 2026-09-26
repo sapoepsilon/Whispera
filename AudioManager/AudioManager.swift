@@ -734,8 +734,15 @@ extension AudioManager {
 
 	/// The open-stream policies only apply to the buffered streaming path; live
 	/// transcription captures through WhisperKit's own audio processor.
+	fileprivate var captureRoute: CaptureRoute {
+		CaptureRoute.resolve(
+			liveTranscriptionEnabled: enableStreaming,
+			modelSupportsLive: whisperKitTranscriber.supportsLiveTranscription,
+			useStreamingTranscription: useStreamingTranscription)
+	}
+
 	fileprivate var canKeepStreamOpen: Bool {
-		!enableStreaming && useStreamingTranscription
+		captureRoute.canKeepMicrophoneOpen
 			&& AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
 	}
 
@@ -791,6 +798,19 @@ extension AudioManager {
 			self.lastStreamPolicySnapshot = snapshot
 			self.applyMicStreamPolicy()
 		}
+		// Switching to or from Parakeet changes the capture route without touching a setting
+		streamPolicyObservers.append(
+			center.addObserver(
+				forName: NSNotification.Name("WhisperKitModelStateChanged"), object: nil, queue: .main
+			) { [weak self] _ in
+				MainActor.assumeIsolated {
+					guard let self else { return }
+					let snapshot = self.streamPolicySnapshot()
+					guard snapshot != self.lastStreamPolicySnapshot else { return }
+					self.lastStreamPolicySnapshot = snapshot
+					self.applyMicStreamPolicy()
+				}
+			})
 		streamPolicyObservers.append(
 			center.addObserver(forName: .audioInputDeviceChanged, object: nil, queue: .main) {
 				[weak self] _ in
@@ -874,7 +894,7 @@ extension AudioManager {
 
 	private func streamPolicySnapshot() -> String {
 		let settings = RecordingControlSettings()
-		return "\(settings.micStreamPolicy.rawValue)|\(enableStreaming)|\(useStreamingTranscription)"
+		return "\(settings.micStreamPolicy.rawValue)|\(captureRoute)"
 	}
 }
 
