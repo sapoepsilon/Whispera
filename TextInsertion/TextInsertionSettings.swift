@@ -37,7 +37,7 @@ enum PasteMethod: String, CaseIterable, Identifiable, Sendable {
 		case .commandV: return String(localized: "Puts the transcript on the clipboard and presses Cmd-V")
 		case .typeCharacters: return String(localized: "Types the text key by key, for apps that block pasting")
 		case .copyOnly: return String(localized: "Leaves the transcript on the clipboard without inserting it")
-		case .externalScript: return String(localized: "Runs your script with the transcript as its first argument")
+		case .externalScript: return String(localized: "Runs a script you choose and passes it the transcript on standard input")
 		}
 	}
 }
@@ -78,6 +78,7 @@ struct TextInsertionSettings: Equatable, Sendable {
 		static let pasteDelayAfterMs = "pasteDelayAfterMs"
 		static let pasteMethod = "pasteMethod"
 		static let externalScriptPath = "externalScriptPath"
+		static let externalScriptApproval = "externalScriptApproval"
 		static let autoSubmit = "autoSubmit"
 		static let autoSubmitKey = "autoSubmitKey"
 		static let appendTrailingSpace = "appendTrailingSpace"
@@ -93,6 +94,8 @@ struct TextInsertionSettings: Equatable, Sendable {
 	var pasteDelayAfterMs: Int = defaultPasteDelayAfterMs
 	var pasteMethod: PasteMethod = .commandV
 	var externalScriptPath = ""
+	/// Set only when the user picks the script in Settings; see `ScriptApproval`.
+	var externalScriptApproval = ""
 	var autoSubmit = false
 	var autoSubmitKey: AutoSubmitKey = .returnKey
 	var appendTrailingSpace = false
@@ -115,6 +118,7 @@ struct TextInsertionSettings: Equatable, Sendable {
 			pasteMethod = value
 		}
 		externalScriptPath = defaults.string(forKey: Keys.externalScriptPath) ?? ""
+		externalScriptApproval = defaults.string(forKey: Keys.externalScriptApproval) ?? ""
 		autoSubmit = defaults.bool(forKey: Keys.autoSubmit)
 		if let raw = defaults.string(forKey: Keys.autoSubmitKey),
 			let value = AutoSubmitKey(rawValue: raw)
@@ -134,6 +138,7 @@ struct TextInsertionSettings: Equatable, Sendable {
 		defaults.set(Self.clampedDelay(pasteDelayAfterMs), forKey: Keys.pasteDelayAfterMs)
 		defaults.set(pasteMethod.rawValue, forKey: Keys.pasteMethod)
 		defaults.set(externalScriptPath, forKey: Keys.externalScriptPath)
+		defaults.set(externalScriptApproval, forKey: Keys.externalScriptApproval)
 		defaults.set(autoSubmit, forKey: Keys.autoSubmit)
 		defaults.set(autoSubmitKey.rawValue, forKey: Keys.autoSubmitKey)
 		defaults.set(appendTrailingSpace, forKey: Keys.appendTrailingSpace)

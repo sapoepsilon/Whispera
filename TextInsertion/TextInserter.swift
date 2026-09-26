@@ -142,7 +142,8 @@ final class TextInserter {
 
 	private func runScript(_ text: String, settings: TextInsertionSettings, concealed: Bool) async -> Bool {
 		do {
-			try await ExternalScriptRunner.run(path: settings.externalScriptPath, text: text)
+			try await ExternalScriptRunner.run(
+				path: settings.externalScriptPath, approval: settings.externalScriptApproval, text: text)
 			logger.info("Insertion script finished for a \(text.count)-character transcript")
 			return true
 		} catch {
