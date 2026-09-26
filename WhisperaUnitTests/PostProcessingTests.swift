@@ -382,6 +382,68 @@ struct PostProcessingServiceTests {
 	}
 }
 
+struct PostProcessingDeadlineTests {
+	private struct FakeProcessor: TextPostProcessor {
+		let reply: @Sendable (PostProcessingMessages) async throws -> String
+		func process(_ messages: PostProcessingMessages) async throws -> String { try await reply(messages) }
+	}
+
+	private func service(timeout: Double, reply: @escaping @Sendable (PostProcessingMessages) async throws -> String)
+		-> PostProcessingService
+	{
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		settings.isEnabled = true
+		settings.timeoutSeconds = timeout
+		return PostProcessingService(
+			settings: settings, secrets: InMemorySecretStore(),
+			processorOverride: { _ in FakeProcessor(reply: reply) })
+	}
+
+	@Test func aModelThatIgnoresCancellationStillHitsTheTotalDeadline() async {
+		// Like a server trickling bytes or the on-device model: it never checks for cancellation
+		let service = service(timeout: 0.3) { _ in
+			await withUnsafeContinuation { continuation in
+				DispatchQueue.global().asyncAfter(deadline: .now() + 5) { continuation.resume() }
+			}
+			return "too late"
+		}
+		let clock = ContinuousClock()
+		let start = clock.now
+		let outcome = await service.process("raw words")
+		#expect(clock.now - start < .seconds(2))
+		#expect(outcome == .failed(original: "raw words", error: PostProcessingError.timedOut(seconds: 1).localizedDescription))
+	}
+
+	@Test func runawayOutputFallsBackToTheRawTranscript() async {
+		let service = service(timeout: 5) { _ in String(repeating: "loop ", count: 4000) }
+		let outcome = await service.process("send the report today")
+		#expect(outcome.text == "send the report today")
+		guard case .failed(_, let error) = outcome else {
+			Issue.record("Expected the oversized reply to be rejected, got \(outcome)")
+			return
+		}
+		#expect(error == PostProcessingError.responseTooLong(characters: 20000, limit: 1000).localizedDescription)
+	}
+
+	@Test func normalRewritesAreKept() async {
+		let service = service(timeout: 5) { _ in "Send the report today." }
+		#expect(await service.process("um send the report today") == .processed("Send the report today."))
+	}
+
+	@Test func outputLimitScalesWithTheTranscriptButAllowsShortDictationsRoom() {
+		#expect(PostProcessingService.outputLimit(forTranscript: "ok") == 1000)
+		#expect(PostProcessingService.outputLimit(forTranscript: String(repeating: "a", count: 400)) == 2000)
+	}
+
+	@Test func deadlinePassesThroughResultsAndErrors() async throws {
+		struct Boom: Error {}
+		#expect(try await PostProcessingService.withDeadline(seconds: 5) { 7 } == 7)
+		await #expect(throws: Boom.self) {
+			_ = try await PostProcessingService.withDeadline(seconds: 5) { () async throws -> Int in throw Boom() }
+		}
+	}
+}
+
 // MARK: - Apple Intelligence
 
 struct AppleIntelligenceProcessorTests {
