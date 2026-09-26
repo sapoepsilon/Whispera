@@ -104,10 +104,11 @@ class LogManager {
 
 				if self.logFileHandle == nil {
 					self.logFileHandle = try FileHandle(forWritingTo: logFile)
-					self.logFileHandle?.seekToEndOfFile()
+					try self.logFileHandle?.seekToEnd()
 				}
 
-				self.logFileHandle?.write(data)
+				// The throwing variant: the legacy write(_:) raises an uncatchable exception when the disk is full
+				try self.logFileHandle?.write(contentsOf: data)
 
 				#if DEBUG
 					// Force flush in debug mode for immediate visibility
@@ -240,8 +241,8 @@ class LogManager {
 					FileManager.default.createFile(atPath: logFile.path, contents: nil)
 				}
 				let handle = try FileHandle(forWritingTo: logFile)
-				handle.seekToEndOfFile()
-				handle.write(data)
+				try handle.seekToEnd()
+				try handle.write(contentsOf: data)
 				handle.closeFile()
 			} catch {
 			}
