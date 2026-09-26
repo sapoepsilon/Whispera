@@ -96,6 +96,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var onboardingWindow: NSWindow?
 	private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
+	private var minimalIndicatorController: MinimalRecordingIndicatorController?
 	private var recordingGlowController: RecordingGlowController?
 	private var popoverFrame: NSRect?
 
@@ -137,6 +138,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
+			minimalIndicatorController = MinimalRecordingIndicatorController(audioManager: audioManager)
 			recordingGlowController = RecordingGlowController(audioManager: audioManager)
 			if !hasCompletedOnboarding {
 				showOnboarding()

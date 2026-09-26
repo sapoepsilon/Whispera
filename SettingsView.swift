@@ -305,6 +305,8 @@ struct SettingsView: View {
 							Toggle("", isOn: $shortcutHapticFeedback)
 						}
 
+						RecordingOverlaySettingRows()
+
 						SettingRow(
 							"Recording Glow",
 							description: "Glow around the screen edges while recording"
