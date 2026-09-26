@@ -59,3 +59,43 @@ struct CancelRecordingIdleTests {
 		#expect(manager.lastTranscription == nil)
 	}
 }
+
+@MainActor
+struct CancelShortcutSecureInputTests {
+	@Test func duplicateEscapeFromTwoSourcesCancelsOnce() {
+		var cancels = 0
+		let monitor = CancelShortcutMonitor(isSecureInputEnabled: { false }) { cancels += 1 }
+		let t0 = Date()
+		monitor.fire(now: t0)
+		monitor.fire(now: t0.addingTimeInterval(0.1))
+		#expect(cancels == 1)
+		monitor.fire(now: t0.addingTimeInterval(1))
+		#expect(cancels == 2)
+	}
+
+	@Test func claimsEscapeAsASystemHotKeyOnlyUnderSecureInput() {
+		var secure = false
+		let monitor = CancelShortcutMonitor(isSecureInputEnabled: { secure }) {}
+		monitor.setActive(true)
+		#expect(!monitor.isSecureInputHotKeyRegistered)
+
+		secure = true
+		monitor.reconcileSecureInput()
+		#expect(monitor.isSecureInputHotKeyRegistered)
+
+		secure = false
+		monitor.reconcileSecureInput()
+		#expect(!monitor.isSecureInputHotKeyRegistered)
+
+		secure = true
+		monitor.reconcileSecureInput()
+		monitor.setActive(false)
+		#expect(!monitor.isSecureInputHotKeyRegistered)
+	}
+
+	@Test func inactiveMonitorNeverClaimsEscape() {
+		let monitor = CancelShortcutMonitor(isSecureInputEnabled: { true }) {}
+		monitor.reconcileSecureInput()
+		#expect(!monitor.isSecureInputHotKeyRegistered)
+	}
+}
