@@ -47,3 +47,29 @@ This script will:
 - `release-distribute.sh` - Your actual script with credentials (NOT tracked in git)
 - `build-release.sh` - Development build script
 - `ExportOptions-dev.plist` - Export configuration
+## Homebrew Cask
+
+`Casks/whispera.rb` is served straight from this repository, which doubles as a tap:
+
+```bash
+brew tap sapoepsilon/whispera https://github.com/sapoepsilon/Whispera
+brew install --cask sapoepsilon/whispera/whispera
+```
+
+After a release is published (the DMG must be attached as `Whispera-<version>.dmg`), bump the cask and commit it:
+
+```bash
+./scripts/update-cask.sh 1.3.3
+```
+
+The script downloads the release DMG, writes the new `version` and `sha256`, and runs `brew style`. Before committing, check the cask end to end:
+
+```bash
+brew tap-new --no-git local/whisperatest
+cp Casks/whispera.rb "$(brew --repository local/whisperatest)/Casks/"
+brew audit --cask --online --strict local/whisperatest/whispera
+brew livecheck --cask local/whisperatest/whispera
+brew untap local/whisperatest
+```
+
+`livecheck` reads the Sparkle appcast, so the same cask can later be submitted to `homebrew/cask` unchanged (see https://docs.brew.sh/Adding-Software-to-Homebrew#casks).

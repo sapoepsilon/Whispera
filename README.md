@@ -9,6 +9,17 @@ A native macOS app that replaces the built-in dictation with OpenAI's Whisper fo
   
 </div>
 
+## Install
+
+Download the DMG above, or install with [Homebrew](https://brew.sh):
+
+```bash
+brew tap sapoepsilon/whispera https://github.com/sapoepsilon/Whispera
+brew install --cask sapoepsilon/whispera/whispera
+```
+
+The app keeps itself up to date through Sparkle, so `brew upgrade` is only needed if you turn automatic updates off. `brew uninstall --zap --cask whispera` also removes models, logs and settings.
+
 ## Demos
 
 <table>
