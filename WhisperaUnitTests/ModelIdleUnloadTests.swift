@@ -72,7 +72,7 @@ struct DeferredActionTests {
 
 /// Exercises a real WhisperKit unload and on-demand reload. Needs a downloaded model.
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .sharedTranscriber)
 struct ModelIdleUnloadIntegrationTests {
 	nonisolated static var hasDownloadedModel: Bool {
 		let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -95,7 +95,7 @@ struct ModelIdleUnloadIntegrationTests {
 		throw CancellationError()
 	}
 
-	@Test(.enabled(if: hasDownloadedModel), .timeLimit(.minutes(5)))
+	@Test(.enabled(if: hasDownloadedModel), .timeLimit(.minutes(10)))
 	func unloadReleasesModelAndNextTranscriptionReloadsIt() async throws {
 		let transcriber = WhisperKitTranscriber.shared
 		try await waitUntilIdleAndLoaded(transcriber)
@@ -115,7 +115,7 @@ struct ModelIdleUnloadIntegrationTests {
 		#expect(!transcriber.isIdleUnloaded)
 	}
 
-	@Test(.enabled(if: hasDownloadedModel), .timeLimit(.minutes(5)))
+	@Test(.enabled(if: hasDownloadedModel), .timeLimit(.minutes(10)))
 	func unloadIsRefusedWhileModelIsInUse() async throws {
 		let transcriber = WhisperKitTranscriber.shared
 		try await waitUntilIdleAndLoaded(transcriber)

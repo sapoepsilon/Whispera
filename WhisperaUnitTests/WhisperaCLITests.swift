@@ -100,7 +100,7 @@ struct CLIComputeDeviceTests {
 		#expect(CLIComputeDevice.device(at: 99) == nil)
 	}
 
-	@Test @MainActor func defaultDeviceMatchesTheAppsComputeOptions() {
+	@Test(.sharedTranscriber) @MainActor func defaultDeviceMatchesTheAppsComputeOptions() {
 		let app = WhisperKitTranscriber.shared.getComputeOptionsStatus()
 		let device = CLIComputeDevice.all[0]
 		#expect(app["melCompute"] == name(device.mel))

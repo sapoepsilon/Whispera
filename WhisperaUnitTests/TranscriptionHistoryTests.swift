@@ -497,6 +497,7 @@ private let hasDownloadedModel: Bool = {
 }()
 
 @MainActor
+@Suite(.serialized, .sharedTranscriber)
 struct HistoryRetranscriptionTests {
 	@Test(.enabled(if: hasDownloadedModel), .timeLimit(.minutes(10)))
 	func retranscribesSavedRecordingWithWhisperKit() async throws {

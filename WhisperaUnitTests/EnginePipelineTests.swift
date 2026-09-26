@@ -119,7 +119,7 @@ struct EmptyTranscriptTests {
 	}
 
 	@MainActor
-	@Test func emptyAudioReturnsNoTextInsteadOfAPlaceholder() async throws {
+	@Test(.sharedTranscriber) func emptyAudioReturnsNoTextInsteadOfAPlaceholder() async throws {
 		let text = try await WhisperKitTranscriber.shared.transcribeAudioArray([], enableTranslation: false)
 		#expect(text.isEmpty)
 	}
@@ -178,7 +178,7 @@ struct LiveTextPipelineWhisperKitTests {
 /// dictation path, the text pipeline and idle unload. Switches the shared transcriber to
 /// Parakeet and back, restoring the model preferences it touches.
 @MainActor
-@Suite(.serialized, .enabled(if: ParakeetTranscriptionTests.enabled))
+@Suite(.serialized, .sharedTranscriber, .enabled(if: ParakeetTranscriptionTests.enabled))
 struct ParakeetPipelineTests {
 	private func waitForInitialization(_ transcriber: WhisperKitTranscriber) async throws {
 		let deadline = Date().addingTimeInterval(180)
@@ -199,6 +199,10 @@ struct ParakeetPipelineTests {
 		let savedSelected = standard.string(forKey: "selectedModel")
 		let savedLastUsed = standard.string(forKey: "lastUsedModel")
 		let previousModel = transcriber.currentModel
+		defer {
+			standard.set(savedSelected, forKey: "selectedModel")
+			standard.set(savedLastUsed, forKey: "lastUsedModel")
+		}
 		let (defaults, suite) = isolatedDefaults()
 		TextProcessingSettings.setCustomFillerWords(["fox"], in: defaults)
 		transcriber.textProcessingDefaults = defaults
@@ -258,7 +262,5 @@ struct ParakeetPipelineTests {
 			try await transcriber.switchModel(to: previousModel)
 			#expect(transcriber.isCurrentModelLoaded(), "state: \(transcriber.getCurrentModelState())")
 		}
-		standard.set(savedSelected, forKey: "selectedModel")
-		standard.set(savedLastUsed, forKey: "lastUsedModel")
 	}
 }
