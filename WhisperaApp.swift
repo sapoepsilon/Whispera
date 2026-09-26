@@ -624,6 +624,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	}
 
 	private func observeUpdateState() {
+		// The update alert is modal, so a test that posts an update notification would block the host forever
+		guard !Self.isRunningAsTestHost else { return }
 		// Observe update availability notifications
 		updateObserver = NotificationCenter.default.addObserver(
 			forName: UpdateManager.updateAvailableNotification,
@@ -702,11 +704,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		return true
 	}
 
-	private func shouldTerminateDuplicateInstances() -> Bool {
-		// A test host shares the bundle id with the installed app and would quit before the runner connects
+	static var isRunningAsTestHost: Bool {
 		let environment = ProcessInfo.processInfo.environment
 		let testHostKeys = ["XCTestConfigurationFilePath", "XCTestBundlePath", "XCTestSessionIdentifier"]
-		guard !testHostKeys.contains(where: { environment[$0] != nil }) else { return false }
+		return testHostKeys.contains { environment[$0] != nil }
+	}
+
+	private func shouldTerminateDuplicateInstances() -> Bool {
+		// A test host shares the bundle id with the installed app and would quit before the runner connects
+		guard !Self.isRunningAsTestHost else { return false }
 		let existingInstances = checkForExistingInstances()
 		return !existingInstances.isEmpty
 	}

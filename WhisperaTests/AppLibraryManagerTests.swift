@@ -15,7 +15,10 @@ final class AppLibraryManagerTests: XCTestCase {
 		tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
 		try! FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
 
-		appLibraryManager = AppLibraryManager()
+		// ~/Downloads is TCC-protected: an ad-hoc signed test host blocks in open() on its consent prompt
+		let downloads = tempDirectory.appendingPathComponent("Downloads")
+		try! FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
+		appLibraryManager = AppLibraryManager(downloadsDirectory: downloads)
 	}
 
 	override func tearDown() {

@@ -63,15 +63,19 @@ class AppLibraryManager {
 
 	/// Downloads directory where updates are stored
 	var downloadsDirectory: URL? {
-		return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+		downloadsDirectoryOverride
+			?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
 	}
+
+	private let downloadsDirectoryOverride: URL?
 
 	/// Logs directory
 	var logsDirectory: URL? {
 		return appSupportDirectory?.appendingPathComponent("Logs")
 	}
 
-	init() {
+	init(downloadsDirectory: URL? = nil) {
+		downloadsDirectoryOverride = downloadsDirectory
 		Task {
 			await refreshStorageInfo()
 		}
