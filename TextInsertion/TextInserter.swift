@@ -93,17 +93,21 @@ final class TextInserter {
 	/// Upper bound on waiting for the target app to read the transcript before restoring.
 	private let readTimeoutMs: Int
 	private let captureDeadlineMs: Int
+	/// How long a dictated secret may sit on the clipboard when it had to be left there.
+	private let concealedClipboardLifetime: Duration
 	private var pendingInsertion: Task<Void, Never>?
 	/// Called on the main actor when a transcript could not be delivered.
 	var onProblem: ((InsertionProblem) -> Void)?
 
 	static let defaultReadTimeoutMs = 1500
+	static let defaultConcealedClipboardLifetime: Duration = .seconds(60)
 
 	init(
 		pasteboard: NSPasteboard = .general,
 		keyPoster: KeyEventPosting = CGKeyEventPoster(),
 		readTimeoutMs: Int = TextInserter.defaultReadTimeoutMs,
 		captureDeadlineMs: Int = ClipboardSnapshot.defaultCaptureDeadlineMs,
+		concealedClipboardLifetime: Duration = TextInserter.defaultConcealedClipboardLifetime,
 		isSecureInputActive: @escaping () -> Bool = { SecureDictation.isSecureInputActive },
 		settingsProvider: @escaping () -> TextInsertionSettings = { .current }
 	) {
@@ -112,6 +116,7 @@ final class TextInserter {
 		self.isSecureInputActive = isSecureInputActive
 		self.readTimeoutMs = readTimeoutMs
 		self.captureDeadlineMs = captureDeadlineMs
+		self.concealedClipboardLifetime = concealedClipboardLifetime
 		self.settingsProvider = settingsProvider
 	}
 
@@ -174,7 +179,8 @@ final class TextInserter {
 		case .typeCharacters:
 			await typeCharacters(text)
 		case .copyOnly:
-			ClipboardWriter.write(text, to: pasteboard, transient: false, concealed: concealed)
+			let changeCount = ClipboardWriter.write(text, to: pasteboard, transient: false, concealed: concealed)
+			if concealed { expireConcealedClipboard(changeCount: changeCount) }
 		case .externalScript:
 			inserted = await runScript(text, settings: settings, concealed: concealed)
 		}
@@ -211,7 +217,8 @@ final class TextInserter {
 			return true
 		} catch {
 			// Keep the words recoverable when the script cannot deliver them
-			ClipboardWriter.write(text, to: pasteboard, transient: false, concealed: concealed)
+			let changeCount = ClipboardWriter.write(text, to: pasteboard, transient: false, concealed: concealed)
+			if concealed { expireConcealedClipboard(changeCount: changeCount) }
 			logger.error(
 				"Insertion script failed, transcript copied to clipboard: \(error.localizedDescription)")
 			return false
@@ -273,6 +280,20 @@ final class TextInserter {
 		}
 		restorePrevious(capture)
 		return true
+	}
+
+	/// A secret left on the clipboard for the user to paste by hand is taken back after a while,
+	/// unless something else has been copied since.
+	private func expireConcealedClipboard(changeCount: Int) {
+		let lifetime = concealedClipboardLifetime
+		let pasteboard = pasteboard
+		let logger = logger
+		Task { @MainActor in
+			try? await Task.sleep(for: lifetime)
+			guard pasteboard.changeCount == changeCount else { return }
+			pasteboard.clearContents()
+			logger.info("Cleared a Secure Input dictation from the clipboard")
+		}
 	}
 
 	private func restorePrevious(_ capture: ClipboardSnapshot.Capture) {
