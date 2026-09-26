@@ -143,6 +143,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
+			WhatsNewController.shared.checkOnLaunch(suppress: !hasCompletedOnboarding)
 
 			if updateManager?.autoCheckForUpdates == true {
 				Task {

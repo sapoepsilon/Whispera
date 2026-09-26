@@ -245,6 +245,8 @@ struct SettingsView: View {
 						) {
 							Toggle("", isOn: $softwareUpdater.automaticallyDownloadsUpdates)
 						}
+
+						WhatsNewSettingRow()
 					}
 
 					Divider()
