@@ -39,11 +39,31 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 		}
 	}
 
+	/// Arguments for `/bin/sh` that start the app again once `pid` has exited. Waiting on the
+	/// process instead of a fixed delay matters because a new copy launched while this one is
+	/// still quitting hits the single-instance check and quits too, leaving nothing running.
+	/// If this process is still alive after `timeoutTicks` tenths of a second (termination was
+	/// cancelled), the app never quit, so nothing is opened.
+	static func relaunchArguments(
+		bundlePath: String, pid: Int32, opener: String = "/usr/bin/open", timeoutTicks: Int = 600
+	) -> [String] {
+		let script = """
+			i=0
+			while [ "$i" -lt "$3" ]; do
+			  kill -0 "$1" 2>/dev/null || exec "$2" "$0"
+			  sleep 0.1
+			  i=$((i + 1))
+			done
+			exit 1
+			"""
+		return ["-c", script, bundlePath, String(pid), opener, String(timeoutTicks)]
+	}
+
 	static func relaunch() {
-		let path = Bundle.main.bundleURL.path
 		let process = Process()
 		process.executableURL = URL(fileURLWithPath: "/bin/sh")
-		process.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", path]
+		process.arguments = relaunchArguments(
+			bundlePath: Bundle.main.bundleURL.path, pid: ProcessInfo.processInfo.processIdentifier)
 		do {
 			try process.run()
 			AppLogger.shared.general.info("Relaunching to apply the app language")

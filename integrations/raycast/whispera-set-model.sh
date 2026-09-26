@@ -13,5 +13,9 @@
 # @raycast.description Switch Whispera to an already downloaded model (see List Models).
 # @raycast.author Whispera
 
+if [ "$(defaults read "com.macwhisper.app" remoteControlURLSchemeEnabled 2>/dev/null)" != "1" ]; then
+  echo "Turn on \"Allow whispera:// links\" in Whispera Settings > Automation, then try again."
+  exit 1
+fi
 token="$(cat "$HOME/Library/Application Support/Whispera/remote-control-token" 2>/dev/null)"
 open -g "whispera://model?name=$1&token=$token"

@@ -36,6 +36,9 @@ struct TextProcessingConfiguration: Equatable {
 	var customFillerWords: [String] = []
 	var chineseScript: ChineseScriptPreference = .defaultValue
 	var preferredLanguages: [String] = Locale.preferredLanguages
+	/// File transcripts keep their paragraph structure; dictation is typed into one field, so
+	/// its line breaks are folded into spaces as before.
+	var preservesLineBreaks = false
 }
 
 /// Post-transcription text pipeline: filler removal, stutter and whitespace cleanup,
@@ -53,7 +56,7 @@ struct TranscriptTextProcessor {
 		if configuration.fillerWordRemovalEnabled {
 			result = Self.removeFillerWords(
 				result, language: language, additionalFillerWords: configuration.customFillerWords)
-			result = Self.normalize(result)
+			result = Self.normalize(result, preservingLineBreaks: configuration.preservesLineBreaks)
 		}
 		if !configuration.customWords.isEmpty {
 			result = Self.applyCustomWords(
@@ -112,7 +115,16 @@ extension TranscriptTextProcessor {
 	}
 
 	/// Collapses 3+ consecutive repeats of a word ("I I I I" -> "I"), squeezes whitespace, trims.
-	static func normalize(_ text: String) -> String {
+	/// With `preservingLineBreaks`, each line is cleaned on its own and the breaks stay.
+	static func normalize(_ text: String, preservingLineBreaks: Bool) -> String {
+		guard preservingLineBreaks else { return normalizeLine(text) }
+		return text.split(separator: "\n", omittingEmptySubsequences: false)
+			.map { normalizeLine(String($0)) }
+			.joined(separator: "\n")
+			.trimmingCharacters(in: .whitespacesAndNewlines)
+	}
+
+	private static func normalizeLine(_ text: String) -> String {
 		let words = text.split(whereSeparator: { $0.isWhitespace })
 		var output: [Substring] = []
 		var i = 0

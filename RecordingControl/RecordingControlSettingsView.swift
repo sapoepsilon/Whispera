@@ -111,7 +111,7 @@ struct RecordingControlSettingsView: View {
 
 			SettingRow(
 				"Cancel Shortcut",
-				description: "Press it while recording or transcribing to discard the dictation without pasting"
+				description: "Press it while recording or transcribing to discard the dictation without pasting. In Live Transcription Mode the text is typed as you speak, so it only stops the stream; what was already typed stays."
 			) {
 				HStack(spacing: 8) {
 					CancelShortcutRecorder()

@@ -184,6 +184,25 @@ struct MenuBarView: View {
 						.buttonStyle(SecondaryButtonStyle())
 					}
 
+					HStack(spacing: 8) {
+						Button {
+							HistoryWindowController.shared.show()
+						} label: {
+							Label("History", systemImage: "clock.arrow.circlepath")
+								.frame(maxWidth: .infinity)
+						}
+						.buttonStyle(SecondaryButtonStyle())
+						.accessibilityIdentifier("menuBarHistoryButton")
+
+						Button(action: copyLastTranscript) {
+							Label("Copy Last", systemImage: "doc.on.doc")
+								.frame(maxWidth: .infinity)
+						}
+						.buttonStyle(SecondaryButtonStyle())
+						.help("Copy the most recent transcript to the clipboard")
+						.accessibilityIdentifier("menuBarCopyLastButton")
+					}
+
 					Button("Quit Whispera") {
 						NSApplication.shared.terminate(nil)
 					}
@@ -336,6 +355,18 @@ struct MenuBarView: View {
 				)
 				.allowsHitTesting(false)
 		}
+	}
+
+	/// Clipboard restore puts the previous clipboard back after pasting, so this is the quick
+	/// way to paste a dictation again.
+	private func copyLastTranscript() {
+		let actions = RemoteHistoryActions.live
+		guard let text = actions.lastTranscript(audioManager) else {
+			showError(String(localized: "No transcript yet"))
+			return
+		}
+		actions.copyToClipboard(text)
+		showSuccess(String(localized: "Copied the last transcript"))
 	}
 
 	// MARK: - Notification Handling

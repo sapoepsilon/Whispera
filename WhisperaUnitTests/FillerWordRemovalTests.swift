@@ -10,7 +10,8 @@ struct FillerWordRemovalTests {
 
 	private func clean(_ text: String, _ evidence: OutputLanguageEvidence, extra: [String] = []) -> String {
 		TranscriptTextProcessor.normalize(
-			TranscriptTextProcessor.removeFillerWords(text, language: evidence, additionalFillerWords: extra))
+			TranscriptTextProcessor.removeFillerWords(text, language: evidence, additionalFillerWords: extra),
+			preservingLineBreaks: false)
 	}
 
 	@Test func removesFillers() {
@@ -135,6 +136,21 @@ struct FillerPipelineTests {
 		let processor = TranscriptTextProcessor(configuration: configuration)
 		let text = "um  I I I think"
 		#expect(processor.process(text, language: .userSelected("en")) == text)
+	}
+
+	@Test func fileTranscriptsKeepTheirLineBreaks() {
+		var configuration = TextProcessingConfiguration()
+		configuration.preservesLineBreaks = true
+		let processor = TranscriptTextProcessor(configuration: configuration)
+		let text = "  First   paragraph, um, here.\n\nSecond I I I paragraph uh.\nThird line  "
+		#expect(
+			processor.process(text, language: .userSelected("en"))
+				== "First paragraph, here.\n\nSecond I paragraph\nThird line")
+	}
+
+	@Test func dictationStillFoldsLineBreaksIntoSpaces() {
+		let processor = TranscriptTextProcessor(configuration: TextProcessingConfiguration())
+		#expect(processor.process("one\ntwo\n\nthree", language: .userSelected("en")) == "one two three")
 	}
 }
 

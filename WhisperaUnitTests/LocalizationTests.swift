@@ -93,3 +93,53 @@ struct AppLanguageTests {
 		}
 	}
 }
+
+struct AppRelaunchTests {
+	private func makeOpener() throws -> (opener: URL, marker: URL, directory: URL) {
+		let directory = FileManager.default.temporaryDirectory
+			.appendingPathComponent("AppRelaunchTests-\(UUID().uuidString)", isDirectory: true)
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		let marker = directory.appendingPathComponent("opened")
+		let opener = directory.appendingPathComponent("fake-open")
+		try "#!/bin/sh\nprintf '%s' \"$1\" > \"\(marker.path)\"\n".write(to: opener, atomically: true, encoding: .utf8)
+		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: opener.path)
+		return (opener, marker, directory)
+	}
+
+	private func runRelaunchScript(waitingFor pid: Int32, opener: URL, timeoutTicks: Int) throws -> Process {
+		let script = Process()
+		script.executableURL = URL(fileURLWithPath: "/bin/sh")
+		script.arguments = AppLanguage.relaunchArguments(
+			bundlePath: "/Applications/Whispera.app", pid: pid, opener: opener.path, timeoutTicks: timeoutTicks)
+		try script.run()
+		return script
+	}
+
+	@Test func opensTheAppOnlyAfterTheOldProcessHasExited() throws {
+		let (opener, marker, directory) = try makeOpener()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let quitting = Process()
+		quitting.executableURL = URL(fileURLWithPath: "/bin/sleep")
+		quitting.arguments = ["1"]
+		try quitting.run()
+
+		let script = try runRelaunchScript(waitingFor: quitting.processIdentifier, opener: opener, timeoutTicks: 100)
+		Thread.sleep(forTimeInterval: 0.5)
+		#expect(!FileManager.default.fileExists(atPath: marker.path), "Opened while the old copy was still running")
+		quitting.waitUntilExit()
+		script.waitUntilExit()
+		#expect(script.terminationStatus == 0)
+		#expect(try String(contentsOf: marker, encoding: .utf8) == "/Applications/Whispera.app")
+	}
+
+	@Test func doesNotOpenASecondCopyWhenQuittingWasCancelled() throws {
+		let (opener, marker, directory) = try makeOpener()
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		let script = try runRelaunchScript(
+			waitingFor: ProcessInfo.processInfo.processIdentifier, opener: opener, timeoutTicks: 3)
+		script.waitUntilExit()
+		#expect(script.terminationStatus == 1)
+		#expect(!FileManager.default.fileExists(atPath: marker.path))
+	}
+}

@@ -12,4 +12,5 @@
 # @raycast.description Stop Whispera dictation and paste the transcript.
 # @raycast.author Whispera
 
-open -g "whispera://stop"
+WHISPERA="${WHISPERA_CLI:-/Applications/Whispera.app/Contents/MacOS/Whispera}"
+"$WHISPERA" --stop 2>&1

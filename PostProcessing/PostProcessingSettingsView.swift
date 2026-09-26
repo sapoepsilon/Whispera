@@ -310,10 +310,23 @@ struct PostProcessingSettingsView: View {
 		isRecordingShortcut = true
 		shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
 			guard isRecordingShortcut else { return event }
-			if let formatted = PostProcessingShortcutFormatter.format(event) {
-				shortcut = formatted
-				stopRecordingShortcut()
+			let modifiers = event.modifierFlags.intersection(ShortcutCombo.relevantModifiers)
+			guard !modifiers.isEmpty else { return nil }
+			stopRecordingShortcut()
+			guard let formatted = PostProcessingShortcutFormatter.format(keyCode: event.keyCode, modifiers: modifiers)
+			else {
+				alert = PostProcessingAlert(
+					title: String(localized: "Shortcut not available"),
+					message: String(localized: "That key can't be used in a shortcut. Try a letter, number or F-key."))
+				return nil
 			}
+			if let conflict = PostProcessShortcutMonitor.conflictingShortcut(for: formatted) {
+				alert = PostProcessingAlert(
+					title: String(localized: "Shortcut not available"),
+					message: String(localized: "\(formatted) is already used by another Whispera shortcut (\(conflict))."))
+				return nil
+			}
+			shortcut = formatted
 			return nil
 		}
 	}
@@ -332,21 +345,12 @@ struct PostProcessingAlert: Identifiable {
 }
 
 enum PostProcessingShortcutFormatter {
-	/// Produces the same symbol string that `GlobalShortcutManager.parseShortcut` reads back.
-	static func format(_ event: NSEvent) -> String? {
-		let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
-		guard !flags.isEmpty else { return nil }
-		let key: String
-		switch event.keyCode {
-		case 49: key = "Space"
-		case 36: key = "Return"
-		case 48: key = "Tab"
-		default:
-			guard let characters = event.charactersIgnoringModifiers?.uppercased(), !characters.isEmpty else {
-				return nil
-			}
-			key = characters
-		}
+	/// Produces the symbol string `ShortcutCombo` reads back to the same key code. The key is
+	/// named from its key code, so Shift never turns "1" into "!" and F-keys keep their names.
+	/// Nil when there are no modifiers or the key has no name.
+	static func format(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> String? {
+		let flags = modifiers.intersection(ShortcutCombo.relevantModifiers)
+		guard !flags.isEmpty, let key = ShortcutKeyCodes.keyName(forKeyCode: keyCode) else { return nil }
 		return format(modifiers: flags, key: key)
 	}
 

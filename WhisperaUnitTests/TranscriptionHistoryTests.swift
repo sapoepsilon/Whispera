@@ -411,7 +411,10 @@ struct TranscriptionHistoryStoreTests {
 		#expect(store.entries.map(\.text) == ["new", "old"])
 	}
 
-	@Test func retranscribingAnEntryDeletedMidFlightDoesNotTouchIt() async throws {
+	// These two cover the store's bookkeeping when an entry disappears mid-flight, not
+	// transcription, so the transcriber is a closure that deletes the entry and returns a fixed
+	// result. Real WhisperKit re-transcription is covered by HistoryRetranscriptionTests.
+	@Test func storeDiscardsTheResultForAnEntryDeletedWhileRetranscribing() async throws {
 		let directory = makeTempDirectory()
 		let defaults = makeDefaults()
 		let store = TranscriptionHistoryStore(directory: directory, defaults: defaults)
@@ -424,7 +427,7 @@ struct TranscriptionHistoryStoreTests {
 
 		try await store.retranscribe(entry) { _ in
 			store.delete(entry)
-			return ("resurrected", "tiny")
+			return (text: "resurrected", modelName: "tiny")
 		}
 
 		#expect(store.entries.isEmpty)
@@ -433,7 +436,7 @@ struct TranscriptionHistoryStoreTests {
 		#expect(reopened.entries.isEmpty, "A deleted entry must not come back with the new text")
 	}
 
-	@Test func failedRetranscriptionOfADeletedEntryStillThrowsWithoutWriting() async throws {
+	@Test func storeRethrowsWithoutWritingWhenAnEntryIsDeletedAndRetranscriptionFails() async throws {
 		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
 		let entry = try #require(
 			store.record(
@@ -497,6 +500,7 @@ private let hasDownloadedModel: Bool = {
 }()
 
 @MainActor
+@Suite(.serialized, .sharedTranscriber)
 struct HistoryRetranscriptionTests {
 	@Test(.enabled(if: hasDownloadedModel), .timeLimit(.minutes(10)))
 	func retranscribesSavedRecordingWithWhisperKit() async throws {
@@ -751,40 +755,27 @@ private actor SeenInputs {
 	func append(_ value: String) { values.append(value) }
 }
 
-// MARK: - Debounced retention
+// MARK: - Confirming retention changes
 
 @MainActor
-struct DebouncedActionTests {
-	@Test func burstOfSchedulesRunsOnlyTheLastActionOnce() async throws {
-		let debouncer = DebouncedAction(delay: .milliseconds(80))
-		var runs: [Int] = []
-		for value in [50, 45, 40, 35, 30] {
-			debouncer.schedule { runs.append(value) }
-			try await Task.sleep(for: .milliseconds(10))
-		}
-		#expect(runs.isEmpty, "Intermediate Stepper values must not apply retention")
-		try await Task.sleep(for: .milliseconds(300))
-		#expect(runs == [30])
-	}
+struct RetentionConfirmationTests {
+	@Test func countsWhatANewRetentionWouldDeleteWithoutDeletingIt() throws {
+		let defaults = makeDefaults()
+		let clock = Clock()
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: defaults, now: { clock.now })
+		let starred = try #require(
+			store.record(text: "starred", audio: nil, source: .dictation, modelName: nil, language: nil))
+		store.toggleStar(starred)
+		store.record(text: "old", audio: nil, source: .dictation, modelName: nil, language: nil)
+		clock.advance(10 * 24 * 60 * 60)
+		store.record(text: "new", audio: nil, source: .dictation, modelName: nil, language: nil)
+		#expect(store.entries.count == 3)
 
-	@Test func flushRunsPendingActionImmediatelyAndOnlyOnce() async throws {
-		let debouncer = DebouncedAction(delay: .seconds(10))
-		var runs = 0
-		debouncer.schedule { runs += 1 }
-		#expect(debouncer.isPending)
-		debouncer.flush()
-		debouncer.flush()
-		#expect(runs == 1)
-		#expect(!debouncer.isPending)
-	}
-
-	@Test func cancelDropsPendingAction() async throws {
-		let debouncer = DebouncedAction(delay: .milliseconds(20))
-		var runs = 0
-		debouncer.schedule { runs += 1 }
-		debouncer.cancel()
-		try await Task.sleep(for: .milliseconds(100))
-		#expect(runs == 0)
+		#expect(store.retentionDeletionCount(period: .days3, limit: 50) == 1)
+		#expect(store.retentionDeletionCount(period: .preserveLimit, limit: 1) == 1)
+		#expect(store.retentionDeletionCount(period: .never, limit: 1) == 0)
+		#expect(store.retentionDeletionCount(period: .weeks2, limit: 50) == 0)
+		#expect(store.entries.count == 3, "Counting must not delete anything")
 	}
 }
 

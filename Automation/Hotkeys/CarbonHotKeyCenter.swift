@@ -28,7 +28,7 @@ enum HotkeyBackend: String, CaseIterable, Identifiable, Sendable {
 		case .carbon:
 			return String(
 				localized:
-					"Registers a system hotkey. The front app never sees the shortcut. Fn/Globe cannot be used."
+					"Registers the dictation shortcut as a system hotkey, so the front app never sees it. Fn/Globe cannot be used. The file shortcut is still only observed, so it keeps working in other apps."
 			)
 		}
 	}
@@ -73,9 +73,9 @@ enum CarbonHotKeyError: LocalizedError, Equatable {
 
 	var errorDescription: String? {
 		switch self {
-		case .unsupportedKey: return "Fn/Globe shortcuts cannot be registered as a system hotkey"
-		case .alreadyTaken: return "Another app already owns this shortcut"
-		case .failed(let status): return "RegisterEventHotKey failed (\(status))"
+		case .unsupportedKey: return String(localized: "Fn/Globe shortcuts cannot be registered as a system hotkey")
+		case .alreadyTaken: return String(localized: "Another app already owns this shortcut")
+		case .failed(let status): return String(localized: "RegisterEventHotKey failed (\(Int(status)))")
 		}
 	}
 }

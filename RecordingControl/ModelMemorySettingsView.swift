@@ -5,8 +5,26 @@ struct ModelMemorySettingsView: View {
 		ModelUnloadTimeout.never.rawValue
 	@State private var whisperKit = WhisperKitTranscriber.shared
 	@State private var isWorking = false
+	@State private var loadError: String?
 
 	var body: some View {
+		// Group keeps both rows direct children of the settings stack while sharing one alert
+		Group {
+			rows
+		}
+		.alert(
+			"Could not load the model",
+			isPresented: Binding(get: { loadError != nil }, set: { if !$0 { loadError = nil } }),
+			presenting: loadError
+		) { _ in
+			Button("OK", role: .cancel) {}
+		} message: { message in
+			Text(message)
+		}
+	}
+
+	@ViewBuilder
+	private var rows: some View {
 		SettingRow(
 			"Unload Model When Idle",
 			description:
@@ -32,7 +50,12 @@ struct ModelMemorySettingsView: View {
 				Button("Load Now") {
 					isWorking = true
 					Task {
-						try? await whisperKit.waitForReadyForTranscription()
+						do {
+							try await whisperKit.waitForReadyForTranscription()
+						} catch {
+							AppLogger.shared.transcriber.error("Load Now failed: \(error.localizedDescription)")
+							loadError = error.localizedDescription
+						}
 						isWorking = false
 					}
 				}

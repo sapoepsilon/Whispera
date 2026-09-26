@@ -80,9 +80,7 @@ class GlobalShortcutManager: ObservableObject {
 	func setAudioManager(_ manager: AudioManager) {
 		self.audioManager = manager
 		logger.info("AudioManager set, checking accessibility status...")
-		postProcessShortcutMonitor.attach(audioManager: manager) { [weak self] shortcut in
-			self?.parseShortcut(shortcut) ?? ([], 0)
-		}
+		postProcessShortcutMonitor.attach(audioManager: manager)
 		checkAccessibilityStatus()
 		observeRecordingStateForCancel()
 	}
@@ -177,17 +175,20 @@ class GlobalShortcutManager: ObservableObject {
 		postProcessShortcutMonitor.reinstall()
 		monitorsKeyRelease = RecordingControlSettings().activationMode.needsKeyRelease
 
-		let (textModifiers, textKeyCode) = parseShortcut(currentShortcut)
+		let (textModifiers, textKeyCode) = parseShortcut(currentShortcut, fallback: "⌥⌘R")
 		logger.info(
 			"Setting up text shortcut for \(currentShortcut) (keyCode: \(textKeyCode), modifiers: \(textModifiers.rawValue))"
 		)
 
-		let (fileModifiers, fileKeyCode) = parseShortcut(fileSelectionShortcut)
+		let (fileModifiers, fileKeyCode) = parseShortcut(fileSelectionShortcut, fallback: "⌃F")
 		logger.info(
 			"Setting up file selection shortcut for \(fileSelectionShortcut) (keyCode: \(fileKeyCode), modifiers: \(fileModifiers.rawValue))"
 		)
 
 		if requestedBackend == .carbon {
+			// The secure input fallback may already hold this combination on its own Carbon center,
+			// which would make this registration fail with eventHotKeyExistsErr
+			stopSecureInputFallback()
 			do {
 				try CarbonHotKeyCenter.shared.register(
 					keyCode: textKeyCode, modifiers: textModifiers,
@@ -195,14 +196,13 @@ class GlobalShortcutManager: ObservableObject {
 				) { [weak self] in
 					self?.handleTextHotKey(isRepeat: false, source: .systemHotKey)
 				}
-				try CarbonHotKeyCenter.shared.register(keyCode: fileKeyCode, modifiers: fileModifiers) {
-					[weak self] in
-					self?.handleFileSelectionHotKey()
-				}
 				publishBackend(active: .carbon, message: nil)
-				// A registered system hotkey keeps working under secure input, so the fallback would only collide with it
+				// A fallback start queued by an earlier setup must not bring the monitor back
 				Task { @MainActor in SecureInputMonitor.shared.stop() }
-				logger.info("Registered system hotkeys for text and file selection shortcuts")
+				// The file shortcut (default Control-F) stays observed rather than registered: a
+				// system hotkey would swallow it in every app, breaking forward-char in text fields
+				installFileSelectionMonitors(modifiers: fileModifiers, keyCode: fileKeyCode)
+				logger.info("Registered the text shortcut as a system hotkey; file selection stays on event monitors")
 				return
 			} catch {
 				CarbonHotKeyCenter.shared.unregisterAll()
@@ -245,16 +245,6 @@ class GlobalShortcutManager: ObservableObject {
 			}
 		}
 
-		fileSelectionGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
-			[weak self] event in
-			if self?.matchesShortcut(
-				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
-			{
-				self?.logger.info("Global file selection shortcut detected (dedicated monitor)!")
-				self?.handleFileSelectionHotKey()
-			}
-		}
-
 		// Also set up local monitors as fallback (works when app is focused)
 		logger.info("Installing local monitors as fallback...")
 		localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) {
@@ -283,6 +273,25 @@ class GlobalShortcutManager: ObservableObject {
 			return event
 		}
 
+		installFileSelectionMonitors(modifiers: fileModifiers, keyCode: fileKeyCode)
+
+		logger.info(
+			"Monitors installed - Text Global: \(globalMonitor != nil), Text Local: \(localMonitor != nil)"
+		)
+		configureSecureInputFallback(modifiers: textModifiers, keyCode: textKeyCode)
+	}
+
+	private func installFileSelectionMonitors(modifiers fileModifiers: NSEvent.ModifierFlags, keyCode fileKeyCode: UInt16) {
+		fileSelectionGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
+			[weak self] event in
+			if self?.matchesShortcut(
+				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
+			{
+				self?.logger.info("Global file selection shortcut detected (dedicated monitor)!")
+				self?.handleFileSelectionHotKey()
+			}
+		}
+
 		fileSelectionLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
 			[weak self] event in
 			if self?.matchesShortcut(
@@ -294,15 +303,17 @@ class GlobalShortcutManager: ObservableObject {
 			}
 			return event
 		}
-
-		logger.info(
-			"Monitors installed - Text Global: \(globalMonitor != nil), Text Local: \(localMonitor != nil)"
-		)
 		logger.info(
 			"File monitors installed - File Global: \(fileSelectionGlobalMonitor != nil), File Local: \(fileSelectionLocalMonitor != nil)"
 		)
+	}
 
-		configureSecureInputFallback(modifiers: textModifiers, keyCode: textKeyCode)
+	private func stopSecureInputFallback() {
+		if Thread.isMainThread {
+			MainActor.assumeIsolated { SecureInputMonitor.shared.stop() }
+		} else {
+			DispatchQueue.main.sync { MainActor.assumeIsolated { SecureInputMonitor.shared.stop() } }
+		}
 	}
 
 	private func configureSecureInputFallback(modifiers: NSEvent.ModifierFlags, keyCode: UInt16) {
@@ -330,134 +341,16 @@ class GlobalShortcutManager: ObservableObject {
 		}
 	}
 
-	private func parseShortcut(_ shortcut: String) -> (NSEvent.ModifierFlags, UInt16) {
-		var modifiers: NSEvent.ModifierFlags = []
-		var keyChar = ""
-
-		logger.debug("Parsing shortcut: '\(shortcut)'")
-
-		if shortcut.contains("⌘") { modifiers.insert(.command) }
-		if shortcut.contains("⌥") { modifiers.insert(.option) }
-		if shortcut.contains("⌃") { modifiers.insert(.control) }
-		if shortcut.contains("⇧") { modifiers.insert(.shift) }
-
-		// Extract the key character (everything after modifiers)
-		let modifierSymbols = "⌘⌥⌃⇧"
-		var remainingShortcut = shortcut
-
-		// Remove all modifier symbols from the beginning
-		for symbol in modifierSymbols {
-			remainingShortcut = remainingShortcut.replacingOccurrences(of: String(symbol), with: "")
+	/// Resolves a stored shortcut, falling back to `fallback` when its key is unknown so a
+	/// corrupt value never binds some unrelated key.
+	private func parseShortcut(_ shortcut: String, fallback: String) -> (NSEvent.ModifierFlags, UInt16) {
+		if let combo = ShortcutCombo(shortcut) {
+			logger.debug("Parsed shortcut '\(shortcut)': keyCode=\(combo.keyCode), modifiers=\(combo.modifiers.rawValue)")
+			return (combo.modifiers, combo.keyCode)
 		}
-
-		keyChar = remainingShortcut.trimmingCharacters(in: .whitespaces)
-
-		let keyCode = keyCodeForCharacter(keyChar.lowercased())
-		logger.debug(
-			"Parsed: keyChar='\(keyChar)', keyCode=\(keyCode), modifiers=\(modifiers.rawValue)")
-		return (modifiers, keyCode)
-	}
-
-	private func keyCodeForCharacter(_ char: String) -> UInt16 {
-		// Map common characters and special keys to key codes
-		switch char.lowercased() {
-		// Letters
-		case "a": return 0
-		case "b": return 11
-		case "c": return 8
-		case "d": return 2
-		case "e": return 14
-		case "f": return 3
-		case "g": return 5
-		case "h": return 4
-		case "i": return 34
-		case "j": return 38
-		case "k": return 40
-		case "l": return 37
-		case "m": return 46
-		case "n": return 45
-		case "o": return 31
-		case "p": return 35
-		case "q": return 12
-		case "r": return 15
-		case "s": return 1
-		case "t": return 17
-		case "u": return 32
-		case "v": return 9
-		case "w": return 13
-		case "x": return 7
-		case "y": return 16
-		case "z": return 6
-
-		// Numbers
-		case "0": return 29
-		case "1": return 18
-		case "2": return 19
-		case "3": return 20
-		case "4": return 21
-		case "5": return 23
-		case "6": return 22
-		case "7": return 26
-		case "8": return 28
-		case "9": return 25
-
-		// Function keys
-		case "f1": return 122
-		case "f2": return 120
-		case "f3": return 99
-		case "f4": return 118
-		case "f5": return 96
-		case "f6": return 97
-		case "f7": return 98
-		case "f8": return 100
-		case "f9": return 101
-		case "f10": return 109
-		case "f11": return 103
-		case "f12": return 111
-		case "f13": return 105
-		case "f14": return 107
-		case "f15": return 113
-		case "f16": return 106
-		case "f17": return 64
-		case "f18": return 79
-		case "f19": return 80
-		case "f20": return 90
-
-		// Special keys
-		case "space", " ": return 49
-		case "return", "enter", "↩": return 36
-		case "tab", "⇥": return 48
-		case "delete", "⌫": return 51
-		case "escape", "esc", "⎋": return 53
-		case "home", "↖": return 115
-		case "end", "↘": return 119
-		case "pageup", "⇞": return 116
-		case "pagedown", "⇟": return 121
-		case "up", "↑": return 126
-		case "down", "↓": return 125
-		case "left", "←": return 123
-		case "right", "→": return 124
-		case "clear", "⌧": return 71
-		case "help", "?⃝": return 114
-
-		// Punctuation
-		case "-": return 27
-		case "=": return 24
-		case "[": return 33
-		case "]": return 30
-		case "\\": return 42
-		case ";": return 41
-		case "'": return 39
-		case ",": return 43
-		case ".": return 47
-		case "/": return 44
-		case "`": return 50
-
-		// Globe/Fn key (on newer Macs)
-		case "globe", "fn", "🌐": return 63
-
-		default: return 15  // Default to 'R' key
-		}
+		logger.error("Shortcut '\(shortcut)' names an unknown key, using \(fallback)")
+		let combo = ShortcutCombo(fallback) ?? ShortcutCombo(modifiers: [.option, .command], keyCode: 15)
+		return (combo.modifiers, combo.keyCode)
 	}
 
 	private func matchesShortcut(

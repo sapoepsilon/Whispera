@@ -16,9 +16,9 @@ enum TranscriptionHistoryError: LocalizedError {
 
 	var errorDescription: String? {
 		switch self {
-		case .audioUnavailable: return "The recording for this entry is no longer available."
-		case .storeUnavailable: return "Transcription history could not be opened."
-		case .nothingToPostProcess: return "This entry has no transcript to post-process."
+		case .audioUnavailable: return String(localized: "The recording for this entry is no longer available.")
+		case .storeUnavailable: return String(localized: "Transcription history could not be opened.")
+		case .nothingToPostProcess: return String(localized: "This entry has no transcript to post-process.")
 		}
 	}
 }
@@ -342,18 +342,29 @@ final class TranscriptionHistoryStore {
 	func applyRetention() {
 		guard context != nil else { return }
 		let settings = self.settings
-		let doomed = HistoryRetention.idsToDelete(
-			from: entries.map {
-				HistoryRetentionCandidate(id: $0.id, createdAt: $0.createdAt, isStarred: $0.isStarred)
-			},
-			period: settings.retention,
-			limit: settings.limit,
-			now: now()
-		)
+		let doomed = idsToDelete(period: settings.retention, limit: settings.limit)
 		guard !doomed.isEmpty else { return }
 
 		remove(entries.filter { doomed.contains($0.id) })
 		AppLogger.shared.database.info("History retention removed \(doomed.count) entries")
+	}
+
+	/// How many entries switching to these retention settings would delete right away, so the
+	/// change can be confirmed first.
+	func retentionDeletionCount(period: HistoryRetentionPeriod, limit: Int) -> Int {
+		guard context != nil else { return 0 }
+		return idsToDelete(period: period, limit: limit).count
+	}
+
+	private func idsToDelete(period: HistoryRetentionPeriod, limit: Int) -> Set<UUID> {
+		HistoryRetention.idsToDelete(
+			from: entries.map {
+				HistoryRetentionCandidate(id: $0.id, createdAt: $0.createdAt, isStarred: $0.isStarred)
+			},
+			period: period,
+			limit: limit,
+			now: now()
+		)
 	}
 
 	func reload() {

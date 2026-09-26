@@ -26,8 +26,8 @@ enum RemoteCommandOutcome: Equatable, Sendable {
 
 	var message: String {
 		switch self {
-		case .performed: return "Done"
-		case .deferred: return "Queued until Whispera finishes launching"
+		case .performed: return String(localized: "Done")
+		case .deferred: return String(localized: "Queued until Whispera finishes launching")
 		case .ignored(let reason): return reason
 		case .rejected(let reason): return reason
 		}
@@ -201,26 +201,26 @@ final class RemoteControlCenter: NSObject {
 			controller.toggleRecording(postProcess: true)
 			return .performed
 		case .start:
-			guard !isActive else { return .ignored("Already recording") }
+			guard !isActive else { return .ignored(String(localized: "Already recording")) }
 			controller.toggleRecording(postProcess: false)
 			return .performed
 		case .stop:
 			// A stop during microphone startup is deferred by the controller, like a hotkey release
-			guard isActive else { return .ignored("Not recording") }
+			guard isActive else { return .ignored(String(localized: "Not recording")) }
 			controller.requestStop()
 			return .performed
 		case .cancel:
 			// Matches Escape and the pill, which can also abandon a transcription in flight
-			guard isActive || controller.isTranscribing else { return .ignored("Not recording") }
+			guard isActive || controller.isTranscribing else { return .ignored(String(localized: "Not recording")) }
 			controller.cancelRecording()
 			return .performed
 		case .setLanguage, .setModel, .copyLastTranscript, .openHistory, .addWord:
-			return .rejected("Not a dictation command")
+			return .rejected(String(localized: "Not a dictation command"))
 		}
 	}
 
 	private func copyLastTranscript() -> RemoteCommandOutcome {
-		copyLastTranscriptText() == nil ? .ignored("No transcript yet") : .performed
+		copyLastTranscriptText() == nil ? .ignored(String(localized: "No transcript yet")) : .performed
 	}
 
 	/// Copies the last transcript and returns exactly what was copied, so a caller never has to
@@ -234,21 +234,20 @@ final class RemoteControlCenter: NSObject {
 	private func addWords(_ input: String) -> RemoteCommandOutcome {
 		guard let words = RemoteCommand.parseWords(input) else {
 			return .rejected(
-				"Give up to \(RemoteCommand.maxWordsPerCommand) comma-separated words of at most \(RemoteCommand.maxWordLength) characters"
-			)
+				String(
+					localized:
+						"Give up to \(RemoteCommand.maxWordsPerCommand) comma-separated words of at most \(RemoteCommand.maxWordLength) characters"
+				))
 		}
-		let existing = TextProcessingSettings.customWords(from: defaults)
-		let known = Set(existing.map { $0.lowercased() })
-		let added = words.filter { !known.contains($0.lowercased()) }
-		guard !added.isEmpty else { return .ignored("Already in the dictionary") }
-		TextProcessingSettings.setCustomWords(existing + added, in: defaults)
+		let added = TextProcessingSettings.addCustomWords(words, in: defaults)
+		guard !added.isEmpty else { return .ignored(String(localized: "Already in the dictionary")) }
 		logger.info("Added \(added.count) word(s) to the custom dictionary")
 		return .performed
 	}
 
 	private func applyLanguage(_ input: String) -> RemoteCommandOutcome {
 		guard let name = RemoteCommand.resolveLanguageName(input) else {
-			return .rejected("Unknown language: \(RemoteCommand.sanitizedForLog(input))")
+			return .rejected(String(localized: "Unknown language: \(RemoteCommand.sanitizedForLog(input))"))
 		}
 		defaults.set(false, forKey: "autoDetectLanguageFromKeyboard")
 		defaults.set(name, forKey: "selectedLanguage")
@@ -257,17 +256,17 @@ final class RemoteControlCenter: NSObject {
 
 	private func applyModel(_ model: String) async -> RemoteCommandOutcome {
 		guard let modelSwitcher else {
-			return .rejected("Model switching is not available yet")
+			return .rejected(String(localized: "Model switching is not available yet"))
 		}
 		let downloaded = await modelSwitcher.downloadedModelNames()
 		guard downloaded.contains(model) else {
-			return .rejected("Model \(model) is not downloaded. Download it in Settings first.")
+			return .rejected(String(localized: "Model \(model) is not downloaded. Download it in Settings first."))
 		}
 		do {
 			try await modelSwitcher.switchModel(to: model)
 			return .performed
 		} catch {
-			return .rejected("Could not switch to \(model): \(error.localizedDescription)")
+			return .rejected(String(localized: "Could not switch to \(model): \(error.localizedDescription)"))
 		}
 	}
 }

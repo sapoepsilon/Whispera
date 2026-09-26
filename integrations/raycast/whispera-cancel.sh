@@ -12,4 +12,5 @@
 # @raycast.description Stop Whispera dictation and discard the recording.
 # @raycast.author Whispera
 
-open -g "whispera://cancel"
+WHISPERA="${WHISPERA_CLI:-/Applications/Whispera.app/Contents/MacOS/Whispera}"
+"$WHISPERA" --cancel 2>&1

@@ -96,7 +96,7 @@ struct TextInsertionSettingsView: View {
 					SettingRow(
 						"After Inserting",
 						description:
-							"Restore puts back whatever you had copied once the transcript is pasted"
+							"Restore puts back what you had copied once the transcript is pasted. Exceptions: passwords and other concealed items are cleared rather than restored, anything larger than 16 MB per item or 32 MB in total is lost and the transcript stays, and files or images another app only promised to provide may come back incomplete."
 					) {
 						Picker("", selection: $clipboardHandling) {
 							ForEach(ClipboardHandling.allCases) { handling in

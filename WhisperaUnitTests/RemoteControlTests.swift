@@ -212,9 +212,9 @@ struct RemoteControlCenterTests {
 		let controller = FakeDictationController()
 		center.register(controller: controller)
 
-		#expect(await center.handle(.stop, source: .url) == .ignored("Not recording"))
+		#expect(await center.handle(.stop, source: .url) == .ignored(String(localized: "Not recording")))
 		#expect(await center.handle(.start, source: .url) == .performed)
-		#expect(await center.handle(.start, source: .url) == .ignored("Already recording"))
+		#expect(await center.handle(.start, source: .url) == .ignored(String(localized: "Already recording")))
 		#expect(controller.isRecording)
 		#expect(await center.handle(.stop, source: .intent) == .performed)
 		#expect(!controller.isRecording)
@@ -243,7 +243,7 @@ struct RemoteControlCenterTests {
 
 		#expect(await center.handle(.cancel, source: .cli) == .performed)
 		#expect(controller.cancels == 1)
-		#expect(await center.handle(.stop, source: .cli) == .ignored("Not recording"))
+		#expect(await center.handle(.stop, source: .cli) == .ignored(String(localized: "Not recording")))
 	}
 
 	@Test func startIsIgnoredWhileMicrophoneInitializes() async throws {
@@ -253,7 +253,7 @@ struct RemoteControlCenterTests {
 		controller.isMicrophoneInitializing = true
 		center.register(controller: controller)
 
-		#expect(await center.handle(.start, source: .url) == .ignored("Already recording"))
+		#expect(await center.handle(.start, source: .url) == .ignored(String(localized: "Already recording")))
 		#expect(await center.handle(.cancel, source: .url) == .performed)
 		#expect(controller.cancels == 1)
 		#expect(controller.toggles == 0)
@@ -265,7 +265,7 @@ struct RemoteControlCenterTests {
 		let controller = FakeDictationController()
 		center.register(controller: controller)
 
-		#expect(await center.handle(.cancel, source: .cli) == .ignored("Not recording"))
+		#expect(await center.handle(.cancel, source: .cli) == .ignored(String(localized: "Not recording")))
 		#expect(await center.handle(.toggle, source: .cli) == .performed)
 		#expect(await center.handle(.cancel, source: .cli) == .performed)
 		#expect(controller.cancels == 1)
@@ -293,7 +293,7 @@ struct RemoteControlCenterTests {
 		#expect(defaults.bool(forKey: "autoDetectLanguageFromKeyboard") == false)
 
 		let rejected = await center.handle(.setLanguage("klingon"), source: .url)
-		#expect(rejected == .rejected("Unknown language: klingon"))
+		#expect(rejected == .rejected(String(localized: "Unknown language: \("klingon")")))
 		#expect(defaults.string(forKey: "selectedLanguage") == "german")
 
 		#expect(await center.handle(.setLanguage("Auto"), source: .url) == .performed)
@@ -481,7 +481,7 @@ struct RemoteHistoryCommandTests {
 		let (center, defaults, suite) = try makeCenter(log)
 		defer { defaults.removePersistentDomain(forName: suite) }
 
-		#expect(await center.handle(.copyLastTranscript, source: .url) == .ignored("No transcript yet"))
+		#expect(await center.handle(.copyLastTranscript, source: .url) == .ignored(String(localized: "No transcript yet")))
 		#expect(log.copied.isEmpty)
 
 		log.lastTranscript = "Ship it on Friday."
@@ -506,7 +506,7 @@ struct RemoteHistoryCommandTests {
 		#expect(await center.handle(.addWord("kubernetes, Grafana"), source: .cli) == .performed)
 		#expect(TextProcessingSettings.customWords(from: defaults) == ["Kubernetes", "Grafana"])
 
-		#expect(await center.handle(.addWord("GRAFANA"), source: .cli) == .ignored("Already in the dictionary"))
+		#expect(await center.handle(.addWord("GRAFANA"), source: .cli) == .ignored(String(localized: "Already in the dictionary")))
 		#expect(TextProcessingSettings.customWords(from: defaults) == ["Kubernetes", "Grafana"])
 	}
 

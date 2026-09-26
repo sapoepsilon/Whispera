@@ -15,7 +15,7 @@ struct LauncherSettingsSection: View {
 			SettingRow(
 				"Raycast script commands",
 				description:
-					"Toggle, start, stop and cancel dictation, switch language or model, and transcribe a file from Raycast. Pick the folder you added under Raycast > Extensions > Script Commands."
+					"Control dictation, copy the last transcript, open history, add dictionary words, switch language or model, and transcribe a file from Raycast. Apart from stop, cancel, listing models and transcribing a file, they need \"Allow whispera:// links\" turned on above. Pick the folder you added under Raycast > Extensions > Script Commands."
 			) {
 				Button("Export...") { exportScripts() }
 			}
@@ -42,16 +42,22 @@ struct LauncherSettingsSection: View {
 		guard panel.runModal() == .OK, let directory = panel.url else { return }
 
 		let cliPath = Bundle.main.executableURL?.path ?? RaycastScripts.defaultCLIPath
+		let bundleIdentifier = Bundle.main.bundleIdentifier ?? RaycastScripts.defaultBundleIdentifier
 		do {
-			let files = try RaycastScripts.export(to: directory, cliPath: cliPath)
+			let files = try RaycastScripts.export(to: directory, cliPath: cliPath, bundleIdentifier: bundleIdentifier)
 			AppLogger.shared.general.info("Exported \(files.count) Raycast scripts to \(directory.path)")
-			exportResult = ExportResult(
-				title: String(localized: "Scripts Exported"),
-				message: String(
-					localized:
-						"\(files.count) script commands saved to \(directory.path). Raycast picks them up automatically."
-				)
+			var message = String(
+				localized:
+					"\(files.count) script commands saved to \(directory.path). Raycast picks them up automatically."
 			)
+			if !RemoteControlSettings.isURLSchemeEnabled() {
+				message += "\n\n"
+					+ String(
+						localized:
+							"\"Allow whispera:// links\" is off, so the commands that control Whispera will only tell you to turn it on. Turn it on in Settings > Automation."
+					)
+			}
+			exportResult = ExportResult(title: String(localized: "Scripts Exported"), message: message)
 		} catch {
 			AppLogger.shared.general.error("Raycast script export failed: \(error.localizedDescription)")
 			exportResult = ExportResult(

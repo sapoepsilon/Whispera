@@ -5,6 +5,7 @@ struct AutomationSettingsView: View {
 	@AppStorage(RemoteControlSettings.urlSchemeEnabledKey) private var urlSchemeEnabled =
 		RemoteControlSettings.urlSchemeEnabledDefault
 	@State private var token: String?
+	@State private var resetTokenError: String?
 
 	var body: some View {
 		ScrollView {
@@ -18,6 +19,16 @@ struct AutomationSettingsView: View {
 		}
 		.onChange(of: urlSchemeEnabled, initial: true) { _, enabled in
 			if enabled && token == nil { token = RemoteControlToken.load() }
+		}
+		.alert(
+			"Could not reset the token",
+			isPresented: Binding(get: { resetTokenError != nil }, set: { if !$0 { resetTokenError = nil } }),
+			presenting: resetTokenError
+		) { _ in
+			Button("OK", role: .cancel) {}
+		} message: { message in
+			Text(
+				"The old token still works, so links and scripts that carry it keep working. \(message)")
 		}
 	}
 
@@ -48,7 +59,7 @@ struct AutomationSettingsView: View {
 			.opacity(urlSchemeEnabled ? 1 : 0.5)
 
 			Text(
-				"Shortcuts and Spotlight also list Toggle, Start, Stop and Cancel Dictation, Set Dictation Language and Transcribe Audio File actions. They work even when links are off."
+				"Shortcuts and Spotlight also list Toggle, Start, Stop and Cancel Dictation, Set Dictation Language, Copy Last Transcript, Open Transcription History, Add Word to Dictionary and Transcribe Audio File actions. They work even when links are off."
 			)
 			.font(.caption)
 			.foregroundColor(.secondary)
@@ -61,6 +72,7 @@ struct AutomationSettingsView: View {
 			token = try RemoteControlToken.regenerate()
 		} catch {
 			AppLogger.shared.general.error("Could not reset the remote control token: \(error.localizedDescription)")
+			resetTokenError = error.localizedDescription
 		}
 	}
 

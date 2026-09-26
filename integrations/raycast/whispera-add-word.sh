@@ -14,4 +14,4 @@
 # @raycast.author Whispera
 
 WHISPERA="${WHISPERA_CLI:-/Applications/Whispera.app/Contents/MacOS/Whispera}"
-"$WHISPERA" --add-word "$1"
+"$WHISPERA" --add-word "$1" 2>&1

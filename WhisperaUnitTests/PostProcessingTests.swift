@@ -489,6 +489,50 @@ struct PostProcessShortcutTests {
 		#expect(!PostProcessShortcutMonitor.isUsableShortcut("⌥⇧"))
 		#expect(PostProcessShortcutMonitor.isUsableShortcut("⌥⇧Space"))
 	}
+
+	@Test func unknownKeysAreRejectedInsteadOfBecomingR() {
+		#expect(ShortcutCombo("⌥⇧\u{F708}") == nil)
+		#expect(ShortcutCombo("⌥⇧Å") == nil)
+		#expect(!PostProcessShortcutMonitor.isUsableShortcut("⌥⇧\u{F708}"))
+		#expect(ShortcutCombo("⌥⌘R") == ShortcutCombo(modifiers: [.option, .command], keyCode: 15))
+	}
+
+	@Test func recorderNamesThePhysicalKey() {
+		// Option-Shift-1 used to be stored as "⌥⇧!" and F5 as a private-use character
+		#expect(PostProcessingShortcutFormatter.format(keyCode: 18, modifiers: [.option, .shift]) == "⌥⇧1")
+		#expect(PostProcessingShortcutFormatter.format(keyCode: 96, modifiers: [.control]) == "⌃F5")
+		#expect(PostProcessingShortcutFormatter.format(keyCode: 49, modifiers: [.option, .shift]) == "⌥⇧Space")
+		#expect(PostProcessingShortcutFormatter.format(keyCode: 15, modifiers: []) == nil)
+		#expect(PostProcessingShortcutFormatter.format(keyCode: 255, modifiers: [.command]) == nil)
+	}
+
+	@Test func everyNamedKeyRoundTripsToItsKeyCode() {
+		for keyCode in UInt16(0)...UInt16(200) {
+			guard let formatted = PostProcessingShortcutFormatter.format(keyCode: keyCode, modifiers: [.command])
+			else { continue }
+			#expect(ShortcutCombo(formatted) == ShortcutCombo(modifiers: [.command], keyCode: keyCode), "\(formatted)")
+		}
+	}
+
+	@Test func legacyShiftedSymbolsResolveToTheirKey() {
+		#expect(ShortcutCombo("⌥⇧!") == ShortcutCombo(modifiers: [.option, .shift], keyCode: 18))
+		#expect(ShortcutCombo("⌘?") == ShortcutCombo(modifiers: [.command], keyCode: 44))
+	}
+
+	@Test func conflictsWithTheOtherWhisperaShortcutsAreFound() {
+		let defaults = isolatedDefaults()
+		#expect(PostProcessShortcutMonitor.conflictingShortcut(for: "⌘⌥R", defaults: defaults) == "⌥⌘R")
+		#expect(PostProcessShortcutMonitor.conflictingShortcut(for: "⌃F", defaults: defaults) == "⌃F")
+		#expect(PostProcessShortcutMonitor.conflictingShortcut(for: "⌥⇧Space", defaults: defaults) == nil)
+
+		defaults.set("⌃⇧D", forKey: "globalShortcut")
+		#expect(PostProcessShortcutMonitor.conflictingShortcut(for: "⇧⌃D", defaults: defaults) == "⌃⇧D")
+		#expect(PostProcessShortcutMonitor.conflictingShortcut(for: "⌥⌘R", defaults: defaults) == nil)
+
+		RecordingControlSettings(defaults: defaults).cancelShortcut = CancelShortcutBinding(
+			keyCode: 2, modifiers: [.command, .shift], display: "⌘⇧D")
+		#expect(PostProcessShortcutMonitor.conflictingShortcut(for: "⌘⇧D", defaults: defaults) == "⌘⇧D")
+	}
 }
 
 struct PostProcessingKeyTransportTests {
