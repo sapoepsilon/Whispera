@@ -3658,25 +3658,25 @@
         }
       }
     },
-    "Convert Chinese transcripts to Simplified or Traditional characters": {
+    "Convert Chinese transcripts to Simplified or Traditional characters. Match My Languages uses the Chinese variant in your macOS language list": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chinesische Transkripte in Kurz- oder Langzeichen umwandeln"
+            "value": "Chinesische Transkripte in vereinfachte oder traditionelle Schriftzeichen umwandeln. „Wie meine Sprachen“ nutzt die chinesische Variante aus deiner macOS-Sprachliste"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Convertir las transcripciones en chino a caracteres simplificados o tradicionales"
+            "value": "Convierte las transcripciones en chino a caracteres simplificados o tradicionales. Según mis idiomas usa la variante de chino de tu lista de idiomas de macOS"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Convertir les transcriptions en chinois en caractères simplifiés ou traditionnels"
+            "value": "Convertir les transcriptions chinoises en caractères simplifiés ou traditionnels. « Selon mes langues » utilise la variante chinoise de votre liste de langues macOS"
           }
         }
       }
@@ -5337,6 +5337,29 @@
         }
       }
     },
+    "Energy": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Energie"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Energía"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Énergie"
+          }
+        }
+      }
+    },
     "English only; the Source Language setting is ignored.": {
       "extractionState": "manual",
       "localizations": {
@@ -6740,6 +6763,29 @@
         }
       }
     },
+    "Has no effect in the current recording mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hat im aktuellen Aufnahmemodus keine Wirkung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No tiene efecto en el modo de grabación actual"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sans effet dans le mode d'enregistrement actuel"
+          }
+        }
+      }
+    },
     "Help": {
       "extractionState": "manual",
       "localizations": {
@@ -6759,6 +6805,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aide"
+          }
+        }
+      }
+    },
+    "Hide Icon": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Symbol ausblenden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar icono"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masquer l'icône"
+          }
+        }
+      }
+    },
+    "Hide the Menu Bar Icon?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Symbol in der Menüleiste ausblenden?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Ocultar el icono de la barra de menús?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masquer l'icône de la barre des menus ?"
           }
         }
       }
@@ -8281,6 +8373,29 @@
         }
       }
     },
+    "Live Transcription Mode records every channel mixed together; turn it off to record a single channel": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Live-Transkriptionsmodus nimmt alle Kanäle gemischt auf; schalte ihn aus, um einen einzelnen Kanal aufzunehmen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modo de transcripción en vivo graba todos los canales mezclados; desactívalo para grabar un solo canal"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le mode de transcription en direct enregistre tous les canaux mélangés ; désactivez-le pour enregistrer un seul canal"
+          }
+        }
+      }
+    },
     "Live Transcription Settings": {
       "extractionState": "manual",
       "localizations": {
@@ -8783,6 +8898,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Basse (128 kbit/s)"
+          }
+        }
+      }
+    },
+    "Match My Languages": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wie meine Sprachen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Según mis idiomas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selon mes langues"
           }
         }
       }
@@ -9592,6 +9730,29 @@
         }
       }
     },
+    "Neural (Silero)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuronal (Silero)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuronal (Silero)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuronal (Silero)"
+          }
+        }
+      }
+    },
     "Neural Engine": {
       "extractionState": "manual",
       "localizations": {
@@ -9611,6 +9772,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Neural Engine"
+          }
+        }
+      }
+    },
+    "Neural uses the Silero model (downloaded once, about 1 MB) for recorded clips and is better at ignoring noise; Live Transcription Mode always uses Energy": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuronal nutzt das Silero-Modell (einmalig geladen, etwa 1 MB) für aufgenommene Clips und ignoriert Geräusche besser; der Live-Transkriptionsmodus nutzt immer Energie"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuronal usa el modelo Silero (se descarga una vez, unos 1 MB) para los clips grabados e ignora mejor el ruido; el modo de transcripción en vivo siempre usa Energía"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuronal utilise le modèle Silero (téléchargé une fois, environ 1 Mo) pour les extraits enregistrés et ignore mieux le bruit ; le mode de transcription en direct utilise toujours Énergie"
           }
         }
       }
@@ -9795,6 +9979,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucune mise à jour disponible"
+          }
+        }
+      }
+    },
+    "No effect in Live Transcription Mode: WhisperKit opens the microphone for each recording. Turn Live Transcription Mode off to use this.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Wirkung im Live-Transkriptionsmodus: WhisperKit öffnet das Mikrofon für jede Aufnahme. Schalte den Live-Transkriptionsmodus aus, um dies zu nutzen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin efecto en el modo de transcripción en vivo: WhisperKit abre el micrófono en cada grabación. Desactiva el modo de transcripción en vivo para usarlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sans effet en mode de transcription en direct : WhisperKit ouvre le micro à chaque enregistrement. Désactivez le mode de transcription en direct pour l'utiliser."
+          }
+        }
+      }
+    },
+    "No effect with streaming transcription off: each recording opens the microphone to write a file.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Wirkung bei ausgeschalteter Streaming-Transkription: Jede Aufnahme öffnet das Mikrofon, um eine Datei zu schreiben."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin efecto con la transcripción en streaming desactivada: cada grabación abre el micrófono para escribir un archivo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sans effet quand la transcription en streaming est désactivée : chaque enregistrement ouvre le micro pour écrire un fichier."
           }
         }
       }
@@ -10255,52 +10485,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Activée (les moniteurs sont aveugles)"
-          }
-        }
-      }
-    },
-    "Only applies to streaming transcription with Live Transcription Mode off": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gilt nur für Streaming-Transkription bei ausgeschaltetem Live-Transkriptionsmodus"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Solo se aplica a la transcripción en streaming con el modo de transcripción en vivo desactivado"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "S'applique uniquement à la transcription en continu, mode transcription en direct désactivé"
-          }
-        }
-      }
-    },
-    "Only applies with Live Transcription Mode off; live dictation always mixes all channels": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gilt nur bei ausgeschaltetem Live-Transkriptionsmodus; das Live-Diktat mischt immer alle Kanäle"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Solo se aplica con el modo de transcripción en vivo desactivado; el dictado en vivo siempre mezcla todos los canales"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "S'applique uniquement lorsque le mode Transcription en direct est désactivé ; la dictée en direct mélange toujours tous les canaux"
           }
         }
       }
@@ -14192,6 +14376,29 @@
         }
       }
     },
+    "Shortcuts keep working. To get back to Settings, open Whispera again from Finder or Spotlight; the icon reappears with its menu until you close it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kurzbefehle funktionieren weiter. Um zu den Einstellungen zurückzukehren, öffne Whispera erneut über den Finder oder Spotlight; das Symbol erscheint mit seinem Menü, bis du es schließt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los atajos siguen funcionando. Para volver a Ajustes, abre Whispera de nuevo desde Finder o Spotlight; el icono reaparece con su menú hasta que lo cierres."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les raccourcis continuent de fonctionner. Pour revenir aux Réglages, rouvrez Whispera depuis le Finder ou Spotlight ; l'icône réapparaît avec son menu jusqu'à ce que vous le fermiez."
+          }
+        }
+      }
+    },
     "Show": {
       "extractionState": "manual",
       "localizations": {
@@ -14234,6 +14441,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Afficher les points de suspension"
+          }
+        }
+      }
+    },
+    "Show Menu Bar Icon": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Symbol in der Menüleiste anzeigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar icono en la barra de menús"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher l'icône dans la barre des menus"
           }
         }
       }
@@ -14786,6 +15016,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Optimisation"
+          }
+        }
+      }
+    },
+    "Speech Detection": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spracherkennung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detección de voz"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Détection de la parole"
           }
         }
       }
@@ -18305,6 +18558,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nouveautés de Whispera"
+          }
+        }
+      }
+    },
+    "When hidden, open Whispera again from Finder or Spotlight to show the icon and its menu": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn es ausgeblendet ist, öffne Whispera erneut über den Finder oder Spotlight, um das Symbol und sein Menü anzuzeigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si está oculto, vuelve a abrir Whispera desde Finder o Spotlight para mostrar el icono y su menú"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lorsqu'elle est masquée, rouvrez Whispera depuis le Finder ou Spotlight pour afficher l'icône et son menu"
           }
         }
       }
