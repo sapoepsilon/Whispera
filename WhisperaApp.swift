@@ -340,9 +340,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		popover.performClose(nil)
 		guard NSApp.isActive else { return }
 		NSApp.deactivate()
-		for _ in 0..<20 where NSApp.isActive {
+		let me = NSRunningApplication.current
+		for _ in 0..<40 where NSApp.isActive || NSWorkspace.shared.frontmostApplication == me {
 			try? await Task.sleep(for: .milliseconds(25))
 		}
+		// The next app is frontmost before its key window takes keyboard focus
+		try? await Task.sleep(for: .milliseconds(200))
 		AppLogger.shared.general.info("Closed the menu before inserting the transcript")
 	}
 
