@@ -442,6 +442,7 @@ import WhisperKit
 	}
 
 	func startInitialization() {
+		guard !isInitialized else { return }
 		guard initializationTask == nil else {
 			AppLogger.shared.transcriber.log("WhisperKit initialization already in progress...")
 			return
@@ -460,6 +461,8 @@ import WhisperKit
 		guard !isInitialized else {
 			AppLogger.shared.transcriber.log("WhisperKit already initialized")
 			isInitializing = false
+			// A leftover task would block idle unload forever
+			initializationTask = nil
 			return
 		}
 		await updateProgress(0.1, "Loading WhisperKit framework...")
@@ -1797,9 +1800,21 @@ import WhisperKit
 	}
 
 	var canUnloadModel: Bool {
-		whisperKit != nil && activeModelUses == 0 && !isLiveTranscriptionMode
-			&& modelOperationTask == nil && pendingLoadTask == nil && initializationTask == nil
-			&& !isModelLoading && !isDownloadingModel
+		idleUnloadBlockers.isEmpty
+	}
+
+	/// Names every condition currently keeping the model from being unloaded.
+	var idleUnloadBlockers: [String] {
+		var blockers: [String] = []
+		if whisperKit == nil { blockers.append("no model loaded") }
+		if activeModelUses > 0 { blockers.append("\(activeModelUses) active model uses") }
+		if isLiveTranscriptionMode { blockers.append("live transcription") }
+		if modelOperationTask != nil { blockers.append("model operation running") }
+		if pendingLoadTask != nil { blockers.append("model load pending") }
+		if initializationTask != nil { blockers.append("initialization running") }
+		if isModelLoading { blockers.append("model loading") }
+		if isDownloadingModel { blockers.append("model downloading") }
+		return blockers
 	}
 
 	func scheduleIdleUnload() {

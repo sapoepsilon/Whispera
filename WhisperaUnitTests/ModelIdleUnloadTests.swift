@@ -88,7 +88,7 @@ struct ModelIdleUnloadIntegrationTests {
 			try await Task.sleep(nanoseconds: 250_000_000)
 		}
 		Issue.record(
-			"Model never became idle and loaded: initialized=\(transcriber.isInitialized) initializing=\(transcriber.isInitializing) status=\(transcriber.initializationStatus) state=\(transcriber.modelState) loading=\(transcriber.isModelLoading) hasKit=\(transcriber.whisperKit != nil)"
+			"Model never became idle and loaded: initialized=\(transcriber.isInitialized) initializing=\(transcriber.isInitializing) status=\(transcriber.initializationStatus) state=\(transcriber.modelState) loading=\(transcriber.isModelLoading) hasKit=\(transcriber.whisperKit != nil) blockers=\(transcriber.idleUnloadBlockers)"
 		)
 		throw CancellationError()
 	}
