@@ -107,6 +107,60 @@ struct SecureDictationInsertionTests {
 		#expect(ClipboardSnapshot.isSensitive(types: types))
 	}
 
+	@Test func copyOnlySecretIsClearedAfterItsLifetime() async throws {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, concealedClipboardLifetime: .milliseconds(100),
+			isSecureInputActive: { true },
+			settingsProvider: { settings { $0.pasteMethod = .copyOnly } })
+
+		await inserter.insert("hunter2", context: .finalTranscript).value
+		#expect(pasteboard.string(forType: .string) == "hunter2")
+
+		try await Task.sleep(for: .milliseconds(400))
+		#expect(pasteboard.string(forType: .string) == nil)
+	}
+
+	@Test func secretExpiryLeavesLaterClipboardContentAlone() async throws {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, concealedClipboardLifetime: .milliseconds(100),
+			isSecureInputActive: { true },
+			settingsProvider: { settings { $0.pasteMethod = .copyOnly } })
+
+		await inserter.insert("hunter2", context: .finalTranscript).value
+		pasteboard.clearContents()
+		pasteboard.setString("copied later", forType: .string)
+
+		try await Task.sleep(for: .milliseconds(400))
+		#expect(pasteboard.string(forType: .string) == "copied later")
+	}
+
+	@Test func failedScriptSecretIsClearedAfterItsLifetime() async throws {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, concealedClipboardLifetime: .milliseconds(100),
+			isSecureInputActive: { true },
+			settingsProvider: {
+				settings {
+					$0.pasteMethod = .externalScript
+					$0.externalScriptPath = "/nonexistent/whispera-script"
+				}
+			})
+
+		await inserter.insert("hunter2", context: .finalTranscript).value
+		#expect(pasteboard.string(forType: .string) == "hunter2")
+
+		try await Task.sleep(for: .milliseconds(400))
+		#expect(pasteboard.string(forType: .string) == nil)
+	}
+
 	@Test func normalPasteHasNoConcealedMarker() async {
 		let pasteboard = makePasteboard()
 		defer { pasteboard.releaseGlobally() }

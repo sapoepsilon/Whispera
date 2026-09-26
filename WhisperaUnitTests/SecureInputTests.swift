@@ -203,13 +203,82 @@ struct SecureInputMonitorTests {
 			monitor.stop()
 			defaults.removePersistentDomain(forName: suite)
 		}
-		#expect(SecureInputMonitor.pollInterval >= 2)
-		#expect(SecureInputMonitor.pollTolerance >= SecureInputMonitor.pollInterval / 2)
+		#expect(SecureInputMonitor.idlePollInterval >= 5)
+		#expect(SecureInputMonitor.idlePollTolerance >= SecureInputMonitor.idlePollInterval / 2)
+		#expect(SecureInputMonitor.activePollInterval < SecureInputStateMachine.sustainThreshold)
 		#expect(!monitor.isPolling)
 		monitor.start()
 		#expect(monitor.isPolling)
+		#expect(monitor.currentPollInterval == SecureInputMonitor.idlePollInterval)
 		monitor.stop()
 		#expect(!monitor.isPolling)
+		#expect(monitor.currentPollInterval == nil)
+	}
+
+	@Test func pollsFasterOnlyWhileSecureInputIsOn() {
+		let (monitor, fake, defaults, suite) = makeMonitor()
+		defer {
+			monitor.stop()
+			defaults.removePersistentDomain(forName: suite)
+		}
+		monitor.configure(hotKeySpec: { self.testSpec }, action: {})
+		monitor.start()
+		let start = Date()
+
+		fake.enabled = true
+		monitor.poll(now: start)
+		#expect(monitor.currentPollInterval == SecureInputMonitor.activePollInterval)
+		monitor.poll(now: start.addingTimeInterval(SecureInputStateMachine.sustainThreshold))
+		#expect(monitor.currentPollInterval == SecureInputMonitor.activePollInterval)
+
+		fake.enabled = false
+		monitor.poll(now: start.addingTimeInterval(10))
+		#expect(monitor.currentPollInterval == SecureInputMonitor.idlePollInterval)
+	}
+
+	@Test func withTheFallbackOffItPollsOnlyWhileAViewShowsTheState() {
+		let (monitor, _, defaults, suite) = makeMonitor()
+		defer {
+			monitor.stop()
+			defaults.removePersistentDomain(forName: suite)
+		}
+		defaults.set(false, forKey: SecureInputMonitor.Keys.fallbackEnabled)
+		monitor.start()
+		#expect(!monitor.isPolling, "Nothing uses the answer, so nothing should wake the app")
+
+		monitor.viewDidAppear()
+		#expect(monitor.isPolling)
+		monitor.viewDidDisappear()
+		#expect(!monitor.isPolling)
+
+		defaults.set(true, forKey: SecureInputMonitor.Keys.fallbackEnabled)
+		monitor.reconcileFallback()
+		#expect(monitor.isPolling)
+	}
+
+	@Test func sleepingScreensSuspendPolling() {
+		let (monitor, _, defaults, suite) = makeMonitor()
+		defer {
+			monitor.stop()
+			defaults.removePersistentDomain(forName: suite)
+		}
+		monitor.start()
+		monitor.suspend()
+		#expect(!monitor.isPolling)
+		monitor.resume()
+		#expect(monitor.isPolling)
+	}
+
+	@Test func viewsDoNotStartPollingWhenShortcutsDoNotNeedIt() {
+		let (monitor, _, defaults, suite) = makeMonitor()
+		defer {
+			monitor.stop()
+			defaults.removePersistentDomain(forName: suite)
+		}
+		// Never started: the shortcut is a system hotkey, which secure input does not blind
+		monitor.viewDidAppear()
+		#expect(!monitor.isPolling)
+		monitor.viewDidDisappear()
 	}
 
 	@Test func carbonHotKeyRegistersAndUnregisters() {

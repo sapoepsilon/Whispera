@@ -163,7 +163,7 @@ struct TextInsertionSettingsView: View {
 
 	private static let scriptUsage = String(
 		localized:
-			"Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Choose the script again after editing it."
+			"Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Whispera runs a private copy of the script, starting in the script's folder; WHISPERA_SCRIPT_PATH holds the original path. Choose the script again after editing it."
 	)
 
 	private var scriptDescription: String {

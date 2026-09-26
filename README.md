@@ -73,9 +73,13 @@ $WHISPERA --toggle            # start or stop dictation in the running app
 $WHISPERA --help
 ```
 
+The control flags (`--toggle`, `--toggle-post-process`, `--start`, `--copy-last`, `--open-history`, `--add-word`) are sent to the running app as `whispera://` links, so they fail with "Remote control is off" until you turn on **Settings > Automation > Allow whispera:// links**. `--stop` and `--cancel` work either way.
+
 ### `whispera://` links
 
-Links are off until you turn on **Settings > Automation > Allow whispera:// links**, because any web page or app can open a URL. Commands that start recording or read your data (`toggle`, `toggle-post-process`, `start`, `language`, `model`, `copy-last`, `history`, `add-word`) must also carry the per-install token stored in `~/Library/Application Support/Whispera/remote-control-token`; `stop` and `cancel` do not need it.
+Links are off until you turn on **Settings > Automation > Allow whispera:// links**, because any web page or app can open a URL. Commands that start recording or read your data (`toggle`, `toggle-post-process`, `start`, `language`, `model`, `copy-last`, `history`, `add-word`) must also carry the per-install token stored in `~/Library/Application Support/Whispera/remote-control-token`.
+
+`stop` and `cancel` are the exception: they need no token and work even while links are off, because they can only end a dictation you already started. Any page or app that can open a URL can therefore stop a dictation (the text heard so far is pasted) or cancel it (the text is discarded), but cannot start one or read anything.
 
 ```text
 whispera://toggle?token=<token>

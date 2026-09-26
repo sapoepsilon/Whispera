@@ -82,7 +82,11 @@ final class TranscriptionHistoryStore {
 		container = opened.0
 		storeNotice = opened.1
 		reload()
-		applyRetention()
+		applyRetention(userInitiated: false)
+		// Retention deletes from a previous run that were never scrubbed
+		if retentionDeletesAwaitingScrub > 0 {
+			scheduleScrub()
+		}
 		enabledObserver = DefaultsKeyObserver(defaults: defaults, keys: [HistorySettings.enabledKey]) {
 			[weak self] in self?.historyEnabledChanged()
 		}
@@ -137,11 +141,13 @@ final class TranscriptionHistoryStore {
 		}
 	}
 
+	static let quarantinePrefix = "history-unreadable-"
+
 	/// Moves the database and its -wal/-shm companions to a timestamped name next to it.
 	static func quarantineStore(at storeURL: URL) -> URL? {
 		let fileManager = FileManager.default
 		let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-		let kept = storeURL.deletingLastPathComponent().appendingPathComponent("history-unreadable-\(stamp).store")
+		let kept = storeURL.deletingLastPathComponent().appendingPathComponent("\(quarantinePrefix)\(stamp).store")
 		var movedAny = false
 		for suffix in ["", "-wal", "-shm"] {
 			let source = URL(fileURLWithPath: storeURL.path + suffix)
@@ -155,6 +161,16 @@ final class TranscriptionHistoryStore {
 			}
 		}
 		return movedAny ? kept : nil
+	}
+
+	/// When a store was set aside, from its name. The file's own dates are those of the old
+	/// database, which may be far older than the move.
+	static func quarantineDate(fileName: String) -> Date? {
+		guard fileName.hasPrefix(quarantinePrefix), let storeRange = fileName.range(of: ".store") else { return nil }
+		let stamp = fileName[fileName.index(fileName.startIndex, offsetBy: quarantinePrefix.count)..<storeRange.lowerBound]
+		let parts = stamp.split(separator: "T", maxSplits: 1)
+		guard parts.count == 2 else { return nil }
+		return ISO8601DateFormatter().date(from: "\(parts[0])T\(parts[1].replacingOccurrences(of: "-", with: ":"))")
 	}
 
 	static func isOutOfSpace(_ error: Error) -> Bool {
@@ -239,7 +255,7 @@ final class TranscriptionHistoryStore {
 			return nil
 		}
 		entries.insert(entry, at: 0)
-		applyRetention()
+		applyRetention(userInitiated: false)
 		return entries.contains(where: { $0.id == id }) ? entry : nil
 	}
 
@@ -261,11 +277,13 @@ final class TranscriptionHistoryStore {
 		remove(entries.filter { !$0.isStarred })
 	}
 
-	/// Removes every entry, starred ones included, with its recording.
+	/// Removes every entry, starred ones included, with its recording, and any database that was
+	/// set aside as unreadable, since that holds older dictations too.
 	func deleteAllEntries() {
 		pendingOptOutPurge = nil
 		remove(entries)
 		removeOrphanedAudio()
+		removeQuarantinedStores(olderThan: nil)
 	}
 
 	func keepEntriesAfterOptOut() {
@@ -426,14 +444,59 @@ final class TranscriptionHistoryStore {
 
 	// MARK: - Retention
 
-	func applyRetention() {
+	/// Deleted rows stay in SQLite's free pages until a scrub rewrites the file. Pruning after a
+	/// dictation usually removes one entry, and a full rewrite for each would cost a VACUUM per
+	/// dictation, so those are scrubbed in batches. A user-initiated delete is scrubbed right away.
+	static let retentionScrubBatch = 25
+	static let retentionScrubPendingKey = "historyRetentionDeletesAwaitingScrub"
+
+	/// Scrubs requested so far, for tests.
+	@ObservationIgnored private(set) var scrubsScheduled = 0
+
+	var retentionDeletesAwaitingScrub: Int {
+		get { defaults.integer(forKey: Self.retentionScrubPendingKey) }
+		set { defaults.set(newValue, forKey: Self.retentionScrubPendingKey) }
+	}
+
+	func applyRetention(userInitiated: Bool = true) {
 		guard context != nil else { return }
 		let settings = self.settings
+		if let maxAge = settings.retention.maxAge {
+			removeQuarantinedStores(olderThan: now().addingTimeInterval(-maxAge))
+		}
 		let doomed = idsToDelete(period: settings.retention, limit: settings.limit)
 		guard !doomed.isEmpty else { return }
 
-		remove(entries.filter { doomed.contains($0.id) })
+		if userInitiated {
+			remove(entries.filter { doomed.contains($0.id) })
+		} else {
+			remove(entries.filter { doomed.contains($0.id) }, scrub: false)
+			retentionDeletesAwaitingScrub += doomed.count
+			if retentionDeletesAwaitingScrub >= Self.retentionScrubBatch {
+				scheduleScrub()
+			}
+		}
 		AppLogger.shared.database.info("History retention removed \(doomed.count) entries")
+	}
+
+	/// Databases moved aside as unreadable still hold old dictations. With `cutoff` nil every one
+	/// goes; otherwise only those set aside before it.
+	func removeQuarantinedStores(olderThan cutoff: Date?) {
+		let directory = storeURL.deletingLastPathComponent()
+		let fileManager = FileManager.default
+		guard let names = try? fileManager.contentsOfDirectory(atPath: directory.path) else { return }
+		for name in names where name.hasPrefix(Self.quarantinePrefix) {
+			let url = directory.appendingPathComponent(name)
+			if let cutoff {
+				guard let setAside = Self.quarantineDate(fileName: name), setAside < cutoff else { continue }
+			}
+			do {
+				try fileManager.removeItem(at: url)
+				AppLogger.shared.database.info("Removed the set-aside history file \(name)")
+			} catch {
+				AppLogger.shared.database.error("Could not remove \(name): \(error)")
+			}
+		}
 	}
 
 	/// How many entries switching to these retention settings would delete right away, so the
@@ -497,7 +560,7 @@ final class TranscriptionHistoryStore {
 	}
 
 	/// Detach from the published list before deleting so no view reads a deleted model.
-	private func remove(_ doomed: [TranscriptionHistoryEntry]) {
+	private func remove(_ doomed: [TranscriptionHistoryEntry], scrub: Bool = true) {
 		guard !doomed.isEmpty else { return }
 		let ids = Set(doomed.map(\.id))
 		entries.removeAll { ids.contains($0.id) }
@@ -506,7 +569,9 @@ final class TranscriptionHistoryStore {
 			context?.delete(entry)
 		}
 		save()
-		scheduleScrub()
+		if scrub {
+			scheduleScrub()
+		}
 	}
 
 	// MARK: - Scrubbing deleted text
@@ -516,11 +581,16 @@ final class TranscriptionHistoryStore {
 	/// rewrites the file once.
 	private func scheduleScrub() {
 		scrubTask?.cancel()
+		scrubsScheduled += 1
 		let url = storeURL
-		scrubTask = Task {
+		scrubTask = Task { [weak self] in
 			try? await Task.sleep(nanoseconds: 500_000_000)
 			guard !Task.isCancelled else { return }
-			await Task.detached(priority: .utility) { Self.scrub(storeAt: url) }.value
+			let covered = self?.retentionDeletesAwaitingScrub ?? 0
+			let scrubbed = await Task.detached(priority: .utility) { Self.scrub(storeAt: url) }.value
+			if scrubbed, let self {
+				self.retentionDeletesAwaitingScrub = max(self.retentionDeletesAwaitingScrub - covered, 0)
+			}
 		}
 	}
 

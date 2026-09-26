@@ -933,7 +933,7 @@ struct ExternalScriptRunnerTests {
 
 	@Test func passesTranscriptOnStdinAndEnvironmentButNotArgv() async throws {
 		let (script, directory) = try makeScript(
-			"printf '%s|%s|%s' \"$#\" \"$(cat)\" \"$WHISPERA_TRANSCRIPT\" > \"$(dirname \"$0\")/out.txt\"\n")
+			"printf '%s|%s|%s' \"$#\" \"$(cat)\" \"$WHISPERA_TRANSCRIPT\" > \"$(dirname \"$WHISPERA_SCRIPT_PATH\")/out.txt\"\n")
 		defer { try? FileManager.default.removeItem(at: directory) }
 
 		try await approveAndRun(script, text: "it's \"quoted\" text")
@@ -943,7 +943,7 @@ struct ExternalScriptRunnerTests {
 	}
 
 	@Test func runsWithAMinimalEnvironment() async throws {
-		let (script, directory) = try makeScript("env > \"$(dirname \"$0\")/env.txt\"\n")
+		let (script, directory) = try makeScript("env > \"$(dirname \"$WHISPERA_SCRIPT_PATH\")/env.txt\"\n")
 		defer { try? FileManager.default.removeItem(at: directory) }
 
 		try await approveAndRun(script, text: "x")
@@ -952,14 +952,14 @@ struct ExternalScriptRunnerTests {
 		let names = Set(output.split(separator: "\n").compactMap { $0.split(separator: "=").first.map(String.init) })
 		let allowed: Set<String> = [
 			"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
-			ExternalScriptRunner.transcriptEnvironmentKey, "PWD", "SHLVL", "_", "OLDPWD", "__CF_USER_TEXT_ENCODING",
+			ExternalScriptRunner.transcriptEnvironmentKey, ExternalScriptRunner.scriptPathEnvironmentKey, "PWD", "SHLVL", "_", "OLDPWD", "__CF_USER_TEXT_ENCODING",
 		]
 		#expect(names.subtracting(allowed).isEmpty, "Leaked: \(names.subtracting(allowed).sorted())")
 		#expect(names.contains(ExternalScriptRunner.transcriptEnvironmentKey))
 	}
 
 	@Test func refusesAPathThatWasNeverApprovedInSettings() async throws {
-		let (script, directory) = try makeScript("touch \"$(dirname \"$0\")/ran\"\n")
+		let (script, directory) = try makeScript("touch \"$(dirname \"$WHISPERA_SCRIPT_PATH\")/ran\"\n")
 		defer { try? FileManager.default.removeItem(at: directory) }
 
 		// What `defaults write ... externalScriptPath /tmp/x` produces: a path with no approval
@@ -979,13 +979,85 @@ struct ExternalScriptRunnerTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let approval = try ScriptApproval.approve(path: script.path, keyStore: keyStore)
 
-		try "#!/bin/sh\ntouch \"$(dirname \"$0\")/ran\"\n".write(to: script, atomically: true, encoding: .utf8)
+		try "#!/bin/sh\ntouch \"$(dirname \"$WHISPERA_SCRIPT_PATH\")/ran\"\n".write(to: script, atomically: true, encoding: .utf8)
 		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
 
 		await #expect(throws: ExternalScriptError.notApproved) {
 			try await ExternalScriptRunner.run(path: script.path, approval: approval, text: "x", keyStore: keyStore)
 		}
 		#expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("ran").path))
+	}
+
+	@Test func refusesASameSizeRewriteWithTheModificationTimeRestored() async throws {
+		let (script, directory) = try makeScript("exit 0 # padding\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let approval = try ScriptApproval.approve(path: script.path, keyStore: keyStore)
+		var original = stat()
+		#expect(stat(script.path, &original) == 0)
+
+		let payload = "#!/bin/sh\ntouch ran\n"
+		let padded = payload + String(repeating: "#", count: Int(original.st_size) - payload.utf8.count - 1) + "\n"
+		let fd = open(script.path, O_WRONLY | O_TRUNC)
+		#expect(fd >= 0)
+		_ = padded.withCString { write(fd, $0, strlen($0)) }
+		close(fd)
+		var times = [original.st_atimespec, original.st_mtimespec]
+		#expect(utimensat(AT_FDCWD, script.path, &times, 0) == 0)
+		var rewritten = stat()
+		#expect(stat(script.path, &rewritten) == 0)
+		#expect(rewritten.st_size == original.st_size)
+		#expect(rewritten.st_mtimespec.tv_nsec == original.st_mtimespec.tv_nsec)
+
+		await #expect(throws: ExternalScriptError.notApproved) {
+			try await ExternalScriptRunner.run(path: script.path, approval: approval, text: "x", keyStore: keyStore)
+		}
+		#expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("ran").path))
+	}
+
+	@Test func fingerprintCoversTheContentsAndChangeTime() throws {
+		let (script, directory) = try makeScript("exit 0\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let fingerprint = try ScriptFingerprint.read(path: script.path)
+		let expectedDigest = SHA256.hash(data: try Data(contentsOf: script))
+			.map { String(format: "%02x", $0) }.joined()
+		#expect(fingerprint.contentDigest == expectedDigest)
+		#expect(fingerprint.canonical.hasPrefix("v2|"))
+		#expect(fingerprint.canonical.hasSuffix("|\(expectedDigest)"))
+		#expect(fingerprint.canonical.contains("|\(fingerprint.changedSeconds).\(fingerprint.changedNanoseconds)|"))
+	}
+
+	@Test func runsTheVerifiedBytesEvenIfTheFileIsSwappedAfterTheCheck() async throws {
+		let (script, directory) = try makeScript("echo verified > \"$(dirname \"$WHISPERA_SCRIPT_PATH\")/out.txt\"\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let approval = try ScriptApproval.approve(path: script.path, keyStore: keyStore)
+		// Approvals are over the resolved path, as `run` checks them
+		let snapshot = try ScriptFingerprint.snapshot(path: ExternalScriptRunner.validate(path: script.path).path)
+		#expect(ScriptApproval.isApproved(snapshot: snapshot, approval: approval, keyStore: keyStore))
+
+		try "#!/bin/sh\necho swapped > \"$(dirname \"$WHISPERA_SCRIPT_PATH\")/out.txt\"\n"
+			.write(to: script, atomically: false, encoding: .utf8)
+		try await ExternalScriptRunner.execute(snapshot: snapshot, text: "x")
+
+		let output = try String(contentsOf: directory.appendingPathComponent("out.txt"), encoding: .utf8)
+		#expect(output == "verified\n")
+	}
+
+	@Test func runsAPrivateCopyFromTheScriptsFolderAndRemovesIt() async throws {
+		let (script, directory) = try makeScript(
+			"printf '%s\\n%s\\n%s\\n' \"$0\" \"$(stat -f %Lp \"$(dirname \"$(dirname \"$0\")\")\")\" \"$PWD\" > out.txt\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		try await approveAndRun(script, text: "x")
+
+		let lines = try String(contentsOf: directory.appendingPathComponent("out.txt"), encoding: .utf8)
+			.split(separator: "\n").map(String.init)
+		try #require(lines.count == 3)
+		#expect(lines[0] != script.path)
+		#expect(lines[0].hasSuffix("/insert.sh"))
+		#expect(lines[0].contains("/\(VerifiedScriptCopy.folderName)/"))
+		#expect(lines[1] == "700")
+		#expect(URL(fileURLWithPath: lines[2]).resolvingSymlinksInPath().path == directory.resolvingSymlinksInPath().path)
+		#expect(!FileManager.default.fileExists(atPath: lines[0]))
 	}
 
 	@Test func refusesAnApprovalCopiedToAnotherScript() async throws {
@@ -1039,8 +1111,8 @@ struct ExternalScriptRunnerTests {
 			"""
 			trap '' TERM
 			sleep 30 &
-			echo $! > "$(dirname "$0")/child.pid"
-			echo $$ > "$(dirname "$0")/parent.pid"
+			echo $! > "$(dirname "$WHISPERA_SCRIPT_PATH")/child.pid"
+			echo $$ > "$(dirname "$WHISPERA_SCRIPT_PATH")/parent.pid"
 			while :; do sleep 1; done
 
 			""")

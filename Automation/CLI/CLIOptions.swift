@@ -180,7 +180,8 @@ struct CLIOptions: Equatable {
 		  --list-models                 List downloaded models and exit (honors --json)
 		  --list-devices                List compute devices and exit (honors --json)
 
-		Control the running app (sent through whispera:// links):
+		Control the running app (sent through whispera:// links; all but --stop and --cancel
+		fail until "Allow whispera:// links" is on in Settings > Automation):
 		  --toggle, --toggle-transcription   Start or stop dictation
 		  --toggle-post-process              Start or stop dictation with LLM post-processing
 		  --start | --stop | --cancel        Start, stop, or discard the recording
