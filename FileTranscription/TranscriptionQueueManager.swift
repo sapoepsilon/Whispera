@@ -300,21 +300,17 @@ class TranscriptionQueueManager {
 		item.status = QueueItemStatus.processing
 		item.progress = 0.0
 
-		// Create a task to track progress during transcription
-		let progressTask = Task {
-			while item.status == QueueItemStatus.processing {
-				// Update item progress from file transcription manager
-				await MainActor.run {
-					let newProgress = fileTranscriptionManager.progress
-					// Publish only >=1% deltas (or on completion) so observers are not
-					// invalidated on every poll tick when progress is effectively unchanged.
-					if newProgress >= 1.0 || abs(newProgress - item.progress) >= 0.01 {
-						item.progress = newProgress
-					}
+		let progressTask = Task { [fileTranscriptionManager] in
+			await QueueProgressPoller.run(while: { item.status == QueueItemStatus.processing }) {
+				let newProgress = fileTranscriptionManager.progress
+				// Publish only >=1% deltas (or on completion) so observers are not
+				// invalidated on every poll tick when progress is effectively unchanged.
+				if newProgress >= 1.0 || abs(newProgress - item.progress) >= 0.01 {
+					item.progress = newProgress
 				}
-				try? await Task.sleep(nanoseconds: 100_000_000)  // Update every 0.1 seconds
 			}
 		}
+		defer { progressTask.cancel() }
 
 		do {
 			// Determine if it's a YouTube URL, network URL, or local file
@@ -362,13 +358,13 @@ class TranscriptionQueueManager {
 			await saveTranscriptionResult(item.result ?? "", filename: item.displayName, item: item)
 		} catch is CancellationError {
 			logger.info("Transcription cancelled: \(item.displayName)")
+			item.status = QueueItemStatus.cancelled
 			items.removeAll { $0.id == item.id }
 		} catch {
 			logger.error("Transcription failed for \(item.displayName): \(error.localizedDescription)")
 			item.status = QueueItemStatus.failed
 			item.error = error.localizedDescription
 		}
-		progressTask.cancel()
 		currentItem = nil
 	}
 
@@ -462,6 +458,24 @@ class TranscriptionQueueManager {
 	func toggleExpanded() {
 		withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
 			isExpanded.toggle()
+		}
+	}
+}
+
+/// Polls the running file's progress until it stops processing or the poll is cancelled. The
+/// sleep must throw on cancellation: swallowing it turned a cancelled poll into a main-actor spin.
+@MainActor
+enum QueueProgressPoller {
+	static func run(
+		while isProcessing: () -> Bool, interval: Duration = .milliseconds(100), tick: () -> Void
+	) async {
+		while !Task.isCancelled, isProcessing() {
+			tick()
+			do {
+				try await Task.sleep(for: interval)
+			} catch {
+				return
+			}
 		}
 	}
 }

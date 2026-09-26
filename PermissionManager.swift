@@ -13,27 +13,61 @@ class PermissionManager {
 	var needsPermissions = false
 
 	// MARK: - Private Properties
-	private var permissionCheckTimer: Timer?
+	@ObservationIgnored private var permissionCheckTimer: Timer?
+	@ObservationIgnored private var activationObserver: NSObjectProtocol?
+	@ObservationIgnored private let microphoneCheck: () -> Bool
+	@ObservationIgnored private let accessibilityCheck: () -> Bool
 
-	init() {
+	init(
+		microphoneCheck: @escaping () -> Bool = { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized },
+		accessibilityCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
+		monitorsChanges: Bool = true
+	) {
+		self.microphoneCheck = microphoneCheck
+		self.accessibilityCheck = accessibilityCheck
 		updatePermissionStatus()
-		startPeriodicChecks()
+		guard monitorsChanges else { return }
+		activationObserver = NotificationCenter.default.addObserver(
+			forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+		) { [weak self] _ in
+			self?.updatePermissionStatus()
+		}
+		schedulePolling()
 	}
 
 	deinit {
 		permissionCheckTimer?.invalidate()
+		if let activationObserver {
+			NotificationCenter.default.removeObserver(activationObserver)
+		}
 	}
 
 	// MARK: - Public Methods
 
-	/// Updates all permission statuses
+	/// Updates all permission statuses. Only changed values are written, so the views observing
+	/// these properties are not invalidated on every check.
 	func updatePermissionStatus() {
-		let newMicrophonePermission = checkMicrophonePermission()
-		let newAccessibilityPermission = checkAccessibilityPermission()
+		let newMicrophonePermission = microphoneCheck()
+		let newAccessibilityPermission = accessibilityCheck()
+		let newNeedsPermissions = !newMicrophonePermission || !newAccessibilityPermission
 
-		microphonePermissionGranted = newMicrophonePermission
-		accessibilityPermissionGranted = newAccessibilityPermission
-		needsPermissions = !newMicrophonePermission || !newAccessibilityPermission
+		if microphonePermissionGranted != newMicrophonePermission {
+			microphonePermissionGranted = newMicrophonePermission
+		}
+		if accessibilityPermissionGranted != newAccessibilityPermission {
+			accessibilityPermissionGranted = newAccessibilityPermission
+		}
+		if needsPermissions != newNeedsPermissions {
+			needsPermissions = newNeedsPermissions
+		}
+		schedulePolling()
+	}
+
+	/// How often permissions are re-checked. Fast while something is missing so a grant in System
+	/// Settings shows up promptly; slow once everything is granted, where only a revocation is left
+	/// to notice and app activation re-checks anyway.
+	static func pollInterval(needsPermissions: Bool) -> TimeInterval {
+		needsPermissions ? 2 : 30
 	}
 
 	/// Requests microphone permission
@@ -75,20 +109,17 @@ class PermissionManager {
 
 	// MARK: - Private Methods
 
-	private func checkMicrophonePermission() -> Bool {
-		return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-	}
-
-	private func checkAccessibilityPermission() -> Bool {
-		return AXIsProcessTrusted()
-	}
-
-	private func startPeriodicChecks() {
-		// Check permissions every 2 seconds to detect changes
-		permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) {
-			[weak self] _ in
+	private func schedulePolling() {
+		guard activationObserver != nil else { return }
+		let interval = Self.pollInterval(needsPermissions: needsPermissions)
+		if let timer = permissionCheckTimer, timer.isValid, timer.timeInterval == interval { return }
+		permissionCheckTimer?.invalidate()
+		let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
 			self?.updatePermissionStatus()
 		}
+		timer.tolerance = interval / 4
+		RunLoop.main.add(timer, forMode: .common)
+		permissionCheckTimer = timer
 	}
 }
 
