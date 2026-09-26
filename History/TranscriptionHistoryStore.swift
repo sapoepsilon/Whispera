@@ -106,7 +106,12 @@ final class TranscriptionHistoryStore {
 			errorMessage: errorMessage
 		)
 		context.insert(entry)
-		save()
+		guard save() else {
+			if let audioFileName {
+				try? FileManager.default.removeItem(at: audioDirectory.appendingPathComponent(audioFileName))
+			}
+			return nil
+		}
 		entries.insert(entry, at: 0)
 		applyRetention()
 		return entries.contains(where: { $0.id == id }) ? entry : nil
@@ -226,11 +231,17 @@ final class TranscriptionHistoryStore {
 
 	// MARK: - Private
 
-	private func save() {
+	// A failed save (for example a full disk) leaves unsaved changes that make the next delete throw
+	@discardableResult
+	private func save() -> Bool {
 		do {
 			try context?.save()
+			return true
 		} catch {
 			AppLogger.shared.database.error("Failed to save transcription history: \(error)")
+			context?.rollback()
+			reload()
+			return false
 		}
 	}
 
