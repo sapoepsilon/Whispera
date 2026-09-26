@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # Whispera Release & Distribution Script Template
-# Copy this file to release-distribute.sh and fill in your actual credentials
+# Only the settings of a private, gitignored release-distribute.sh. The script body is not
+# in the repository; scripts/README.md lists the steps it runs and how to release by hand
+# with release-distribute-ci.sh instead.
 
 set -e  # Exit on any error
 
@@ -19,4 +21,4 @@ APPLE_ID="your-apple-id@example.com"
 APP_SPECIFIC_PASSWORD="your-app-specific-password"
 TEAM_ID="YOUR_TEAM_ID"
 
-# ... rest of the script is the same as release-distribute.sh
+# The steps (archive, export, sign, notarize, staple, DMG) follow release-distribute-ci.sh.

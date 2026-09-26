@@ -24,7 +24,7 @@ xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:Whisp
 xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:WhisperaUITests
 ```
 
-The `WhisperaUnitTests` target compiles the Swift Testing suites in `WhisperaUnitTests/` and the XCTest files in `WhisperaTests/`; there is no separate `WhisperaTests` target.
+The `WhisperaUnitTests` target compiles the Swift Testing suites in `WhisperaUnitTests/` plus five of the XCTest files in `WhisperaTests/` (`AppLibraryManagerTests`, `AudioDeviceManagerTests`, `LargeModelTranscriptionTests`, `SingleInstanceTests`, `VersionTests`); there is no separate `WhisperaTests` target. The other files in `WhisperaTests/` (`AudioManagerTests`, `FileDropHandlerIntegrationTests`, `ModelSynchronizationTests`, `PermissionManagerTests`, `SimpleTest`, `StreamingTranscriptionIntegrationTests`, `WhisperKitTranscriberTests`) are not in any target's Sources phase and do not build.
 
 ### Version Management
 ```bash
@@ -33,12 +33,15 @@ The `WhisperaUnitTests` target compiles the Swift Testing suites in `WhisperaUni
 
 # Bump and commit
 ./scripts/bump-version.sh 1.0.5 --commit
+
+# Set the build number explicitly, e.g. to match a release
+BUILD_NUMBER=36 ./scripts/bump-version.sh 1.3.2 --commit
 ```
 
-Keep the tree at the latest released version and build (the appcast's `sparkle:version`), or Sparkle offers local builds the release they already are.
+Without `BUILD_NUMBER` the script uses `GITHUB_RUN_NUMBER` on CI and the current build + 1 locally. Keep the tree at the latest released version and build (the appcast's `sparkle:version`, which is the release workflow's run number), or Sparkle offers local builds the release they already are.
 
 ### Release Distribution
-Releases are cut by pushing a `vX.Y.Z` tag, which runs `.github/workflows/release.yml`: bump the version on the runner, build, sign and notarize with `scripts/release-distribute-ci.sh` (which also writes `appcast.xml`), write the release body with `scripts/release-notes.sh` (from `release-notes/vX.Y.Z.md` when present; the app shows this body in What's New), publish the GitHub release, commit `appcast.xml` to `main`, then bump `Casks/whispera.rb` in a separate step. See `scripts/README.md`. `scripts/release-distribute.template.sh` is the template for a local, credential-holding `release-distribute.sh`, which is gitignored.
+Releases are cut by pushing a `vX.Y.Z` tag, which runs `.github/workflows/release.yml`: validate the version and bump it on the runner, archive and export with `xcodebuild`, then sign, notarize and package with `scripts/release-distribute-ci.sh` (which also writes the Sparkle-signed `appcast.xml`), write the release body with `scripts/release-notes.sh` (from `release-notes/vX.Y.Z.md` when present; the app shows this body in What's New), publish the GitHub release and commit `appcast.xml` to `main`; a separate `homebrew-cask` job then bumps `Casks/whispera.rb`. See `scripts/README.md`. There is no complete local release script in the repository: `scripts/release-distribute.template.sh` only holds the credential variables of a private, gitignored `release-distribute.sh`; `scripts/README.md` lists the steps to release by hand.
 
 ## Architecture
 
@@ -157,15 +160,17 @@ Releases are cut by pushing a `vX.Y.Z` tag, which runs `.github/workflows/releas
 - **WhisperKit**: Main transcription engine (argmaxinc/WhisperKit @ main)
 - **FluidAudio**: Parakeet ASR and Silero VAD on Core ML (Apache-2.0)
 - **Sparkle**: Software updates
-- **swift-transformers**: Hugging Face transformers (0.1.15)
-- **YouTubeKit**: YouTube video downloading (0.2.8)
+- **swift-transformers**: Hugging Face transformers (1.1.9)
+- **YouTubeKit**: YouTube video downloading (0.4.7)
 - **swift-markdown-ui**: Markdown rendering for UI (2.4.1)
-- **swift-collections**: Advanced collection types (1.2.1)
+- **swift-collections**: Advanced collection types (1.4.0)
+
+Versions are the ones pinned in `Whispera.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` (FluidAudio 0.9.1, Sparkle 2.9.0; WhisperKit tracks `main`).
 
 ## Common Patterns
 
 ### Model Operations
-Models are downloaded to `~/Library/Application Support/Whispera/models/argmaxinc/whisperkit-coreml/{model-name}/`
+Whisper models are downloaded to `~/Library/Application Support/Whispera/models/argmaxinc/whisperkit-coreml/{model-name}/`. FluidAudio models live under `~/Library/Application Support/Whispera/models/FluidInference/`: `parakeet-tdt-0.6b-v3-coreml/` and `parakeet-tdt-0.6b-v2-coreml/` (`ParakeetEngine`) and `silero-vad-coreml/` (`NeuralVoiceActivityDetector`).
 - Operations are serialized via `modelOperationTask`
 - Download progress tracked via callback
 - Models persist across app launches
@@ -188,7 +193,7 @@ Models are downloaded to `~/Library/Application Support/Whispera/models/argmaxin
 - Tests should use real WhisperKit when testing transcription
 - Mock only external dependencies (network, file system)
 - Use `@MainActor` for SwiftUI-related test operations
-- Test files located in `WhisperaUnitTests/` (Swift Testing), `WhisperaTests/` (XCTest, built into the `WhisperaUnitTests` target) and `WhisperaUITests/`
+- Test files located in `WhisperaUnitTests/` (Swift Testing), `WhisperaTests/` (XCTest; only the five files listed under Testing are built, into the `WhisperaUnitTests` target) and `WhisperaUITests/`
 - Tests that touch `UserDefaults` use `UserDefaults(suiteName:)` with a unique suite name; tests that need a downloaded model gate themselves with `.enabled(if:)`
 
 ## Plans Directory
