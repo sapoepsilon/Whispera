@@ -254,11 +254,22 @@ final class LogFileWriter {
 	init(
 		backoff: TimeInterval = 60,
 		now: @escaping () -> Date = Date.init,
-		openHandle: @escaping HandleOpener = { try FileHandle(forWritingTo: $0) }
+		openHandle: @escaping HandleOpener = LogFileWriter.openForAppending
 	) {
 		self.backoff = backoff
 		self.now = now
 		self.openHandle = openHandle
+	}
+
+	/// The app, the headless CLI and test hosts write the same daily file. O_APPEND makes every
+	/// write land at the current end of the file; a handle positioned once at open overwrote
+	/// lines the other processes had appended since.
+	static func openForAppending(_ url: URL) throws -> FileHandle {
+		let descriptor = open(url.path, O_WRONLY | O_APPEND | O_CLOEXEC)
+		guard descriptor >= 0 else {
+			throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+		}
+		return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
 	}
 
 	/// Returns false when the line was dropped.

@@ -89,4 +89,21 @@ struct LogFileWriterTests {
 		#expect(try String(contentsOf: first, encoding: .utf8) == "a\n")
 		#expect(try String(contentsOf: second, encoding: .utf8) == "b\n")
 	}
+
+	/// The app, the CLI and test hosts share one log file; each keeps its own open handle.
+	@Test func twoWritersSharingAFileDoNotOverwriteEachOther() throws {
+		let url = try makeLogURL()
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		let app = LogFileWriter()
+		let cli = LogFileWriter()
+
+		#expect(app.append(line("app 1"), to: url))
+		#expect(cli.append(line("cli 1"), to: url))
+		#expect(app.append(line("app 2"), to: url))
+		#expect(cli.append(line("cli 2"), to: url))
+		app.close()
+		cli.close()
+
+		#expect(try String(contentsOf: url, encoding: .utf8) == "app 1\ncli 1\napp 2\ncli 2\n")
+	}
 }
