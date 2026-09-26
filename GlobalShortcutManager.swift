@@ -14,6 +14,7 @@ class GlobalShortcutManager: ObservableObject {
 	private var queueManager: TranscriptionQueueManager?
 	private var isProcessingFileOperation = false
 	private var lastTextHotKeyTrigger: Date?
+	private let postProcessShortcutMonitor = PostProcessShortcutMonitor()
 	private let logger = AppLogger.shared.general
 	@MainActor private var cancelMonitor: CancelShortcutMonitor?
 	@MainActor private var activation = ActivationStateMachine(
@@ -58,6 +59,9 @@ class GlobalShortcutManager: ObservableObject {
 	func setAudioManager(_ manager: AudioManager) {
 		self.audioManager = manager
 		logger.info("AudioManager set, checking accessibility status...")
+		postProcessShortcutMonitor.attach(audioManager: manager) { [weak self] shortcut in
+			self?.parseShortcut(shortcut) ?? ([], 0)
+		}
 		checkAccessibilityStatus()
 		observeRecordingStateForCancel()
 	}

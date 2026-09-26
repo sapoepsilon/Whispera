@@ -141,6 +141,8 @@ final class AudioManager: NSObject {
 	private var streamPolicyObservers: [NSObjectProtocol] = []
 	@ObservationIgnored
 	private var lastStreamPolicySnapshot: String?
+	@ObservationIgnored
+	var postProcessCurrentSession = false
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -170,18 +172,23 @@ final class AudioManager: NSObject {
 		isRecording || isMicrophoneInitializing
 	}
 
-	func toggleRecording() {
+	func toggleRecording(postProcess: Bool = false) {
 		if isSessionActive {
 			requestStop()
 		} else {
-			startRecordingSession()
+			startRecordingSession(postProcess: postProcess)
 		}
 	}
 
-	func startRecordingSession() {
+	func startRecordingSession(postProcess: Bool = false) {
 		guard !isSessionActive else { return }
 		pendingStopAfterStart = false
-		currentRecordingMode = enableStreaming ? .liveTranscription : .text
+		let postProcessing = PostProcessingSettings()
+		// Post-processing rewrites the whole transcript, so that session must run in text mode.
+		let forceTextMode = postProcess && postProcessing.isEnabled
+		currentRecordingMode = enableStreaming && !forceTextMode ? .liveTranscription : .text
+		postProcessCurrentSession = postProcessing.shouldPostProcess(
+			requestedByShortcut: postProcess, isLiveMode: currentRecordingMode == .liveTranscription)
 		startRecording()
 	}
 
@@ -233,6 +240,7 @@ final class AudioManager: NSObject {
 		pendingStopAfterStart = false
 		tailStop.cancel()
 		isFinalizingStop = false
+		postProcessCurrentSession = false
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
 
@@ -837,9 +845,14 @@ extension AudioManager {
 		transcriptionError = nil
 
 		do {
-			let transcription = try await work()
+			let rawTranscription = try await work()
 			guard !cancelledSessions.contains(session) else {
 				AppLogger.shared.audioManager.info("Discarding transcription of a cancelled recording")
+				return
+			}
+			let transcription = await postProcessIfRequested(rawTranscription)
+			guard !cancelledSessions.contains(session) else {
+				AppLogger.shared.audioManager.info("Discarding post-processed text of a cancelled recording")
 				return
 			}
 			lastTranscription = transcription

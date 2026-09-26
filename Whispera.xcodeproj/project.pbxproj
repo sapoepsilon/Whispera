@@ -185,6 +185,7 @@
 		D6RCTL012F30000000000001 /* RecordingControl */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = RecordingControl; sourceTree = "<group>"; };
 		D6A5E71000000000000000A1 /* TextInsertion */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = TextInsertion; sourceTree = "<group>"; };
 		D6A5E71000000000000000A2 /* SecureInput */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SecureInput; sourceTree = "<group>"; };
+		D6POSTPROC2F0000000000001 /* PostProcessing */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = PostProcessing; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -223,6 +224,7 @@
 			children = (
 				D6BENCH032F0000000000000 /* Benchmark */,
 				D6A15700000000000000A001 /* History */,
+				D6POSTPROC2F0000000000001 /* PostProcessing */,
 				D6F9D7872ED6C4B500959822 /* AudioManager */,
 				D6RCTL012F30000000000001 /* RecordingControl */,
 				D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */,
@@ -408,6 +410,7 @@
 				D6A5E71000000000000000A1 /* TextInsertion */,
 				D6A5E71000000000000000A2 /* SecureInput */,
 				D6TXTPROC2F00000000000001 /* TextProcessing */,
+				D6POSTPROC2F0000000000001 /* PostProcessing */,
 			);
 			name = Whispera;
 			productName = MacWhisper;
@@ -683,6 +686,11 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0.16;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-weak_framework",
+					FoundationModels,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.macwhisper.app.debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -714,6 +722,11 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0.16;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-weak_framework",
+					FoundationModels,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.macwhisper.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
