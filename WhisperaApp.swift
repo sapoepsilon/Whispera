@@ -2,7 +2,7 @@ import AppKit
 import Sparkle
 import SwiftUI
 
-@main
+// Launched from WhisperaMain, which diverts CLI invocations before NSApplication starts.
 struct WhisperaApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	private let softwareUpdater = SoftwareUpdater()
@@ -99,6 +99,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var recordingGlowController: RecordingGlowController?
 	private var popoverFrame: NSRect?
 
+	func applicationWillFinishLaunching(_ notification: Notification) {
+		// A cold launch from whispera:// delivers the URL before didFinishLaunching.
+		RemoteControlCenter.shared.installURLHandler()
+	}
+
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		if shouldTerminateDuplicateInstances() {
 			AppLogger.shared.general.info(
@@ -129,6 +134,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			shortcutManager.setFileTranscriptionManager(fileTranscriptionManager)
 			shortcutManager.setNetworkDownloader(networkDownloader)
 			shortcutManager.setQueueManager(queueManager)
+			RemoteControlCenter.shared.installURLHandler()
+			RemoteControlCenter.shared.register(
+				controller: audioManager, modelSwitcher: audioManager.whisperKitTranscriber)
 			observeRecordingState()
 			observeWindowState()
 			observeUpdateState()

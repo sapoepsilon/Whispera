@@ -178,6 +178,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		D6AUTO0012F0000000000001 /* Automation */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Automation; sourceTree = "<group>"; };
 		D63850CC2E179188000FD465 /* WhisperaUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUITests; sourceTree = "<group>"; };
 		D6TXTPROC2F00000000000001 /* TextProcessing */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = TextProcessing; sourceTree = "<group>"; };
 		D63850DF2E1791AF000FD465 /* WhisperaUnitTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUnitTests; sourceTree = "<group>"; };
@@ -222,6 +223,7 @@
 		6A6A6A6A6A6A6A6A6A6A6A6A = {
 			isa = PBXGroup;
 			children = (
+				D6AUTO0012F0000000000001 /* Automation */,
 				D6BENCH032F0000000000000 /* Benchmark */,
 				D6A15700000000000000A001 /* History */,
 				D6POSTPROC2F0000000000001 /* PostProcessing */,
@@ -411,6 +413,7 @@
 				D6A5E71000000000000000A2 /* SecureInput */,
 				D6TXTPROC2F00000000000001 /* TextProcessing */,
 				D6POSTPROC2F0000000000001 /* PostProcessing */,
+				D6AUTO0012F0000000000001 /* Automation */,
 			);
 			name = Whispera;
 			productName = MacWhisper;

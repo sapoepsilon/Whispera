@@ -8,26 +8,6 @@ struct SecureInputCulprit: Equatable, Sendable {
 	let name: String
 }
 
-struct CarbonHotKeySpec: Equatable, Sendable {
-	let keyCode: UInt32
-	let modifiers: UInt32
-}
-
-enum CarbonHotKeyMapping {
-	static let globeKeyCode: UInt16 = 63
-
-	// Carbon cannot register the Globe/Fn key, so that shortcut has no fallback
-	static func spec(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> CarbonHotKeySpec? {
-		guard keyCode != globeKeyCode else { return nil }
-		var carbonModifiers: UInt32 = 0
-		if modifiers.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
-		if modifiers.contains(.option) { carbonModifiers |= UInt32(optionKey) }
-		if modifiers.contains(.control) { carbonModifiers |= UInt32(controlKey) }
-		if modifiers.contains(.shift) { carbonModifiers |= UInt32(shiftKey) }
-		return CarbonHotKeySpec(keyCode: UInt32(keyCode), modifiers: carbonModifiers)
-	}
-}
-
 enum SecureInputCulpritLookup {
 	static func pid(fromIORegOutput output: String) -> pid_t? {
 		let marker = "\"kCGSSessionSecureInputPID\"="
@@ -112,53 +92,38 @@ struct SecureInputStateMachine: Equatable {
 	}
 }
 
+/// A single re-registrable hotkey on its own CarbonHotKeyCenter, so rebuilding the
+/// shared center's shortcuts never drops the secure input fallback.
 final class CarbonHotKey {
-	private static let signature: OSType = 0x5748_5350
-	private var hotKeyRef: EventHotKeyRef?
-	private var handlerRef: EventHandlerRef?
+	private let center = CarbonHotKeyCenter()
+	private var registrationID: UInt32?
 	private(set) var registeredSpec: CarbonHotKeySpec?
 	var action: (() -> Void)?
+	var releaseAction: (() -> Void)?
 
 	deinit {
 		unregister()
-		if let handlerRef { RemoveEventHandler(handlerRef) }
 	}
 
 	func register(_ spec: CarbonHotKeySpec) -> Bool {
-		if registeredSpec == spec, hotKeyRef != nil { return true }
+		if registeredSpec == spec, registrationID != nil { return true }
 		unregister()
-		guard installHandlerIfNeeded() else { return false }
-		let hotKeyID = EventHotKeyID(signature: Self.signature, id: 1)
-		var ref: EventHotKeyRef?
-		let status = RegisterEventHotKey(
-			spec.keyCode, spec.modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
-		guard status == noErr, let ref else { return false }
-		hotKeyRef = ref
+		do {
+			registrationID = try center.register(
+				spec,
+				onRelease: { [weak self] in self?.releaseAction?() },
+				handler: { [weak self] in self?.action?() })
+		} catch {
+			return false
+		}
 		registeredSpec = spec
 		return true
 	}
 
 	func unregister() {
-		if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
-		hotKeyRef = nil
+		if let registrationID { center.unregister(id: registrationID) }
+		registrationID = nil
 		registeredSpec = nil
-	}
-
-	private func installHandlerIfNeeded() -> Bool {
-		if handlerRef != nil { return true }
-		var eventType = EventTypeSpec(
-			eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-		let userData = Unmanaged.passUnretained(self).toOpaque()
-		let status = InstallEventHandler(
-			GetApplicationEventTarget(),
-			{ _, _, userData in
-				guard let userData else { return OSStatus(eventNotHandledErr) }
-				let hotKey = Unmanaged<CarbonHotKey>.fromOpaque(userData).takeUnretainedValue()
-				DispatchQueue.main.async { hotKey.action?() }
-				return noErr
-			},
-			1, &eventType, userData, &handlerRef)
-		return status == noErr
 	}
 }
 
@@ -208,9 +173,13 @@ final class SecureInputMonitor {
 		isSustained && fallbackStatus != .active
 	}
 
-	func configure(hotKeySpec: @escaping () -> CarbonHotKeySpec?, action: @escaping () -> Void) {
+	func configure(
+		hotKeySpec: @escaping () -> CarbonHotKeySpec?, action: @escaping () -> Void,
+		release: (() -> Void)? = nil
+	) {
 		hotKeySpecProvider = hotKeySpec
 		hotKey.action = action
+		hotKey.releaseAction = release
 		reconcileFallback()
 	}
 
@@ -230,6 +199,11 @@ final class SecureInputMonitor {
 		timer?.invalidate()
 		timer = nil
 		hotKey.unregister()
+		stateMachine = SecureInputStateMachine()
+		isEnabled = false
+		isSustained = false
+		culprit = nil
+		fallbackStatus = .inactive
 	}
 
 	func poll(now: Date = Date()) {

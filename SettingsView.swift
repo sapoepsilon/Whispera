@@ -1127,6 +1127,11 @@ struct SettingsView: View {
 					Label("History", systemImage: "clock.arrow.circlepath")
 				}
 
+			AutomationSettingsView()
+				.tabItem {
+					Label("Automation", systemImage: "bolt.horizontal")
+				}
+
 			BenchmarkView()
 				.tabItem {
 					Label("Benchmark", systemImage: "speedometer")
