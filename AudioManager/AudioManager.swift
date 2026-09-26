@@ -556,19 +556,7 @@ extension AudioManager {
 		NSSound(named: soundName)?.play()
 	}
 	fileprivate func pasteToFocusedApp(_ text: String) {
-		let pasteboard = NSPasteboard.general
-		pasteboard.clearContents()
-		pasteboard.setString(text, forType: .string)
-
-		let source = CGEventSource(stateID: .combinedSessionState)
-		let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
-		let keyUpEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
-
-		keyDownEvent?.flags = .maskCommand
-		keyUpEvent?.flags = .maskCommand
-
-		keyDownEvent?.post(tap: .cghidEventTap)
-		keyUpEvent?.post(tap: .cghidEventTap)
+		TextInserter.shared.insert(text, context: .finalTranscript)
 	}
 	fileprivate func checkAndRequestMicrophonePermission() {
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {

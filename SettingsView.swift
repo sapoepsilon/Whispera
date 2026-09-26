@@ -611,6 +611,11 @@ struct SettingsView: View {
 				Label("General", systemImage: "gear")
 			}
 
+			TextInsertionSettingsView()
+				.tabItem {
+					Label("Text Insertion", systemImage: "text.cursor")
+				}
+
 			// MARK: - Storage & Downloads Tab
 			ScrollView {
 				VStack(spacing: 24) {

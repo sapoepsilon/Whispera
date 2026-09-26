@@ -180,6 +180,7 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D63850CC2E179188000FD465 /* WhisperaUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUITests; sourceTree = "<group>"; };
 		D63850DF2E1791AF000FD465 /* WhisperaUnitTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUnitTests; sourceTree = "<group>"; };
+		D6A5E71000000000000000A1 /* TextInsertion */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = TextInsertion; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -249,6 +250,7 @@
 				D63850C12E17907D000FD465 /* WhisperaUITests */,
 				2A2A2A2A2A2A2A2A2A2A2A31 /* WhisperKitTranscriber.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A32 /* DictationWordTracker.swift */,
+				D6A5E71000000000000000A1 /* TextInsertion */,
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Info.plist */,
 				D64B1B282DF11A7B00D2CEAB /* OnboardingView.swift */,
 				D66E6D5B2E1859DE00F55A5B /* Onboarding */,
@@ -391,6 +393,9 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D6A5E71000000000000000A1 /* TextInsertion */,
 			);
 			name = Whispera;
 			productName = MacWhisper;
