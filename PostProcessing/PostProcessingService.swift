@@ -1,6 +1,6 @@
 import Foundation
 
-enum PostProcessingOutcome: Equatable {
+enum PostProcessingOutcome: Equatable, Sendable {
 	case processed(String)
 	case skipped(original: String)
 	case failed(original: String, error: String)
@@ -12,6 +12,13 @@ enum PostProcessingOutcome: Equatable {
 		case .skipped(let original), .failed(let original, _): return original
 		}
 	}
+}
+
+/// One post-processing pass together with the prompt that drove it, so history can show what
+/// was asked of the model next to what came back.
+struct PostProcessingRun: Equatable, Sendable {
+	let prompt: PostProcessingPrompt
+	let outcome: PostProcessingOutcome
 }
 
 struct PostProcessingService {
@@ -47,11 +54,19 @@ struct PostProcessingService {
 	}
 
 	func process(_ transcript: String) async -> PostProcessingOutcome {
+		await run(transcript).outcome
+	}
+
+	func run(_ transcript: String) async -> PostProcessingRun {
+		let prompt = settings.selectedPrompt
+		return PostProcessingRun(prompt: prompt, outcome: await process(transcript, prompt: prompt))
+	}
+
+	private func process(_ transcript: String, prompt: PostProcessingPrompt) async -> PostProcessingOutcome {
 		guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
 			return .skipped(original: transcript)
 		}
 		let provider = settings.provider
-		let prompt = settings.selectedPrompt
 		let logger = AppLogger.shared.general
 		do {
 			let processor = try makeProcessor(for: provider)
