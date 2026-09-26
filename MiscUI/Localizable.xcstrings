@@ -9546,6 +9546,29 @@
         }
       }
     },
+    "Live Transcription Mode is now off by default, so your Microphone Stream choice \"%@\" would now keep the microphone open. It was set back to \"Open per recording\". Choose it again in Settings > Recording Control if you want it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Live-Transkriptionsmodus ist jetzt standardmäßig aus, daher würde deine Mikrofonstream-Wahl „%@“ das Mikrofon offen halten. Sie wurde auf „Pro Aufnahme öffnen“ zurückgesetzt. Wähle sie unter Einstellungen > Aufnahmesteuerung erneut, wenn du sie möchtest."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modo de transcripción en vivo ahora está desactivado por defecto, así que tu opción de flujo del micrófono «%@» mantendría el micrófono abierto. Se restableció a «Abrir en cada grabación». Vuelve a elegirla en Ajustes > Control de grabación si la quieres."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le mode de transcription en direct est désormais désactivé par défaut, votre choix de flux du micro « %@ » garderait donc le micro ouvert. Il a été remis sur « Ouvrir à chaque enregistrement ». Choisissez-le de nouveau dans Réglages > Contrôle de l’enregistrement si vous le souhaitez."
+          }
+        }
+      }
+    },
     "Live Transcription Mode needs a Whisper model.": {
       "extractionState": "manual",
       "localizations": {

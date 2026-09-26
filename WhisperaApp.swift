@@ -141,6 +141,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 		AppDelegate.registerInitialDefaults(in: .standard)
 		UpgradeDefaults.apply(to: .standard)
+		MicStreamPolicyMigration.apply(
+			to: .standard,
+			stored: UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:])
 		ThemeController.shared.start()
 
 		Task { @MainActor in
