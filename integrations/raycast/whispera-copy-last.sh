@@ -12,4 +12,5 @@
 # @raycast.description Copy the most recent Whispera transcript to the clipboard.
 # @raycast.author Whispera
 
-open -g "whispera://copy-last"
+token="$(cat "$HOME/Library/Application Support/Whispera/remote-control-token" 2>/dev/null)"
+open -g "whispera://copy-last?token=$token"

@@ -12,4 +12,5 @@
 # @raycast.description Open Whispera's history window.
 # @raycast.author Whispera
 
-open -g "whispera://history"
+token="$(cat "$HOME/Library/Application Support/Whispera/remote-control-token" 2>/dev/null)"
+open -g "whispera://history?token=$token"
