@@ -473,6 +473,23 @@ struct InsertionDeliveryTests {
 		#expect(problems == [.accessibilityDenied(transcriptOnClipboard: true)])
 	}
 
+	@Test func withoutAccessibilityASecretIsNotLeftOnTheClipboard() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("old copy", forType: .string)
+		let poster = DeniedKeyPoster()
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, settingsProvider: { fastSettings() })
+		var problems: [InsertionProblem] = []
+		inserter.onProblem = { problems.append($0) }
+
+		await inserter.insert("hunter2", context: .finalTranscript, concealed: true).value
+
+		#expect(pasteboard.string(forType: .string) == "old copy")
+		#expect(problems == [.accessibilityDenied(transcriptOnClipboard: false)])
+	}
+
 	@Test func withoutAccessibilityTypingIsNotAttempted() async {
 		let pasteboard = makePasteboard()
 		defer { pasteboard.releaseGlobally() }

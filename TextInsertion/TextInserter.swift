@@ -155,10 +155,11 @@ final class TextInserter {
 		var inserted = true
 
 		if method == .commandV || method == .typeCharacters, !keyPoster.canPostEvents {
-			// Live segments are all in history; one segment alone on the clipboard would mislead
-			let copied = context == .finalTranscript
+			// Live segments are all in history; one segment alone on the clipboard would mislead.
+			// A secret is never left behind, even to rescue it.
+			let copied = context == .finalTranscript && !concealed
 			if copied {
-				ClipboardWriter.write(text, to: pasteboard, transient: false, concealed: concealed)
+				ClipboardWriter.write(text, to: pasteboard, transient: false)
 			}
 			logger.error("Accessibility access is off; cannot post keystrokes, transcript copied: \(copied)")
 			onProblem?(.accessibilityDenied(transcriptOnClipboard: copied))
