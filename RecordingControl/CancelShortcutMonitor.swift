@@ -22,6 +22,16 @@ enum CancelShortcut {
 	static let duplicateWindow: TimeInterval = 0.3
 }
 
+enum CancelShortcutPolicy {
+	/// Armed only while the microphone is capturing. Transcription and the LLM wait can take
+	/// many seconds, by which time an Esc is usually meant for the app in front (leaving vim
+	/// insert mode, closing a popup), and it would throw the dictation away. The pill and the
+	/// menu bar keep a cancel button for that phase.
+	static func shouldListen(isRecording: Bool, isStarting: Bool, enabled: Bool) -> Bool {
+		enabled && (isRecording || isStarting)
+	}
+}
+
 /// The key that discards a dictation. Stored as a key code plus modifiers so layouts and
 /// symbol spelling never change what it matches; `display` is only for the settings UI.
 struct CancelShortcutBinding: Equatable, Sendable {

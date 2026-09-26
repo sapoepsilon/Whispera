@@ -199,3 +199,12 @@ struct CancelShortcutBindingTests {
 		monitor.setActive(false)
 	}
 }
+
+struct CancelShortcutPolicyTests {
+	@Test func armedOnlyWhileCapturing() {
+		#expect(CancelShortcutPolicy.shouldListen(isRecording: true, isStarting: false, enabled: true))
+		#expect(CancelShortcutPolicy.shouldListen(isRecording: false, isStarting: true, enabled: true))
+		#expect(!CancelShortcutPolicy.shouldListen(isRecording: false, isStarting: false, enabled: true))
+		#expect(!CancelShortcutPolicy.shouldListen(isRecording: true, isStarting: false, enabled: false))
+	}
+}

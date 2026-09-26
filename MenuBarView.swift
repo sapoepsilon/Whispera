@@ -122,6 +122,15 @@ struct MenuBarView: View {
 						.buttonStyle(PrimaryButtonStyle(isRecording: isActiveState))
 						.disabled(audioManager.isTranscribing)
 
+						// The cancel shortcut is not armed while transcribing, so this is the way out
+						if audioManager.isTranscribing {
+							Button("Cancel Transcription") {
+								audioManager.cancelRecording()
+							}
+							.buttonStyle(TertiaryButtonStyle())
+							.accessibilityIdentifier("menuBarCancelTranscriptionButton")
+						}
+
 						// Shortcut display - design language compliant
 						VStack(spacing: 8) {
 							HStack {

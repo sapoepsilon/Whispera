@@ -59,6 +59,7 @@ struct ListeningView: View {
 						.font(.system(.caption, design: .rounded))
 						.foregroundColor(.secondary)
 						.lineLimit(1)
+					cancelButton
 				}
 			} else {
 				HStack(spacing: 8) {
@@ -140,7 +141,11 @@ struct ListeningView: View {
 				.foregroundColor(.secondary)
 		}
 		.buttonStyle(.plain)
-		.help("Cancel and discard (Esc)")
+		.help(
+			audioManager.isRecording
+				? String(localized: "Cancel and discard (Esc)")
+				: String(localized: "Cancel and discard")
+		)
 		.accessibilityIdentifier("cancelRecordingButton")
 	}
 

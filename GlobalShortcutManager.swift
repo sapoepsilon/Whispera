@@ -98,10 +98,9 @@ class GlobalShortcutManager: ObservableObject {
 	@MainActor
 	private func updateCancelMonitor() {
 		guard let audioManager else { return }
-		let sessionActive =
-			audioManager.isRecording || audioManager.isMicrophoneInitializing
-			|| audioManager.isTranscribing
-		let shouldListen = sessionActive && RecordingControlSettings().cancelShortcutEnabled
+		let shouldListen = CancelShortcutPolicy.shouldListen(
+			isRecording: audioManager.isRecording, isStarting: audioManager.isMicrophoneInitializing,
+			enabled: RecordingControlSettings().cancelShortcutEnabled)
 		if shouldListen && cancelMonitor == nil {
 			cancelMonitor = CancelShortcutMonitor { [weak self] in
 				self?.logger.info("Cancel shortcut pressed")
