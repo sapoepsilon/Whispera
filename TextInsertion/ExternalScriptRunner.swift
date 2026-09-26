@@ -29,6 +29,7 @@ enum ExternalScriptError: LocalizedError, Equatable {
 /// since, and not writable by anyone else.
 enum ExternalScriptRunner {
 	static let transcriptEnvironmentKey = "WHISPERA_TRANSCRIPT"
+	static let scriptPathEnvironmentKey = "WHISPERA_SCRIPT_PATH"
 	static let defaultTimeout: TimeInterval = 10
 	/// Time between SIGTERM and SIGKILL for a script that overruns its timeout.
 	static let terminationGrace: TimeInterval = 1
@@ -72,13 +73,15 @@ enum ExternalScriptRunner {
 
 	/// Only what a script needs to find tools and a home; nothing of Whispera's own environment.
 	static func minimalEnvironment(
-		transcript: String, from parent: [String: String] = ProcessInfo.processInfo.environment
+		transcript: String, scriptPath: String? = nil,
+		from parent: [String: String] = ProcessInfo.processInfo.environment
 	) -> [String: String] {
 		var environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"]
 		for key in ["HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"] {
 			if let value = parent[key] { environment[key] = value }
 		}
 		environment[transcriptEnvironmentKey] = transcript
+		if let scriptPath { environment[scriptPathEnvironmentKey] = scriptPath }
 		return environment
 	}
 
@@ -90,16 +93,38 @@ enum ExternalScriptRunner {
 	) async throws {
 		let url = try validate(path: path)
 		try checkOwnershipAndPermissions(of: url.path)
-		guard ScriptApproval.isApproved(path: url.path, approval: approval, keyStore: keyStore) else {
+		let snapshot = try ScriptFingerprint.snapshot(path: url.path)
+		guard ScriptApproval.isApproved(snapshot: snapshot, approval: approval, keyStore: keyStore) else {
 			throw ExternalScriptError.notApproved
 		}
-		let child = try SpawnedScript.launch(
-			executable: url.path, environment: minimalEnvironment(transcript: text), input: Data(text.utf8))
+		try await execute(snapshot: snapshot, text: text, timeout: timeout)
+	}
+
+	/// Runs a private copy of the verified bytes, so replacing the script between the approval
+	/// check and the launch cannot change what runs. The script starts in its own folder and finds
+	/// its real path in WHISPERA_SCRIPT_PATH; `$0` is the copy.
+	static func execute(
+		snapshot: ScriptFingerprint.Snapshot, text: String, timeout: TimeInterval = defaultTimeout
+	) async throws {
+		let original = snapshot.fingerprint.path
+		let copy = try VerifiedScriptCopy.make(contents: snapshot.contents, name: (original as NSString).lastPathComponent)
+		let child: SpawnedScript
+		do {
+			child = try SpawnedScript.launch(
+				executable: copy.executable,
+				workingDirectory: (original as NSString).deletingLastPathComponent,
+				environment: minimalEnvironment(transcript: text, scriptPath: original),
+				input: Data(text.utf8))
+		} catch {
+			copy.remove()
+			throw error
+		}
 
 		let status: Int32? = await withCheckedContinuation { continuation in
 			let resumed = ResumeOnce()
 			DispatchQueue.global(qos: .userInitiated).async {
 				let status = child.waitForExit()
+				copy.remove()
 				if resumed.claim() { continuation.resume(returning: status) }
 			}
 			DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
@@ -114,11 +139,73 @@ enum ExternalScriptRunner {
 	}
 }
 
+/// A single-use copy of an approved script inside a folder only this user can open.
+struct VerifiedScriptCopy: Sendable {
+	static let folderName = "Whispera-scripts"
+
+	let folder: URL
+	let executable: String
+
+	static func privateRoot() throws -> URL {
+		let root = FileManager.default.temporaryDirectory.appendingPathComponent(folderName, isDirectory: true)
+		if mkdir(root.path, 0o700) != 0, errno != EEXIST {
+			throw ExternalScriptError.launchFailed(String(cString: strerror(errno)))
+		}
+		var info = stat()
+		guard lstat(root.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR, info.st_uid == getuid() else {
+			throw ExternalScriptError.unsafePermissions("its run folder is not private")
+		}
+		if info.st_mode & 0o077 != 0, chmod(root.path, 0o700) != 0 {
+			throw ExternalScriptError.unsafePermissions("its run folder is not private")
+		}
+		return root
+	}
+
+	static func make(contents: Data, name: String) throws -> VerifiedScriptCopy {
+		let folder = try privateRoot().appendingPathComponent(UUID().uuidString, isDirectory: true)
+		guard mkdir(folder.path, 0o700) == 0 else {
+			throw ExternalScriptError.launchFailed(String(cString: strerror(errno)))
+		}
+		let copy = VerifiedScriptCopy(folder: folder, executable: folder.appendingPathComponent(name).path)
+		let fd = open(copy.executable, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o700)
+		guard fd >= 0 else {
+			let reason = String(cString: strerror(errno))
+			copy.remove()
+			throw ExternalScriptError.launchFailed(reason)
+		}
+		let written = contents.withUnsafeBytes { buffer -> Bool in
+			var offset = 0
+			while offset < buffer.count {
+				let count = write(fd, buffer.baseAddress! + offset, buffer.count - offset)
+				if count < 0 {
+					if errno == EINTR { continue }
+					return false
+				}
+				offset += count
+			}
+			return true
+		}
+		let sealed = fchmod(fd, 0o500) == 0
+		close(fd)
+		guard written, sealed else {
+			copy.remove()
+			throw ExternalScriptError.launchFailed("could not copy the script")
+		}
+		return copy
+	}
+
+	func remove() {
+		try? FileManager.default.removeItem(at: folder)
+	}
+}
+
 /// A script started in its own process group, so a timeout can stop everything it spawned.
 private struct SpawnedScript: Sendable {
 	let pid: pid_t
 
-	static func launch(executable: String, environment: [String: String], input: Data) throws -> SpawnedScript {
+	static func launch(
+		executable: String, workingDirectory: String, environment: [String: String], input: Data
+	) throws -> SpawnedScript {
 		var pipeFDs: [Int32] = [0, 0]
 		guard pipe(&pipeFDs) == 0 else {
 			throw ExternalScriptError.launchFailed(String(cString: strerror(errno)))
@@ -134,6 +221,7 @@ private struct SpawnedScript: Sendable {
 		posix_spawn_file_actions_adddup2(&actions, readFD, STDIN_FILENO)
 		posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0)
 		posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0)
+		posix_spawn_file_actions_addchdir_np(&actions, workingDirectory)
 
 		var attributes: posix_spawnattr_t?
 		posix_spawnattr_init(&attributes)

@@ -14123,25 +14123,25 @@
         }
       }
     },
-    "Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Choose the script again after editing it.": {
+    "Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Whispera runs a private copy of the script, starting in the script's folder; WHISPERA_SCRIPT_PATH holds the original path. Choose the script again after editing it.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Erhält das Transkript über die Standardeingabe und in WHISPERA_TRANSCRIPT. Wähle das Skript nach jeder Änderung erneut aus."
+            "value": "Erhält das Transkript über die Standardeingabe und in WHISPERA_TRANSCRIPT. Whispera führt eine private Kopie des Skripts aus, gestartet im Ordner des Skripts; WHISPERA_SCRIPT_PATH enthält den ursprünglichen Pfad. Wähle das Skript nach jeder Änderung erneut aus."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recibe la transcripción por la entrada estándar y en WHISPERA_TRANSCRIPT. Vuelve a elegir el script después de editarlo."
+            "value": "Recibe la transcripción por la entrada estándar y en WHISPERA_TRANSCRIPT. Whispera ejecuta una copia privada del script, empezando en la carpeta del script; WHISPERA_SCRIPT_PATH contiene la ruta original. Vuelve a elegir el script después de editarlo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reçoit la transcription sur l'entrée standard et dans WHISPERA_TRANSCRIPT. Choisissez de nouveau le script après l'avoir modifié."
+            "value": "Reçoit la transcription sur l'entrée standard et dans WHISPERA_TRANSCRIPT. Whispera exécute une copie privée du script, lancée dans le dossier du script ; WHISPERA_SCRIPT_PATH contient le chemin d'origine. Choisissez de nouveau le script après l'avoir modifié."
           }
         }
       }
