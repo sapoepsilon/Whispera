@@ -24,6 +24,32 @@ enum CapturePath {
 	}
 }
 
+/// What a recording does when its microphone disappears.
+enum InputLossResponse: Equatable {
+	/// Nothing is capturing yet, so startup simply runs again on the fallback input.
+	case restartStartup
+	/// The capture reopens on the fallback input and keeps the audio it already has.
+	case followFallbackInput
+	/// AVAudioRecorder stays bound to the device it opened and cannot be moved, so the file
+	/// is finished and what was captured is transcribed.
+	case finishRecording
+
+	static func decide(path: CapturePath?, isStartingCapture: Bool) -> InputLossResponse {
+		if isStartingCapture { return .restartStartup }
+		return path == .file ? .finishRecording : .followFallbackInput
+	}
+
+	static func fallbackNotice(lostDevice name: String) -> String {
+		String(localized: "\(name) disconnected. Using the system default microphone.")
+	}
+
+	static func finishedNotice(lostDevice name: String) -> String {
+		String(
+			localized:
+				"\(name) disconnected, so the recording was stopped. What was captured was transcribed.")
+	}
+}
+
 enum AudioState {
 	case idle
 	case initializing
@@ -376,12 +402,25 @@ final class AudioManager: NSObject {
 	/// is unplugged; audio captured so far is kept.
 	func handleInputDeviceLost(name: String) {
 		guard isRecording || isMicrophoneInitializing else { return }
-		AppLogger.shared.audioManager.info("Falling back to system default input after losing \(name)")
+		let response = InputLossResponse.decide(path: activeCapturePath, isStartingCapture: isStartingCapture)
+		AppLogger.shared.audioManager.info("Lost input \(name) while recording; response: \(String(describing: response))")
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
+		if response == .finishRecording {
+			finishInterruptedRecording(notice: InputLossResponse.finishedNotice(lostDevice: name))
+			return
+		}
 		deviceManager.beginFallbackToSystemDefault()
-		inputNotice = "\(name) disconnected. Using the system default microphone."
-		if isStartingCapture {
+		let notice = InputLossResponse.fallbackNotice(lostDevice: name)
+		inputNotice = notice
+		// The pill tooltip is invisible with the Minimal or None overlay, so the notice is also
+		// posted: live mode has no session result to carry it, the other paths show it with the text
+		if activeCapturePath == .live {
+			postNotice(notice)
+		} else if pendingStopNotice == nil {
+			pendingStopNotice = notice
+		}
+		if response == .restartStartup {
 			restartCaptureStartup()
 		} else {
 			reactivateInputDuringRecording()
@@ -515,6 +554,7 @@ extension AudioManager {
 		// result or error underneath it.
 		lastTranscription = nil
 		transcriptionError = nil
+		pendingStopNotice = nil
 		currentRecordingMode = mode
 		let (session, abandoned) = ledger.beginCapture(mode: mode, postProcess: postProcess)
 		if let abandoned {

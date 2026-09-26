@@ -29,4 +29,27 @@ struct MicrophoneFallbackTests {
 		#expect(!manager.isUsingFallbackInput)
 		#expect(manager.activeSessionDevice == nil)
 	}
+
+	/// AVAudioRecorder cannot move to another device, so a file recording ends with what it has
+	/// instead of silently recording nothing on the vanished microphone.
+	@Test func fileRecordingFinishesWhileStreamAndLiveFollowTheFallback() {
+		#expect(InputLossResponse.decide(path: .file, isStartingCapture: false) == .finishRecording)
+		#expect(InputLossResponse.decide(path: .stream, isStartingCapture: false) == .followFallbackInput)
+		#expect(InputLossResponse.decide(path: .live, isStartingCapture: false) == .followFallbackInput)
+		for path in [CapturePath.file, .stream, nil] {
+			#expect(InputLossResponse.decide(path: path, isStartingCapture: true) == .restartStartup)
+		}
+	}
+
+	@Test func noticesNameTheLostDevice() {
+		#expect(InputLossResponse.fallbackNotice(lostDevice: "USB Mic").contains("USB Mic"))
+		#expect(InputLossResponse.finishedNotice(lostDevice: "USB Mic").contains("USB Mic"))
+	}
+
+	@Test func deviceLossWithoutARecordingChangesNothing() {
+		let manager = AudioManager()
+		manager.handleInputDeviceLost(name: "USB Mic")
+		#expect(manager.inputNotice == nil)
+		#expect(manager.transcriptionError == nil)
+	}
 }

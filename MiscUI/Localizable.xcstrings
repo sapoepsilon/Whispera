@@ -116,6 +116,52 @@
         }
       }
     },
+    "%@ disconnected, so the recording was stopped. What was captured was transcribed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wurde getrennt, daher wurde die Aufnahme beendet. Das bisher Aufgenommene wurde transkribiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ se desconectó, así que la grabación se detuvo. Se transcribió lo que se había capturado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a été déconnecté, l’enregistrement a donc été arrêté. Ce qui avait été capturé a été transcrit."
+          }
+        }
+      }
+    },
+    "%@ disconnected. Using the system default microphone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wurde getrennt. Das Standardmikrofon des Systems wird verwendet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ se desconectó. Se usa el micrófono predeterminado del sistema."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a été déconnecté. Le micro par défaut du système est utilisé."
+          }
+        }
+      }
+    },
     "%@ has turned on Secure Input": {
       "extractionState": "manual",
       "localizations": {
