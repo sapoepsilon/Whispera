@@ -200,7 +200,7 @@ struct SettingsView: View {
 
 	// Extended logging settings
 	@AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
-	@AppStorage("enableDebugLogging") private var enableDebugLogging = false
+	@AppStorage(DebugMode.defaultsKey) private var debugModeEnabled = false
 
 	var body: some View {
 		TabView {
@@ -747,18 +747,14 @@ struct SettingsView: View {
 							VStack(alignment: .leading, spacing: 8) {
 								Divider()
 
+								LogLevelSettingRow()
+
 								SettingRow(
 									"Debug Mode",
-									description: "Include detailed debug messages in logs"
+									description: "Show the Debug tab with a live log viewer (⇧⌘D)"
 								) {
-									Toggle("", isOn: $enableDebugLogging)
+									Toggle("", isOn: $debugModeEnabled)
 								}
-
-								Text(
-									"By default, only info, error, and fault messages are logged. Enable debug mode to capture detailed debug information."
-								)
-								.font(.caption)
-								.foregroundColor(.secondary)
 							}
 						}
 					}
@@ -1113,7 +1109,15 @@ struct SettingsView: View {
 				.tabItem {
 					Label("Benchmark", systemImage: "speedometer")
 				}
+
+			if debugModeEnabled {
+				LogViewerView()
+					.tabItem {
+						Label("Debug", systemImage: "ladybug")
+					}
+			}
 		}
+		.background(DebugModeShortcut())
 		.frame(maxWidth: 600)
 		.onAppear {
 			loadAvailableModels()
