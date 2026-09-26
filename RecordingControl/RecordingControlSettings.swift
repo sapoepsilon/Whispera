@@ -15,6 +15,12 @@ enum ActivationMode: String, CaseIterable, Identifiable {
 		}
 	}
 
+	/// Only modes that act on release need the shortcut's key-up events, so toggle mode can
+	/// skip a global key-up monitor that would otherwise wake the app on every key release.
+	var needsKeyRelease: Bool {
+		self != .toggle
+	}
+
 	var summary: String {
 		switch self {
 		case .toggle: return "Press once to start, press again to stop"

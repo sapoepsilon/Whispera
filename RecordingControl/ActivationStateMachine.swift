@@ -24,7 +24,9 @@ struct ActivationStateMachine {
 
 	mutating func keyDown(at time: Date, isRepeat: Bool, isSessionActive: Bool) -> ActivationAction {
 		guard !isRepeat, !isPressed else { return .none }
-		isPressed = true
+		// Toggle mode is driven without a system-wide key-release monitor, so a press must not
+		// latch waiting for a release that may never be delivered.
+		isPressed = mode.needsKeyRelease
 		pressStartedAt = time
 
 		if isSessionActive {
