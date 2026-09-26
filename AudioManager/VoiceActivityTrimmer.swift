@@ -30,8 +30,18 @@ enum VADSensitivity: String, CaseIterable, Identifiable, Sendable {
 struct VoiceActivitySettings: Equatable, Sendable {
 	static let enabledKey = "vadEnabled"
 	static let sensitivityKey = "vadSensitivity"
+	/// On for new installs. Installs that predate Skip Silence keep it off (see UpgradeDefaults),
+	/// because a quiet microphone would otherwise start losing dictations after an update.
 	static let defaultEnabled = true
 	static let defaultSensitivity = VADSensitivity.medium
+
+	/// Shown in the menu bar when a clip is dropped, naming the setting responsible.
+	static var noSpeechNotice: String {
+		String(
+			localized:
+				"No speech detected - clip skipped. Skip Silence (Settings > General > Microphone) drops clips it hears as silence; if you did speak, raise Speech Sensitivity or turn Skip Silence off."
+		)
+	}
 
 	var enabled: Bool
 	var sensitivity: VADSensitivity

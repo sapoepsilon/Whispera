@@ -1087,6 +1087,9 @@ extension AudioManager {
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
 		let session = whisperKitTranscriber.takeLastLiveSession()
+		if session.text.isEmpty, VoiceActivitySettings(defaults: .standard).enabled {
+			transcriptionError = VoiceActivitySettings.noSpeechNotice
+		}
 		if !session.text.isEmpty {
 			recordHistory(
 				text: session.text,
@@ -1129,6 +1132,7 @@ extension AudioManager {
 		case .noSpeech:
 			AppLogger.shared.audioManager.info(
 				"VAD found no speech in \(samples.count) samples, skipping transcription")
+			transcriptionError = VoiceActivitySettings.noSpeechNotice
 			return nil
 		case .speech(let trimmed):
 			AppLogger.shared.audioManager.debug(

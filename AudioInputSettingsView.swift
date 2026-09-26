@@ -96,7 +96,7 @@ struct VoiceActivitySettingsRows: View {
 		SettingRow(
 			"Skip Silence",
 			description:
-				"Skip clips with no speech and trim silence from them; in Live Transcription Mode, pause transcribing while you are silent"
+				"Skip clips with no speech and trim silence from them; in Live Transcription Mode, pause transcribing while you are silent. A skipped clip shows \"No speech detected\" in the menu bar. On by default for new installs; left off when updating from a version without it."
 		) {
 			Toggle("", isOn: $vadEnabled)
 		}
