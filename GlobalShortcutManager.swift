@@ -23,9 +23,8 @@ class GlobalShortcutManager: ObservableObject {
 	private var recordingStateObserver: NSObjectProtocol?
 	private var defaultsObserver: DefaultsKeyObserver?
 	private var monitorsKeyRelease = false
-	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
-	var fileSelectionShortcut: String =
-		UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
+	var currentShortcut: String = ShortcutDefaults.dictation(in: .standard)
+	var fileSelectionShortcut: String = ShortcutDefaults.fileSelection(in: .standard)
 
 	// MARK: - Settings
 	private var autoDeleteDownloadedFiles: Bool {
@@ -45,8 +44,8 @@ class GlobalShortcutManager: ObservableObject {
 	}
 
 	private func shortcutSettingsChanged() {
-		let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
-		let newFileShortcut = UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
+		let newShortcut = ShortcutDefaults.dictation(in: .standard)
+		let newFileShortcut = ShortcutDefaults.fileSelection(in: .standard)
 		let newBackend = HotkeyBackend.preferred()
 		var needsSetup = false
 
@@ -175,12 +174,15 @@ class GlobalShortcutManager: ObservableObject {
 		postProcessShortcutMonitor.reinstall()
 		monitorsKeyRelease = RecordingControlSettings().activationMode.needsKeyRelease
 
-		let (textModifiers, textKeyCode) = parseShortcut(currentShortcut, fallback: "⌥⌘R")
+		let (textModifiers, textKeyCode) = parseShortcut(
+			currentShortcut, fallback: ShortcutDefaults.dictation, defaultsKey: ShortcutDefaults.dictationKey)
 		logger.info(
 			"Setting up text shortcut for \(currentShortcut) (keyCode: \(textKeyCode), modifiers: \(textModifiers.rawValue))"
 		)
 
-		let (fileModifiers, fileKeyCode) = parseShortcut(fileSelectionShortcut, fallback: "⌃F")
+		let (fileModifiers, fileKeyCode) = parseShortcut(
+			fileSelectionShortcut, fallback: ShortcutDefaults.fileSelection,
+			defaultsKey: ShortcutDefaults.fileSelectionKey)
 		logger.info(
 			"Setting up file selection shortcut for \(fileSelectionShortcut) (keyCode: \(fileKeyCode), modifiers: \(fileModifiers.rawValue))"
 		)
@@ -342,14 +344,24 @@ class GlobalShortcutManager: ObservableObject {
 	}
 
 	/// Resolves a stored shortcut, falling back to `fallback` when its key is unknown so a
-	/// corrupt value never binds some unrelated key.
-	private func parseShortcut(_ shortcut: String, fallback: String) -> (NSEvent.ModifierFlags, UInt16) {
+	/// corrupt value never binds some unrelated key. The fallback is written back so every
+	/// place that shows the shortcut shows the key that actually works, and the user is told.
+	private func parseShortcut(
+		_ shortcut: String, fallback: String, defaultsKey: String
+	) -> (NSEvent.ModifierFlags, UInt16) {
 		if let combo = ShortcutCombo(shortcut) {
 			logger.debug("Parsed shortcut '\(shortcut)': keyCode=\(combo.keyCode), modifiers=\(combo.modifiers.rawValue)")
 			return (combo.modifiers, combo.keyCode)
 		}
 		logger.error("Shortcut '\(shortcut)' names an unknown key, using \(fallback)")
 		let combo = ShortcutCombo(fallback) ?? ShortcutCombo(modifiers: [.option, .command], keyCode: 15)
+		// Deferred: the defaults observer would re-enter setup while it is still running
+		DispatchQueue.main.async {
+			UserDefaults.standard.set(fallback, forKey: defaultsKey)
+			MainActor.assumeIsolated {
+				AppNoticeCenter.shared.post(.shortcutReset(unreadable: shortcut, boundTo: fallback))
+			}
+		}
 		return (combo.modifiers, combo.keyCode)
 	}
 

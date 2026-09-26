@@ -87,7 +87,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	var permissionManager: PermissionManager?
 	var appLibraryManager: AppLibraryManager?
 	var softwareUpdater: SoftwareUpdater?
-	@AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
+	@AppStorage(ShortcutDefaults.dictationKey) var globalShortcut = ShortcutDefaults.dictation
 	@AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
 	private var recordingObserver: NSObjectProtocol?
 	private var downloadObserver: NSObjectProtocol?
@@ -121,6 +121,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		}
 
 		AppDelegate.registerInitialDefaults(in: .standard)
+		UpgradeDefaults.apply(to: .standard)
 		ThemeController.shared.start()
 
 		Task { @MainActor in
@@ -136,6 +137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			permissionManager = PermissionManager()
 			appLibraryManager = AppLibraryManager()
 			setupMenuBar()
+			AppNoticeCenter.shared.postLaunchNotices()
 			NSApp.setActivationPolicy(.accessory)
 			shortcutManager.setAudioManager(audioManager)
 			shortcutManager.setFileTranscriptionManager(fileTranscriptionManager)
@@ -197,7 +199,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	nonisolated static func registerInitialDefaults(in defaults: UserDefaults) {
 		defaults.register(defaults: [
 			"selectedModel": "openai_whisper-small.en",
-			"globalShortcut": "⌥⌘R",
+			ShortcutDefaults.dictationKey: ShortcutDefaults.dictation,
 			"startSound": "Tink",
 			"stopSound": "Pop",
 			"launchAtStartup": false,

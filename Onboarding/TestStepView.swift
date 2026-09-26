@@ -11,7 +11,7 @@ struct TestStepView: View {
 	@Bindable var audioManager: AudioManager
 	@Binding var enableTranslation: Bool
 	@Binding var selectedLanguage: String
-	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
+	@AppStorage(ShortcutDefaults.dictationKey) private var globalShortcut = ShortcutDefaults.dictation
 
 	var body: some View {
 		VStack(spacing: 24) {

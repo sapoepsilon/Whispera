@@ -13,7 +13,7 @@ struct OnboardingView: View {
 	@State private var showingShortcutCapture = false
 
 	@AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
+	@AppStorage(ShortcutDefaults.dictationKey) private var globalShortcut = ShortcutDefaults.dictation
 	@AppStorage("selectedModel") private var storedModel = ""
 	@AppStorage("launchAtStartup") private var storedLaunchAtLogin = false
 	@AppStorage("enableTranslation") private var enableTranslation = false

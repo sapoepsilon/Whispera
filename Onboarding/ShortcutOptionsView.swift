@@ -11,6 +11,7 @@ struct ShortcutOptionsView: View {
 	@Binding var showingOptions: Bool
 	@State private var isRecordingShortcut = false
 	@State private var eventMonitor: Any?
+	@State private var rejectedKey = false
 
 	private let shortcutOptions = [
 		"⌥⌘R", "⌃⌘R", "⇧⌘R",
@@ -59,10 +60,16 @@ struct ShortcutOptionsView: View {
 				}
 
 				if isRecordingShortcut {
-					Text("Press Command, Option, Control or Shift + another key")
-						.font(.caption)
-						.foregroundColor(.blue)
-						.multilineTextAlignment(.center)
+					Text(
+						rejectedKey
+							? LocalizedStringKey(
+								"That key can't be used. Press Command, Option, Control or Shift + another key"
+							)
+							: LocalizedStringKey("Press Command, Option, Control or Shift + another key")
+					)
+					.font(.caption)
+					.foregroundColor(rejectedKey ? .orange : .blue)
+					.multilineTextAlignment(.center)
 				}
 			}
 			.padding()
@@ -109,14 +116,20 @@ struct ShortcutOptionsView: View {
 
 	private func startRecording() {
 		isRecordingShortcut = true
+		rejectedKey = false
 
 		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
 			if self.isRecordingShortcut {
-				let shortcut = self.formatKeyEvent(event)
-				if !shortcut.isEmpty {
+				// Same formatter as Settings, so ⌥Space and F-keys are saved as names the
+				// shortcut parser reads back instead of raw characters
+				if let shortcut = DictationShortcutFormatter.format(
+					keyCode: event.keyCode, modifiers: event.modifierFlags)
+				{
 					self.customShortcut = shortcut
 					self.stopRecording()
 					self.showingOptions = false
+				} else {
+					self.rejectedKey = true
 				}
 				return nil
 			}
@@ -130,21 +143,5 @@ struct ShortcutOptionsView: View {
 			NSEvent.removeMonitor(monitor)
 			eventMonitor = nil
 		}
-	}
-
-	private func formatKeyEvent(_ event: NSEvent) -> String {
-		var parts: [String] = []
-		let flags = event.modifierFlags
-
-		if flags.contains(.command) { parts.append("⌘") }
-		if flags.contains(.option) { parts.append("⌥") }
-		if flags.contains(.control) { parts.append("⌃") }
-		if flags.contains(.shift) { parts.append("⇧") }
-
-		if let characters = event.charactersIgnoringModifiers?.uppercased() {
-			parts.append(characters)
-		}
-
-		return flags.intersection([.command, .option, .control, .shift]).isEmpty ? "" : parts.joined()
 	}
 }

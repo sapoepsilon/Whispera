@@ -4,7 +4,7 @@ import SwiftUI
 struct MenuBarView: View {
 	@Bindable var audioManager: AudioManager
 	var whisperKit = WhisperKitTranscriber.shared
-	@AppStorage("globalShortcut") private var shortcutKey = "⌥⌘R"
+	@AppStorage(ShortcutDefaults.dictationKey) private var shortcutKey = ShortcutDefaults.dictation
 	@AppStorage("globalCommandShortcut") private var commandShortcutKey = "⌘⌥C"
 	@AppStorage("enableTranslation") private var enableTranslation = false
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
@@ -93,6 +93,8 @@ struct MenuBarView: View {
 					}
 
 					SecureInputWarningBanner()
+
+					AppNoticeBanners()
 
 					// Status card
 					StatusCardView(

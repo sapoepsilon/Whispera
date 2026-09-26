@@ -51,8 +51,8 @@ final class PostProcessShortcutMonitor {
 	static func conflictingShortcut(for shortcut: String, defaults: UserDefaults = .standard) -> String? {
 		guard let combo = ShortcutCombo(shortcut) else { return nil }
 		let others = [
-			defaults.string(forKey: "globalShortcut") ?? "⌥⌘R",
-			defaults.string(forKey: "fileSelectionShortcut") ?? "⌃F",
+			ShortcutDefaults.dictation(in: defaults),
+			ShortcutDefaults.fileSelection(in: defaults),
 		]
 		if let clash = others.first(where: { ShortcutCombo($0) == combo }) {
 			return clash

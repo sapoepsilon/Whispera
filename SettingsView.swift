@@ -133,7 +133,7 @@ struct InfoBox<Content: View>: View {
 }
 
 struct SettingsView: View {
-	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
+	@AppStorage(ShortcutDefaults.dictationKey) private var globalShortcut = ShortcutDefaults.dictation
 	@AppStorage("selectedModel") private var selectedModel = ""
 	@AppStorage("autoDownloadModel") private var autoDownloadModel = true
 	@AppStorage("soundFeedback") private var soundFeedback = true
@@ -168,7 +168,7 @@ struct SettingsView: View {
 	@AppStorage("liveTranscriptionFollowCaret") private var liveTranscriptionFollowCaret = true
 
 	// MARK: - File Transcription Settings
-	@AppStorage("fileSelectionShortcut") private var fileSelectionShortcut = "⌃F"
+	@AppStorage(ShortcutDefaults.fileSelectionKey) private var fileSelectionShortcut = ShortcutDefaults.fileSelection
 	@AppStorage("autoDeleteDownloadedFiles") private var autoDeleteDownloadedFiles = true
 	@AppStorage("transcriptionOutput") private var transcriptionOutput = "both"
 	@AppStorage("transcriptionFileLocation") private var transcriptionFileLocation = "Desktop"
@@ -1402,60 +1402,7 @@ struct SettingsView: View {
 	}
 
 	private func formatKeyEvent(_ event: NSEvent) -> String {
-		var parts: [String] = []
-		let flags = event.modifierFlags
-
-		if flags.contains(.command) { parts.append("⌘") }
-		if flags.contains(.option) { parts.append("⌥") }
-		if flags.contains(.control) { parts.append("⌃") }
-		if flags.contains(.shift) { parts.append("⇧") }
-
-		// Handle special keys
-		switch event.keyCode {
-		// Function keys
-		case 122: parts.append("F1")
-		case 120: parts.append("F2")
-		case 99: parts.append("F3")
-		case 118: parts.append("F4")
-		case 96: parts.append("F5")
-		case 97: parts.append("F6")
-		case 98: parts.append("F7")
-		case 100: parts.append("F8")
-		case 101: parts.append("F9")
-		case 109: parts.append("F10")
-		case 103: parts.append("F11")
-		case 111: parts.append("F12")
-		case 105: parts.append("F13")
-		case 107: parts.append("F14")
-		case 113: parts.append("F15")
-
-		// Special keys
-		case 49: parts.append("Space")
-		case 36: parts.append("Return")
-		case 48: parts.append("Tab")
-		case 51: parts.append("Delete")
-		case 53: parts.append("Escape")
-		case 126: parts.append("↑")
-		case 125: parts.append("↓")
-		case 123: parts.append("←")
-		case 124: parts.append("→")
-		case 63: parts.append("🌐")  // Globe/Fn key
-
-		// Regular characters
-		default:
-			if let characters = event.charactersIgnoringModifiers?.uppercased() {
-				parts.append(characters)
-			}
-		}
-
-		// Allow function keys and Globe key without modifiers, but require modifiers for regular keys
-		let requiresModifier = event.keyCode != 63 && !(event.keyCode >= 96 && event.keyCode <= 122)
-
-		if requiresModifier && flags.intersection([.command, .option, .control, .shift]).isEmpty {
-			return ""
-		}
-
-		return parts.joined()
+		DictationShortcutFormatter.format(keyCode: event.keyCode, modifiers: event.modifierFlags) ?? ""
 	}
 
 	private func switchToModel(_ modelName: String) async {

@@ -63,8 +63,8 @@ struct CancelShortcutRecorder: View {
 	private func save(_ binding: CancelShortcutBinding) {
 		let defaults = UserDefaults.standard
 		let taken = [
-			defaults.string(forKey: "globalShortcut") ?? "⌃A",
-			defaults.string(forKey: "fileSelectionShortcut") ?? "⌃F",
+			ShortcutDefaults.dictation(in: defaults),
+			ShortcutDefaults.fileSelection(in: defaults),
 			PostProcessingSettings().shortcut,
 		]
 		switch binding.rejection(taken: taken) {
