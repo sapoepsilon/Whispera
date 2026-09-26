@@ -67,12 +67,14 @@ final class AudioManager: NSObject {
 	}
 
 	var currentState: AudioState {
+		// A new recording can start while the previous one is still transcribing;
+		// the live capture is what the user is looking at.
 		if isMicrophoneInitializing {
 			return .initializing
-		} else if isTranscribing {
-			return .transcribing
 		} else if isRecording {
 			return .recording
+		} else if isTranscribing {
+			return .transcribing
 		} else {
 			return .idle
 		}
@@ -107,25 +109,19 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	private var audioFileURL: URL?
 	@ObservationIgnored
-	private var audioBuffer: [Float] = []
-	@ObservationIgnored
-	private let maxBufferSize = 16000 * 1800
+	private let captureBuffer = StreamCaptureBuffer()
 	@ObservationIgnored
 	private var meteringTimer: Timer?
 	@ObservationIgnored
 	private var deviceActivationTask: Task<Void, Never>?
 	@ObservationIgnored
-	private var sessionID = 0
+	private var ledger = DictationSessionLedger()
 	@ObservationIgnored
 	private var sessionsHoldingModel: Set<Int> = []
 	@ObservationIgnored
 	private var activeCapturePath: CapturePath?
 	@ObservationIgnored
-	private var transcriptionTask: Task<Void, Never>?
-	@ObservationIgnored
-	private var transcribingSession: Int?
-	@ObservationIgnored
-	private var cancelledSessions: Set<Int> = []
+	private var transcriptionTasks: [Int: Task<Void, Never>] = [:]
 	@ObservationIgnored
 	private var pendingStopAfterStart = false
 	@ObservationIgnored
@@ -135,8 +131,6 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	private let lazyStreamClose = DeferredAction()
 	@ObservationIgnored
-	private var isCapturingStream = false
-	@ObservationIgnored
 	private var openStreamDeviceID: AudioDeviceID?
 	@ObservationIgnored
 	private var warmStreamTask: Task<Void, Never>?
@@ -145,13 +139,13 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	private var lastStreamPolicySnapshot: String?
 	@ObservationIgnored
-	var postProcessCurrentSession = false
+	private var micStreamSuspension = MicStreamSuspension()
+	@ObservationIgnored
+	private var powerStateObservers: [(NotificationCenter, NSObjectProtocol)] = []
 	@ObservationIgnored
 	private var outputMuteTask: Task<Void, Never>?
 	@ObservationIgnored
 	private var deviceLostObserver: NSObjectProtocol?
-	@ObservationIgnored
-	private var inputChannelSelection = InputChannelSelection.mixAllChannels
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -168,6 +162,7 @@ final class AudioManager: NSObject {
 			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
 		}
 		observeMicStreamPolicy()
+		observePowerState()
 		deviceLostObserver = NotificationCenter.default.addObserver(
 			forName: .activeInputDeviceLost, object: nil, queue: .main
 		) { [weak self] notification in
@@ -204,12 +199,13 @@ final class AudioManager: NSObject {
 		let postProcessing = PostProcessingSettings()
 		// Post-processing rewrites the whole transcript, so that session must run in text mode.
 		let forceTextMode = postProcess && postProcessing.isEnabled
-		currentRecordingMode =
+		let mode: RecordingMode =
 			enableStreaming && whisperKitTranscriber.supportsLiveTranscription && !forceTextMode
 			? .liveTranscription : .text
-		postProcessCurrentSession = postProcessing.shouldPostProcess(
-			requestedByShortcut: postProcess, isLiveMode: currentRecordingMode == .liveTranscription)
-		startRecording()
+		currentRecordingMode = mode
+		let shouldPostProcess = postProcessing.shouldPostProcess(
+			requestedByShortcut: postProcess, isLiveMode: mode == .liveTranscription)
+		startRecording(mode: mode, postProcess: shouldPostProcess)
 	}
 
 	/// Stops the active recording and transcribes it. A stop that arrives while the
@@ -251,21 +247,26 @@ final class AudioManager: NSObject {
 		requestStop()
 	}
 
-	/// Discards the current recording: no transcription, no paste. A transcription
-	/// that is already running is abandoned and its result dropped.
+	/// Discards the current recording: no transcription, no paste. With no recording
+	/// running, transcriptions still in flight (including VAD) are abandoned instead.
 	func cancelRecording() {
 		let capturing = isRecording || isMicrophoneInitializing
-		guard capturing || isTranscribing else { return }
+		guard capturing || ledger.isTranscribing else { return }
 
-		pendingStopAfterStart = false
-		tailStop.cancel()
-		isFinalizingStop = false
-		postProcessCurrentSession = false
-		deviceActivationTask?.cancel()
-		deviceActivationTask = nil
+		// Only the capture is cancelled while one runs, so an earlier dictation that is
+		// still transcribing is not thrown away with it.
+		let cancelled = capturing && ledger.capturing == nil ? [] : ledger.cancel()
+		for session in cancelled {
+			transcriptionTasks.removeValue(forKey: session.id)?.cancel()
+			releaseModel(for: session.id)
+		}
 
 		if capturing {
-			cancelledSessions.insert(sessionID)
+			pendingStopAfterStart = false
+			tailStop.cancel()
+			isFinalizingStop = false
+			deviceActivationTask?.cancel()
+			deviceActivationTask = nil
 			switch activeCapturePath {
 			case .live:
 				whisperKitTranscriber.cancelLiveStream()
@@ -278,8 +279,7 @@ final class AudioManager: NSObject {
 				}
 				audioFileURL = nil
 			case .stream:
-				isCapturingStream = false
-				audioBuffer.removeAll()
+				captureBuffer.discard()
 				releaseStreamingEngine()
 			case nil:
 				break
@@ -288,24 +288,15 @@ final class AudioManager: NSObject {
 			restoreSystemOutput()
 			deviceManager.restoreSystemDefault()
 			deviceManager.endRecordingSession()
-			releaseModel(for: sessionID)
 			playFeedbackSound(start: false)
+			isMicrophoneInitializing = false
+			isRecording = false
+			timer.stop()
+			levelMonitor.reset()
+			scheduleTimerReset()
 		}
 
-		if let transcribingSession {
-			cancelledSessions.insert(transcribingSession)
-			transcriptionTask?.cancel()
-			transcriptionTask = nil
-			releaseModel(for: transcribingSession)
-			self.transcribingSession = nil
-		}
-
-		isMicrophoneInitializing = false
-		isRecording = false
-		isTranscribing = false
-		timer.stop()
-		levelMonitor.reset()
-		scheduleTimerReset()
+		syncTranscribingState()
 		AppLogger.shared.audioManager.info("Recording cancelled; audio discarded")
 	}
 
@@ -320,7 +311,11 @@ final class AudioManager: NSObject {
 			}
 			return
 		}
-		reactivateInputDuringRecording()
+		if isStartingCapture {
+			restartCaptureStartup()
+		} else {
+			reactivateInputDuringRecording()
+		}
 	}
 
 	/// Keeps the recording alive on the system default input when its microphone
@@ -332,47 +327,95 @@ final class AudioManager: NSObject {
 		deviceActivationTask = nil
 		deviceManager.beginFallbackToSystemDefault()
 		inputNotice = "\(name) disconnected. Using the system default microphone."
-		reactivateInputDuringRecording()
+		if isStartingCapture {
+			restartCaptureStartup()
+		} else {
+			reactivateInputDuringRecording()
+		}
+	}
+
+	/// The recording was requested but its microphone is not capturing yet. Live mode
+	/// is excluded because it reports recording from the start.
+	private var isStartingCapture: Bool {
+		isMicrophoneInitializing && !isRecording && currentRecordingMode != .liveTranscription
+	}
+
+	/// A device change during startup restarts startup on the new device instead of
+	/// cancelling it, so the session, its model hold and any pending stop survive.
+	private func restartCaptureStartup() {
+		AppLogger.shared.audioManager.info("Input changed during microphone startup; restarting on the new device")
+		switch activeCapturePath {
+		case .stream:
+			shutdownStreamingEngine()
+			startStreamingRecording()
+		case .file:
+			startFileBasedRecording()
+		case .live, nil:
+			reactivateInputDuringRecording()
+		}
+	}
+
+	/// Stop paths call this so a device activation still in flight can neither reopen
+	/// the microphone nor leave the session looking like it is starting.
+	private func abortDeviceActivation() {
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+		isMicrophoneInitializing = false
 	}
 
 	private func reactivateInputDuringRecording() {
 		guard isRecording || isMicrophoneInitializing else { return }
 
 		isMicrophoneInitializing = true
+		let session = ledger.capturing?.id
 		deviceActivationTask = Task {
 			if currentRecordingMode == .liveTranscription {
 				await whisperKitTranscriber.switchLiveStreamDevice()
-				guard !Task.isCancelled else { return }
+				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				isMicrophoneInitializing = false
-			} else if useStreamingTranscription {
-				let savedBuffer = audioBuffer
+			} else if activeCapturePath == .stream {
+				// Samples captured so far stay in the buffer across the switch
 				shutdownStreamingEngine()
 
 				do {
 					await deviceManager.activateSelectedDevice()
-					guard !Task.isCancelled else { return }
+					guard !Task.isCancelled, isCurrentCapture(session) else { return }
 					try await openStreamingEngine()
-					audioBuffer = savedBuffer
-					isCapturingStream = true
+					guard !Task.isCancelled, isCurrentCapture(session) else {
+						shutdownStreamingEngine()
+						return
+					}
+					captureBuffer.setCapturing(true)
 					isMicrophoneInitializing = false
 					AppLogger.shared.audioManager.info("Switched input device while recording")
 				} catch {
-					guard !Task.isCancelled else { return }
+					guard !Task.isCancelled, isCurrentCapture(session) else { return }
 					isMicrophoneInitializing = false
 					AppLogger.shared.audioManager.error("Failed to switch device: \(error)")
 					isRecording = false
 					timer.stop()
-					releaseModel(for: sessionID)
+					captureBuffer.discard()
+					activeCapturePath = nil
+					if let dropped = ledger.dropCapture() {
+						releaseModel(for: dropped.id)
+					}
 					restoreSystemOutput()
+					deviceManager.restoreSystemDefault()
+					deviceManager.endRecordingSession()
 				}
 			} else {
 				deviceManager.restoreSystemDefault()
 				await deviceManager.activateSelectedDevice()
-				guard !Task.isCancelled else { return }
+				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				isMicrophoneInitializing = false
 			}
 			deviceActivationTask = nil
 		}
+	}
+
+	private func isCurrentCapture(_ session: Int?) -> Bool {
+		guard let session else { return false }
+		return ledger.isCapturing(session) && isSessionActive
 	}
 
 	// MARK: - Deprecated Compatibility
@@ -393,18 +436,18 @@ final class AudioManager: NSObject {
 // MARK: - Recording Control
 
 extension AudioManager {
-	fileprivate func startRecording() {
+	fileprivate func startRecording(mode: RecordingMode, postProcess: Bool) {
 		detectAndSetKeyboardLanguage()
 		inputNotice = nil
 
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
 		case .authorized:
-			beginRecording()
+			beginRecording(mode: mode, postProcess: postProcess)
 		case .notDetermined:
 			AVCaptureDevice.requestAccess(for: .audio) { granted in
 				DispatchQueue.main.async {
 					if granted {
-						self.beginRecording()
+						self.beginRecording(mode: mode, postProcess: postProcess)
 					} else {
 						self.showMicrophonePermissionAlert()
 					}
@@ -416,12 +459,18 @@ extension AudioManager {
 			break
 		}
 	}
-	fileprivate func beginRecording() {
-		sessionID += 1
-		if currentRecordingMode != .liveTranscription {
-			holdModel(for: sessionID)
+	fileprivate func beginRecording(mode: RecordingMode, postProcess: Bool) {
+		guard !isSessionActive else { return }
+		currentRecordingMode = mode
+		let (session, abandoned) = ledger.beginCapture(mode: mode, postProcess: postProcess)
+		if let abandoned {
+			AppLogger.shared.audioManager.error("Releasing session \(abandoned.id) whose capture never finished")
+			releaseModel(for: abandoned.id)
 		}
-		if currentRecordingMode == .liveTranscription {
+		if mode != .liveTranscription {
+			holdModel(for: session.id)
+		}
+		if mode == .liveTranscription {
 			startLiveTranscription()
 		} else if useStreamingTranscription {
 			startStreamingRecording()
@@ -446,10 +495,11 @@ extension AudioManager {
 	fileprivate func startFileBasedRecording() {
 		activeCapturePath = .file
 		isMicrophoneInitializing = true
+		let session = ledger.capturing?.id
 
 		deviceActivationTask = Task {
 			await deviceManager.activateSelectedDevice()
-			guard !Task.isCancelled else { return }
+			guard !Task.isCancelled, isCurrentCapture(session) else { return }
 
 			let appSupportPath = getApplicationSupportDirectory()
 			let audioFilename =
@@ -486,12 +536,18 @@ extension AudioManager {
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start recording: \(error)")
 				pendingStopAfterStart = false
-				releaseModel(for: sessionID)
+				activeCapturePath = nil
+				if let dropped = ledger.dropCapture() {
+					releaseModel(for: dropped.id)
+				}
+				deviceManager.restoreSystemDefault()
+				deviceManager.endRecordingSession()
 				showRecordingErrorAlert(error)
 			}
 		}
 	}
 	fileprivate func stopFileBasedRecording() {
+		abortDeviceActivation()
 		stopMeteringTimer()
 		audioRecorder?.stop()
 		audioRecorder = nil
@@ -503,15 +559,16 @@ extension AudioManager {
 		deviceManager.endRecordingSession()
 
 		activeCapturePath = nil
-		let session = sessionID
-		if let audioFileURL {
-			transcriptionTask = Task {
-				await transcribeAudio(
-					fileURL: audioFileURL, enableTranslation: enableTranslation, session: session)
+		if let audioFileURL, let session = ledger.finishCapture() {
+			let translate = enableTranslation
+			startTranscription(session) { manager in
+				await manager.transcribeAudio(
+					fileURL: audioFileURL, enableTranslation: translate, session: session)
 			}
-		} else {
-			releaseModel(for: session)
+		} else if let dropped = ledger.dropCapture() {
+			releaseModel(for: dropped.id)
 		}
+		audioFileURL = nil
 
 		scheduleTimerReset()
 	}
@@ -541,28 +598,29 @@ extension AudioManager {
 	fileprivate func startStreamingRecording() {
 		AppLogger.shared.audioManager.info("Starting streaming recording")
 		activeCapturePath = .stream
-		audioBuffer.removeAll()
+		captureBuffer.discard()
 		lazyStreamClose.cancel()
 		warmStreamTask?.cancel()
 		warmStreamTask = nil
-		inputChannelSelection = InputChannelSelection.stored(in: .standard)
+		let channelSelection = InputChannelSelection.stored(in: .standard)
 
-		if resumeOpenStream() {
+		if resumeOpenStream(channelSelection: channelSelection) {
 			return
 		}
 
 		isMicrophoneInitializing = true
+		let session = ledger.capturing?.id
 		deviceActivationTask = Task {
 			do {
 				await deviceManager.activateSelectedDevice()
-				guard !Task.isCancelled else { return }
+				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				try await openStreamingEngine()
-				guard !Task.isCancelled else {
+				guard !Task.isCancelled, isCurrentCapture(session) else {
 					shutdownStreamingEngine()
 					return
 				}
 
-				isCapturingStream = true
+				captureBuffer.beginCapture(channelSelection: channelSelection)
 				isMicrophoneInitializing = false
 				isRecording = true
 				timer.start()
@@ -571,6 +629,7 @@ extension AudioManager {
 				applyPendingStopIfNeeded()
 
 			} catch {
+				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start streaming: \(error)")
 				shutdownStreamingEngine()
@@ -581,14 +640,12 @@ extension AudioManager {
 	}
 
 	fileprivate func stopStreamingRecording() {
-		isCapturingStream = false
+		abortDeviceActivation()
+		let capturedAudio = captureBuffer.finishCapture()
 		isRecording = false
 		timer.stop()
 		restoreSystemOutput()
 		playFeedbackSound(start: false)
-
-		let capturedAudio = audioBuffer
-		audioBuffer.removeAll()
 		levelMonitor.reset()
 
 		releaseStreamingEngine()
@@ -598,71 +655,20 @@ extension AudioManager {
 		AppLogger.shared.audioManager.info("Streaming recording stopped")
 
 		activeCapturePath = nil
-		let session = sessionID
-		if !capturedAudio.isEmpty {
-			transcriptionTask = Task {
-				await transcribeAudioBuffer(
-					audioArray: capturedAudio, enableTranslation: enableTranslation, session: session)
+		if !capturedAudio.isEmpty, let session = ledger.finishCapture() {
+			let translate = enableTranslation
+			startTranscription(session) { manager in
+				await manager.transcribeAudioBuffer(
+					audioArray: capturedAudio, enableTranslation: translate, session: session)
 			}
 		} else {
 			AppLogger.shared.audioManager.info("No audio captured")
-			releaseModel(for: session)
+			if let dropped = ledger.dropCapture() {
+				releaseModel(for: dropped.id)
+			}
 		}
 
 		scheduleTimerReset()
-	}
-	fileprivate func processAudioBuffer(_ inputBuffer: AVAudioPCMBuffer, originalFormat inputFormat: AVAudioFormat) {
-		// The stream can stay open between recordings; drop audio nobody asked for.
-		guard isCapturingStream else { return }
-		let buffer = InputChannelSelection.isolate(inputBuffer, selected: inputChannelSelection)
-		let originalFormat = buffer === inputBuffer ? inputFormat : buffer.format
-
-		guard let targetFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1) else {
-			return
-		}
-
-		if originalFormat != targetFormat {
-			guard let converter = AVAudioConverter(from: originalFormat, to: targetFormat) else {
-				return
-			}
-
-			let ratio = targetFormat.sampleRate / originalFormat.sampleRate
-			let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
-
-			guard
-				let convertedBuffer = AVAudioPCMBuffer(
-					pcmFormat: targetFormat, frameCapacity: outputFrameCount)
-			else {
-				return
-			}
-
-			var error: NSError?
-			converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
-				outStatus.pointee = .haveData
-				return buffer
-			}
-
-			if error == nil {
-				extractFloatData(from: convertedBuffer)
-			}
-		} else {
-			extractFloatData(from: buffer)
-		}
-	}
-	fileprivate func extractFloatData(from buffer: AVAudioPCMBuffer) {
-		guard let channelData = buffer.floatChannelData?[0] else { return }
-		let frameCount = Int(buffer.frameLength)
-		let audioData = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
-
-		audioBuffer.append(contentsOf: audioData)
-		if audioBuffer.count > maxBufferSize {
-			let excessCount = audioBuffer.count - maxBufferSize
-			audioBuffer.removeFirst(excessCount)
-		}
-
-		Task { @MainActor in
-			levelMonitor.update(from: audioData)
-		}
 	}
 }
 
@@ -671,8 +677,12 @@ extension AudioManager {
 	fileprivate func openStreamingEngine() async throws {
 		let deviceID = deviceManager.resolveActiveDeviceID()
 		_ = try await engineController.setup(deviceID: deviceID)
+		let captureBuffer = captureBuffer
 		try engineController.installTap { [weak self] buffer, format in
-			self?.processAudioBuffer(buffer, originalFormat: format)
+			guard let samples = captureBuffer.ingest(buffer, format: format) else { return }
+			Task { @MainActor [weak self] in
+				self?.levelMonitor.update(from: samples)
+			}
 		}
 		openStreamDeviceID = deviceID
 		engineController.onRouteChange = { [weak self] in
@@ -682,7 +692,7 @@ extension AudioManager {
 
 	/// Starts capturing on a stream left open by the lazy-close or always-on policy,
 	/// skipping engine and device setup entirely.
-	fileprivate func resumeOpenStream() -> Bool {
+	fileprivate func resumeOpenStream(channelSelection: Int) -> Bool {
 		guard engineController.isRunning else { return false }
 		guard engineController.isEngineRunning,
 			openStreamDeviceID == deviceManager.resolveActiveDeviceID()
@@ -690,7 +700,7 @@ extension AudioManager {
 			shutdownStreamingEngine()
 			return false
 		}
-		isCapturingStream = true
+		captureBuffer.beginCapture(channelSelection: channelSelection)
 		isRecording = true
 		timer.start()
 		playFeedbackSound(start: true)
@@ -701,6 +711,10 @@ extension AudioManager {
 
 	fileprivate func releaseStreamingEngine() {
 		let settings = RecordingControlSettings()
+		guard !micStreamSuspension.isSuspended else {
+			shutdownStreamingEngine()
+			return
+		}
 		switch settings.micStreamPolicy {
 		case .onDemand:
 			shutdownStreamingEngine()
@@ -722,7 +736,7 @@ extension AudioManager {
 		lazyStreamClose.cancel()
 		warmStreamTask?.cancel()
 		warmStreamTask = nil
-		isCapturingStream = false
+		captureBuffer.setCapturing(false)
 		engineController.onRouteChange = nil
 		engineController.cleanup()
 		openStreamDeviceID = nil
@@ -739,7 +753,7 @@ extension AudioManager {
 		guard !isSessionActive else { return }
 		switch RecordingControlSettings().micStreamPolicy {
 		case .alwaysOn:
-			guard canKeepStreamOpen else {
+			guard canKeepStreamOpen, !micStreamSuspension.isSuspended else {
 				if engineController.isRunning { shutdownStreamingEngine() }
 				return
 			}
@@ -803,6 +817,73 @@ extension AudioManager {
 		}
 	}
 
+	/// Kept-open streams hold an IO power assertion that blocks idle sleep, so they
+	/// close whenever the Mac sleeps, locks, switches user or enters Low Power Mode.
+	fileprivate func observePowerState() {
+		let workspace = NSWorkspace.shared.notificationCenter
+		let pairs: [(Notification.Name, MicStreamSuspension.Reason, Bool)] = [
+			(NSWorkspace.willSleepNotification, .systemSleep, true),
+			(NSWorkspace.screensDidSleepNotification, .displaySleep, true),
+			(NSWorkspace.screensDidWakeNotification, .displaySleep, false),
+			(NSWorkspace.sessionDidResignActiveNotification, .sessionInactive, true),
+			(NSWorkspace.sessionDidBecomeActiveNotification, .sessionInactive, false),
+		]
+		for (name, reason, begins) in pairs {
+			let token = workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+				MainActor.assumeIsolated {
+					self?.updateStreamSuspension(reason, active: begins)
+				}
+			}
+			powerStateObservers.append((workspace, token))
+		}
+		let wake = workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) {
+			[weak self] _ in
+			MainActor.assumeIsolated {
+				guard let self, self.micStreamSuspension.endAfterWake() else { return }
+				self.applyMicStreamPolicy()
+			}
+		}
+		powerStateObservers.append((workspace, wake))
+
+		let distributed = DistributedNotificationCenter.default()
+		for (name, begins) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
+			let token = distributed.addObserver(forName: Notification.Name(name), object: nil, queue: .main) {
+				[weak self] _ in
+				MainActor.assumeIsolated {
+					self?.updateStreamSuspension(.screenLocked, active: begins)
+				}
+			}
+			powerStateObservers.append((distributed, token))
+		}
+
+		let power = NotificationCenter.default.addObserver(
+			forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main
+		) { [weak self] _ in
+			MainActor.assumeIsolated {
+				self?.updateStreamSuspension(
+					.lowPowerMode, active: ProcessInfo.processInfo.isLowPowerModeEnabled)
+			}
+		}
+		powerStateObservers.append((NotificationCenter.default, power))
+		if ProcessInfo.processInfo.isLowPowerModeEnabled {
+			micStreamSuspension.begin(.lowPowerMode)
+		}
+	}
+
+	private func updateStreamSuspension(_ reason: MicStreamSuspension.Reason, active: Bool) {
+		if active {
+			guard micStreamSuspension.begin(reason) else { return }
+			AppLogger.shared.audioManager.info("Suspending kept-open microphone stream: \(reason.rawValue)")
+			// An active recording keeps its stream; releaseStreamingEngine closes it on stop
+			guard !isSessionActive, engineController.isRunning else { return }
+			shutdownStreamingEngine()
+		} else {
+			guard micStreamSuspension.end(reason) else { return }
+			AppLogger.shared.audioManager.info("Microphone stream suspension lifted")
+			applyMicStreamPolicy()
+		}
+	}
+
 	private func streamPolicySnapshot() -> String {
 		let settings = RecordingControlSettings()
 		return "\(settings.micStreamPolicy.rawValue)|\(enableStreaming)|\(useStreamingTranscription)"
@@ -833,6 +914,8 @@ extension AudioManager {
 				isRecording = false
 				timer.stop()
 				restoreSystemOutput()
+				activeCapturePath = nil
+				ledger.dropCapture()
 				AppLogger.shared.audioManager.error("Failed to start live transcription: \(error)")
 			}
 		}
@@ -847,6 +930,7 @@ extension AudioManager {
 		playFeedbackSound(start: false)
 
 		activeCapturePath = nil
+		ledger.dropCapture()
 		whisperKitTranscriber.stopLiveStream()
 		deviceManager.endRecordingSession()
 		levelMonitor.reset()
@@ -889,20 +973,45 @@ extension AudioManager {
 		}
 	}
 
-	fileprivate func transcribeAudioBuffer(audioArray: [Float], enableTranslation: Bool, session: Int)
-		async
-	{
-		guard let audioArray = await applyVoiceActivityDetection(audioArray) else {
-			releaseModel(for: session)
-			return
+	/// Registers the transcription so cancel can reach it from the moment capture stops.
+	fileprivate func startTranscription(
+		_ session: DictationSession, _ work: @escaping @MainActor (AudioManager) async -> Void
+	) {
+		syncTranscribingState()
+		transcriptionTasks[session.id] = Task { [weak self] in
+			guard let self else { return }
+			await work(self)
+			self.finishTranscription(session.id)
 		}
+	}
+
+	fileprivate func finishTranscription(_ id: Int) {
+		ledger.completeTranscription(id)
+		transcriptionTasks[id] = nil
+		releaseModel(for: id)
+		syncTranscribingState()
+	}
+
+	fileprivate func syncTranscribingState() {
+		let transcribing = ledger.isTranscribing
+		if isTranscribing != transcribing {
+			isTranscribing = transcribing
+		}
+	}
+
+	fileprivate func transcribeAudioBuffer(
+		audioArray: [Float], enableTranslation: Bool, session: DictationSession
+	) async {
+		guard let audioArray = await applyVoiceActivityDetection(audioArray) else { return }
 		await runTranscription(session: session, historyAudio: .samples(audioArray, sampleRate: 16000)) {
 			try await self.whisperKitTranscriber.transcribeAudioArray(
 				audioArray, enableTranslation: enableTranslation)
 		}
 	}
 
-	fileprivate func transcribeAudio(fileURL: URL, enableTranslation: Bool, session: Int) async {
+	fileprivate func transcribeAudio(fileURL: URL, enableTranslation: Bool, session: DictationSession)
+		async
+	{
 		if VoiceActivitySettings(defaults: .standard).enabled {
 			let path = fileURL.path
 			let samples = await Task.detached(priority: .userInitiated) {
@@ -926,44 +1035,40 @@ extension AudioManager {
 	}
 
 	private func runTranscription(
-		session: Int, historyAudio: TranscriptionHistoryAudio, _ work: () async throws -> String
+		session: DictationSession, historyAudio: TranscriptionHistoryAudio,
+		_ work: () async throws -> String
 	) async {
-		defer {
-			releaseModel(for: session)
-			cancelledSessions.remove(session)
-			if transcribingSession == session {
-				transcribingSession = nil
-				transcriptionTask = nil
-			}
+		let id = session.id
+		guard !ledger.isCancelled(id), !Task.isCancelled else {
+			AppLogger.shared.audioManager.info("Skipping transcription of a cancelled recording")
+			return
 		}
-		transcribingSession = session
-		isTranscribing = true
 		transcriptionError = nil
 
 		do {
 			let rawTranscription = try await work()
-			guard !cancelledSessions.contains(session) else {
+			guard !ledger.isCancelled(id) else {
 				AppLogger.shared.audioManager.info("Discarding transcription of a cancelled recording")
 				return
 			}
-			let transcription = await postProcessIfRequested(rawTranscription)
-			guard !cancelledSessions.contains(session) else {
+			let transcription = await postProcessIfRequested(rawTranscription, requested: session.postProcess)
+			guard !ledger.isCancelled(id) else {
 				AppLogger.shared.audioManager.info("Discarding post-processed text of a cancelled recording")
 				return
 			}
 			lastTranscription = transcription
-			isTranscribing = false
+			finishTranscription(id)
 
-			if currentRecordingMode == .text {
+			if session.mode == .text {
 				pasteToFocusedApp(transcription)
 			}
 			// After the paste so saving the recording never delays the text
 			recordHistory(text: transcription, audio: historyAudio)
 		} catch {
-			guard !cancelledSessions.contains(session) else { return }
+			guard !ledger.isCancelled(id) else { return }
 			transcriptionError = error.localizedDescription
 			lastTranscription = "Transcription failed: \(error.localizedDescription)"
-			isTranscribing = false
+			finishTranscription(id)
 			recordHistory(text: "", audio: historyAudio, errorMessage: error.localizedDescription)
 		}
 	}
