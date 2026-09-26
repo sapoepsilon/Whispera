@@ -14,25 +14,64 @@ extension KeyEventPosting {
 	var canPostEvents: Bool { true }
 }
 
+/// Marks the keyboard events Whispera posts. They reach the frontmost app, so Whispera's own
+/// shortcut monitors see them too, and a pasted segment would otherwise read as "another key
+/// pressed while the dictation key is held" and cancel the recording in progress.
+enum SyntheticKeyEvent {
+	/// "WHSP"
+	static let marker: Int64 = 0x5748_5350
+
+	static func tag(_ event: CGEvent) {
+		event.setIntegerValueField(.eventSourceUserData, value: marker)
+	}
+
+	static func isSelfPosted(_ event: CGEvent) -> Bool {
+		if event.getIntegerValueField(.eventSourceUserData) == marker { return true }
+		let pid = event.getIntegerValueField(.eventSourceUnixProcessID)
+		return pid != 0 && pid == Int64(getpid())
+	}
+
+	static func isSelfPosted(_ event: NSEvent) -> Bool {
+		guard let cgEvent = event.cgEvent else { return false }
+		return isSelfPosted(cgEvent)
+	}
+}
+
 struct CGKeyEventPoster: KeyEventPosting {
 	var canPostEvents: Bool { AXIsProcessTrusted() }
+	/// Modifiers the user is physically holding. The session state would also count modifiers
+	/// Whispera itself left set, which are exactly the ones that need releasing.
+	var physicallyHeldFlags: () -> CGEventFlags = { CGEventSource.flagsState(.hidSystemState) }
+	var send: (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }
 
 	func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
+		keyEvents(keyCode, flags: flags).forEach(send)
+	}
+
+	func keyEvents(_ keyCode: CGKeyCode, flags: CGEventFlags) -> [CGEvent] {
 		let source = CGEventSource(stateID: .combinedSessionState)
-		let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
-		let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-		keyDown?.flags = flags
-		keyUp?.flags = flags
-		keyDown?.post(tap: .cghidEventTap)
-		keyUp?.post(tap: .cghidEventTap)
+		var events: [CGEvent] = []
+		func make(_ virtualKey: CGKeyCode, down: Bool, flags: CGEventFlags) {
+			guard let event = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: down) else {
+				return
+			}
+			event.flags = flags
+			SyntheticKeyEvent.tag(event)
+			events.append(event)
+		}
+		make(keyCode, down: true, flags: flags)
+		make(keyCode, down: false, flags: flags)
 		// A key-up that still carries Command leaves the session believing Command is held, so
 		// the next mouse click became a Cmd-click (a menu-bar icon then starts a rearrange drag
-		// instead of opening its menu) until the user pressed and released Command.
-		for modifier in Self.modifierKeyCodes(in: flags) {
-			let release = CGEvent(keyboardEventSource: source, virtualKey: modifier, keyDown: false)
-			release?.flags = []
-			release?.post(tap: .cghidEventTap)
+		// instead of opening its menu) until the user pressed and released Command. A modifier
+		// the user is still holding is left alone: releasing it would make the next click or
+		// key they make with it arrive without it.
+		let held = physicallyHeldFlags().intersection(Self.modifierMask)
+		for modifier in Self.modifierKeyCodes(toRelease: flags, physicallyHeld: held) {
+			// Carries what is still held, so the release does not also lift the dictation key
+			make(modifier, down: false, flags: held)
 		}
+		return events
 	}
 
 	static func modifierKeyCodes(in flags: CGEventFlags) -> [CGKeyCode] {
@@ -44,17 +83,27 @@ struct CGKeyEventPoster: KeyEventPosting {
 		return codes
 	}
 
+	static let modifierMask: CGEventFlags = [.maskCommand, .maskShift, .maskAlternate, .maskControl]
+
+	/// The modifiers a synthetic shortcut set that the user is not holding down themselves.
+	static func modifierKeyCodes(toRelease posted: CGEventFlags, physicallyHeld: CGEventFlags) -> [CGKeyCode] {
+		modifierKeyCodes(in: posted.subtracting(physicallyHeld.intersection(modifierMask)))
+	}
+
 	func postUnicode(_ units: [UniChar]) {
+		unicodeEvents(units).forEach(send)
+	}
+
+	func unicodeEvents(_ units: [UniChar]) -> [CGEvent] {
 		let source = CGEventSource(stateID: .combinedSessionState)
-		let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
-		let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
-		// Cleared so a still-held hotkey modifier does not turn typed letters into shortcuts
-		keyDown?.flags = []
-		keyUp?.flags = []
-		keyDown?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
-		keyUp?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
-		keyDown?.post(tap: .cghidEventTap)
-		keyUp?.post(tap: .cghidEventTap)
+		return [true, false].compactMap { down in
+			guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down) else { return nil }
+			// Cleared so a still-held hotkey modifier does not turn typed letters into shortcuts
+			event.flags = []
+			event.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
+			SyntheticKeyEvent.tag(event)
+			return event
+		}
 	}
 }
 

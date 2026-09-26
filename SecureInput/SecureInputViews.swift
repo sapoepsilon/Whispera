@@ -22,6 +22,12 @@ extension SecureInputMonitor {
 					localized:
 						"Your dictation shortcut cannot be detected until it ends. Turn on the fallback hotkey in Settings."
 				)
+		case .singleKeyShortcut:
+			return
+				String(
+					localized:
+						"Single-key shortcuts can't be detected while it lasts, so dictation won't start. It works again when Secure Input ends, or pick a key combination in Settings, which has a fallback."
+				)
 		case .inactive:
 			return String(localized: "Keyboard shortcuts may not be detected until it ends.")
 		}
@@ -76,9 +82,17 @@ struct SecureInputSettingsRows: View {
 				.onChange(of: fallbackEnabled) {
 					monitor.reconcileFallback()
 				}
+				.disabled(!monitor.supportsFallback)
 		}
 		.onAppear { monitor.viewDidAppear() }
 		.onDisappear { monitor.viewDidDisappear() }
+
+		if !monitor.supportsFallback {
+			Text("Not available with a single-key shortcut: the fallback needs a key combination.")
+				.font(.caption)
+				.foregroundColor(.secondary)
+				.fixedSize(horizontal: false, vertical: true)
+		}
 
 		if monitor.isSustained {
 			SecureInputWarningBanner(monitor: monitor)

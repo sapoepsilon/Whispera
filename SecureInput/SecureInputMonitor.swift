@@ -139,6 +139,8 @@ final class SecureInputMonitor {
 		case active
 		case unavailable
 		case disabledByUser
+		/// The dictation shortcut is one modifier key, which a system hotkey cannot bind.
+		case singleKeyShortcut
 	}
 
 	static let shared = SecureInputMonitor()
@@ -156,6 +158,8 @@ final class SecureInputMonitor {
 	private(set) var isSustained = false
 	private(set) var culprit: SecureInputCulprit?
 	private(set) var fallbackStatus: FallbackStatus = .inactive
+	/// False while the dictation shortcut is a single modifier key: the monitor then only warns.
+	private(set) var supportsFallback = true
 
 	@ObservationIgnored private var stateMachine = SecureInputStateMachine()
 	@ObservationIgnored private var timer: Timer?
@@ -195,6 +199,18 @@ final class SecureInputMonitor {
 		hotKeySpecProvider = hotKeySpec
 		hotKey.action = action
 		hotKey.releaseAction = release
+		setIfChanged(\.supportsFallback, true)
+		reconcileFallback()
+	}
+
+	/// A single-key shortcut is watched through flagsChanged events, which Secure Input blinds
+	/// just like key presses, and it has no hotkey to fall back on. The monitor still runs so
+	/// the menu bar and Settings can say why dictation stopped responding.
+	func configureWarningOnly() {
+		hotKeySpecProvider = { nil }
+		hotKey.action = nil
+		hotKey.releaseAction = nil
+		setIfChanged(\.supportsFallback, false)
 		reconcileFallback()
 	}
 
@@ -271,7 +287,7 @@ final class SecureInputMonitor {
 	}
 
 	private var desiredPollInterval: TimeInterval? {
-		guard started, !suspended, isFallbackEnabled || visibleViews > 0 else { return nil }
+		guard started, !suspended, isFallbackEnabled || !supportsFallback || visibleViews > 0 else { return nil }
 		return stateMachine.isEnabled ? Self.activePollInterval : Self.idlePollInterval
 	}
 
@@ -347,6 +363,11 @@ final class SecureInputMonitor {
 		guard isSustained else {
 			hotKey.unregister()
 			setIfChanged(\.fallbackStatus, .inactive)
+			return
+		}
+		guard supportsFallback else {
+			hotKey.unregister()
+			setIfChanged(\.fallbackStatus, .singleKeyShortcut)
 			return
 		}
 		guard isFallbackEnabled else {

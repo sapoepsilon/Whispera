@@ -152,6 +152,35 @@ struct SecureInputMonitorTests {
 		#expect(monitor.fallbackStatus == .active)
 	}
 
+	/// A single-key shortcut is blinded by Secure Input too and has no hotkey to fall back on.
+	/// The monitor keeps running so the banner can say why dictation stopped responding.
+	@Test func singleKeyShortcutsStillWarnWithoutAFallback() {
+		let (monitor, fake, defaults, suite) = makeMonitor()
+		defer {
+			monitor.stop()
+			defaults.removePersistentDomain(forName: suite)
+		}
+		defaults.set(false, forKey: SecureInputMonitor.Keys.fallbackEnabled)
+		monitor.configureWarningOnly()
+		monitor.start()
+		#expect(!monitor.supportsFallback)
+		// Polls even with the fallback toggle off: the warning is all there is
+		#expect(monitor.isPolling)
+
+		let start = Date()
+		fake.enabled = true
+		monitor.poll(now: start)
+		monitor.poll(now: start.addingTimeInterval(SecureInputStateMachine.sustainThreshold))
+		#expect(monitor.fallbackStatus == .singleKeyShortcut)
+		#expect(monitor.showsWarning)
+
+		// Switching back to a key combination brings the fallback back
+		defaults.set(true, forKey: SecureInputMonitor.Keys.fallbackEnabled)
+		monitor.configure(hotKeySpec: { self.testSpec }, action: {})
+		#expect(monitor.supportsFallback)
+		#expect(monitor.fallbackStatus == .active)
+	}
+
 	private final class ChangeCounter: @unchecked Sendable {
 		var count = 0
 	}

@@ -26,6 +26,7 @@ struct PostProcessingSettingsView: View {
 
 	@State private var isRecordingShortcut = false
 	@State private var shortcutMonitor: Any?
+	@State private var recorderToken: UUID?
 	@State private var alert: PostProcessingAlert?
 
 	private var provider: PostProcessingProvider {
@@ -310,6 +311,8 @@ struct PostProcessingSettingsView: View {
 
 	private func startRecordingShortcut() {
 		isRecordingShortcut = true
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = ShortcutRecorderGate.shared.begin()
 		shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
 			guard isRecordingShortcut else { return event }
 			let modifiers = event.modifierFlags.intersection(ShortcutCombo.relevantModifiers)
@@ -335,6 +338,8 @@ struct PostProcessingSettingsView: View {
 
 	private func stopRecordingShortcut() {
 		isRecordingShortcut = false
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = nil
 		if let shortcutMonitor { NSEvent.removeMonitor(shortcutMonitor) }
 		shortcutMonitor = nil
 	}

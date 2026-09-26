@@ -10,8 +10,9 @@ class GlobalShortcutManager: ObservableObject {
 	private var fileSelectionLocalMonitor: Any?
 	private var modifierGlobalMonitor: Any?
 	private var modifierLocalMonitor: Any?
-	private var modifierTracker: ModifierOnlyKeyTracker?
-	@MainActor private var modifierRouter = ModifierOnlyPressRouter()
+	private var modifierMachine: ModifierOnlyShortcutMachine?
+	/// The capture the current single-key press started, the only one its cancel may discard.
+	@MainActor private var modifierPressSession: Int?
 	private var audioManager: AudioManager?
 	private var fileTranscriptionManager: FileTranscriptionManager?
 	private var networkDownloader: NetworkFileDownloader?
@@ -176,7 +177,8 @@ class GlobalShortcutManager: ObservableObject {
 		// A release in flight is lost when the monitors or hotkeys are replaced
 		Task { @MainActor [weak self] in
 			self?.activation.reset()
-			self?.modifierRouter.reset()
+			self?.modifierMachine?.reset()
+			self?.modifierPressSession = nil
 		}
 		postProcessShortcutMonitor.reinstall()
 		monitorsKeyRelease = RecordingControlSettings().activationMode.needsKeyRelease
@@ -238,6 +240,8 @@ class GlobalShortcutManager: ObservableObject {
 		logger.info("Installing global monitors (key release: \(monitorsKeyRelease))...")
 		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: globalMask) {
 			[weak self] event in
+			// Whispera's own Cmd-V key-up would otherwise end a held shortcut that uses V
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return }
 			if event.type == .keyUp {
 				if event.keyCode == textKeyCode {
 					self?.handleTextHotKeyRelease()
@@ -263,6 +267,7 @@ class GlobalShortcutManager: ObservableObject {
 		logger.info("Installing local monitors as fallback...")
 		localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) {
 			[weak self] event in
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return event }
 			if event.type == .keyUp {
 				if event.keyCode == textKeyCode {
 					self?.handleTextHotKeyRelease()
@@ -299,7 +304,12 @@ class GlobalShortcutManager: ObservableObject {
 	/// the secure input fallback can bind, so it always runs on the event monitors.
 	private func installModifierOnlyShortcut(_ key: ModifierOnlyShortcut) {
 		stopSecureInputFallback()
-		Task { @MainActor in SecureInputMonitor.shared.stop() }
+		// Secure Input blinds this monitor too, and there is no hotkey to fall back on, so the
+		// monitor only warns: without it dictation would stop working with nothing saying why
+		Task { @MainActor in
+			SecureInputMonitor.shared.configureWarningOnly()
+			SecureInputMonitor.shared.start()
+		}
 		publishBackend(
 			active: .eventMonitor,
 			message: requestedBackend == .carbon
@@ -307,7 +317,7 @@ class GlobalShortcutManager: ObservableObject {
 					localized:
 						"System hotkeys cannot bind \(key.displayName) on its own, so the event monitor is used.")
 				: nil)
-		modifierTracker = ModifierOnlyKeyTracker(key: key)
+		modifierMachine = ModifierOnlyShortcutMachine(key: key)
 		logger.info("Installing modifier-only dictation shortcut for \(key.rawValue)")
 		// keyDown is watched too: a key typed while the modifier is held makes it a combination
 		modifierGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown]) {
@@ -336,44 +346,51 @@ class GlobalShortcutManager: ObservableObject {
 			NSEvent.removeMonitor(monitor)
 			modifierLocalMonitor = nil
 		}
-		modifierTracker = nil
+		modifierMachine = nil
 	}
 
+	/// Monitors deliver on the main thread.
 	private func handleModifierEvent(_ event: NSEvent) {
-		guard var tracker = modifierTracker else { return }
-		let result: ModifierOnlyKeyTracker.Event
-		if event.type == .keyDown {
-			result = tracker.keyDown()
-		} else {
-			result = tracker.flagsChanged(keyCode: event.keyCode, flags: event.modifierFlags)
-		}
-		modifierTracker = tracker
-		guard result != .none else { return }
-		let at = Date()
-		Task { @MainActor in
-			guard let audioManager else { return }
-			let steps: [ModifierOnlyPressRouter.Step]
-			switch result {
-			case .pressed:
-				steps = modifierRouter.pressed(
-					mode: RecordingControlSettings().activationMode, isSessionActive: audioManager.isSessionActive)
-			case .released:
-				steps = modifierRouter.released()
-			case .interrupted:
-				steps = modifierRouter.interrupted()
-			case .none:
-				steps = []
-			}
-			for step in steps {
-				switch step {
-				case .keyDown:
-					textKeyDown(isRepeat: false, source: .eventMonitor, at: at)
-				case .keyUp:
-					textKeyUp(at: at)
-				case .cancelSession:
-					logger.info("Dictation key was part of a key combination; cancelling the recording it started")
-					activation.reset()
-					audioManager.cancelRecording()
+		guard let input = ModifierOnlyInput(event: event) else { return }
+		MainActor.assumeIsolated { handleModifierInput(input, at: Date()) }
+	}
+
+	@MainActor
+	private func handleModifierInput(_ input: ModifierOnlyInput, at: Date) {
+		guard var machine = modifierMachine, let audioManager else { return }
+		let steps = machine.handle(
+			input, recorderListening: ShortcutRecorderGate.shared.isRecording,
+			mode: RecordingControlSettings().activationMode, isSessionActive: audioManager.isSessionActive)
+		modifierMachine = machine
+		runModifierSteps(steps, at: at, on: audioManager)
+	}
+
+	@MainActor
+	private func runModifierSteps(_ steps: [ModifierOnlyPressRouter.Step], at: Date, on audioManager: AudioManager) {
+		for step in steps {
+			switch step {
+			case .keyDown:
+				textKeyDown(isRepeat: false, source: .eventMonitor, at: at)
+				modifierPressSession = audioManager.captureSessionID
+			case .keyUp:
+				textKeyUp(at: at)
+				modifierPressSession = nil
+			case .cancelSession:
+				logger.info("Dictation key was part of a key combination; cancelling the recording it started")
+				activation.reset()
+				// Only this press's own capture: an earlier dictation still transcribing is kept
+				if let session = modifierPressSession {
+					audioManager.cancelCapture(sessionID: session)
+				}
+				modifierPressSession = nil
+			case .scheduleStart(let press, let delay):
+				Task { @MainActor [weak self] in
+					try? await Task.sleep(for: .seconds(delay))
+					guard let self, let audioManager = self.audioManager else { return }
+					guard var machine = self.modifierMachine else { return }
+					let steps = machine.startDelayElapsed(press: press, isSessionActive: audioManager.isSessionActive)
+					self.modifierMachine = machine
+					self.runModifierSteps(steps, at: at, on: audioManager)
 				}
 			}
 		}
@@ -382,6 +399,7 @@ class GlobalShortcutManager: ObservableObject {
 	private func installFileSelectionMonitors(modifiers fileModifiers: NSEvent.ModifierFlags, keyCode fileKeyCode: UInt16) {
 		fileSelectionGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
 			[weak self] event in
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return }
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
 			{
@@ -392,6 +410,7 @@ class GlobalShortcutManager: ObservableObject {
 
 		fileSelectionLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
 			[weak self] event in
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return event }
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
 			{
@@ -529,6 +548,8 @@ class GlobalShortcutManager: ObservableObject {
 
 	@MainActor
 	private func textKeyDown(isRepeat: Bool, source: ShortcutSource, at pressedAt: Date) {
+		// The key press is being recorded as a new shortcut, not used as one
+		guard !ShortcutRecorderGate.shared.isRecording else { return }
 		if !isRepeat {
 			KeyboardDiagnostics.shared.recordShortcut(.dictation, backend: activeBackend)
 		}

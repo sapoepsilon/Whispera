@@ -58,6 +58,14 @@ struct DictationSessionLedger {
 		return cancelTranscriptions()
 	}
 
+	/// Cancels the capture only if it is still the one with this id. Transcriptions in flight
+	/// are never touched, so a late cancel for a capture that already ended does nothing.
+	mutating func cancelCapture(id: Int) -> DictationSession? {
+		guard let session = capturing, session.id == id else { return nil }
+		capturing = nil
+		return session
+	}
+
 	/// Abandons every transcription still in flight and leaves a running capture alone.
 	mutating func cancelTranscriptions() -> [DictationSession] {
 		let sessions = transcribing

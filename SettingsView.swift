@@ -189,6 +189,8 @@ struct SettingsView: View {
 	@State private var eventMonitor: Any?
 	@State private var modifierRecording = ModifierOnlyRecording()
 	@State private var fileShortcutEventMonitor: Any?
+	@State private var shortcutRecorderToken: UUID?
+	@State private var fileShortcutRecorderToken: UUID?
 	@State private var errorMessage: String?
 	@State private var showingError = false
 	@State private var showingLLMSettings = false
@@ -1337,9 +1339,11 @@ struct SettingsView: View {
 	private func startRecording() {
 		isRecordingShortcut = true
 		modifierRecording = ModifierOnlyRecording()
+		ShortcutRecorderGate.shared.end(shortcutRecorderToken)
+		shortcutRecorderToken = ShortcutRecorderGate.shared.begin()
 
 		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
-			if self.isRecordingShortcut {
+			if self.isRecordingShortcut, !SyntheticKeyEvent.isSelfPosted(event) {
 				if event.type == .flagsChanged {
 					if let key = self.modifierRecording.flagsChanged(keyCode: event.keyCode, flags: event.modifierFlags) {
 						self.globalShortcut = key.rawValue
@@ -1361,6 +1365,8 @@ struct SettingsView: View {
 
 	private func stopRecording() {
 		isRecordingShortcut = false
+		ShortcutRecorderGate.shared.end(shortcutRecorderToken)
+		shortcutRecorderToken = nil
 		if let monitor = eventMonitor {
 			NSEvent.removeMonitor(monitor)
 			eventMonitor = nil
@@ -1369,6 +1375,8 @@ struct SettingsView: View {
 
 	private func startRecordingFileShortcut() {
 		isRecordingFileShortcut = true
+		ShortcutRecorderGate.shared.end(fileShortcutRecorderToken)
+		fileShortcutRecorderToken = ShortcutRecorderGate.shared.begin()
 
 		fileShortcutEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
 			if self.isRecordingFileShortcut {
@@ -1385,6 +1393,8 @@ struct SettingsView: View {
 
 	private func stopRecordingFileShortcut() {
 		isRecordingFileShortcut = false
+		ShortcutRecorderGate.shared.end(fileShortcutRecorderToken)
+		fileShortcutRecorderToken = nil
 		if let monitor = fileShortcutEventMonitor {
 			NSEvent.removeMonitor(monitor)
 			fileShortcutEventMonitor = nil

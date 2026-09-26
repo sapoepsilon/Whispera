@@ -228,13 +228,17 @@ final class CancelShortcutMonitor {
 		let binding = self.binding()
 		installedBinding = binding
 		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-			guard binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags) else {
+			guard binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags),
+				!SyntheticKeyEvent.isSelfPosted(event)
+			else {
 				return
 			}
 			Task { @MainActor in self?.fire() }
 		}
 		localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-			guard binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags) else {
+			guard binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags),
+				!SyntheticKeyEvent.isSelfPosted(event)
+			else {
 				return event
 			}
 			Task { @MainActor in self?.fire() }
