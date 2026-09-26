@@ -137,8 +137,12 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 			if let existing = state.converter, existing.inputFormat == source {
 				return existing
 			}
-			state.converter = AVAudioConverter(from: source, to: target)
-			return state.converter
+			let converter = AVAudioConverter(from: source, to: target)
+			// Without downmix the converter keeps only the first channel, so "All channels"
+			// dropped speech that reached a stereo input on its second channel only
+			converter?.downmix = true
+			state.converter = converter
+			return converter
 		}
 		guard let converter else { return nil }
 

@@ -114,6 +114,25 @@ struct StreamCaptureBufferTests {
 		return buffer
 	}
 
+	/// A stereo input with speech on its right channel only (an interface with the mic in
+	/// input 2) came through "All channels" as silence: the converter kept channel 1.
+	@Test func mixingAllChannelsKeepsAudioOnTheSecondChannel() throws {
+		let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
+		let frames = 4800
+		let stereo = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)))
+		stereo.frameLength = AVAudioFrameCount(frames)
+		for index in 0..<frames {
+			stereo.floatChannelData![0][index] = 0
+			stereo.floatChannelData![1][index] = sin(Float(index) * 2 * .pi * 440 / 48000) * 0.5
+		}
+		let buffer = StreamCaptureBuffer()
+		buffer.beginCapture(channelSelection: InputChannelSelection.mixAllChannels)
+		_ = buffer.ingest(stereo, format: format)
+		let samples = buffer.finishCapture()
+		#expect(!samples.isEmpty)
+		#expect((samples.map(abs).max() ?? 0) > 0.1)
+	}
+
 	@Test func dropsAudioWhileNotCapturing() {
 		let buffer = StreamCaptureBuffer()
 		#expect(!buffer.append([1, 2, 3]))
