@@ -22,7 +22,8 @@ jobs:
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          # The FoundationModels weak link needs the macOS 26 SDK
+          xcode-version: "^26.0"
 
       - name: Cache Swift Package Manager
         uses: actions/cache@v4
@@ -88,3 +89,49 @@ jobs:
             build/DerivedData/Logs/Test/
             build/
           retention-days: 3
+
+  unit-tests:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "^26.0"
+
+      - name: Cache Swift Package Manager
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      # Tests that need a downloaded Whisper or Parakeet model, the bundled test recording,
+      # Apple Intelligence or an unlocked keychain skip themselves via .enabled(if:), so this
+      # runs the logic suites only. XCTest targets and UI tests need models or a GUI session.
+      - name: Run WhisperaUnitTests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+                     -project "${APP_NAME}.xcodeproj" \
+                     -scheme "${SCHEME_NAME}" \
+                     -destination "platform=macOS,arch=arm64" \
+                     -only-testing:WhisperaUnitTests \
+                     -parallel-testing-enabled NO \
+                     -resultBundlePath build/UnitTests.xcresult \
+                     CODE_SIGN_IDENTITY="-" \
+                     CODE_SIGNING_REQUIRED=NO
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: build/UnitTests.xcresult
+          retention-days: 7
