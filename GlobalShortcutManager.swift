@@ -821,7 +821,7 @@ class GlobalShortcutManager: ObservableObject {
 		do {
 			if urls.count == 1 {
 				let result = try await fileManager.transcribeFile(at: urls[0])
-				logger.info("Transcription completed: \(result.prefix(100))...")
+				logger.userText("Transcription completed", result)
 
 				// Copy result to clipboard
 				let pasteboard = NSPasteboard.general

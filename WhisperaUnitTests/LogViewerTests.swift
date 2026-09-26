@@ -185,3 +185,17 @@ struct LogTailerTests {
 		#expect(tailer.fileURL == second)
 	}
 }
+
+struct TranscriptLogRedactionTests {
+	@Test func summaryCarriesOnlyTheLength() {
+		let summary = ExtendedLogger.redactedSummary("my bank PIN is 4321")
+		#expect(summary == "19 chars")
+		#expect(!summary.contains("4321"))
+	}
+
+	@Test func defaultLevelKeepsTranscriptLinesOutOfTheFile() {
+		#expect(LogLevel.info.allows(.info))
+		#expect(!LogLevel.info.allows(.debug), "userText writes the text itself only at Debug")
+		#expect(LogLevel.debug.allows(.debug))
+	}
+}
