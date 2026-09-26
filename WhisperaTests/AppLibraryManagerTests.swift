@@ -189,7 +189,7 @@ final class AppLibraryManagerTests: XCTestCase {
 			try mockData.write(to: updateFile)
 
 			let updates = appLibraryManager.getDownloadedUpdates()
-			XCTAssertTrue(updates.contains(updateFile))
+			XCTAssertTrue(updates.map { $0.resolvingSymlinksInPath() }.contains(updateFile.resolvingSymlinksInPath()))
 
 			let fileSize = appLibraryManager.getUpdateFileSize(at: updateFile)
 			XCTAssertEqual(fileSize, 1024 * 1024)

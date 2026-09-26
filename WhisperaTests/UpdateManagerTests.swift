@@ -6,12 +6,19 @@ final class UpdateManagerTests: XCTestCase {
 
 	var updateManager: UpdateManager!
 
+	private var downloadsDirectory: URL!
+
 	override func setUp() {
 		super.setUp()
-		updateManager = UpdateManager()
+		// ~/Downloads is TCC-protected: an ad-hoc signed test host blocks in open() on its consent prompt
+		downloadsDirectory = FileManager.default.temporaryDirectory
+			.appendingPathComponent("UpdateManagerTests-\(UUID().uuidString)/Downloads")
+		try! FileManager.default.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
+		updateManager = UpdateManager(downloadsDirectory: downloadsDirectory)
 	}
 
 	override func tearDown() {
+		try? FileManager.default.removeItem(at: downloadsDirectory.deletingLastPathComponent())
 		updateManager = nil
 		super.tearDown()
 	}
@@ -129,8 +136,7 @@ final class UpdateManagerTests: XCTestCase {
 
 		// Mock file existence check by creating a file
 		guard
-			let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
-				.first
+			let downloadsDir = updateManager.downloadsDirectory
 		else {
 			XCTFail("Downloads directory not available")
 			return
@@ -289,8 +295,7 @@ final class UpdateManagerTests: XCTestCase {
 		XCTAssertFalse(updateManager.isUpdateDownloaded)
 
 		guard
-			let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
-				.first
+			let downloadsDir = updateManager.downloadsDirectory
 		else {
 			XCTFail("Downloads directory not available")
 			return
@@ -318,8 +323,7 @@ final class UpdateManagerTests: XCTestCase {
 		updateManager.latestVersion = testVersion
 
 		guard
-			let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
-				.first
+			let downloadsDir = updateManager.downloadsDirectory
 		else {
 			XCTFail("Downloads directory not available")
 			return
@@ -346,8 +350,7 @@ final class UpdateManagerTests: XCTestCase {
 		updateManager.latestVersion = testVersion
 
 		guard
-			let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
-				.first
+			let downloadsDir = updateManager.downloadsDirectory
 		else {
 			XCTFail("Downloads directory not available")
 			return

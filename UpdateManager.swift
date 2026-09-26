@@ -51,8 +51,7 @@ class UpdateManager: NSObject {
 	var isUpdateDownloaded: Bool {
 		guard let latestVersion = latestVersion else { return false }
 		guard
-			let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
-				.first
+			let downloadsDir = downloadsDirectory
 		else { return false }
 		let localURL = downloadsDir.appendingPathComponent("Whispera-\(latestVersion).dmg")
 		return FileManager.default.fileExists(atPath: localURL.path)
@@ -79,7 +78,16 @@ class UpdateManager: NSObject {
 	var mockDownloadURL: String?
 	var mockError: Error?
 
-	override init() {
+	/// Where update disk images are saved; tests point this away from the TCC-protected ~/Downloads.
+	var downloadsDirectory: URL? {
+		downloadsDirectoryOverride
+			?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+	}
+
+	@ObservationIgnored private let downloadsDirectoryOverride: URL?
+
+	init(downloadsDirectory: URL? = nil) {
+		downloadsDirectoryOverride = downloadsDirectory
 		super.init()
 		setupDefaultSettings()
 		setupURLSession()
@@ -183,7 +191,7 @@ class UpdateManager: NSObject {
 			return
 		}
 
-		let documentsPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+		guard let documentsPath = downloadsDirectory else { throw UpdateError.downloadFailed }
 		let localURL = documentsPath.appendingPathComponent("Whispera-\(latestVersion ?? "latest").dmg")
 
 		// Check if file already exists
@@ -276,8 +284,7 @@ class UpdateManager: NSObject {
 		}
 
 		guard
-			let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
-				.first
+			let downloadsDir = downloadsDirectory
 		else {
 			throw UpdateError.downloadFailed
 		}
