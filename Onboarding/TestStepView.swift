@@ -68,6 +68,7 @@ struct TestStepView: View {
 						}
 						Spacer()
 						Picker("Language", selection: $selectedLanguage) {
+							Text("Auto-detect").tag(Constants.autoDetectLanguageName)
 							ForEach(Constants.sortedLanguageNames, id: \.self) { language in
 								Text(language.capitalized).tag(language)
 							}

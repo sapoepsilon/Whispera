@@ -492,6 +492,8 @@ struct SettingsView: View {
 								"Source Language", description: "Language of the audio to transcribe"
 							) {
 								Picker("Language", selection: $selectedLanguage) {
+									Text("Auto-detect").tag(Constants.autoDetectLanguageName)
+									Divider()
 									ForEach(Constants.sortedLanguageNames, id: \.self) { language in
 										Text(language.capitalized).tag(language)
 									}
@@ -511,6 +513,9 @@ struct SettingsView: View {
 							}
 						}
 					}
+					Divider()
+
+					TextProcessingSettingsSection()
 					Divider()
 
 					SettingsSection("Performance") {

@@ -864,10 +864,12 @@ import WhisperKit
 					sampleLength: 224,  // Use safe fallback
 					usePrefillPrompt: savedUsePrefillPrompt,
 					usePrefillCache: savedUsePrefillCache,
+					detectLanguage: options.detectLanguage,
 					skipSpecialTokens: savedSkipSpecialTokens,
 					withoutTimestamps: savedWithoutTimestamps,
 					wordTimestamps: savedWordTimestamps,
-					clipTimestamps: [0]
+					clipTimestamps: [0],
+					promptTokens: options.promptTokens
 				)
 
 				let transcriptionResults = try await whisperKit.transcribe(
@@ -885,29 +887,36 @@ import WhisperKit
 
 	// MARK: - Decoding Options Management
 	private func createDefaultDecodingOptions() -> DecodingOptions {
+		let languageParameters = Self.languageDecodingParameters(
+			selectedLanguage: selectedLanguage, enableTranslation: false)
 		return DecodingOptions(
 			verbose: false,
 			task: .transcribe,
-			language: Constants.languageCode(for: selectedLanguage),
+			language: languageParameters.language,
 			temperature: savedTemperature,
 			temperatureFallbackCount: savedTemperatureFallbackCount,
 			sampleLength: savedSampleLength,
 			usePrefillPrompt: savedUsePrefillPrompt,
 			usePrefillCache: savedUsePrefillCache,
-			detectLanguage: false,
+			detectLanguage: languageParameters.detectLanguage,
 			skipSpecialTokens: savedSkipSpecialTokens,
 			withoutTimestamps: savedWithoutTimestamps,
 			wordTimestamps: savedWordTimestamps,
-			clipTimestamps: [0]
+			clipTimestamps: [0],
+			promptTokens: customWordPromptTokens()
 		)
 	}
 
 	func createDecodingOptions(enableTranslation: Bool) -> DecodingOptions {
 		let task: DecodingTask = enableTranslation ? .translate : .transcribe
-		let languageCode = Constants.languageCode(for: selectedLanguage)
+		let languageParameters = Self.languageDecodingParameters(
+			selectedLanguage: selectedLanguage, enableTranslation: enableTranslation)
+		let languageCode = languageParameters.language
+		let promptTokens = customWordPromptTokens()
 
 		AppLogger.shared.transcriber.log(
-			"Creating decoding options - mode: \(task.description) language: \(languageCode)")
+			"Creating decoding options - mode: \(task.description) language: \(languageCode ?? "auto") promptTokens: \(promptTokens?.count ?? 0)"
+		)
 		return DecodingOptions(
 			verbose: false,
 			task: task,
@@ -917,12 +926,56 @@ import WhisperKit
 			sampleLength: savedSampleLength,
 			usePrefillPrompt: savedUsePrefillPrompt,
 			usePrefillCache: savedUsePrefillCache,
-			detectLanguage: enableTranslation,
+			detectLanguage: languageParameters.detectLanguage,
 			skipSpecialTokens: savedSkipSpecialTokens,
 			withoutTimestamps: savedWithoutTimestamps,
 			wordTimestamps: savedWordTimestamps,
-			clipTimestamps: [0]
+			clipTimestamps: [0],
+			promptTokens: promptTokens
 		)
+	}
+
+	/// "auto" leaves the language unset so WhisperKit detects it from the audio.
+	nonisolated static func languageDecodingParameters(selectedLanguage: String, enableTranslation: Bool)
+		-> (language: String?, detectLanguage: Bool)
+	{
+		let language = Constants.decodingLanguageCode(for: selectedLanguage)
+		return (language, enableTranslation || language == nil)
+	}
+
+	func refreshDecodingOptions() {
+		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation ?? false)
+	}
+
+	private func customWordPromptTokens() -> [Int]? {
+		let defaults = UserDefaults.standard
+		guard TextProcessingSettings.biasDecodingWithCustomWords(from: defaults),
+			let prompt = TextProcessingSettings.decoderPrompt(
+				for: TextProcessingSettings.customWords(from: defaults)),
+			let tokenizer = whisperKit?.tokenizer
+		else { return nil }
+		let tokens = tokenizer.encode(text: prompt).filter {
+			$0 < tokenizer.specialTokens.specialTokenBegin
+		}
+		return tokens.isEmpty ? nil : tokens
+	}
+
+	private func processTranscriptText(
+		_ text: String, detectedLanguage: String?, enableTranslation: Bool
+	) -> String {
+		let configuration = TextProcessingSettings.configuration()
+		let evidence = TranscriptTextProcessor.languageEvidence(
+			selectedLanguageCode: Constants.decodingLanguageCode(for: selectedLanguage),
+			translating: enableTranslation,
+			modelDetectedLanguage: detectedLanguage,
+			text: text
+		)
+		let processed = TranscriptTextProcessor(configuration: configuration).process(text, language: evidence)
+		if processed != text {
+			AppLogger.shared.transcriber.log(
+				"Text processing changed transcript (language evidence: \(evidence))")
+		}
+		return processed
 	}
 
 	func updateDecodingOptions(
@@ -1087,8 +1140,11 @@ import WhisperKit
 				}.value
 
 				if !result.isEmpty {
-					let transcription = result.compactMap { $0.text }.joined(separator: " ")
+					let rawTranscription = result.compactMap { $0.text }.joined(separator: " ")
 						.trimmingCharacters(in: .whitespacesAndNewlines)
+					let transcription = processTranscriptText(
+						rawTranscription, detectedLanguage: result.first?.language,
+						enableTranslation: enableTranslation)
 
 					if !transcription.isEmpty {
 						AppLogger.shared.transcriber.log(
@@ -1122,10 +1178,12 @@ import WhisperKit
 						sampleLength: 224,
 						usePrefillPrompt: savedUsePrefillPrompt,
 						usePrefillCache: savedUsePrefillCache,
+						detectLanguage: decodingOptions?.detectLanguage,
 						skipSpecialTokens: savedSkipSpecialTokens,
 						withoutTimestamps: savedWithoutTimestamps,
 						wordTimestamps: savedWordTimestamps,
-						clipTimestamps: [0]
+						clipTimestamps: [0],
+						promptTokens: decodingOptions?.promptTokens
 					)
 
 					do {
@@ -1144,8 +1202,12 @@ import WhisperKit
 						}.value
 
 						if !fallbackResult.isEmpty {
-							let transcription = fallbackResult.compactMap { $0.text }.joined(separator: " ")
+							let rawTranscription = fallbackResult.compactMap { $0.text }
+								.joined(separator: " ")
 								.trimmingCharacters(in: .whitespacesAndNewlines)
+							let transcription = processTranscriptText(
+								rawTranscription, detectedLanguage: fallbackResult.first?.language,
+								enableTranslation: enableTranslation)
 							if !transcription.isEmpty {
 								AppLogger.shared.transcriber.log(
 									"WhisperKit \(logPrefix) transcription completed with fallback: \(transcription)")
@@ -1276,7 +1338,10 @@ import WhisperKit
 			// WhisperKit returns [TranscriptionResult], we need to extract segments from each result
 			let allSegments = result.flatMap { transcriptionResult in
 				transcriptionResult.segments.compactMap { whisperSegment -> TranscriptionSegment? in
-					let text = whisperSegment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+					let text = processTranscriptText(
+						whisperSegment.text.trimmingCharacters(in: .whitespacesAndNewlines),
+						detectedLanguage: transcriptionResult.language,
+						enableTranslation: enableTranslation)
 					guard !text.isEmpty else {
 						return nil
 					}
@@ -1331,8 +1396,11 @@ import WhisperKit
 		}.value
 
 		if !result.isEmpty {
-			let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(
-				in: .whitespacesAndNewlines)
+			let transcription = processTranscriptText(
+				result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(
+					in: .whitespacesAndNewlines),
+				detectedLanguage: result.first?.language,
+				enableTranslation: enableTranslation)
 
 			if !transcription.isEmpty {
 				AppLogger.shared.transcriber.log(
