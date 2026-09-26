@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import SQLite3
 import SwiftData
 
 enum TranscriptionHistoryAudio {
@@ -32,10 +33,14 @@ final class TranscriptionHistoryStore {
 	}
 
 	static let shared = TranscriptionHistoryStore(
-		directory: TranscriptionHistoryStore.defaultDirectory(), defaults: .standard)
+		directory: TranscriptionHistoryStore.defaultDirectory(), defaults: .standard,
+		presentOptOutPrompt: { HistoryWindowController.shared.show() })
 
 	private(set) var entries: [TranscriptionHistoryEntry] = []
 	private(set) var retranscribingIDs: Set<UUID> = []
+	/// Set when history is turned off, from any settings screen or `defaults`, while entries
+	/// remain; the history view asks whether to delete them.
+	private(set) var pendingOptOutPurge: Int?
 
 	@ObservationIgnored let audioDirectory: URL
 	@ObservationIgnored private let defaults: UserDefaults
@@ -43,18 +48,32 @@ final class TranscriptionHistoryStore {
 	@ObservationIgnored private let container: ModelContainer?
 	@ObservationIgnored private var context: ModelContext? { container?.mainContext }
 	@ObservationIgnored private var pendingAudioWrites: [UUID: Task<Void, Never>] = [:]
+	@ObservationIgnored let storeURL: URL
+	@ObservationIgnored private var scrubTask: Task<Void, Never>?
+	@ObservationIgnored private var enabledObserver: DefaultsKeyObserver?
+	@ObservationIgnored private var wasEnabled: Bool
+	@ObservationIgnored private let presentOptOutPrompt: @MainActor () -> Void
+	/// History views on screen; when none is, turning history off opens the window to ask.
+	@ObservationIgnored private var visibleViews = 0
 
-	init(directory: URL, defaults: UserDefaults, now: @escaping () -> Date = Date.init) {
+	init(
+		directory: URL, defaults: UserDefaults, now: @escaping () -> Date = Date.init,
+		presentOptOutPrompt: @escaping @MainActor () -> Void = {}
+	) {
 		self.audioDirectory = directory.appendingPathComponent("Recordings", isDirectory: true)
+		self.storeURL = directory.appendingPathComponent("history.store")
 		self.defaults = defaults
 		self.now = now
+		self.presentOptOutPrompt = presentOptOutPrompt
+		self.wasEnabled = HistorySettings(defaults: defaults).isEnabled
 
 		do {
 			try FileManager.default.createDirectory(
 				at: audioDirectory, withIntermediateDirectories: true)
+			// The whole folder, so the transcript database and its -wal/-shm stay out of backups too
+			Self.excludeFromBackup(directory)
 			Self.excludeFromBackup(audioDirectory)
-			let configuration = ModelConfiguration(
-				url: directory.appendingPathComponent("history.store"))
+			let configuration = ModelConfiguration(url: storeURL)
 			container = try ModelContainer(
 				for: TranscriptionHistoryEntry.self, configurations: configuration)
 		} catch {
@@ -64,6 +83,9 @@ final class TranscriptionHistoryStore {
 
 		reload()
 		applyRetention()
+		enabledObserver = DefaultsKeyObserver(defaults: defaults, keys: [HistorySettings.enabledKey]) {
+			[weak self] in self?.historyEnabledChanged()
+		}
 	}
 
 	static func defaultDirectory() -> URL {
@@ -149,8 +171,35 @@ final class TranscriptionHistoryStore {
 
 	/// Removes every entry, starred ones included, with its recording.
 	func deleteAllEntries() {
+		pendingOptOutPurge = nil
 		remove(entries)
 		removeOrphanedAudio()
+	}
+
+	func keepEntriesAfterOptOut() {
+		pendingOptOutPurge = nil
+	}
+
+	func viewDidAppear() {
+		visibleViews += 1
+	}
+
+	func viewDidDisappear() {
+		visibleViews = max(visibleViews - 1, 0)
+	}
+
+	private func historyEnabledChanged() {
+		let isEnabled = settings.isEnabled
+		defer { wasEnabled = isEnabled }
+		guard wasEnabled, !isEnabled else {
+			if isEnabled { pendingOptOutPurge = nil }
+			return
+		}
+		guard !entries.isEmpty else { return }
+		pendingOptOutPurge = entries.count
+		if visibleViews == 0 {
+			presentOptOutPrompt()
+		}
 	}
 
 	/// Drops every saved recording but keeps the text of each entry.
@@ -354,6 +403,49 @@ final class TranscriptionHistoryStore {
 			context?.delete(entry)
 		}
 		save()
+		scheduleScrub()
+	}
+
+	// MARK: - Scrubbing deleted text
+
+	/// SQLite leaves deleted rows in free pages and in the write-ahead log until they are reused,
+	/// so a "deleted" dictation stays recoverable from the file. Coalesced so a burst of deletes
+	/// rewrites the file once.
+	private func scheduleScrub() {
+		scrubTask?.cancel()
+		let url = storeURL
+		scrubTask = Task {
+			try? await Task.sleep(nanoseconds: 500_000_000)
+			guard !Task.isCancelled else { return }
+			await Task.detached(priority: .utility) { Self.scrub(storeAt: url) }.value
+		}
+	}
+
+	/// Waits for a pending scrub, for tests and for callers that must know the text is gone.
+	func flushScrub() async {
+		await scrubTask?.value
+	}
+
+	/// Rewrites the database without its free pages and empties the write-ahead log.
+	@discardableResult
+	nonisolated static func scrub(storeAt url: URL) -> Bool {
+		guard FileManager.default.fileExists(atPath: url.path) else { return false }
+		var db: OpaquePointer?
+		guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+			AppLogger.shared.database.error("Could not open history to scrub deleted entries")
+			sqlite3_close(db)
+			return false
+		}
+		defer { sqlite3_close(db) }
+		sqlite3_busy_timeout(db, 5000)
+		for statement in ["PRAGMA secure_delete = ON", "VACUUM", "PRAGMA wal_checkpoint(TRUNCATE)"] {
+			guard sqlite3_exec(db, statement, nil, nil, nil) == SQLITE_OK else {
+				let message = String(cString: sqlite3_errmsg(db))
+				AppLogger.shared.database.error("History scrub step '\(statement)' failed: \(message)")
+				return false
+			}
+		}
+		return true
 	}
 
 	private func persistAudio(_ audio: TranscriptionHistoryAudio, id: UUID) -> String? {
@@ -425,7 +517,7 @@ final class TranscriptionHistoryStore {
 		do {
 			try url.setResourceValues(values)
 		} catch {
-			AppLogger.shared.database.error("Could not exclude history recordings from backups: \(error)")
+			AppLogger.shared.database.error("Could not exclude history from backups: \(error)")
 		}
 	}
 

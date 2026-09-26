@@ -85,25 +85,31 @@ struct TranscriptionHistoryView: View {
 		}
 		.onChange(of: retentionRaw) { _, _ in scheduleRetention() }
 		.onChange(of: historyLimit) { _, _ in scheduleRetention() }
-		.onChange(of: historyEnabled) { wasEnabled, isEnabled in
-			if wasEnabled && !isEnabled && !store.entries.isEmpty {
-				pendingPurge = .everything(count: store.entries.count)
-			}
-		}
 		.onChange(of: saveAudio) { wasSaving, isSaving in
 			if wasSaving && !isSaving && store.hasSavedRecordings {
 				pendingPurge = .recordings
 			}
 		}
-		.onAppear { store.reload() }
+		.onAppear {
+			store.reload()
+			store.viewDidAppear()
+		}
 		.onDisappear {
+			store.viewDidDisappear()
 			player.stop()
 			retentionDebouncer.flush()
 		}
 		.alert(
 			purgeTitle,
-			isPresented: Binding(get: { pendingPurge != nil }, set: { if !$0 { pendingPurge = nil } }),
-			presenting: pendingPurge
+			isPresented: Binding(
+				get: { activePurge != nil },
+				set: {
+					if !$0 {
+						pendingPurge = nil
+						store.keepEntriesAfterOptOut()
+					}
+				}),
+			presenting: activePurge
 		) { purge in
 			Button("Delete", role: .destructive) {
 				player.stop()
@@ -144,8 +150,13 @@ struct TranscriptionHistoryView: View {
 		}
 	}
 
+	/// Turning history off is watched by the store, so the prompt appears whichever screen did it.
+	private var activePurge: HistoryPurge? {
+		pendingPurge ?? store.pendingOptOutPurge.map { .everything(count: $0) }
+	}
+
 	private var purgeTitle: String {
-		switch pendingPurge {
+		switch activePurge {
 		case .recordings: return String(localized: "Delete saved recordings?")
 		default: return String(localized: "Delete saved history?")
 		}
@@ -165,7 +176,7 @@ struct TranscriptionHistoryView: View {
 			}
 			SettingRow(
 				"Save recordings",
-				description: "Keep the audio so entries can be replayed or re-transcribed. Recordings stay on this Mac and are left out of Time Machine backups."
+				description: "Keep the audio so entries can be replayed or re-transcribed. History and recordings stay on this Mac and are left out of Time Machine backups."
 			) {
 				Toggle("", isOn: $saveAudio)
 					.toggleStyle(.switch)
