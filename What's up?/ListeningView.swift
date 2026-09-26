@@ -37,9 +37,9 @@ struct ListeningView: View {
 					.foregroundColor(.secondary)
 			}
 		case .transcribing:
+			// A load in progress only blocks transcription when no other engine is loaded
 			if whisperKit.isWaitingForModel
 				|| whisperKit.isInitializing
-				|| whisperKit.isModelLoading
 				|| !whisperKit.isCurrentModelLoaded()
 			{
 				HStack(spacing: 8) {
@@ -53,7 +53,8 @@ struct ListeningView: View {
 							? whisperKit.waitingForModelStatusText
 							: (whisperKit.isInitializing
 								? whisperKit.initializationStatus
-								: String(localized: "Loading model..."))
+								: (whisperKit.modelSwitchNotice?.title(name: WhisperKitTranscriber.shortModelName)
+									?? String(localized: "Loading model...")))
 					)
 						.font(.system(.caption, design: .rounded))
 						.foregroundColor(.secondary)
@@ -61,9 +62,10 @@ struct ListeningView: View {
 				}
 			} else {
 				HStack(spacing: 8) {
-					Text("Transcribing...")
+					Text(transcribingText)
 						.font(.system(.caption, design: .rounded))
 						.foregroundColor(.secondary)
+						.lineLimit(1)
 					cancelButton
 				}
 			}
@@ -97,6 +99,16 @@ struct ListeningView: View {
 
 				AudioMeterView(levels: audioManager.audioLevels)
 
+				if let notice = whisperKit.modelSwitchNotice,
+					let pillText = notice.pillText(name: WhisperKitTranscriber.shortModelName)
+				{
+					Text(pillText)
+						.font(.system(.caption2, design: .rounded))
+						.foregroundColor(.secondary)
+						.lineLimit(1)
+						.help(notice.detail(name: WhisperKitTranscriber.mediumModelName))
+				}
+
 				cancelButton
 
 				Button(action: {
@@ -110,6 +122,13 @@ struct ListeningView: View {
 				.help("Stop recording")
 			}
 		}
+	}
+
+	private var transcribingText: String {
+		guard let activeModel = whisperKit.modelSwitchNotice?.activeModel else {
+			return String(localized: "Transcribing...")
+		}
+		return String(localized: "Transcribing with \(WhisperKitTranscriber.shortModelName(for: activeModel))...")
 	}
 
 	private var cancelButton: some View {

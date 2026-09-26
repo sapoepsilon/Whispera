@@ -596,6 +596,10 @@ struct StatusCardView: View {
 							.foregroundColor(.secondary)
 					}
 				}
+
+				if whisperKit.isInitialized, let notice = whisperKit.modelSwitchNotice {
+					ModelSwitchNoticeRow(notice: notice, showsTitle: !whisperKit.isDownloadingModel)
+				}
 			}
 
 			// Microphone selection
@@ -1065,6 +1069,40 @@ struct StatusCardView: View {
 }
 
 // MARK: - Transcription Result
+struct ModelSwitchNoticeRow: View {
+	let notice: ModelSwitchNotice
+	/// The download progress row already names the model while it downloads.
+	let showsTitle: Bool
+
+	var body: some View {
+		HStack(alignment: .top, spacing: 6) {
+			if showsTitle {
+				ProgressView()
+					.controlSize(.mini)
+			} else {
+				Image(systemName: "info.circle")
+					.font(.caption)
+					.foregroundColor(.secondary)
+			}
+			VStack(alignment: .leading, spacing: 2) {
+				if showsTitle {
+					Text(notice.title(name: WhisperKitTranscriber.mediumModelName))
+						.font(.caption)
+						.fontWeight(.medium)
+						.foregroundColor(.primary)
+				}
+				Text(notice.detail(name: WhisperKitTranscriber.mediumModelName))
+					.font(.caption2)
+					.foregroundColor(.secondary)
+			}
+			.fixedSize(horizontal: false, vertical: true)
+			Spacer(minLength: 0)
+		}
+		.accessibilityElement(children: .combine)
+		.accessibilityIdentifier("menuBarModelSwitchNotice")
+	}
+}
+
 struct TranscriptionResultView: View {
 	let text: String
 

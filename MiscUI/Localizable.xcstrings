@@ -5084,6 +5084,52 @@
         }
       }
     },
+    "Dictation uses %@ until it is ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Diktat verwendet %@, bis es bereit ist"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El dictado usa %@ hasta que esté listo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La dictée utilise %@ en attendant qu'il soit prêt"
+          }
+        }
+      }
+    },
+    "Dictation waits until it is ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Diktat wartet, bis es bereit ist"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El dictado espera hasta que esté listo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La dictée attend qu'il soit prêt"
+          }
+        }
+      }
+    },
     "Dictionary & Cleanup": {
       "extractionState": "manual",
       "localizations": {
@@ -17734,6 +17780,29 @@
         }
       }
     },
+    "Transcribing with %@...": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkription mit %@..."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribiendo con %@..."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription avec %@..."
+          }
+        }
+      }
+    },
     "Transcribing...": {
       "extractionState": "manual",
       "localizations": {
@@ -18903,6 +18972,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Utilisez ce raccourci pour ouvrir un sélecteur de fichiers à transcrire."
+          }
+        }
+      }
+    },
+    "Using %@ · %@ loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ aktiv · %2$@ wird geladen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usando %1$@ · cargando %2$@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ utilisé · chargement de %2$@"
           }
         }
       }

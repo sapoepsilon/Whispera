@@ -93,7 +93,7 @@ import WhisperKit
 		}
 
 		if isModelLoading {
-			let modelName = currentModel ?? selectedModel ?? String(localized: "model")
+			let modelName = loadingModelName ?? currentModel ?? selectedModel ?? String(localized: "model")
 			let pct = Int((loadProgress * 100.0).rounded())
 			waitingForModelStatusText = String(localized: "Loading \(modelName)... \(pct)%")
 			return
@@ -126,6 +126,8 @@ import WhisperKit
 		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
 		downloadedModels = refreshedDownloaded
 
+		try await waitForInFlightLoadIfNoEngine()
+
 		if whisperKit == nil && parakeetEngine == nil {
 			guard !refreshedDownloaded.isEmpty else {
 				isWaitingForModel = true
@@ -156,6 +158,16 @@ import WhisperKit
 		}
 	}
 
+	/// With no engine loaded, a load already in flight is the model the user just picked, so
+	/// wait for it instead of loading the previously used model next to it.
+	private func waitForInFlightLoadIfNoEngine() async throws {
+		while whisperKit == nil && parakeetEngine == nil && loadingModelName != nil {
+			try Task.checkCancellation()
+			updateWaitingStatusText()
+			try await Task.sleep(nanoseconds: 200_000_000)
+		}
+	}
+
 	func waitForReadyForTranscription(timeoutSeconds: TimeInterval = 30) async throws {
 		try Task.checkCancellation()
 		await ensureInitializedIfNeeded()
@@ -163,6 +175,8 @@ import WhisperKit
 
 		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
 		downloadedModels = refreshedDownloaded
+
+		try await waitForInFlightLoadIfNoEngine()
 
 		if whisperKit == nil && parakeetEngine == nil {
 			guard !refreshedDownloaded.isEmpty else {
@@ -403,6 +417,8 @@ import WhisperKit
 	var downloadProgress: Double = 0.0
 	var downloadingModelName: String?
 	var loadProgress: Double = 0.0
+	/// The model a load is currently bringing up; the engine already loaded keeps serving until it finishes.
+	private(set) var loadingModelName: String?
 
 	@MainActor var whisperKit: WhisperKit?
 	@MainActor private(set) var parakeetEngine: ParakeetEngine?
@@ -1244,6 +1260,11 @@ import WhisperKit
 		defer { endModelUse() }
 		try await waitForReadyForTranscription()
 		guard isWhisperKitReady() else { throw WhisperKitError.notReady }
+		if let notice = modelSwitchNotice, let activeModel = notice.activeModel {
+			AppLogger.shared.transcriber.info(
+				"Transcribing with \(activeModel) while \(notice.pendingModel) is still \(notice.phase == .loading ? "loading" : "downloading")"
+			)
+		}
 		if let engine = parakeetEngine {
 			return try await transcribe(
 				with: engine, input: input, enableTranslation: enableTranslation, logPrefix: logPrefix)
@@ -1837,10 +1858,12 @@ import WhisperKit
 		}
 		isModelLoading = true
 		loadProgress = 0.0
+		loadingModelName = modelName
 		defer {
 			// WhisperKit's state callback never fires when the config or init throws first
 			isModelLoading = false
 			loadProgress = 0.0
+			if loadingModelName == modelName { loadingModelName = nil }
 			scheduleIdleUnload()
 		}
 
@@ -2155,10 +2178,12 @@ import WhisperKit
 		guard let base = baseModelCacheDirectory else { throw WhisperKitError.notInitialized }
 		isModelLoading = true
 		loadProgress = 0.3
+		loadingModelName = model.rawValue
 		publishEngineState(from: modelState, to: "loading")
 		defer {
 			isModelLoading = false
 			loadProgress = 0.0
+			if loadingModelName == model.rawValue { loadingModelName = nil }
 		}
 
 		do {
