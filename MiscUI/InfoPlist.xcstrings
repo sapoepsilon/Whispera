@@ -7,25 +7,25 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Whispera benötigt Bedienungshilfen-Zugriff, um globale Tastaturkurzbefehle zu erkennen."
+            "value": "Whispera verwendet Apple Events, um die Auswahl im Finder zu lesen und von dir genehmigte Einfügeskripte auszuführen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Whispera needs accessibility access to monitor global keyboard shortcuts."
+            "value": "Whispera uses Apple Events to read the Finder selection and to run insertion scripts you approve."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Whispera necesita acceso de accesibilidad para detectar los atajos de teclado globales."
+            "value": "Whispera usa Apple Events para leer la selección del Finder y ejecutar los scripts de inserción que apruebes."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Whispera a besoin de l'accès d'accessibilité pour surveiller les raccourcis clavier globaux."
+            "value": "Whispera utilise les Apple Events pour lire la sélection du Finder et exécuter les scripts d'insertion que vous approuvez."
           }
         }
       }
