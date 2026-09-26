@@ -34,205 +34,214 @@ struct MenuBarView: View {
 		MaterialStyle(rawValue: materialStyleRaw)
 	}
 
+	private var popoverLayout: PopoverLayout {
+		PopoverLayout(
+			contentHeight: contentHeight, visibleScreenHeight: NSScreen.main?.visibleFrame.height)
+	}
+
 	var body: some View {
-		VStack(spacing: 0) {
+		ScrollView(.vertical) {
+			VStack(spacing: 0) {
 
-			// Main content
-			VStack(spacing: 16) {
-				// Update notification banner (if available)
-				if let latestVersion = updateManager.latestVersion,
-					AppVersion(latestVersion) > AppVersion.current
-				{
-					VStack(spacing: 8) {
-						HStack {
-							Image(systemName: "arrow.down.circle.fill")
-								.foregroundColor(.blue)
-							Text("Update Available")
-								.font(.caption)
-								.fontWeight(.medium)
-								.foregroundColor(.blue)
-							Spacer()
+				// Main content
+				VStack(spacing: 16) {
+					// Update notification banner (if available)
+					if let latestVersion = updateManager.latestVersion,
+						AppVersion(latestVersion) > AppVersion.current
+					{
+						VStack(spacing: 8) {
+							HStack {
+								Image(systemName: "arrow.down.circle.fill")
+									.foregroundColor(.blue)
+								Text("Update Available")
+									.font(.caption)
+									.fontWeight(.medium)
+									.foregroundColor(.blue)
+								Spacer()
+							}
+
+							HStack {
+								Text("Whispera \(latestVersion)")
+									.font(.caption2)
+									.foregroundColor(.secondary)
+								Spacer()
+								if updateManager.isUpdateDownloaded {
+									Button("Install") {
+										Task {
+											try? await updateManager.installDownloadedUpdate()
+										}
+									}
+									.buttonStyle(.bordered)
+									.controlSize(.mini)
+								} else {
+									Button("Update") {
+										Task {
+											try? await updateManager.downloadUpdate()
+										}
+									}
+									.buttonStyle(.bordered)
+									.controlSize(.mini)
+								}
+							}
 						}
+						.padding(8)
+						.background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+						.overlay(
+							RoundedRectangle(cornerRadius: 6)
+								.stroke(.blue.opacity(0.3), lineWidth: 1)
+						)
+					}
 
-						HStack {
-							Text("Whispera \(latestVersion)")
-								.font(.caption2)
-								.foregroundColor(.secondary)
-							Spacer()
-							if updateManager.isUpdateDownloaded {
-								Button("Install") {
-									Task {
-										try? await updateManager.installDownloadedUpdate()
-									}
-								}
-								.buttonStyle(.bordered)
-								.controlSize(.mini)
-							} else {
-								Button("Update") {
-									Task {
-										try? await updateManager.downloadUpdate()
-									}
-								}
-								.buttonStyle(.bordered)
-								.controlSize(.mini)
+					SecureInputWarningBanner()
+
+					// Status card
+					StatusCardView(
+						audioManager: audioManager,
+						whisperKit: whisperKit,
+						permissionManager: permissionManager,
+						fileTranscriptionManager: fileTranscriptionManager,
+						networkDownloader: networkDownloader,
+						queueManager: queueManager
+					)
+
+					// Controls
+					VStack(spacing: 12) {
+						Button(action: {
+							audioManager.toggleRecording()
+						}) {
+							HStack(spacing: 8) {
+								Image(systemName: buttonIcon)
+								Text(buttonText)
+									.font(.system(.body, design: .rounded, weight: .medium))
+							}
+							.frame(maxWidth: .infinity)
+							.frame(height: 40)
+						}
+						.buttonStyle(PrimaryButtonStyle(isRecording: isActiveState))
+						.disabled(audioManager.isTranscribing)
+
+						// Shortcut display - design language compliant
+						VStack(spacing: 8) {
+							HStack {
+								Text(enableTranslation ? "Translation" : "Transcription")
+									.font(.caption)
+									.foregroundColor(.secondary)
+								Spacer()
+								Text(shortcutKey)
+									.font(.system(.caption, design: .monospaced))
+									.padding(.horizontal, 8)
+									.padding(.vertical, 4)
+									.background(
+										Color.blue.opacity(0.2), in: RoundedRectangle(cornerRadius: 6)
+									)
+									.foregroundColor(.blue)
 							}
 						}
 					}
-					.padding(8)
-					.background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-					.overlay(
-						RoundedRectangle(cornerRadius: 6)
-							.stroke(.blue.opacity(0.3), lineWidth: 1)
+
+					Divider()
+
+					// Secondary actions
+					VStack(spacing: 8) {
+						if #available(macOS 14.0, *) {
+							Button {
+
+								NSApp.setActivationPolicy(.regular)
+								NSApp.activate(ignoringOtherApps: true)
+
+								openSettings()
+
+								DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+									// TODO: Might become a problem if we add more windows
+									if let settingsWindow = SettingsWindowLocator.find() {
+										settingsWindow.collectionBehavior.insert(.moveToActiveSpace)
+										settingsWindow.makeKeyAndOrderFront(nil)
+										settingsWindow.orderFrontRegardless()
+										NSApp.activate(ignoringOtherApps: true)
+									}
+								}
+							} label: {
+								Label("Settings", systemImage: "gear")
+									.frame(maxWidth: .infinity)
+							}
+							.buttonStyle(SecondaryButtonStyle())
+						} else {
+							Button {
+
+								// Set app policy to regular to ensure proper window focus
+								NSApp.setActivationPolicy(.regular)
+								NSApp.activate(ignoringOtherApps: true)
+
+								// Use legacy preferences approach
+								NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+
+								// Bring the settings window to front after a brief delay
+								DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+									if let settingsWindow = SettingsWindowLocator.find() {
+										settingsWindow.makeKeyAndOrderFront(nil)
+										settingsWindow.orderFrontRegardless()
+										NSApp.activate(ignoringOtherApps: true)
+									}
+								}
+							} label: {
+								Label("Settings", systemImage: "gear")
+									.frame(maxWidth: .infinity)
+							}
+							.buttonStyle(SecondaryButtonStyle())
+						}
+
+						HStack(spacing: 8) {
+							Button {
+								HistoryWindowController.shared.show()
+							} label: {
+								Label("History", systemImage: "clock.arrow.circlepath")
+									.frame(maxWidth: .infinity)
+							}
+							.buttonStyle(SecondaryButtonStyle())
+							.accessibilityIdentifier("menuBarHistoryButton")
+
+							Button(action: copyLastTranscript) {
+								Label("Copy Last", systemImage: "doc.on.doc")
+									.frame(maxWidth: .infinity)
+							}
+							.buttonStyle(SecondaryButtonStyle())
+							.help("Copy the most recent transcript to the clipboard")
+							.accessibilityIdentifier("menuBarCopyLastButton")
+						}
+
+						Button("Quit Whispera") {
+							NSApplication.shared.terminate(nil)
+						}
+						.buttonStyle(TertiaryButtonStyle())
+					}
+				}
+				.padding(.horizontal, 20)
+				.padding(.bottom, 20)
+
+				// Transcription result
+				if let error = audioManager.transcriptionError {
+					ErrorBannerView(error: error)
+				} else if let transcription = audioManager.lastTranscription {
+					TranscriptionResultView(text: transcription)
+				}
+			}
+			.frame(width: 320)
+			.background(
+				GeometryReader { geometry in
+					Color.clear.preference(
+						key: ViewHeightKey.self,
+						value: geometry.size.height
 					)
 				}
-
-				SecureInputWarningBanner()
-
-				// Status card
-				StatusCardView(
-					audioManager: audioManager,
-					whisperKit: whisperKit,
-					permissionManager: permissionManager,
-					fileTranscriptionManager: fileTranscriptionManager,
-					networkDownloader: networkDownloader,
-					queueManager: queueManager
-				)
-
-				// Controls
-				VStack(spacing: 12) {
-					Button(action: {
-						audioManager.toggleRecording()
-					}) {
-						HStack(spacing: 8) {
-							Image(systemName: buttonIcon)
-							Text(buttonText)
-								.font(.system(.body, design: .rounded, weight: .medium))
-						}
-						.frame(maxWidth: .infinity)
-						.frame(height: 40)
-					}
-					.buttonStyle(PrimaryButtonStyle(isRecording: isActiveState))
-					.disabled(audioManager.isTranscribing)
-
-					// Shortcut display - design language compliant
-					VStack(spacing: 8) {
-						HStack {
-							Text(enableTranslation ? "Translation" : "Transcription")
-								.font(.caption)
-								.foregroundColor(.secondary)
-							Spacer()
-							Text(shortcutKey)
-								.font(.system(.caption, design: .monospaced))
-								.padding(.horizontal, 8)
-								.padding(.vertical, 4)
-								.background(
-									Color.blue.opacity(0.2), in: RoundedRectangle(cornerRadius: 6)
-								)
-								.foregroundColor(.blue)
-						}
-					}
-				}
-
-				Divider()
-
-				// Secondary actions
-				VStack(spacing: 8) {
-					if #available(macOS 14.0, *) {
-						Button {
-
-							NSApp.setActivationPolicy(.regular)
-							NSApp.activate(ignoringOtherApps: true)
-
-							openSettings()
-
-							DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-								// TODO: Might become a problem if we add more windows
-								if let settingsWindow = SettingsWindowLocator.find() {
-									settingsWindow.collectionBehavior.insert(.moveToActiveSpace)
-									settingsWindow.makeKeyAndOrderFront(nil)
-									settingsWindow.orderFrontRegardless()
-									NSApp.activate(ignoringOtherApps: true)
-								}
-							}
-						} label: {
-							Label("Settings", systemImage: "gear")
-								.frame(maxWidth: .infinity)
-						}
-						.buttonStyle(SecondaryButtonStyle())
-					} else {
-						Button {
-
-							// Set app policy to regular to ensure proper window focus
-							NSApp.setActivationPolicy(.regular)
-							NSApp.activate(ignoringOtherApps: true)
-
-							// Use legacy preferences approach
-							NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-
-							// Bring the settings window to front after a brief delay
-							DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-								if let settingsWindow = SettingsWindowLocator.find() {
-									settingsWindow.makeKeyAndOrderFront(nil)
-									settingsWindow.orderFrontRegardless()
-									NSApp.activate(ignoringOtherApps: true)
-								}
-							}
-						} label: {
-							Label("Settings", systemImage: "gear")
-								.frame(maxWidth: .infinity)
-						}
-						.buttonStyle(SecondaryButtonStyle())
-					}
-
-					HStack(spacing: 8) {
-						Button {
-							HistoryWindowController.shared.show()
-						} label: {
-							Label("History", systemImage: "clock.arrow.circlepath")
-								.frame(maxWidth: .infinity)
-						}
-						.buttonStyle(SecondaryButtonStyle())
-						.accessibilityIdentifier("menuBarHistoryButton")
-
-						Button(action: copyLastTranscript) {
-							Label("Copy Last", systemImage: "doc.on.doc")
-								.frame(maxWidth: .infinity)
-						}
-						.buttonStyle(SecondaryButtonStyle())
-						.help("Copy the most recent transcript to the clipboard")
-						.accessibilityIdentifier("menuBarCopyLastButton")
-					}
-
-					Button("Quit Whispera") {
-						NSApplication.shared.terminate(nil)
-					}
-					.buttonStyle(TertiaryButtonStyle())
-				}
-			}
-			.padding(.horizontal, 20)
-			.padding(.bottom, 20)
-
-			// Transcription result
-			if let error = audioManager.transcriptionError {
-				ErrorBannerView(error: error)
-			} else if let transcription = audioManager.lastTranscription {
-				TranscriptionResultView(text: transcription)
-			}
-
+			)
 		}
-		.background(
-			GeometryReader { geometry in
-				Color.clear.preference(
-					key: ViewHeightKey.self,
-					value: geometry.size.height
-				)
-			}
-		)
+		.scrollDisabled(!popoverLayout.scrolls)
+		.scrollIndicators(popoverLayout.scrolls ? .automatic : .never)
 		.onPreferenceChange(ViewHeightKey.self) { height in
-			contentHeight = min(max(height, 400), 700)
+			contentHeight = height
 		}
-		.frame(width: 320, height: contentHeight, alignment: .top)
-		.background(materialStyle.material)
+		.frame(width: 320, height: popoverLayout.height, alignment: .top)
+		.background(AdaptiveMaterialBackground(style: materialStyle))
 		.overlay(dropZoneOverlay)
 		.overlay(alignment: .bottom) {
 			VStack(spacing: 8) {
@@ -586,6 +595,10 @@ struct StatusCardView: View {
 							.font(.system(.caption, design: .monospaced))
 							.foregroundColor(.secondary)
 					}
+				}
+
+				if whisperKit.isInitialized, let notice = whisperKit.modelSwitchNotice {
+					ModelSwitchNoticeRow(notice: notice, showsTitle: !whisperKit.isDownloadingModel)
 				}
 			}
 
@@ -1056,6 +1069,40 @@ struct StatusCardView: View {
 }
 
 // MARK: - Transcription Result
+struct ModelSwitchNoticeRow: View {
+	let notice: ModelSwitchNotice
+	/// The download progress row already names the model while it downloads.
+	let showsTitle: Bool
+
+	var body: some View {
+		HStack(alignment: .top, spacing: 6) {
+			if showsTitle {
+				ProgressView()
+					.controlSize(.mini)
+			} else {
+				Image(systemName: "info.circle")
+					.font(.caption)
+					.foregroundColor(.secondary)
+			}
+			VStack(alignment: .leading, spacing: 2) {
+				if showsTitle {
+					Text(notice.title(name: WhisperKitTranscriber.mediumModelName))
+						.font(.caption)
+						.fontWeight(.medium)
+						.foregroundColor(.primary)
+				}
+				Text(notice.detail(name: WhisperKitTranscriber.mediumModelName))
+					.font(.caption2)
+					.foregroundColor(.secondary)
+			}
+			.fixedSize(horizontal: false, vertical: true)
+			Spacer(minLength: 0)
+		}
+		.accessibilityElement(children: .combine)
+		.accessibilityIdentifier("menuBarModelSwitchNotice")
+	}
+}
+
 struct TranscriptionResultView: View {
 	let text: String
 

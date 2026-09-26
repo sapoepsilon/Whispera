@@ -60,7 +60,9 @@ struct SettingsWithMaterial: View {
 				softwareUpdater: softwareUpdater
 			)
 			.frame(minWidth: 450, minHeight: 520)
-			.containerBackground(materialStyle.material, for: .window)
+			.containerBackground(for: .window) {
+				AdaptiveMaterialBackground(style: materialStyle)
+			}
 		} else {
 			SettingsView(
 				permissionManager: permissionManager,
@@ -99,6 +101,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	private var minimalIndicatorController: MinimalRecordingIndicatorController?
 	private var recordingGlowController: RecordingGlowController?
 	private var popoverFrame: NSRect?
+	private var themeObserver: NSObjectProtocol?
 	private var menuBarIcon = MenuBarIconVisibility(defaults: .standard)
 	private var menuBarIconObserver: DefaultsKeyObserver?
 
@@ -215,7 +218,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			button.target = self
 		}
 
-		popover.contentViewController = NSHostingController(
+		let menuController = NSHostingController(
 			rootView: MenuBarView(
 				audioManager: audioManager,
 				permissionManager: permissionManager ?? PermissionManager(),
@@ -224,6 +227,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 				networkDownloader: networkDownloader,
 				queueManager: queueManager
 			))
+		// The popover follows preferredContentSize, so banners appearing while it is open resize it
+		menuController.sizingOptions = .preferredContentSize
+		popover.contentViewController = menuController
+		// A menu bar popover takes the menu bar's appearance, not NSApp.appearance
+		popover.appearance = NSApp.appearance
+		themeObserver = NotificationCenter.default.addObserver(
+			forName: AppTheme.didChangeNotification, object: nil, queue: .main
+		) { [weak self] _ in
+			MainActor.assumeIsolated {
+				self?.popover.appearance = NSApp.appearance
+			}
+		}
 		popover.behavior = .semitransient
 		popover.delegate = self
 		applyMenuBarIconVisibility()
@@ -331,9 +346,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			return
 		}
 
-		if popoverWindow.frame != savedFrame {
-			popoverWindow.setFrame(savedFrame, display: false, animate: false)
-		}
+		// Only the horizontal position is restored; the height follows the content
+		var frame = popoverWindow.frame
+		guard frame.origin.x != savedFrame.origin.x else { return }
+		frame.origin.x = savedFrame.origin.x
+		popoverWindow.setFrame(frame, display: false, animate: false)
 	}
 	private func showOnboarding() {
 		let onboardingView = OnboardingView(

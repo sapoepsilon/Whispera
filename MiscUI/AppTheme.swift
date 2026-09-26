@@ -29,6 +29,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
 	static func stored(in defaults: UserDefaults = .standard) -> AppTheme {
 		defaults.string(forKey: defaultsKey).flatMap(AppTheme.init(rawValue:)) ?? .system
 	}
+
+	static let didChangeNotification = Notification.Name("AppThemeDidChange")
 }
 
 @MainActor
@@ -53,6 +55,7 @@ final class ThemeController {
 		guard theme != lastApplied else { return }
 		lastApplied = theme
 		NSApp.appearance = theme.appearanceName.flatMap(NSAppearance.init(named:))
+		NotificationCenter.default.post(name: AppTheme.didChangeNotification, object: nil)
 		AppLogger.shared.ui.info("Applied app theme: \(theme.rawValue)")
 	}
 }
