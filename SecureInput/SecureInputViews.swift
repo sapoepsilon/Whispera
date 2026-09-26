@@ -77,6 +77,8 @@ struct SecureInputSettingsRows: View {
 					monitor.reconcileFallback()
 				}
 		}
+		.onAppear { monitor.viewDidAppear() }
+		.onDisappear { monitor.viewDidDisappear() }
 
 		if monitor.isSustained {
 			SecureInputWarningBanner(monitor: monitor)

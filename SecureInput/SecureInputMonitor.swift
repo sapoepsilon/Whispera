@@ -142,10 +142,15 @@ final class SecureInputMonitor {
 	}
 
 	static let shared = SecureInputMonitor()
-	// Secure input only needs noticing within the sustain threshold, so a coarse, tolerant timer
-	// lets the system coalesce the wakeup with others instead of waking the app every second.
-	static let pollInterval: TimeInterval = 2
-	static let pollTolerance: TimeInterval = 1
+	// There is no notification for secure input, so it is polled, but only while the answer can
+	// matter: the fallback is on or a view shows the state, and the screens are awake. While it is
+	// off the poll is slow and tolerant so the system can coalesce the wakeup; app switches, which
+	// is when secure input usually changes, trigger an immediate check. Once it is on, the poll
+	// speeds up to notice the sustained hold and the release promptly.
+	static let idlePollInterval: TimeInterval = 6
+	static let idlePollTolerance: TimeInterval = 3
+	static let activePollInterval: TimeInterval = 1
+	static let activePollTolerance: TimeInterval = 0.5
 
 	private(set) var isEnabled = false
 	private(set) var isSustained = false
@@ -154,6 +159,13 @@ final class SecureInputMonitor {
 
 	@ObservationIgnored private var stateMachine = SecureInputStateMachine()
 	@ObservationIgnored private var timer: Timer?
+	@ObservationIgnored private(set) var currentPollInterval: TimeInterval?
+	/// Set by `start()`: the dictation shortcut relies on event monitors, which secure input blinds.
+	@ObservationIgnored private var started = false
+	/// Screens asleep or the session switched away; nobody can press the shortcut.
+	@ObservationIgnored private var suspended = false
+	@ObservationIgnored private var visibleViews = 0
+	@ObservationIgnored private var workspaceObservers: [NSObjectProtocol] = []
 	@ObservationIgnored private let hotKey = CarbonHotKey()
 	@ObservationIgnored private let isSecureInputEnabled: () -> Bool
 	@ObservationIgnored private let defaults: UserDefaults
@@ -187,22 +199,21 @@ final class SecureInputMonitor {
 	}
 
 	func start() {
-		guard timer == nil else { return }
+		guard !started else { return }
+		started = true
+		observeWorkspace()
 		poll()
-		let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
-			MainActor.assumeIsolated { self?.poll() }
-		}
-		timer.tolerance = Self.pollTolerance
-		RunLoop.main.add(timer, forMode: .common)
-		self.timer = timer
+		updatePolling()
 		logger.info("Secure input monitor started")
 	}
 
 	var isPolling: Bool { timer != nil }
 
 	func stop() {
-		timer?.invalidate()
-		timer = nil
+		started = false
+		suspended = false
+		stopObservingWorkspace()
+		updatePolling()
 		hotKey.unregister()
 		stateMachine = SecureInputStateMachine()
 		setIfChanged(\.isEnabled, false)
@@ -221,6 +232,7 @@ final class SecureInputMonitor {
 			return
 		case .enabled:
 			logger.debug("Secure event input enabled")
+			updatePolling()
 		case .sustained:
 			logger.info("Secure event input sustained; global shortcut monitors are blind")
 			reconcileFallback()
@@ -229,7 +241,83 @@ final class SecureInputMonitor {
 			logger.debug("Secure event input disabled")
 			setIfChanged(\.culprit, nil)
 			if wasSustained { reconcileFallback() }
+			updatePolling()
 		}
+	}
+
+	/// A banner or settings row showing the state keeps it fresh even with the fallback off.
+	func viewDidAppear() {
+		visibleViews += 1
+		if started { poll() }
+		updatePolling()
+	}
+
+	func viewDidDisappear() {
+		visibleViews = max(visibleViews - 1, 0)
+		updatePolling()
+	}
+
+	func suspend() {
+		guard !suspended else { return }
+		suspended = true
+		updatePolling()
+	}
+
+	func resume() {
+		guard suspended else { return }
+		suspended = false
+		if started { poll() }
+		updatePolling()
+	}
+
+	private var desiredPollInterval: TimeInterval? {
+		guard started, !suspended, isFallbackEnabled || visibleViews > 0 else { return nil }
+		return stateMachine.isEnabled ? Self.activePollInterval : Self.idlePollInterval
+	}
+
+	private func updatePolling() {
+		let desired = desiredPollInterval
+		guard desired != currentPollInterval || (desired != nil) != (timer != nil) else { return }
+		timer?.invalidate()
+		timer = nil
+		currentPollInterval = desired
+		guard let desired else { return }
+		let timer = Timer(timeInterval: desired, repeats: true) { [weak self] _ in
+			MainActor.assumeIsolated { self?.poll() }
+		}
+		timer.tolerance = desired == Self.activePollInterval ? Self.activePollTolerance : Self.idlePollTolerance
+		RunLoop.main.add(timer, forMode: .common)
+		self.timer = timer
+	}
+
+	private func observeWorkspace() {
+		guard workspaceObservers.isEmpty else { return }
+		let center = NSWorkspace.shared.notificationCenter
+		func observe(_ name: Notification.Name, _ handler: @escaping @MainActor (SecureInputMonitor) -> Void)
+			-> NSObjectProtocol
+		{
+			center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+				MainActor.assumeIsolated {
+					guard let self else { return }
+					handler(self)
+				}
+			}
+		}
+		workspaceObservers = [
+			observe(NSWorkspace.didActivateApplicationNotification) { monitor in
+				if monitor.timer != nil { monitor.poll() }
+			},
+			observe(NSWorkspace.screensDidSleepNotification) { $0.suspend() },
+			observe(NSWorkspace.sessionDidResignActiveNotification) { $0.suspend() },
+			observe(NSWorkspace.screensDidWakeNotification) { $0.resume() },
+			observe(NSWorkspace.sessionDidBecomeActiveNotification) { $0.resume() },
+		]
+	}
+
+	private func stopObservingWorkspace() {
+		let center = NSWorkspace.shared.notificationCenter
+		workspaceObservers.forEach { center.removeObserver($0) }
+		workspaceObservers = []
 	}
 
 	// Browsers toggle secure input on every password-field focus; only a sustained hold is shown
@@ -255,6 +343,7 @@ final class SecureInputMonitor {
 	}
 
 	func reconcileFallback() {
+		updatePolling()
 		guard isSustained else {
 			hotKey.unregister()
 			setIfChanged(\.fallbackStatus, .inactive)
