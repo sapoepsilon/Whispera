@@ -14,7 +14,8 @@ extension SecureInputMonitor {
 			return
 				"Your dictation shortcut cannot be detected until it ends. Pick a shortcut without the Globe key or close the password field."
 		case .disabledByUser:
-			return "Your dictation shortcut cannot be detected until it ends. Turn on the fallback hotkey in Settings."
+			return
+				"Your dictation shortcut cannot be detected until it ends. Turn on the fallback hotkey in Settings."
 		case .inactive:
 			return "Keyboard shortcuts may not be detected until it ends."
 		}
@@ -29,8 +30,11 @@ struct SecureInputWarningBanner: View {
 			let tint: Color = monitor.showsWarning ? .orange : .blue
 			VStack(alignment: .leading, spacing: 4) {
 				HStack(spacing: 6) {
-					Image(systemName: monitor.showsWarning ? "lock.trianglebadge.exclamationmark" : "lock.fill")
-						.foregroundColor(tint)
+					Image(
+						systemName: monitor.showsWarning
+							? "lock.trianglebadge.exclamationmark" : "lock.fill"
+					)
+					.foregroundColor(tint)
 					Text(monitor.holderDescription)
 						.font(.caption)
 						.fontWeight(.medium)

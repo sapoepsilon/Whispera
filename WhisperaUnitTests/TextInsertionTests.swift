@@ -493,7 +493,10 @@ struct AutoSubmitTests {
 		let live = await run(.liveSegment) { $0.autoSubmit = true }
 		#expect(live.events.map(\.keyCode) == [KeyCode.v])
 
-		let copyOnly = await run { $0.autoSubmit = true; $0.pasteMethod = .copyOnly }
+		let copyOnly = await run {
+			$0.autoSubmit = true
+			$0.pasteMethod = .copyOnly
+		}
 		#expect(copyOnly.events.isEmpty)
 	}
 

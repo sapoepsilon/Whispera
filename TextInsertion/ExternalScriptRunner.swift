@@ -56,7 +56,8 @@ enum ExternalScriptRunner {
 				try process.run()
 			} catch {
 				if resumed.claim() {
-					continuation.resume(throwing: ExternalScriptError.launchFailed(error.localizedDescription))
+					continuation.resume(
+						throwing: ExternalScriptError.launchFailed(error.localizedDescription))
 				}
 				return
 			}

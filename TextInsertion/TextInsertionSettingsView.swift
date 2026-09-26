@@ -49,7 +49,8 @@ struct TextInsertionSettingsView: View {
 
 					SettingRow(
 						"Append Trailing Space",
-						description: "Add a space after each transcript so the next one does not run into it"
+						description:
+							"Add a space after each transcript so the next one does not run into it"
 					) {
 						Toggle("", isOn: $appendTrailingSpace)
 					}
