@@ -43,21 +43,25 @@ enum WhisperaCLI {
 
 	@MainActor
 	private static func listModels(options: CLIOptions, defaults: UserDefaults) {
-		let models = CLIModelCatalog.downloadedModels()
-		let current = CLIModelCatalog.defaultModel(downloaded: models, defaults: defaults)
+		let models = CLIModelCatalog.availableModels(defaults: defaults)
+		let current = CLIModelCatalog.defaultModel(downloaded: models.map(\.id), defaults: defaults)
 		if options.json {
 			struct Entry: Encodable {
 				let id: String
 				let name: String
+				let engine: String
 				let isDefault: Bool
 				enum CodingKeys: String, CodingKey {
-					case id, name
+					case id, name, engine
 					case isDefault = "default"
 				}
 			}
 			writeJSON(
-				models.map {
-					Entry(id: $0, name: WhisperKitTranscriber.getModelDisplayName(for: $0), isDefault: $0 == current)
+				models.map { model in
+					Entry(
+						id: model.id,
+						name: model.name == model.id ? WhisperKitTranscriber.getModelDisplayName(for: model.id) : model.name,
+						engine: model.engineName, isDefault: model.id == current)
 				})
 			return
 		}
@@ -66,7 +70,8 @@ enum WhisperaCLI {
 			return
 		}
 		for model in models {
-			write("\(model == current ? "*" : " ") \(model)")
+			let label = model.name == model.id ? model.id : "\(model.id)  (\(model.name))"
+			write("\(model.id == current ? "*" : " ") \(label)")
 		}
 	}
 
@@ -85,12 +90,14 @@ enum WhisperaCLI {
 		}
 	}
 
+	@MainActor
 	private static func transcribe(options: CLIOptions, defaults: UserDefaults) async throws {
-		let downloaded = CLIModelCatalog.downloadedModels()
-		guard !downloaded.isEmpty else { throw HeadlessTranscriberError.noModelsDownloaded }
-		let model = options.model ?? CLIModelCatalog.defaultModel(downloaded: downloaded, defaults: defaults)!
-		guard downloaded.contains(model) else {
-			throw HeadlessTranscriberError.modelNotDownloaded(model, available: downloaded)
+		let available = CLIModelCatalog.availableModels(defaults: defaults)
+		guard !available.isEmpty else { throw HeadlessTranscriberError.noModelsDownloaded }
+		let ids = available.map(\.id)
+		let requested = options.model ?? CLIModelCatalog.defaultModel(downloaded: ids, defaults: defaults)!
+		guard let model = available.first(where: { $0.id == requested }) else {
+			throw HeadlessTranscriberError.modelNotDownloaded(requested, available: ids)
 		}
 		guard let device = CLIComputeDevice.device(at: options.deviceIndex) else {
 			throw HeadlessTranscriberError.unknownDevice(options.deviceIndex ?? 0)
@@ -98,29 +105,41 @@ enum WhisperaCLI {
 		guard let language = CLIDecodingSettings.resolveLanguage(options.language, defaults: defaults) else {
 			throw HeadlessTranscriberError.unknownLanguage(options.language ?? "")
 		}
+		if !model.honorsLanguage {
+			if options.translate { throw HeadlessTranscriberError.translationUnsupported(model.id) }
+			if options.language != nil {
+				writeError("whispera: \(model.id) detects the spoken language itself; --language is ignored")
+			}
+		}
 
 		for file in options.files where !FileManager.default.isReadableFile(atPath: file) {
 			throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: file])
 		}
 
-		debugLog(options, "Loading \(model) on device \(device.index) (\(device.id))")
+		debugLog(options, "Loading \(model.id) (\(model.engineName)) on device \(device.index) (\(device.id))")
 		let transcriber = try await HeadlessTranscriber(
 			model: model, device: device, downloadBase: CLIModelCatalog.defaultDownloadBase, verbose: options.debug)
+		defer { transcriber.unload() }
 		debugLog(options, String(format: "Model loaded in %.0f ms", transcriber.loadMs))
 
-		let decoding: DecodingOptions
+		let base: DecodingOptions
 		switch language {
 		case .code(let code):
-			decoding = CLIDecodingSettings.options(
+			base = CLIDecodingSettings.options(
 				language: code, detectLanguage: options.translate, translate: options.translate, defaults: defaults)
 		case .detect:
-			decoding = CLIDecodingSettings.options(
+			base = CLIDecodingSettings.options(
 				language: nil, detectLanguage: true, translate: options.translate, defaults: defaults)
 		}
+		let decoding = transcriber.decodingOptions(base, defaults: defaults)
+		let pipeline = CLITextPipeline(
+			configuration: TextProcessingSettings.configuration(from: defaults), language: language,
+			translating: options.translate, modelHonorsLanguage: model.honorsLanguage)
 
 		var runs: [CLITranscriptionRun] = []
 		for file in options.files {
-			let run = try await transcriber.run(file: file, repeatCount: options.repeatCount, options: decoding)
+			let run = try await transcriber.run(
+				file: file, repeatCount: options.repeatCount, options: decoding, pipeline: pipeline)
 			runs.append(run)
 			debugLog(
 				options,
@@ -138,7 +157,7 @@ enum WhisperaCLI {
 
 		if options.json {
 			writeJSON(
-				CLITranscriptionReport(model: model, device: device.id, loadMs: transcriber.loadMs, results: runs))
+				CLITranscriptionReport(model: model.id, device: device.id, loadMs: transcriber.loadMs, results: runs))
 		}
 	}
 

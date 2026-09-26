@@ -166,12 +166,13 @@ struct CLIOptions: Equatable {
 	static let usage = """
 		Usage: Whispera [options]
 
-		Headless transcription (the model must already be downloaded in the app):
+		Headless transcription (the model must already be downloaded in the app; output
+		goes through the app's filler-word, custom-word and Chinese-script settings):
 		  -f, --transcribe-file <path>  Transcribe an audio file and exit (repeatable)
-		  --model <id>                  Model to load (default: the model selected in the app)
+		  --model <id>                  Whisper, custom or Parakeet model (default: the app's model)
 		  --device-index <n>            Compute device from --list-devices (default 0)
-		  --language <name|code|auto>   Spoken language (default: the app setting)
-		  --translate                   Translate to English
+		  --language <name|code|auto>   Spoken language (default: the app setting; Parakeet detects it)
+		  --translate                   Translate to English (Whisper models only)
 		  --repeat <n>                  Transcribe each file n times; best_ms is the fastest run
 		  --json                        Print machine-readable JSON
 		  --debug                       Verbose WhisperKit logging on stderr
