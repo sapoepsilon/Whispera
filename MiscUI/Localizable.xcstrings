@@ -1427,6 +1427,29 @@
         }
       }
     },
+    "Also apply to the main shortcut. Live Transcription Mode types as you speak, so its sessions are never post-processed; use the shortcut above for those.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auch auf den Hauptkurzbefehl anwenden. Der Live-Transkriptionsmodus tippt, während du sprichst, daher werden seine Sitzungen nie nachbearbeitet; verwende dafür den Kurzbefehl oben."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aplícalo también al atajo principal. El modo de transcripción en vivo escribe mientras hablas, por lo que sus sesiones nunca se posprocesan; usa el atajo de arriba para eso."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "S'applique aussi au raccourci principal. Le mode Transcription en direct tape pendant que vous parlez, ses sessions ne sont donc jamais post-traitées ; utilisez le raccourci ci-dessus pour cela."
+          }
+        }
+      }
+    },
     "Also apply to the main shortcut. Live transcription sessions are not affected.": {
       "extractionState": "manual",
       "localizations": {
@@ -4555,6 +4578,52 @@
         }
       }
     },
+    "Delete saved history?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gespeicherten Verlauf löschen?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar el historial guardado?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer l'historique sauvegardé ?"
+          }
+        }
+      }
+    },
+    "Delete saved recordings?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gespeicherte Aufnahmen löschen?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar las grabaciones guardadas?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer les enregistrements sauvegardés ?"
+          }
+        }
+      }
+    },
     "Deletes every unstarred transcription and its recording. Starred entries are kept.": {
       "extractionState": "manual",
       "localizations": {
@@ -5747,6 +5816,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enregistrement supplémentaire après l'arrêt"
+          }
+        }
+      }
+    },
+    "Extra wait after the app reads the transcript before the clipboard is restored; raise it if an app pastes your old clipboard": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zusätzliche Wartezeit, nachdem die App das Transkript gelesen hat, bevor die Zwischenablage wiederhergestellt wird; erhöhe sie, wenn eine App deine alte Zwischenablage einfügt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espera adicional después de que la app lea la transcripción y antes de restaurar el portapapeles; auméntala si una app pega tu portapapeles anterior"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Délai supplémentaire après la lecture de la transcription par l'app avant la restauration du presse-papiers ; augmentez-le si une app colle votre ancien presse-papiers"
           }
         }
       }
@@ -7246,6 +7338,52 @@
         }
       }
     },
+    "Invalidates every link and script that carries the current token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Macht alle Links und Skripte ungültig, die das aktuelle Token enthalten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalida todos los enlaces y scripts que llevan el token actual"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalide tous les liens et scripts qui contiennent le jeton actuel"
+          }
+        }
+      }
+    },
+    "Keep": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Behalten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conservar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conserver"
+          }
+        }
+      }
+    },
     "Keep Open For": {
       "extractionState": "manual",
       "localizations": {
@@ -7403,6 +7541,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conserve l'audio pour réécouter ou retranscrire les entrées"
+          }
+        }
+      }
+    },
+    "Keep the audio so entries can be replayed or re-transcribed. Recordings stay on this Mac and are left out of Time Machine backups.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Behält das Audio, damit Einträge erneut abgespielt oder transkribiert werden können. Aufnahmen bleiben auf diesem Mac und sind von Time-Machine-Backups ausgenommen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guarda el audio para poder reproducir o volver a transcribir las entradas. Las grabaciones se quedan en este Mac y no se incluyen en las copias de Time Machine."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conserve l'audio pour pouvoir réécouter ou retranscrire les entrées. Les enregistrements restent sur ce Mac et sont exclus des sauvegardes Time Machine."
           }
         }
       }
@@ -7909,6 +8070,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Configurons tout en quelques étapes !"
+          }
+        }
+      }
+    },
+    "Lets Stream Deck, launchers and scripts control dictation. Links that start dictation, switch the model, open or copy from history, or add words must carry this Mac's private token, so web pages cannot open the mic or read your transcripts. Stop and cancel links always work.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ermöglicht Stream Deck, Launchern und Skripten, das Diktat zu steuern. Links, die das Diktat starten, das Modell wechseln, den Verlauf öffnen oder daraus kopieren oder Wörter hinzufügen, müssen das private Token dieses Macs enthalten, damit Webseiten weder das Mikrofon öffnen noch deine Transkripte lesen können. Links zum Stoppen und Abbrechen funktionieren immer."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permite que Stream Deck, lanzadores y scripts controlen el dictado. Los enlaces que inician el dictado, cambian el modelo, abren o copian del historial, o añaden palabras deben llevar el token privado de este Mac, para que ninguna página web pueda abrir el micrófono ni leer tus transcripciones. Los enlaces para detener y cancelar siempre funcionan."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permet à Stream Deck, aux lanceurs et aux scripts de contrôler la dictée. Les liens qui démarrent la dictée, changent de modèle, ouvrent l'historique ou y copient, ou ajoutent des mots doivent contenir le jeton privé de ce Mac, afin qu'aucune page web ne puisse ouvrir le micro ni lire vos transcriptions. Les liens pour arrêter et annuler fonctionnent toujours."
           }
         }
       }
@@ -9454,6 +9638,29 @@
         }
       }
     },
+    "New dictations are no longer saved. Delete the %lld entries already in history, including starred ones and their recordings?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Diktate werden nicht mehr gespeichert. Die %lld Einträge im Verlauf löschen, einschließlich markierter Einträge und ihrer Aufnahmen?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los dictados nuevos ya no se guardan. ¿Eliminar las %lld entradas que ya están en el historial, incluidas las destacadas y sus grabaciones?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les nouvelles dictées ne sont plus enregistrées. Supprimer les %lld entrées déjà dans l'historique, y compris les favorites et leurs enregistrements ?"
+          }
+        }
+      }
+    },
     "New prompt": {
       "extractionState": "manual",
       "localizations": {
@@ -9473,6 +9680,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nouvelle invite"
+          }
+        }
+      }
+    },
+    "New recordings are no longer saved. Delete the recordings already saved? The text of each entry is kept.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Aufnahmen werden nicht mehr gespeichert. Bereits gespeicherte Aufnahmen löschen? Der Text jedes Eintrags bleibt erhalten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las grabaciones nuevas ya no se guardan. ¿Eliminar las grabaciones ya guardadas? El texto de cada entrada se conserva."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les nouveaux enregistrements ne sont plus sauvegardés. Supprimer les enregistrements déjà sauvegardés ? Le texte de chaque entrée est conservé."
           }
         }
       }
@@ -10048,6 +10278,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "S'applique uniquement à la transcription en continu, mode transcription en direct désactivé"
+          }
+        }
+      }
+    },
+    "Only applies with Live Transcription Mode off; live dictation always mixes all channels": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gilt nur bei ausgeschaltetem Live-Transkriptionsmodus; das Live-Diktat mischt immer alle Kanäle"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo se aplica con el modo de transcripción en vivo desactivado; el dictado en vivo siempre mezcla todos los canales"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "S'applique uniquement lorsque le mode Transcription en direct est désactivé ; la dictée en direct mélange toujours tous les canaux"
           }
         }
       }
@@ -10765,6 +11018,29 @@
         }
       }
     },
+    "Plain http to %@ would expose your API key, so Whispera will not send it. Use https://.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unverschlüsseltes http zu %@ würde deinen API-Schlüssel offenlegen, daher sendet Whispera ihn nicht. Verwende https://."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El http sin cifrar hacia %@ expondría tu clave de API, así que Whispera no la enviará. Usa https://."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le http non chiffré vers %@ exposerait votre clé d'API, Whispera ne l'enverra donc pas. Utilisez https://."
+          }
+        }
+      }
+    },
     "Play recording": {
       "extractionState": "manual",
       "localizations": {
@@ -11037,6 +11313,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Appuie sur une touche après l'insertion pour que les chats envoient le message"
+          }
+        }
+      }
+    },
+    "Press a key after inserting so chat boxes send the message. Live dictation presses it once, when you stop.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drückt nach dem Einfügen eine Taste, damit Chatfelder die Nachricht senden. Das Live-Diktat drückt sie einmal, wenn du stoppst."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa una tecla después de insertar para que los chats envíen el mensaje. El dictado en vivo la pulsa una vez, al detener."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuie sur une touche après l'insertion pour que les champs de discussion envoient le message. La dictée en direct l'appuie une fois, à l'arrêt."
           }
         }
       }
@@ -11892,6 +12191,29 @@
         }
       }
     },
+    "Record a single channel of a multi-channel interface": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nimmt einen einzelnen Kanal eines Mehrkanal-Interfaces auf"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Graba un solo canal de una interfaz multicanal"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistre un seul canal d'une interface multicanal"
+          }
+        }
+      }
+    },
     "Record a single channel of a multi-channel interface (dictation without live preview)": {
       "extractionState": "manual",
       "localizations": {
@@ -12141,6 +12463,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Actualiser"
+          }
+        }
+      }
+    },
+    "Refusing to send your API key to %@ over plain http. Use an https:// base URL, or remove the key for a local server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein API-Schlüssel wird nicht über unverschlüsseltes http an %@ gesendet. Verwende eine https://-Basis-URL oder entferne den Schlüssel für einen lokalen Server."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se enviará tu clave de API a %@ por http sin cifrar. Usa una URL base https:// o quita la clave para un servidor local."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre clé d'API ne sera pas envoyée à %@ en http non chiffré. Utilisez une URL de base https:// ou retirez la clé pour un serveur local."
           }
         }
       }
@@ -12601,6 +12946,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Réinitialiser"
+          }
+        }
+      }
+    },
+    "Reset Token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token zurücksetzen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restablecer token"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réinitialiser le jeton"
           }
         }
       }
@@ -14215,6 +14583,29 @@
         }
       }
     },
+    "Skip clips with no speech and trim silence from them; in Live Transcription Mode, pause transcribing while you are silent": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Überspringt Clips ohne Sprache und schneidet Stille heraus; im Live-Transkriptionsmodus pausiert die Transkription, während du schweigst"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Omite los clips sin voz y recorta sus silencios; en el modo de transcripción en vivo, pausa la transcripción mientras estás en silencio"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignore les extraits sans parole et en retire les silences ; en mode Transcription en direct, met la transcription en pause pendant que vous vous taisez"
+          }
+        }
+      }
+    },
     "Small (English)": {
       "extractionState": "manual",
       "localizations": {
@@ -15453,6 +15844,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le microphone reste ouvert quelques secondes après l'arrêt pour qu'un nouvel enregistrement démarre aussitôt"
+          }
+        }
+      }
+    },
+    "The microphone stays open for a few seconds after stopping so a quick follow-up starts instantly; the mic indicator stays on until it closes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Mikrofon bleibt nach dem Stoppen einige Sekunden geöffnet, damit ein schnelles Folgediktat sofort startet; die Mikrofonanzeige bleibt an, bis es geschlossen wird"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El micrófono sigue abierto unos segundos después de detener para que un dictado inmediato empiece al instante; el indicador del micrófono sigue encendido hasta que se cierra"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le micro reste ouvert quelques secondes après l'arrêt pour qu'une dictée rapide suivante démarre instantanément ; l'indicateur du micro reste allumé jusqu'à sa fermeture"
+          }
+        }
+      }
+    },
+    "The microphone stays open while Whispera runs for the fastest start. The mic indicator stays on, it uses more battery and keeps the Mac from idle sleeping. It closes during sleep, screen lock and Low Power Mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Mikrofon bleibt geöffnet, solange Whispera läuft, für den schnellsten Start. Die Mikrofonanzeige bleibt an, es verbraucht mehr Akku und verhindert den Ruhezustand bei Inaktivität. Es wird im Ruhezustand, bei gesperrtem Bildschirm und im Stromsparmodus geschlossen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El micrófono sigue abierto mientras Whispera se ejecuta para empezar lo más rápido posible. El indicador del micrófono sigue encendido, consume más batería e impide que el Mac entre en reposo por inactividad. Se cierra durante el reposo, el bloqueo de pantalla y el modo de bajo consumo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le micro reste ouvert tant que Whispera fonctionne pour un démarrage le plus rapide. L'indicateur du micro reste allumé, cela consomme plus de batterie et empêche la mise en veille du Mac en cas d'inactivité. Il se ferme pendant la veille, le verrouillage de l'écran et le mode économie d'énergie"
           }
         }
       }

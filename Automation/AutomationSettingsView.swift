@@ -26,7 +26,7 @@ struct AutomationSettingsView: View {
 			SettingRow(
 				"Allow whispera:// links",
 				description:
-					"Lets Stream Deck, launchers and scripts control dictation. Links that start dictation or switch the model must carry this Mac's private token, so web pages cannot open the mic. Stop and cancel links always work."
+					"Lets Stream Deck, launchers and scripts control dictation. Links that start dictation, switch the model, open or copy from history, or add words must carry this Mac's private token, so web pages cannot open the mic or read your transcripts. Stop and cancel links always work."
 			) {
 				Toggle("", isOn: $urlSchemeEnabled)
 					.toggleStyle(.switch)

@@ -31,7 +31,10 @@ enum PostProcessingError: LocalizedError, Equatable {
 		case .appleIntelligenceUnavailable(let reason):
 			return "Apple Intelligence is unavailable: \(reason)"
 		case .insecureKeyTransport(let host):
-			return "Refusing to send your API key to \(host) over plain http. Use an https:// base URL, or remove the key for a local server."
+			return String(
+				localized:
+					"Refusing to send your API key to \(host) over plain http. Use an https:// base URL, or remove the key for a local server."
+			)
 		}
 	}
 }
@@ -141,7 +144,8 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		guard hasKey, let url = endpoint(baseURL: baseURL, path: "models"), !canSendKey(to: url) else {
 			return nil
 		}
-		return "Plain http to \(url.host ?? baseURL) would expose your API key, so Whispera will not send it. Use https://."
+		let host = url.host ?? baseURL
+		return String(localized: "Plain http to \(host) would expose your API key, so Whispera will not send it. Use https://.")
 	}
 
 	private func makeRequest(path: String, method: String) throws -> URLRequest {

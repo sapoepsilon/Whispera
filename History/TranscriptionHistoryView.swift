@@ -146,8 +146,8 @@ struct TranscriptionHistoryView: View {
 
 	private var purgeTitle: String {
 		switch pendingPurge {
-		case .recordings: return "Delete saved recordings?"
-		default: return "Delete saved history?"
+		case .recordings: return String(localized: "Delete saved recordings?")
+		default: return String(localized: "Delete saved history?")
 		}
 	}
 
