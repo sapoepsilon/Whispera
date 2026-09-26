@@ -417,6 +417,7 @@ import WhisperKit
 	@ObservationIgnored private var liveStreamHoldsModel = false
 	@ObservationIgnored private var pendingLoadTask: Task<Void, Error>?
 	@ObservationIgnored private var lastObservedUnloadTimeout: ModelUnloadTimeout?
+	@ObservationIgnored private var settingsObserver: DefaultsKeyObserver?
 	private(set) var isIdleUnloaded = false
 
 	// Swift 6 compliant singleton pattern
@@ -2197,13 +2198,13 @@ import WhisperKit
 	}
 
 	private func setupUserDefaultsObservation() {
-		// Observe language changes
-		NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-			.receive(on: DispatchQueue.main)
-			.sink { [weak self] _ in
-				self?.checkForSettingsChanges()
-			}
-			.store(in: &cancellables)
+		settingsObserver = DefaultsKeyObserver(
+			keys: [
+				"selectedLanguage", "enableTranslation", RecordingControlSettings.Key.modelUnloadTimeout,
+			]
+		) { [weak self] in
+			self?.checkForSettingsChanges()
+		}
 	}
 
 	private var lastObservedLanguage: String?

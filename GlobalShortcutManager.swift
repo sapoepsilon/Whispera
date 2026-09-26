@@ -22,6 +22,7 @@ class GlobalShortcutManager: ObservableObject {
 	@MainActor private var activation = ActivationStateMachine(
 		mode: .toggle, holdThreshold: TimeInterval(RecordingControlSettings.defaultHoldThresholdMs) / 1000)
 	private var recordingStateObserver: NSObjectProtocol?
+	private var defaultsObserver: DefaultsKeyObserver?
 	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
 	var fileSelectionShortcut: String =
 		UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
@@ -33,36 +34,41 @@ class GlobalShortcutManager: ObservableObject {
 
 	init() {
 		setupShortcut()
-		NotificationCenter.default.addObserver(
-			forName: UserDefaults.didChangeNotification,
-			object: nil,
-			queue: .main
-		) { [weak self] _ in
-			let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
-			let newFileShortcut = UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
-			let newBackend = HotkeyBackend.preferred()
-
-			if newBackend != self?.requestedBackend {
-				self?.logger.info("Hotkey backend changed to \(newBackend.rawValue)")
-				self?.requestedBackend = newBackend
-				self?.setupShortcut()
-			}
-
-			if newShortcut != self?.currentShortcut {
-				self?.logger.info(
-					"Text shortcut changed: \(self?.currentShortcut ?? "nil") → \(newShortcut)")
-				self?.currentShortcut = newShortcut
-				self?.setupShortcut()
-			}
-
-			if newFileShortcut != self?.fileSelectionShortcut {
-				self?.logger.info(
-					"File selection shortcut changed: \(self?.fileSelectionShortcut ?? "nil") → \(newFileShortcut)"
-				)
-				self?.fileSelectionShortcut = newFileShortcut
-				self?.setupShortcut()
-			}
+		defaultsObserver = DefaultsKeyObserver(
+			keys: [
+				"globalShortcut", "fileSelectionShortcut", HotkeyBackend.defaultsKey,
+			]
+		) { [weak self] in
+			self?.shortcutSettingsChanged()
 		}
+	}
+
+	private func shortcutSettingsChanged() {
+		let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
+		let newFileShortcut = UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
+		let newBackend = HotkeyBackend.preferred()
+		var needsSetup = false
+
+		if newBackend != requestedBackend {
+			logger.info("Hotkey backend changed to \(newBackend.rawValue)")
+			requestedBackend = newBackend
+			needsSetup = true
+		}
+
+		if newShortcut != currentShortcut {
+			logger.info("Text shortcut changed: \(currentShortcut) → \(newShortcut)")
+			currentShortcut = newShortcut
+			needsSetup = true
+		}
+
+		if newFileShortcut != fileSelectionShortcut {
+			logger.info(
+				"File selection shortcut changed: \(fileSelectionShortcut) → \(newFileShortcut)")
+			fileSelectionShortcut = newFileShortcut
+			needsSetup = true
+		}
+
+		if needsSetup { setupShortcut() }
 	}
 
 	func setAudioManager(_ manager: AudioManager) {
@@ -160,6 +166,7 @@ class GlobalShortcutManager: ObservableObject {
 			logger.info("Removed old file selection local monitor")
 		}
 		CarbonHotKeyCenter.shared.unregisterAll()
+		postProcessShortcutMonitor.reinstall()
 
 		let (textModifiers, textKeyCode) = parseShortcut(currentShortcut)
 		logger.info(

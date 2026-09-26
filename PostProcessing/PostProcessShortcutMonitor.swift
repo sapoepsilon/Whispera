@@ -11,23 +11,23 @@ final class PostProcessShortcutMonitor {
 	private var localMonitor: Any?
 	private weak var audioManager: AudioManager?
 	private var parser: ShortcutParser?
-	private var defaultsObserver: NSObjectProtocol?
+	private var defaultsObserver: DefaultsKeyObserver?
 	private var installedSignature: String?
 	private let settings: PostProcessingSettings
 	private let logger = AppLogger.shared.general
 
 	init(settings: PostProcessingSettings = PostProcessingSettings()) {
 		self.settings = settings
-		defaultsObserver = NotificationCenter.default.addObserver(
-			forName: UserDefaults.didChangeNotification, object: nil, queue: .main
-		) { [weak self] _ in
+		defaultsObserver = DefaultsKeyObserver(
+			defaults: settings.defaults,
+			keys: [PostProcessingSettings.Key.enabled, PostProcessingSettings.Key.shortcut]
+		) { [weak self] in
 			self?.reinstallIfChanged()
 		}
 	}
 
 	deinit {
 		removeMonitors()
-		if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
 	}
 
 	func attach(audioManager: AudioManager, parser: @escaping ShortcutParser) {
@@ -37,7 +37,7 @@ final class PostProcessShortcutMonitor {
 	}
 
 	/// Global monitors installed before Accessibility is granted stay deaf, so the owner calls
-	/// this again once permission arrives.
+	/// this again whenever it reinstalls its own shortcut monitors, including after permission arrives.
 	func reinstall() {
 		installedSignature = nil
 		reinstallIfChanged()
