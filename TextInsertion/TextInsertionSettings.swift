@@ -23,13 +23,16 @@ enum InsertionContext: Sendable {
 struct TextInsertionSettings: Equatable, Sendable {
 	enum Keys {
 		static let clipboardHandling = "clipboardHandling"
+		static let pasteDelayBeforeMs = "pasteDelayBeforeMs"
+		static let pasteDelayAfterMs = "pasteDelayAfterMs"
 	}
 
-	static let pasteDelayMs = 60
+	static let defaultPasteDelayMs = 60
+	static let delayRange: ClosedRange<Int> = 0...1000
 
 	var clipboardHandling: ClipboardHandling = .restore
-	var pasteDelayBeforeMs: Int = pasteDelayMs
-	var pasteDelayAfterMs: Int = pasteDelayMs
+	var pasteDelayBeforeMs: Int = defaultPasteDelayMs
+	var pasteDelayAfterMs: Int = defaultPasteDelayMs
 
 	init() {}
 
@@ -39,6 +42,12 @@ struct TextInsertionSettings: Equatable, Sendable {
 		{
 			clipboardHandling = value
 		}
+		if defaults.object(forKey: Keys.pasteDelayBeforeMs) != nil {
+			pasteDelayBeforeMs = Self.clampedDelay(defaults.integer(forKey: Keys.pasteDelayBeforeMs))
+		}
+		if defaults.object(forKey: Keys.pasteDelayAfterMs) != nil {
+			pasteDelayAfterMs = Self.clampedDelay(defaults.integer(forKey: Keys.pasteDelayAfterMs))
+		}
 	}
 
 	static var current: TextInsertionSettings {
@@ -47,5 +56,11 @@ struct TextInsertionSettings: Equatable, Sendable {
 
 	func save(to defaults: UserDefaults) {
 		defaults.set(clipboardHandling.rawValue, forKey: Keys.clipboardHandling)
+		defaults.set(Self.clampedDelay(pasteDelayBeforeMs), forKey: Keys.pasteDelayBeforeMs)
+		defaults.set(Self.clampedDelay(pasteDelayAfterMs), forKey: Keys.pasteDelayAfterMs)
+	}
+
+	static func clampedDelay(_ value: Int) -> Int {
+		min(max(value, delayRange.lowerBound), delayRange.upperBound)
 	}
 }

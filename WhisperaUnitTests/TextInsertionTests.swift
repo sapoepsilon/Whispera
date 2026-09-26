@@ -200,3 +200,61 @@ struct TextInsertionSettingsPersistenceTests {
 		#expect(TextInsertionSettings(defaults: defaults).clipboardHandling == .keepTranscript)
 	}
 }
+
+struct PasteDelaySettingsTests {
+	@Test func defaultsToSixtyMillisecondsEachSide() {
+		let suite = "PasteDelaySettingsTests.defaults.\(UUID().uuidString)"
+		let defaults = UserDefaults(suiteName: suite)!
+		defer { defaults.removePersistentDomain(forName: suite) }
+
+		let settings = TextInsertionSettings(defaults: defaults)
+		#expect(settings.pasteDelayBeforeMs == 60)
+		#expect(settings.pasteDelayAfterMs == 60)
+	}
+
+	@Test func delaysRoundTripAndClamp() {
+		let suite = "PasteDelaySettingsTests.roundtrip.\(UUID().uuidString)"
+		let defaults = UserDefaults(suiteName: suite)!
+		defer { defaults.removePersistentDomain(forName: suite) }
+
+		defaults.set(250, forKey: TextInsertionSettings.Keys.pasteDelayBeforeMs)
+		defaults.set(5000, forKey: TextInsertionSettings.Keys.pasteDelayAfterMs)
+		var settings = TextInsertionSettings(defaults: defaults)
+		#expect(settings.pasteDelayBeforeMs == 250)
+		#expect(settings.pasteDelayAfterMs == 1000)
+
+		settings.pasteDelayBeforeMs = -20
+		settings.save(to: defaults)
+		#expect(TextInsertionSettings(defaults: defaults).pasteDelayBeforeMs == 0)
+	}
+
+	@MainActor
+	@Test func inserterWaitsForBothDelays() async throws {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("user copy", forType: .string)
+		let clock = ContinuousClock()
+		let start = clock.now
+		var pasteAt: ContinuousClock.Instant?
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		poster.onPaste = { _ in pasteAt = clock.now }
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster,
+			settingsProvider: {
+				fastSettings {
+					$0.pasteDelayBeforeMs = 120
+					$0.pasteDelayAfterMs = 150
+				}
+			})
+
+		await inserter.insert("hello", context: .finalTranscript).value
+		let finished = clock.now
+
+		let pastedAt = try #require(pasteAt)
+		let beforePaste = pastedAt - start
+		#expect(beforePaste >= .milliseconds(120))
+		#expect(finished - pastedAt >= .milliseconds(150))
+		#expect(pasteboard.string(forType: .string) == "user copy")
+	}
+}
