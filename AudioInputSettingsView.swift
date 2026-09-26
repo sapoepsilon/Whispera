@@ -22,21 +22,23 @@ struct InputChannelSettingsRow: View {
 		.mixAllChannels
 	@AppStorage("selectedAudioInputDeviceUID") private var deviceUID = AudioDeviceManager
 		.systemDefaultUID
+	@AppStorage(AudioDeviceManager.clamshellDeviceKey) private var clamshellDeviceUID = ""
 	@AppStorage("enableStreaming") private var liveTranscriptionEnabled = Constants.enableStreamingDefault
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@State private var deviceManager = AudioDeviceManager.shared
+	private var transcriber = WhisperKitTranscriber.shared
 
-	private var channelDescription: String {
-		// Live mode records through WhisperKit and file mode through AVAudioRecorder; both mix every channel
-		if liveTranscriptionEnabled || !useStreamingTranscription {
-			return "Only applies with Live Transcription Mode off; live dictation always mixes all channels"
-		}
-		return "Record a single channel of a multi-channel interface"
+	private var captureRoute: CaptureRoute {
+		CaptureRoute.resolve(
+			liveTranscriptionEnabled: liveTranscriptionEnabled,
+			modelSupportsLive: transcriber.supportsLiveTranscription,
+			useStreamingTranscription: useStreamingTranscription)
 	}
 
 	private var channelCount: Int {
-		_ = deviceManager.availableDevices
-		return deviceManager.inputChannelCount(forUID: deviceUID)
+		// Re-read when the device list or either saved choice changes
+		_ = (deviceManager.availableDevices, deviceUID, clamshellDeviceUID)
+		return deviceManager.effectiveInputChannelCount
 	}
 
 	var body: some View {
@@ -44,7 +46,7 @@ struct InputChannelSettingsRow: View {
 		if count > 1 {
 			SettingRow(
 				"Input Channel",
-				description: channelDescription
+				description: InputChannelSelection.settingsDescription(on: captureRoute)
 			) {
 				Picker("", selection: $selectedChannel) {
 					Text("All channels").tag(InputChannelSelection.mixAllChannels)
@@ -88,6 +90,7 @@ struct VoiceActivitySettingsRows: View {
 		.defaultEnabled
 	@AppStorage(VoiceActivitySettings.sensitivityKey) private var vadSensitivity = VoiceActivitySettings
 		.defaultSensitivity.rawValue
+	@AppStorage(VADEngine.defaultsKey) private var vadEngine = VADEngine.defaultValue.rawValue
 
 	var body: some View {
 		SettingRow(
@@ -99,6 +102,31 @@ struct VoiceActivitySettingsRows: View {
 		}
 
 		if vadEnabled {
+			SettingRow(
+				"Speech Detection",
+				description:
+					"Neural uses the Silero model (downloaded once, about 1 MB) for recorded clips and is better at ignoring noise; Live Transcription Mode always uses Energy"
+			) {
+				Picker("", selection: $vadEngine) {
+					ForEach(VADEngine.allCases) { engine in
+						Text(engine.displayName).tag(engine.rawValue)
+					}
+				}
+				.labelsHidden()
+				.frame(width: 150)
+				.onChange(of: vadEngine) { _, newValue in
+					guard newValue == VADEngine.neural.rawValue else { return }
+					// Fetch the model now so the first dictation does not wait for the download
+					Task.detached(priority: .utility) {
+						do {
+							try await NeuralVoiceActivityDetector.shared.prepare()
+						} catch {
+							AppLogger.shared.audioManager.error("Could not prepare the neural VAD model: \(error)")
+						}
+					}
+				}
+			}
+
 			SettingRow(
 				"Speech Sensitivity",
 				description: "Raise it if quiet speech gets skipped; lower it in noisy rooms"

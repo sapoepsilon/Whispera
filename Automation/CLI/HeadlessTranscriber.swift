@@ -43,6 +43,34 @@ struct CLIComputeDevice: Equatable {
 	}
 }
 
+/// A model the CLI can load: a stock WhisperKit download, an imported or Hugging Face custom
+/// Whisper model, or a Parakeet model, all read from where the app keeps them.
+struct CLIModel: Equatable {
+	enum Engine: Equatable {
+		case whisperKit(folder: URL)
+		case customWhisper(folder: URL)
+		case parakeet(ParakeetModel)
+	}
+
+	let id: String
+	let name: String
+	let engine: Engine
+
+	var engineName: String {
+		switch engine {
+		case .whisperKit: return "whisperkit"
+		case .customWhisper: return "custom"
+		case .parakeet: return "parakeet"
+		}
+	}
+
+	/// Parakeet picks the language itself and cannot translate.
+	var honorsLanguage: Bool {
+		if case .parakeet = engine { return false }
+		return true
+	}
+}
+
 enum CLIModelCatalog {
 	/// The app's WhisperKit downloadBase; tokenizers are cached under it too.
 	static var defaultDownloadBase: URL {
@@ -63,6 +91,31 @@ enum CLIModelCatalog {
 			.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
 			.map(\.lastPathComponent)
 			.sorted()
+	}
+
+	/// Custom models the app registered whose folders still exist. Read straight from the app's
+	/// defaults so the CLI never instantiates the app's model store.
+	static func customModels(defaults: UserDefaults) -> [CustomWhisperModel] {
+		guard let data = defaults.data(forKey: CustomModelStore.storageKey),
+			let models = try? JSONDecoder().decode([CustomWhisperModel].self, from: data)
+		else { return [] }
+		return models.filter { FileManager.default.fileExists(atPath: $0.folderPath) }
+	}
+
+	static func availableModels(downloadBase: URL = defaultDownloadBase, defaults: UserDefaults) -> [CLIModel] {
+		let whisperKitDirectory = modelsDirectory(downloadBase: downloadBase)
+		let whisperKit = downloadedModels(in: whisperKitDirectory).map {
+			CLIModel(
+				id: $0, name: $0,
+				engine: .whisperKit(folder: whisperKitDirectory.appendingPathComponent($0, isDirectory: true)))
+		}
+		let parakeet = ParakeetModel.allCases
+			.filter { ParakeetEngine.isDownloaded($0, modelsBase: downloadBase) }
+			.map { CLIModel(id: $0.rawValue, name: $0.rawValue, engine: .parakeet($0)) }
+		let custom = customModels(defaults: defaults).map {
+			CLIModel(id: $0.id, name: $0.displayName, engine: .customWhisper(folder: $0.folderURL))
+		}
+		return whisperKit + parakeet + custom
 	}
 
 	/// Same preference order the app uses when it auto-loads a model at launch.
@@ -188,6 +241,7 @@ enum HeadlessTranscriberError: LocalizedError {
 	case modelNotDownloaded(String, available: [String])
 	case unknownDevice(Int)
 	case unknownLanguage(String)
+	case translationUnsupported(String)
 
 	var errorDescription: String? {
 		switch self {
@@ -199,64 +253,138 @@ enum HeadlessTranscriberError: LocalizedError {
 			return "No compute device with index \(index). See --list-devices."
 		case .unknownLanguage(let language):
 			return "Unknown language: \(language)"
+		case .translationUnsupported(let model):
+			return "\(model) cannot translate. Use a Whisper model with --translate."
 		}
 	}
 }
 
+/// Runs the app's transcript text pipeline (filler words, custom words, Chinese script)
+/// over CLI output, with the same language evidence rules as the app.
+struct CLITextPipeline {
+	let configuration: TextProcessingConfiguration
+	/// nil when the language is detected, or when the engine ignores the language choice.
+	let selectedLanguageCode: String?
+	let translating: Bool
+
+	init(
+		configuration: TextProcessingConfiguration, language: CLIDecodingSettings.LanguageChoice,
+		translating: Bool, modelHonorsLanguage: Bool
+	) {
+		self.configuration = configuration
+		self.translating = translating
+		if modelHonorsLanguage, case .code(let code) = language {
+			selectedLanguageCode = code
+		} else {
+			selectedLanguageCode = nil
+		}
+	}
+
+	func process(_ text: String, modelDetectedLanguage: String?) -> (text: String, language: String) {
+		let evidence = TranscriptTextProcessor.languageEvidence(
+			selectedLanguageCode: selectedLanguageCode, translating: translating,
+			modelDetectedLanguage: modelDetectedLanguage, text: text)
+		let processed =
+			text.isEmpty ? text : TranscriptTextProcessor(configuration: configuration).process(text, language: evidence)
+		return (processed, modelDetectedLanguage ?? evidence.languageCode ?? "")
+	}
+}
+
 /// Loads a downloaded model straight from disk (never downloads) and transcribes files with it.
+@MainActor
 final class HeadlessTranscriber {
-	let model: String
+	private enum Backend {
+		case whisperKit(WhisperKit)
+		case parakeet(ParakeetEngine)
+	}
+
+	let model: CLIModel
 	let device: CLIComputeDevice
 	let loadMs: Double
-	private let whisperKit: WhisperKit
+	private let backend: Backend
 
-	init(model: String, device: CLIComputeDevice, downloadBase: URL, verbose: Bool) async throws {
-		let folder = CLIModelCatalog.modelsDirectory(downloadBase: downloadBase).appendingPathComponent(model)
+	init(model: CLIModel, device: CLIComputeDevice, downloadBase: URL, verbose: Bool) async throws {
 		let start = Date()
-		let config = WhisperKitConfig(
-			model: model,
-			downloadBase: downloadBase,
-			modelFolder: folder.path,
-			computeOptions: device.computeOptions,
-			verbose: verbose,
-			logLevel: verbose ? .debug : .error,
-			prewarm: false,
-			load: true,
-			download: false
-		)
-		whisperKit = try await WhisperKit(config)
+		switch model.engine {
+		case .whisperKit(let folder), .customWhisper(let folder):
+			let isStock: Bool
+			if case .whisperKit = model.engine { isStock = true } else { isStock = false }
+			let config = WhisperKitConfig(
+				model: isStock ? model.id : nil,
+				downloadBase: downloadBase,
+				modelFolder: folder.path,
+				computeOptions: device.computeOptions,
+				verbose: verbose,
+				logLevel: verbose ? .debug : .error,
+				prewarm: false,
+				load: true,
+				download: false
+			)
+			backend = .whisperKit(try await WhisperKit(config))
+		case .parakeet(let parakeet):
+			// Device 0 keeps the app's own Parakeet placement; the others pin the encoder's units
+			let units = device.index == 0 ? ComputeUnitPreference.load().parakeetComputeUnits : device.encoder
+			backend = .parakeet(try await ParakeetEngine.load(parakeet, modelsBase: downloadBase, computeUnits: units))
+		}
 		self.model = model
 		self.device = device
 		self.loadMs = Date().timeIntervalSince(start) * 1000
+	}
+
+	func unload() {
+		if case .parakeet(let engine) = backend { engine.unload() }
 	}
 
 	static func loadSamples(from path: String) throws -> [Float] {
 		try AudioProcessor.loadAudioAsFloatArray(fromPath: path)
 	}
 
-	func transcribe(samples: [Float], options: DecodingOptions) async throws -> (text: String, language: String) {
-		let results = try await whisperKit.transcribe(audioArray: samples, decodeOptions: options)
-		let text =
-			results
-			.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
-			.filter { !$0.isEmpty }
-			.joined(separator: " ")
-		return (text, results.first?.language ?? options.language ?? "")
+	/// Adds the custom-word decoder prompt the app uses, when that bias is on.
+	func decodingOptions(_ base: DecodingOptions, defaults: UserDefaults) -> DecodingOptions {
+		guard case .whisperKit(let whisperKit) = backend,
+			TextProcessingSettings.biasDecodingWithCustomWords(from: defaults),
+			let prompt = TextProcessingSettings.decoderPrompt(for: TextProcessingSettings.customWords(from: defaults)),
+			let tokenizer = whisperKit.tokenizer
+		else { return base }
+		let tokens = tokenizer.encode(text: prompt).filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+		var options = base
+		options.promptTokens = tokens.isEmpty ? nil : tokens
+		return options
 	}
 
-	func run(file: String, repeatCount: Int, options: DecodingOptions) async throws -> CLITranscriptionRun {
+	/// The language is nil when the engine does not report one.
+	func transcribe(samples: [Float], options: DecodingOptions) async throws -> (text: String, language: String?) {
+		switch backend {
+		case .whisperKit(let whisperKit):
+			let results = try await whisperKit.transcribe(audioArray: samples, decodeOptions: options)
+			let text =
+				results
+				.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+				.filter { !$0.isEmpty }
+				.joined(separator: " ")
+			return (text, results.first?.language ?? options.language)
+		case .parakeet(let engine):
+			return (try await engine.transcribe(samples: samples).text, nil)
+		}
+	}
+
+	func run(
+		file: String, repeatCount: Int, options: DecodingOptions, pipeline: CLITextPipeline? = nil
+	) async throws -> CLITranscriptionRun {
 		let samples = try Self.loadSamples(from: file)
 		var timings: [Double] = []
-		var last: (text: String, language: String) = ("", "")
+		var last: (text: String, language: String?) = ("", nil)
 		for _ in 0..<max(repeatCount, 1) {
 			let start = Date()
 			last = try await transcribe(samples: samples, options: options)
 			timings.append(Date().timeIntervalSince(start) * 1000)
 		}
+		let output: (text: String, language: String) =
+			pipeline?.process(last.text, modelDetectedLanguage: last.language) ?? (last.text, last.language ?? "")
 		return CLITranscriptionRun(
 			file: file,
-			text: last.text,
-			language: last.language,
+			text: output.text,
+			language: output.language,
 			audioSeconds: Double(samples.count) / Double(WhisperKit.sampleRate),
 			runsMs: timings
 		)

@@ -73,7 +73,7 @@ struct SettingsWithMaterial: View {
 	}
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate {
 	var statusItem: NSStatusItem?
 	var popover = NSPopover()
 	var audioManager: AudioManager!
@@ -99,6 +99,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var minimalIndicatorController: MinimalRecordingIndicatorController?
 	private var recordingGlowController: RecordingGlowController?
 	private var popoverFrame: NSRect?
+	private var menuBarIcon = MenuBarIconVisibility(defaults: .standard)
+	private var menuBarIconObserver: DefaultsKeyObserver?
 
 	func applicationWillFinishLaunching(_ notification: Notification) {
 		// A cold launch from whispera:// delivers the URL before didFinishLaunching.
@@ -223,6 +225,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				queueManager: queueManager
 			))
 		popover.behavior = .semitransient
+		popover.delegate = self
+		applyMenuBarIconVisibility()
+		menuBarIconObserver = DefaultsKeyObserver(keys: [MenuBarIconVisibility.defaultsKey]) { [weak self] in
+			guard let self else { return }
+			self.menuBarIcon.updateSetting(MenuBarIconVisibility.isShown(in: .standard))
+			self.applyMenuBarIconVisibility()
+		}
 
 		if let hostingView = popover.contentViewController?.view {
 			hostingView.wantsLayer = true
@@ -232,6 +241,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		if #available(macOS 14.0, *) {
 			popover.hasFullSizeContent = true
 		}
+	}
+
+	private func applyMenuBarIconVisibility() {
+		guard let statusItem, statusItem.isVisible != menuBarIcon.isVisible else { return }
+		if !menuBarIcon.isVisible, popover.isShown {
+			popover.performClose(nil)
+		}
+		statusItem.isVisible = menuBarIcon.isVisible
+		AppLogger.shared.general.info("Menu bar icon \(menuBarIcon.isVisible ? "shown" : "hidden")")
+	}
+
+	/// Shows the menu, first bringing back a hidden icon so the popover has somewhere to anchor.
+	private func showPopoverFromReopen() {
+		if menuBarIcon.revealForReopen() {
+			applyMenuBarIconVisibility()
+		}
+		// The revealed button gets its window on the next pass of the run loop
+		DispatchQueue.main.async { [weak self] in
+			guard let self, let button = self.statusItem?.button, !self.popover.isShown else { return }
+			self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+		}
+	}
+
+	func popoverDidClose(_ notification: Notification) {
+		menuBarIcon.menuClosed()
+		applyMenuBarIconVisibility()
 	}
 
 	@objc func togglePopover() {
@@ -692,20 +727,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 	private func activateApp() {
 		NSApp.activate(ignoringOtherApps: true)
-		if let button = statusItem?.button {
-			if !popover.isShown {
-				popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-			}
-		}
+		showPopoverFromReopen()
 	}
 
 	// MARK: - Single Instance Management
 	func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-		if let button = statusItem?.button {
-			if !popover.isShown {
-				popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-			}
-		}
+		showPopoverFromReopen()
 		return true
 	}
 

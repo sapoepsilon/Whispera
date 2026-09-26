@@ -108,6 +108,7 @@ struct LocalizationCatalogTests {
 		strings += AutoSubmitKey.allCases.map(\.displayName)
 		strings += HistoryRetentionPeriod.allCases.map(\.displayName)
 		strings += VADSensitivity.allCases.map(\.displayName)
+		strings += VADEngine.allCases.map(\.displayName)
 		strings += ChineseScriptPreference.allCases.map(\.displayName)
 		strings += ComputeUnitPreference.allCases.flatMap { [$0.displayName, $0.summary] }
 		strings += HotkeyBackend.allCases.flatMap { [$0.title, $0.summary] }

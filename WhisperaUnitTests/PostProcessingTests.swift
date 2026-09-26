@@ -404,6 +404,32 @@ struct AppleIntelligenceProcessorTests {
 			PostProcessingPrompt.defaultCleanup.messages(for: "um so uh the meeting is at three pm period"))
 		#expect(!output.isEmpty)
 		#expect(!output.localizedCaseInsensitiveContains("<think>"))
+		#expect(output.localizedCaseInsensitiveContains("meeting"), "Output: \(output)")
+		let words = output.lowercased().split(whereSeparator: { !$0.isLetter })
+		#expect(!words.contains("um") && !words.contains("uh"), "Output: \(output)")
+	}
+
+	/// Drives the provider the way a dictation does: settings pick Apple Intelligence and the
+	/// service runs the selected prompt through the on-device model.
+	@Test(
+		.enabled(if: AppleIntelligenceProcessor.availability().isAvailable, "Apple Intelligence not available here"),
+		.timeLimit(.minutes(2)))
+	func serviceProcessesThroughAppleIntelligence() async throws {
+		let suite = "AppleIntelligenceProcessorTests.\(UUID().uuidString)"
+		let defaults = try #require(UserDefaults(suiteName: suite))
+		defer { defaults.removePersistentDomain(forName: suite) }
+		let settings = PostProcessingSettings(defaults: defaults)
+		settings.providerID = PostProcessingProvider.appleIntelligenceID
+		let service = PostProcessingService(settings: settings, secrets: InMemorySecretStore())
+
+		let outcome = await service.process("uh so the budget review moved to friday")
+
+		guard case .processed(let text) = outcome else {
+			Issue.record("Expected an on-device result, got \(outcome)")
+			return
+		}
+		#expect(text.localizedCaseInsensitiveContains("budget"), "Output: \(text)")
+		#expect(text.localizedCaseInsensitiveContains("friday"), "Output: \(text)")
 	}
 }
 

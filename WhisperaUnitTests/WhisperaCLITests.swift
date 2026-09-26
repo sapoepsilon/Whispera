@@ -238,10 +238,14 @@ struct HeadlessTranscriberIntegrationTests {
 		.enabled(if: FileManager.default.fileExists(atPath: audioURL.path), "Needs the bundled test recording"),
 		.timeLimit(.minutes(5))
 	)
+	@MainActor
 	func transcribesRealAudioWithoutTheAppSingleton() async throws {
 		let model = try #require(Self.smallestDownloadedModel)
 		let transcriber = try await HeadlessTranscriber(
-			model: model, device: CLIComputeDevice.all[0], downloadBase: CLIModelCatalog.defaultDownloadBase,
+			model: CLIModel(
+				id: model, name: model,
+				engine: .whisperKit(folder: CLIModelCatalog.modelsDirectory().appendingPathComponent(model))),
+			device: CLIComputeDevice.all[0], downloadBase: CLIModelCatalog.defaultDownloadBase,
 			verbose: false)
 		let options = CLIDecodingSettings.options(
 			language: "en", detectLanguage: false, translate: false, defaults: UserDefaults(suiteName: UUID().uuidString)!)

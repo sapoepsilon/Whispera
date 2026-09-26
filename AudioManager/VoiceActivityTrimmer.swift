@@ -35,10 +35,15 @@ struct VoiceActivitySettings: Equatable, Sendable {
 
 	var enabled: Bool
 	var sensitivity: VADSensitivity
+	var engine: VADEngine
 
-	init(enabled: Bool = defaultEnabled, sensitivity: VADSensitivity = defaultSensitivity) {
+	init(
+		enabled: Bool = defaultEnabled, sensitivity: VADSensitivity = defaultSensitivity,
+		engine: VADEngine = .defaultValue
+	) {
 		self.enabled = enabled
 		self.sensitivity = sensitivity
+		self.engine = engine
 	}
 
 	init(defaults: UserDefaults) {
@@ -46,6 +51,7 @@ struct VoiceActivitySettings: Equatable, Sendable {
 		sensitivity =
 			defaults.string(forKey: Self.sensitivityKey).flatMap(VADSensitivity.init(rawValue:))
 			?? Self.defaultSensitivity
+		engine = VADEngine.stored(in: defaults)
 	}
 }
 

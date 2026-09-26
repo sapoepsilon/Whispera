@@ -264,6 +264,12 @@ final class AudioDeviceManager {
 		return Self.inputChannelCount(for: deviceID)
 	}
 
+	/// Channel count of the device the next recording will use, which is the clamshell
+	/// microphone rather than the saved one while the lid is closed.
+	var effectiveInputChannelCount: Int {
+		inputChannelCount(forUID: effectiveDeviceUID)
+	}
+
 	nonisolated static func inputChannelCount(for deviceID: AudioDeviceID) -> Int {
 		var address = AudioObjectPropertyAddress(
 			mSelector: kAudioDevicePropertyStreamConfiguration,

@@ -28,4 +28,29 @@ enum InputChannelSelection {
 		else { return buffer }
 		return mono
 	}
+
+	/// File recordings keep every channel only when one is selected, so the chosen
+	/// channel can be pulled out when the file is loaded for transcription.
+	static func fileRecordingChannelCount(selected: Int, deviceChannels: Int) -> Int {
+		channelMode(selected: selected, channelCount: deviceChannels) == nil ? 1 : deviceChannels
+	}
+
+	/// Loads a recording as 16 kHz mono, keeping only the selected channel when the file has it.
+	static func loadSamples(fromPath path: String, selected: Int) throws -> [Float] {
+		let fileChannels = (try? AVAudioFile(forReading: URL(fileURLWithPath: path)))
+			.map { Int($0.fileFormat.channelCount) } ?? 1
+		let mode = channelMode(selected: selected, channelCount: fileChannels) ?? .sumChannels(nil)
+		return try AudioProcessor.loadAudioAsFloatArray(fromPath: path, channelMode: mode)
+	}
+
+	static func settingsDescription(on route: CaptureRoute) -> String {
+		switch route {
+		case .live:
+			return String(
+				localized:
+					"Live Transcription Mode records every channel mixed together; turn it off to record a single channel")
+		case .stream, .file:
+			return String(localized: "Record a single channel of a multi-channel interface")
+		}
+	}
 }

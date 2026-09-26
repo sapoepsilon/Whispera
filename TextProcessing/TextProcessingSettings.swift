@@ -26,7 +26,7 @@ enum TextProcessingSettings {
 		configuration.customFillerWords = customFillerWords(from: defaults)
 		configuration.chineseScript =
 			defaults.string(forKey: Keys.chineseScriptConversion).flatMap(ChineseScriptPreference.init(rawValue:))
-			?? .unchanged
+			?? .defaultValue
 		return configuration
 	}
 

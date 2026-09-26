@@ -118,6 +118,8 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	private var audioFileURL: URL?
 	@ObservationIgnored
+	private var fileCaptureChannel = InputChannelSelection.mixAllChannels
+	@ObservationIgnored
 	private let captureBuffer = StreamCaptureBuffer()
 	@ObservationIgnored
 	private var meteringTimer: Timer?
@@ -134,9 +136,7 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	private var pendingStopAfterStart = false
 	@ObservationIgnored
-	private let tailStop = DeferredAction()
-	@ObservationIgnored
-	private var isFinalizingStop = false
+	private let tailStop = TailStopCoordinator()
 	@ObservationIgnored
 	private let lazyStreamClose = DeferredAction()
 	@ObservationIgnored
@@ -223,7 +223,7 @@ final class AudioManager: NSObject {
 	/// microphone is still starting is deferred until capture begins, so a short
 	/// push-to-talk press is never lost.
 	func requestStop() {
-		guard !isFinalizingStop else { return }
+		guard !tailStop.isFinalizing else { return }
 		if currentRecordingMode != .liveTranscription && isMicrophoneInitializing && !isRecording {
 			pendingStopAfterStart = true
 			return
@@ -231,24 +231,14 @@ final class AudioManager: NSObject {
 		guard isRecording else { return }
 
 		let tail = RecordingControlSettings().extraRecordingBuffer
-		guard tail > 0 else {
-			// Keep the mode the session started with: re-reading enableStreaming here
-			// would route stop to the wrong path if the setting changed mid-recording.
-			stopRecording()
-			return
+		if tail > 0 {
+			AppLogger.shared.audioManager.debug("Capturing \(Int(tail * 1000)) ms tail before stopping")
 		}
-		// Capture a little past the stop press so the last syllable is not clipped.
-		isFinalizingStop = true
-		AppLogger.shared.audioManager.debug("Capturing \(Int(tail * 1000)) ms tail before stopping")
-		tailStop.schedule(after: tail) { [weak self] in
-			self?.finishTailStop()
+		// Keep the mode the session started with: re-reading enableStreaming here
+		// would route stop to the wrong path if the setting changed mid-recording.
+		tailStop.requestStop(tail: tail) { [weak self] in
+			self?.stopRecording()
 		}
-	}
-
-	private func finishTailStop() {
-		guard isFinalizingStop else { return }
-		isFinalizingStop = false
-		stopRecording()
 	}
 
 	fileprivate func applyPendingStopIfNeeded() {
@@ -275,7 +265,6 @@ final class AudioManager: NSObject {
 		if capturing {
 			pendingStopAfterStart = false
 			tailStop.cancel()
-			isFinalizingStop = false
 			deviceActivationTask?.cancel()
 			deviceActivationTask = nil
 			switch activeCapturePath {
@@ -525,10 +514,15 @@ extension AudioManager {
 				withIntermediateDirectories: true
 			)
 
+			let selectedChannel = InputChannelSelection.stored(in: .standard)
+			let recordedChannels = InputChannelSelection.fileRecordingChannelCount(
+				selected: selectedChannel, deviceChannels: deviceManager.effectiveInputChannelCount)
+			fileCaptureChannel = recordedChannels > 1 ? selectedChannel : InputChannelSelection.mixAllChannels
+
 			let settings: [String: Any] = [
 				AVFormatIDKey: Int(kAudioFormatLinearPCM),
 				AVSampleRateKey: 16000.0,
-				AVNumberOfChannelsKey: 1,
+				AVNumberOfChannelsKey: recordedChannels,
 				AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
 			]
 
@@ -573,9 +567,10 @@ extension AudioManager {
 		activeCapturePath = nil
 		if let audioFileURL, let session = ledger.finishCapture() {
 			let translate = enableTranslation
+			let channel = fileCaptureChannel
 			startTranscription(session) { manager in
 				await manager.transcribeAudio(
-					fileURL: audioFileURL, enableTranslation: translate, session: session)
+					fileURL: audioFileURL, channel: channel, enableTranslation: translate, session: session)
 			}
 		} else if let dropped = ledger.dropCapture() {
 			releaseModel(for: dropped.id)
@@ -758,8 +753,15 @@ extension AudioManager {
 
 	/// The open-stream policies only apply to the buffered streaming path; live
 	/// transcription captures through WhisperKit's own audio processor.
+	fileprivate var captureRoute: CaptureRoute {
+		CaptureRoute.resolve(
+			liveTranscriptionEnabled: enableStreaming,
+			modelSupportsLive: whisperKitTranscriber.supportsLiveTranscription,
+			useStreamingTranscription: useStreamingTranscription)
+	}
+
 	fileprivate var canKeepStreamOpen: Bool {
-		!enableStreaming && useStreamingTranscription
+		captureRoute.canKeepMicrophoneOpen
 			&& AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
 	}
 
@@ -815,6 +817,19 @@ extension AudioManager {
 			self.lastStreamPolicySnapshot = snapshot
 			self.applyMicStreamPolicy()
 		}
+		// Switching to or from Parakeet changes the capture route without touching a setting
+		streamPolicyObservers.append(
+			center.addObserver(
+				forName: NSNotification.Name("WhisperKitModelStateChanged"), object: nil, queue: .main
+			) { [weak self] _ in
+				MainActor.assumeIsolated {
+					guard let self else { return }
+					let snapshot = self.streamPolicySnapshot()
+					guard snapshot != self.lastStreamPolicySnapshot else { return }
+					self.lastStreamPolicySnapshot = snapshot
+					self.applyMicStreamPolicy()
+				}
+			})
 		streamPolicyObservers.append(
 			center.addObserver(forName: .audioInputDeviceChanged, object: nil, queue: .main) {
 				[weak self] _ in
@@ -898,7 +913,7 @@ extension AudioManager {
 
 	private func streamPolicySnapshot() -> String {
 		let settings = RecordingControlSettings()
-		return "\(settings.micStreamPolicy.rawValue)|\(enableStreaming)|\(useStreamingTranscription)"
+		return "\(settings.micStreamPolicy.rawValue)|\(captureRoute)"
 	}
 }
 
@@ -977,10 +992,24 @@ extension AudioManager {
 		let settings = VoiceActivitySettings(defaults: .standard)
 		guard settings.enabled else { return samples }
 
-		let trimmer = VoiceActivityTrimmer(sensitivity: settings.sensitivity)
-		let result = await Task.detached(priority: .userInitiated) {
-			trimmer.process(samples)
-		}.value
+		var neuralResult: VoiceActivityResult?
+		if settings.engine == .neural {
+			do {
+				neuralResult = try await NeuralVoiceActivityDetector.shared.process(
+					samples, sensitivity: settings.sensitivity)
+			} catch {
+				AppLogger.shared.audioManager.error("Neural VAD failed, using the energy detector: \(error)")
+			}
+		}
+		let result: VoiceActivityResult
+		if let neuralResult {
+			result = neuralResult
+		} else {
+			let trimmer = VoiceActivityTrimmer(sensitivity: settings.sensitivity)
+			result = await Task.detached(priority: .userInitiated) {
+				trimmer.process(samples)
+			}.value
+		}
 
 		switch result {
 		case .noSpeech:
@@ -1030,13 +1059,14 @@ extension AudioManager {
 		}
 	}
 
-	fileprivate func transcribeAudio(fileURL: URL, enableTranslation: Bool, session: DictationSession)
-		async
-	{
-		if VoiceActivitySettings(defaults: .standard).enabled {
+	fileprivate func transcribeAudio(
+		fileURL: URL, channel: Int, enableTranslation: Bool, session: DictationSession
+	) async {
+		// A single-channel pick needs the samples in hand to drop the other channels
+		if VoiceActivitySettings(defaults: .standard).enabled || channel != InputChannelSelection.mixAllChannels {
 			let path = fileURL.path
 			let samples = await Task.detached(priority: .userInitiated) {
-				try? AudioProcessor.loadAudioAsFloatArray(fromPath: path)
+				try? InputChannelSelection.loadSamples(fromPath: path, selected: channel)
 			}.value
 			if let samples {
 				try? FileManager.default.removeItem(at: fileURL)

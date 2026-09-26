@@ -549,6 +549,8 @@ struct SettingsView: View {
 
 						ThemeSettingRow()
 
+						MenuBarIconSettingRow()
+
 						AppLanguageSettingRow()
 
 						SettingRow(
