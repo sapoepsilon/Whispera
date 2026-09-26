@@ -89,6 +89,10 @@ struct OnboardingView: View {
 			checkPermissions()
 			customShortcut = globalShortcut
 			launchAtLogin = storedLaunchAtLogin
+			if selectedModel.isEmpty {
+				selectedModel = OnboardingModelChoice.initial(
+					current: audioManager.whisperKitTranscriber.currentModel, stored: storedModel)
+			}
 		}
 	}
 

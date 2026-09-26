@@ -109,6 +109,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	private var sleepObserver: NSObjectProtocol?
 	private var wakeObserver: NSObjectProtocol?
 	private var onboardingWindow: NSWindow?
+	private var onboardingCompletedObserver: NSObjectProtocol?
 	private var activityWindow: ActivityWindow?
 	private var settingsWindow: NSWindow?
 	private var swiftUIOpenSettings: (@MainActor () -> Void)?
@@ -454,34 +455,65 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	private func showSettingsWindow() {
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
-		if let action = swiftUIOpenSettings {
-			action()
-			DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-				guard let self else { return }
-				if let scene = self.settingsSceneWindow() {
-					AppLogger.shared.general.info("Settings opened via native scene")
-					scene.makeKeyAndOrderFront(nil)
-				} else {
-					AppLogger.shared.general.info("openSettings no-oped, using retained settings window")
-					self.showRetainedSettingsWindow()
-				}
-			}
-		} else {
+		let step = SettingsWindowOpening.firstStep(
+			scene: settingsSceneWindow().map(Self.windowState),
+			retained: settingsWindow.map(Self.windowState),
+			canRequestScene: swiftUIOpenSettings != nil)
+		switch step {
+		case .revealScene:
+			if let scene = settingsSceneWindow() { reveal(scene) }
+		case .revealRetained:
+			if let window = settingsWindow { reveal(window) }
+		case .requestScene:
+			swiftUIOpenSettings?()
+			awaitSettingsScene(check: 1)
+		case .openRetained, .wait:
 			showRetainedSettingsWindow()
 		}
+	}
+
+	/// A heavy first render or a minimized scene window can take longer than one check, and
+	/// opening the fallback too early left two Settings windows on screen.
+	@MainActor
+	private func awaitSettingsScene(check: Int) {
+		DispatchQueue.main.asyncAfter(deadline: .now() + SettingsWindowOpening.checkInterval) { [weak self] in
+			guard let self else { return }
+			let scene = self.settingsSceneWindow()
+			switch SettingsWindowOpening.stepAfterRequest(scene: scene.map(Self.windowState), check: check) {
+			case .revealScene, .revealRetained:
+				AppLogger.shared.general.info("Settings opened via native scene")
+				if let scene { self.reveal(scene) }
+			case .wait, .requestScene:
+				self.awaitSettingsScene(check: check + 1)
+			case .openRetained:
+				AppLogger.shared.general.info("openSettings no-oped, using retained settings window")
+				self.showRetainedSettingsWindow()
+			}
+		}
+	}
+
+	@MainActor
+	private func reveal(_ window: NSWindow) {
+		if window.isMiniaturized { window.deminiaturize(nil) }
+		window.makeKeyAndOrderFront(nil)
+	}
+
+	@MainActor
+	private static func windowState(_ window: NSWindow) -> SettingsWindowOpening.WindowState {
+		SettingsWindowOpening.WindowState(isVisible: window.isVisible, isMiniaturized: window.isMiniaturized)
 	}
 
 	@MainActor
 	private func settingsSceneWindow() -> NSWindow? {
 		NSApp.windows.first {
-			$0.isVisible && $0.identifier?.rawValue.hasPrefix("com_apple_SwiftUI_Settings") == true
+			$0.identifier?.rawValue.hasPrefix("com_apple_SwiftUI_Settings") == true
 		}
 	}
 
 	@MainActor
 	private func showRetainedSettingsWindow() {
 		if let window = settingsWindow {
-			window.makeKeyAndOrderFront(nil)
+			reveal(window)
 			return
 		}
 		let hosting = NSHostingController(
@@ -520,6 +552,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		])
 	}
 	private func showOnboarding() {
+		// Showing it again while it is open brings that window back rather than stacking another
+		if let window = onboardingWindow, window.isVisible || window.isMiniaturized {
+			if window.isMiniaturized { window.deminiaturize(nil) }
+			NSApp.setActivationPolicy(.regular)
+			NSApp.activate(ignoringOtherApps: true)
+			window.makeKeyAndOrderFront(nil)
+			return
+		}
 		let onboardingView = OnboardingView(
 			audioManager: audioManager,
 			shortcutManager: shortcutManager
@@ -534,6 +574,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			defer: false
 		)
 
+		onboardingWindow?.isReleasedWhenClosed = false
 		onboardingWindow?.title = String(localized: "Welcome to Whispera")
 		onboardingWindow?.titlebarAppearsTransparent = true
 		onboardingWindow?.isOpaque = false
@@ -544,15 +585,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
-		NotificationCenter.default.addObserver(
+		guard onboardingCompletedObserver == nil else { return }
+		onboardingCompletedObserver = NotificationCenter.default.addObserver(
 			forName: NSNotification.Name("OnboardingCompleted"),
 			object: nil,
 			queue: .main
 		) { [weak self] _ in
 			NSApp.setActivationPolicy(.accessory)
-			self?.onboardingWindow?.close()
 			Task { @MainActor in
-				self?.applyStoredModel()
+				guard let self else { return }
+				self.onboardingWindow?.close()
+				// Releasing the window also stops its animations from running in the background
+				self.onboardingWindow = nil
+				self.applyStoredModel()
 			}
 		}
 	}

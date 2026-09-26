@@ -12,7 +12,7 @@ struct SetupStepView: View {
 	@State private var errorMessage: String?
 	@State private var showingError = false
 	@State private var showingShortcutCapture = false
-	@State private var fileSelectionShortcut = "⌃F"
+	@AppStorage(ShortcutDefaults.fileSelectionKey) private var fileSelectionShortcut = ShortcutDefaults.fileSelection
 	@State private var showingFileShortcutCapture = false
 
 	var body: some View {
@@ -271,16 +271,11 @@ struct SetupStepView: View {
 				}
 				isLoadingModels = false
 
-				if selectedModel.isEmpty || !fetchedModels.contains(selectedModel) {
-					if let smallModel = fetchedModels.first(where: {
-						$0.contains("small") && !$0.contains(".en")
-					}) {
-						selectedModel = smallModel
-					} else if let firstModel = fetchedModels.first {
-						selectedModel = firstModel
-					} else {
-						selectedModel = "openai_whisper-small"
-					}
+				if let pick = OnboardingModelChoice.autoPick(
+					selected: selectedModel, available: fetchedModels,
+					downloaded: audioManager.whisperKitTranscriber.downloadedModels)
+				{
+					selectedModel = pick
 				}
 			} catch {
 				loadingError = error.localizedDescription
@@ -292,16 +287,10 @@ struct SetupStepView: View {
 					"openai_whisper-base.en",
 					"openai_whisper-small.en",
 				]
-				if selectedModel.isEmpty {
-					if let smallModel = availableModels.first(where: {
-						$0.contains("small") && !$0.contains(".en")
-					}) {
-						selectedModel = smallModel
-					} else if let firstModel = availableModels.first {
-						selectedModel = firstModel
-					} else {
-						selectedModel = "openai_whisper-small"
-					}
+				if selectedModel.isEmpty, let pick = OnboardingModelChoice.autoPick(
+					selected: selectedModel, available: availableModels, downloaded: [])
+				{
+					selectedModel = pick
 				}
 			}
 		}
@@ -333,5 +322,25 @@ private extension View {
 			.padding(16)
 			.frame(maxWidth: .infinity, alignment: .leading)
 			.background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+	}
+}
+
+/// Which model onboarding preselects. Running it again from Settings starts from the model in use,
+/// so a Parakeet or custom-model user is not silently moved onto a Whisper model and its download.
+enum OnboardingModelChoice {
+	static func initial(current: String?, stored: String) -> String {
+		if let current, !current.isEmpty { return current }
+		return stored
+	}
+
+	/// A model to switch the picker to, or nil to keep the selection.
+	static func autoPick(selected: String, available: [String], downloaded: Set<String>) -> String? {
+		if !selected.isEmpty, available.contains(selected) || downloaded.contains(selected) {
+			return nil
+		}
+		if let small = available.first(where: { $0.contains("small") && !$0.contains(".en") }) {
+			return small
+		}
+		return available.first ?? "openai_whisper-small"
 	}
 }

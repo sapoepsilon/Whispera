@@ -29,3 +29,42 @@ enum SettingsWindowLocator {
 		NSApp.windows.first(where: isSettingsWindow)
 	}
 }
+
+/// Decides how a Settings request is served so it never ends with two Settings windows: an open
+/// (even minimized) window is brought back, and the retained fallback only opens once the SwiftUI
+/// scene has clearly not appeared.
+enum SettingsWindowOpening {
+	struct WindowState: Equatable {
+		var isVisible: Bool
+		var isMiniaturized: Bool
+
+		var isOpen: Bool { isVisible || isMiniaturized }
+	}
+
+	enum Step: Equatable {
+		case revealScene
+		case revealRetained
+		case requestScene
+		case openRetained
+		case wait
+	}
+
+	/// Checks happen this often after asking SwiftUI for the scene.
+	static let checkInterval: TimeInterval = 0.2
+	/// With no scene window at all after this many checks, the openSettings action no-oped.
+	static let noSceneChecks = 2
+	/// A scene window that exists but is still coming up gets this many checks.
+	static let maxChecks = 12
+
+	static func firstStep(scene: WindowState?, retained: WindowState?, canRequestScene: Bool) -> Step {
+		if scene?.isOpen == true { return .revealScene }
+		if retained?.isOpen == true { return .revealRetained }
+		return canRequestScene ? .requestScene : .openRetained
+	}
+
+	static func stepAfterRequest(scene: WindowState?, check: Int) -> Step {
+		if scene?.isOpen == true { return .revealScene }
+		if scene == nil, check >= noSceneChecks { return .openRetained }
+		return check >= maxChecks ? .openRetained : .wait
+	}
+}
