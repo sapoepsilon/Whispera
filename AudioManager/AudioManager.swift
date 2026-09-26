@@ -466,6 +466,14 @@ extension AudioManager {
 		levelMonitor.reset()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
+		let session = whisperKitTranscriber.takeLastLiveSession()
+		if !session.text.isEmpty {
+			recordHistory(
+				text: session.text,
+				audio: session.samples.isEmpty ? nil : .samples(session.samples, sampleRate: 16000),
+				source: .liveDictation)
+		}
+
 		scheduleTimerReset()
 	}
 }
@@ -487,12 +495,17 @@ extension AudioManager {
 				if currentRecordingMode == .text {
 					pasteToFocusedApp(transcription)
 				}
+				// After the paste so saving the recording never delays the text
+				recordHistory(text: transcription, audio: .samples(audioArray, sampleRate: 16000))
 			}
 		} catch {
 			await MainActor.run {
 				transcriptionError = error.localizedDescription
 				lastTranscription = "Transcription failed: \(error.localizedDescription)"
 				isTranscribing = false
+				recordHistory(
+					text: "", audio: .samples(audioArray, sampleRate: 16000),
+					errorMessage: error.localizedDescription)
 			}
 		}
 	}
@@ -511,16 +524,33 @@ extension AudioManager {
 				if currentRecordingMode == .text {
 					pasteToFocusedApp(transcription)
 				}
+				// After the paste so saving the recording never delays the text
+				recordHistory(text: transcription, audio: .file(fileURL))
 			}
 		} catch {
 			await MainActor.run {
 				transcriptionError = error.localizedDescription
 				lastTranscription = "Transcription failed: \(error.localizedDescription)"
 				isTranscribing = false
+				recordHistory(text: "", audio: .file(fileURL), errorMessage: error.localizedDescription)
 			}
 		}
 
+		// No-op when history already moved the recording into its own folder
 		try? FileManager.default.removeItem(at: fileURL)
+	}
+	fileprivate func recordHistory(
+		text: String, audio: TranscriptionHistoryAudio?,
+		source: TranscriptionHistorySource = .dictation, errorMessage: String? = nil
+	) {
+		TranscriptionHistoryStore.shared.record(
+			text: text,
+			audio: audio,
+			source: source,
+			modelName: whisperKitTranscriber.currentModel ?? whisperKitTranscriber.selectedModel,
+			language: selectedLanguage,
+			errorMessage: errorMessage
+		)
 	}
 }
 

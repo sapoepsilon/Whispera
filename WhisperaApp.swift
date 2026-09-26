@@ -691,6 +691,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	}
 
 	private func shouldTerminateDuplicateInstances() -> Bool {
+		// A test host shares the bundle id with the installed app and would quit before the runner connects
+		let environment = ProcessInfo.processInfo.environment
+		let testHostKeys = ["XCTestConfigurationFilePath", "XCTestBundlePath", "XCTestSessionIdentifier"]
+		guard !testHostKeys.contains(where: { environment[$0] != nil }) else { return false }
 		let existingInstances = checkForExistingInstances()
 		return !existingInstances.isEmpty
 	}

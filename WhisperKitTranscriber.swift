@@ -27,6 +27,7 @@ import WhisperKit
 	var decodingOptions: DecodingOptions?
 	var currentText: String = ""
 	var dictationWordTracker: DictationWordTracker?
+	@ObservationIgnored private var lastLiveSession: (text: String, samples: [Float]) = (text: "", samples: [])
 	// Live text management
 	private var isLiveTranscriptionMode = false
 	private var lastConfirmedSegmentCount: Int = 0
@@ -623,6 +624,12 @@ import WhisperKit
 		waitingForModelStatusText = ""
 		isTranscribing = false
 		shouldShowLiveTranscriptionWindow = false
+		if isLiveTranscriptionMode {
+			lastLiveSession = (
+				text: Self.liveSessionText(confirmed: confirmedText, pending: pendingText),
+				samples: Array(whisperKit?.audioProcessor.audioSamples ?? [])
+			)
+		}
 		whisperKit?.audioProcessor.stopRecording()
 		AudioDeviceManager.shared.restoreSystemDefault()
 
@@ -632,6 +639,23 @@ import WhisperKit
 		transcriptionTask?.cancel()
 		AppLogger.shared.transcriber.info("Live streaming stopped")
 	}
+	/// Hands the finished live session to history once, then forgets it so the audio is freed.
+	func takeLastLiveSession() -> (text: String, samples: [Float]) {
+		defer { lastLiveSession = (text: "", samples: []) }
+		return lastLiveSession
+	}
+
+	/// confirmedText holds the segments already confirmed and pendingText the trailing
+	/// unconfirmed ones, so the whole session is the two joined.
+	nonisolated static func liveSessionText(confirmed: String, pending: String) -> String {
+		[confirmed, pending]
+			.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+			.filter { !$0.isEmpty && $0 != liveWaitingPlaceholder }
+			.joined(separator: " ")
+	}
+
+	nonisolated static let liveWaitingPlaceholder = "Waiting for speech..."
+
 	private func realtimeLoop() {
 		transcriptionTask = Task {
 			while isTranscribing {
@@ -658,7 +682,7 @@ import WhisperKit
 		guard nextBufferSeconds > delayInterval else {
 			await MainActor.run {
 				if pendingText.isEmpty && confirmedText.isEmpty {
-					pendingText = "Waiting for speech..."
+					pendingText = Self.liveWaitingPlaceholder
 					shouldShowLiveTranscriptionWindow = true
 				}
 			}
