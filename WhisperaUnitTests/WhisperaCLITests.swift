@@ -245,3 +245,48 @@ struct HeadlessTranscriberIntegrationTests {
 		#expect(run.text.lowercased().contains("education"), "Transcript: \(run.text.prefix(300))")
 	}
 }
+
+struct CLIRemoteURLTests {
+	private func makeContext() throws -> (UserDefaults, String, URL) {
+		let suite = "CLIRemoteURLTests-\(UUID().uuidString)"
+		let defaults = try #require(UserDefaults(suiteName: suite))
+		let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+		return (defaults, suite, directory)
+	}
+
+	@MainActor
+	@Test func micCommandsCarryTheTokenAndTheAppAcceptsThem() throws {
+		let (defaults, suite, directory) = try makeContext()
+		defer {
+			defaults.removePersistentDomain(forName: suite)
+			try? FileManager.default.removeItem(at: directory)
+		}
+		defaults.set(true, forKey: RemoteControlSettings.urlSchemeEnabledKey)
+
+		let url = try WhisperaCLI.remoteURL(for: .toggle, defaults: defaults, tokenDirectory: directory)
+		let token = try #require(RemoteControlToken.load(in: directory, createIfMissing: false))
+		#expect(RemoteCommand.token(in: url) == token)
+		let center = RemoteControlCenter(defaults: defaults, tokenDirectory: directory)
+		#expect(center.authorizeURL(.toggle, url: url) == .allowed)
+	}
+
+	@Test func stopAndCancelWorkWithURLControlOffButStartDoesNot() throws {
+		let (defaults, suite, directory) = try makeContext()
+		defer {
+			defaults.removePersistentDomain(forName: suite)
+			try? FileManager.default.removeItem(at: directory)
+		}
+
+		#expect(try WhisperaCLI.remoteURL(for: .stop, defaults: defaults, tokenDirectory: directory) == RemoteCommand.stop.url)
+		#expect(try WhisperaCLI.remoteURL(for: .cancel, defaults: defaults, tokenDirectory: directory) == RemoteCommand.cancel.url)
+		#expect(throws: CLIRemoteError.self) {
+			try WhisperaCLI.remoteURL(for: .start, defaults: defaults, tokenDirectory: directory)
+		}
+	}
+
+	@Test func invocationLogNameOmitsFilePaths() throws {
+		let options = try CLIOptions.parse(["-f", "/Users/someone/private/interview.wav"])
+		#expect(options.action.logName == "transcribe")
+		#expect(!options.action.logName.contains("interview"))
+	}
+}

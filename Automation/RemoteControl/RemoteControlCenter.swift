@@ -42,10 +42,12 @@ final class RemoteControlCenter: NSObject {
 	private weak var modelSwitcher: ModelSwitching?
 	private var pendingCommand: (command: RemoteCommand, source: RemoteCommandSource)?
 	private let defaults: UserDefaults
+	private let tokenDirectory: URL
 	private let logger = AppLogger.shared.general
 
-	init(defaults: UserDefaults = .standard) {
+	init(defaults: UserDefaults = .standard, tokenDirectory: URL = RemoteControlToken.defaultDirectory) {
 		self.defaults = defaults
+		self.tokenDirectory = tokenDirectory
 		super.init()
 	}
 
@@ -81,15 +83,37 @@ final class RemoteControlCenter: NSObject {
 		return outcome
 	}
 
-	/// Returns false when the URL is not a Whispera command or URL control is turned off.
+	enum URLAuthorization: Equatable {
+		case allowed
+		case denied(String)
+	}
+
+	/// Stop and cancel are always accepted. Everything else needs URL control turned on, and
+	/// commands that can open the mic or swap the model also need the per-install token.
+	func authorizeURL(_ command: RemoteCommand, url: URL) -> URLAuthorization {
+		if command.isAlwaysAllowedFromURL { return .allowed }
+		guard RemoteControlSettings.isURLSchemeEnabled(in: defaults) else {
+			return .denied("URL control is disabled in Settings")
+		}
+		if command.requiresToken {
+			let expected = RemoteControlToken.load(in: tokenDirectory, createIfMissing: false)
+			guard RemoteControlToken.matches(RemoteCommand.token(in: url), expected: expected) else {
+				return .denied("missing or invalid token")
+			}
+		}
+		return .allowed
+	}
+
+	/// Returns false when the URL is not a Whispera command or is not authorized.
 	@discardableResult
 	func handleURL(_ url: URL) -> Bool {
-		guard RemoteControlSettings.isURLSchemeEnabled(in: defaults) else {
-			logger.info("Ignoring whispera:// URL because URL control is disabled in Settings")
+		// Only the verb is logged; the query can carry the token.
+		guard let command = RemoteCommand(url: url) else {
+			logger.error("Unrecognized whispera:// URL verb: \(url.host ?? url.path)")
 			return false
 		}
-		guard let command = RemoteCommand(url: url) else {
-			logger.error("Unrecognized whispera:// URL: \(url.absoluteString)")
+		if case .denied(let reason) = authorizeURL(command, url: url) {
+			logger.info("Ignoring whispera://\(command.logDescription): \(reason)")
 			return false
 		}
 		Task { await handle(command, source: .url) }

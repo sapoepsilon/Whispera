@@ -12,4 +12,5 @@
 # @raycast.description Start or stop Whispera dictation.
 # @raycast.author Whispera
 
-open -g "whispera://toggle"
+token="$(cat "$HOME/Library/Application Support/Whispera/remote-control-token" 2>/dev/null)"
+open -g "whispera://toggle?token=$token"
