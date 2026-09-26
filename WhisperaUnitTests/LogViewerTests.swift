@@ -184,4 +184,73 @@ struct LogTailerTests {
 		#expect(tailer.entries.map(\.raw) == ["[t] [INFO] [UI] second"])
 		#expect(tailer.fileURL == second)
 	}
+
+	private func waitUntil(
+		timeout: TimeInterval = 3, _ condition: @MainActor () -> Bool
+	) async throws -> Bool {
+		let deadline = Date().addingTimeInterval(timeout)
+		while Date() < deadline {
+			if condition() { return true }
+			try await Task.sleep(nanoseconds: 20_000_000)
+		}
+		return condition()
+	}
+
+	@Test func runningTailerFollowsAppendsThroughFileEvents() async throws {
+		let url = try makeTempFile()
+		try append("[t] [INFO] [UI] one\n", to: url)
+		let tailer = LogTailer(fileProvider: { url })
+		tailer.start(coalescingDelay: 0.02)
+		defer { tailer.stop() }
+		#expect(tailer.isWatchingFile)
+		#expect(tailer.entries.count == 1)
+
+		try append("[t] [INFO] [UI] two\n", to: url)
+		#expect(try await waitUntil { tailer.entries.count == 2 })
+	}
+
+	@Test func stoppedTailerReleasesItsWatchesAndIgnoresWrites() async throws {
+		let url = try makeTempFile()
+		try append("[t] [INFO] [UI] one\n", to: url)
+		let tailer = LogTailer(fileProvider: { url })
+		tailer.start(coalescingDelay: 0.02)
+		tailer.stop()
+		#expect(!tailer.isWatchingFile)
+		#expect(!tailer.isRunning)
+
+		try append("[t] [INFO] [UI] two\n", to: url)
+		try await Task.sleep(nanoseconds: 200_000_000)
+		#expect(tailer.entries.count == 1)
+	}
+
+	@Test func picksUpALogFileCreatedAfterStarting() async throws {
+		let url = try makeTempFile()
+		let tailer = LogTailer(fileProvider: { url })
+		tailer.start(coalescingDelay: 0.02)
+		defer { tailer.stop() }
+		#expect(!tailer.isWatchingFile)
+
+		try append("[t] [INFO] [UI] first\n", to: url)
+		#expect(try await waitUntil { tailer.entries.map(\.raw) == ["[t] [INFO] [UI] first"] })
+		#expect(try await waitUntil { tailer.isWatchingFile })
+
+		try append("[t] [INFO] [UI] second\n", to: url)
+		#expect(try await waitUntil { tailer.entries.count == 2 })
+	}
+
+	@Test func followsTheFileAfterItIsRotatedAway() async throws {
+		let url = try makeTempFile()
+		try append("[t] [INFO] [UI] before rotation\n", to: url)
+		let tailer = LogTailer(fileProvider: { url })
+		tailer.start(coalescingDelay: 0.02)
+		defer { tailer.stop() }
+
+		try FileManager.default.moveItem(
+			at: url, to: url.deletingLastPathComponent().appendingPathComponent("archived.log"))
+		try append("[t] [INFO] [UI] after\n", to: url)
+		#expect(try await waitUntil { tailer.entries.map(\.raw) == ["[t] [INFO] [UI] after"] })
+
+		try append("[t] [INFO] [UI] more\n", to: url)
+		#expect(try await waitUntil { tailer.entries.count == 2 })
+	}
 }
