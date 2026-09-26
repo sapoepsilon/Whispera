@@ -1395,12 +1395,14 @@ extension AudioManager {
 	}
 	fileprivate func showMicrophonePermissionAlert() {
 		let alert = NSAlert()
-		alert.messageText = "Microphone Access Required"
-		alert.informativeText =
-			"Whispera needs access to your microphone to transcribe audio. Please grant permission in System Settings > Privacy & Security > Microphone."
+		alert.messageText = String(localized: "Microphone Access Required")
+		alert.informativeText = String(
+			localized:
+				"Whispera needs access to your microphone to transcribe audio. Please grant permission in System Settings > Privacy & Security > Microphone."
+		)
 		alert.alertStyle = .warning
-		alert.addButton(withTitle: "Open System Settings")
-		alert.addButton(withTitle: "Cancel")
+		alert.addButton(withTitle: String(localized: "Open System Settings"))
+		alert.addButton(withTitle: String(localized: "Cancel"))
 
 		if alert.runModal() == .alertFirstButtonReturn {
 			if let url = URL(

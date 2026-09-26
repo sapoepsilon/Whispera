@@ -185,6 +185,29 @@
         }
       }
     },
+    "%@ is still loading, so this dictation could not be transcribed. Try again once it is ready, or pick another model in Settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird noch geladen, daher konnte dieses Diktat nicht transkribiert werden. Versuche es erneut, sobald es bereit ist, oder wähle in den Einstellungen ein anderes Modell."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ todavía se está cargando, así que este dictado no se pudo transcribir. Vuelve a intentarlo cuando esté listo o elige otro modelo en Ajustes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est encore en cours de chargement, cette dictée n'a donc pas pu être transcrite. Réessayez quand il sera prêt ou choisissez un autre modèle dans les Réglages."
+          }
+        }
+      }
+    },
     "%@ types text, so it needs a modifier such as ⌘, ⌥ or ⌃. Esc, Delete and the F-keys work on their own.": {
       "extractionState": "manual",
       "localizations": {
@@ -2757,6 +2780,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Raccourci d'annulation"
+          }
+        }
+      }
+    },
+    "Cancel Transcription": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkription abbrechen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar transcripción"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler la transcription"
+          }
+        }
+      }
+    },
+    "Cancel and discard": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abbrechen und verwerfen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar y descartar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler et supprimer"
           }
         }
       }
@@ -7407,6 +7476,29 @@
         }
       }
     },
+    "History is on: Whispera keeps your recent transcripts on this Mac so you can copy or retry them. Recordings are not kept unless you turn that on. You can change this any time in Settings > History.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Verlauf ist aktiv: Whispera speichert deine letzten Transkripte auf diesem Mac, damit du sie kopieren oder erneut versuchen kannst. Aufnahmen werden nur gespeichert, wenn du das einschaltest. Du kannst das jederzeit unter Einstellungen > Verlauf ändern."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El historial está activado: Whispera guarda tus transcripciones recientes en este Mac para que puedas copiarlas o reintentarlas. Las grabaciones no se guardan a menos que lo actives. Puedes cambiarlo cuando quieras en Ajustes > Historial."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'historique est activé : Whispera conserve vos transcriptions récentes sur ce Mac pour que vous puissiez les copier ou les relancer. Les enregistrements ne sont conservés que si vous l'activez. Vous pouvez modifier cela à tout moment dans Réglages > Historique."
+          }
+        }
+      }
+    },
     "Hold Threshold": {
       "extractionState": "manual",
       "localizations": {
@@ -7932,6 +8024,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conserver"
+          }
+        }
+      }
+    },
+    "Keep On": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingeschaltet lassen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantener activado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laisser activé"
           }
         }
       }
@@ -9753,6 +9868,29 @@
         }
       }
     },
+    "Microphone Access Required": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mikrofonzugriff erforderlich"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se necesita acceso al micrófono"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accès au micro requis"
+          }
+        }
+      }
+    },
     "Microphone Stream": {
       "extractionState": "manual",
       "localizations": {
@@ -9933,6 +10071,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Minimal"
+          }
+        }
+      }
+    },
+    "Minimum Hold After Paste": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mindesthaltezeit nach dem Einfügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retención mínima tras pegar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintien minimal après le collage"
           }
         }
       }
@@ -10512,6 +10673,52 @@
         }
       }
     },
+    "No app took the paste, so the transcript was left on the clipboard. Click where the text should go and press Cmd-V.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine App hat das Einfügen angenommen, daher bleibt das Transkript in der Zwischenablage. Klicke an die gewünschte Stelle und drücke Cmd-V."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguna app recibió el pegado, así que la transcripción quedó en el portapapeles. Haz clic donde debe ir el texto y pulsa Cmd-V."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune app n'a reçu le collage, la transcription est donc restée dans le presse-papiers. Cliquez à l'endroit voulu et appuyez sur Cmd-V."
+          }
+        }
+      }
+    },
+    "No app took the paste. Secure Input was on, so the text was not kept on the clipboard.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine App hat das Einfügen angenommen. Die sichere Eingabe war aktiv, daher wurde der Text nicht in der Zwischenablage behalten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguna app recibió el pegado. La entrada segura estaba activada, así que el texto no se guardó en el portapapeles."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune app n'a reçu le collage. La saisie sécurisée était active, le texte n'a donc pas été conservé dans le presse-papiers."
+          }
+        }
+      }
+    },
     "No effect in Live Transcription Mode: WhisperKit opens the microphone for each recording. Turn Live Transcription Mode off to use this.": {
       "extractionState": "manual",
       "localizations": {
@@ -10830,6 +11037,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun script choisi"
+          }
+        }
+      }
+    },
+    "No speech detected - clip skipped. Skip Silence (Settings > General > Microphone) drops clips it hears as silence; if you did speak, raise Speech Sensitivity or turn Skip Silence off.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Sprache erkannt – Aufnahme übersprungen. Stille überspringen (Einstellungen > Allgemein > Mikrofon) verwirft Aufnahmen, die es für Stille hält; falls du gesprochen hast, erhöhe die Sprachempfindlichkeit oder schalte Stille überspringen aus."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se detectó voz: se omitió el clip. Omitir silencios (Ajustes > General > Micrófono) descarta los clips que percibe como silencio; si hablaste, sube la Sensibilidad a la voz o desactiva Omitir silencios."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune parole détectée : extrait ignoré. Ignorer les silences (Réglages > Général > Microphone) écarte les extraits qu'il perçoit comme du silence ; si vous avez parlé, augmentez la Sensibilité à la voix ou désactivez Ignorer les silences."
           }
         }
       }
@@ -11570,25 +11800,25 @@
         }
       }
     },
-    "Password fields and Terminal's Secure Keyboard Entry hide keystrokes from Whispera. This registers the dictation shortcut as a system hotkey while that lasts.": {
+    "Password fields and Terminal's Secure Keyboard Entry hide keystrokes from Whispera. This registers the dictation shortcut as a system hotkey while that lasts. Dictations made during Secure Input are pasted as spoken: they skip post-processing and are not saved to history.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Passwortfelder und die sichere Tastatureingabe des Terminals verbergen Tastenanschläge vor Whispera. Solange das anhält, wird der Diktier-Kurzbefehl als System-Hotkey registriert."
+            "value": "Passwortfelder und die sichere Tastatureingabe im Terminal verbergen Tastenanschläge vor Whispera. Dies registriert das Diktierkürzel so lange als systemweiten Hotkey. Diktate während der sicheren Eingabe werden unverändert eingefügt: Sie werden nicht nachbearbeitet und nicht im Verlauf gespeichert."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Los campos de contraseña y la entrada de teclado segura de Terminal ocultan las pulsaciones a Whispera. Mientras dure, el atajo de dictado se registra como atajo del sistema."
+            "value": "Los campos de contraseña y la entrada de teclado segura de Terminal ocultan las pulsaciones a Whispera. Esto registra el atajo de dictado como tecla rápida del sistema mientras dure. Los dictados hechos durante la entrada segura se pegan tal cual: no se posprocesan ni se guardan en el historial."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les champs de mot de passe et la saisie clavier sécurisée du Terminal masquent les frappes à Whispera. Pendant ce temps, le raccourci de dictée est enregistré comme raccourci système."
+            "value": "Les champs de mot de passe et la saisie clavier sécurisée du Terminal cachent les frappes à Whispera. Ceci enregistre le raccourci de dictée comme raccourci système tant que cela dure. Les dictées faites pendant la saisie sécurisée sont collées telles quelles : elles ne sont pas post-traitées ni enregistrées dans l'historique."
           }
         }
       }
@@ -12168,25 +12398,25 @@
         }
       }
     },
-    "Press it while recording or transcribing to discard the dictation without pasting. In Live Transcription Mode the text is typed as you speak, so it only stops the stream; what was already typed stays.": {
+    "Press it while recording to discard the dictation without pasting. Once transcribing has started it no longer listens, so an Esc meant for another app can't throw the dictation away; use the cancel button on the pill or in the menu bar instead. In Live Transcription Mode the text is typed as you speak, so it only stops the stream; what was already typed stays.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drücke ihn während der Aufnahme oder Transkription, um das Diktat ohne Einfügen zu verwerfen. Im Live-Transkriptionsmodus wird der Text beim Sprechen getippt, daher stoppt er nur den Stream; bereits Getipptes bleibt."
+            "value": "Drücke es während der Aufnahme, um das Diktat ohne Einfügen zu verwerfen. Sobald die Transkription begonnen hat, hört es nicht mehr zu, damit ein Esc für eine andere App das Diktat nicht verwirft; nutze dann die Abbrechen-Taste in der Pille oder in der Menüleiste. Im Live-Transkriptionsmodus wird der Text beim Sprechen getippt, daher stoppt es nur den Stream; bereits Getipptes bleibt."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Púlsalo mientras grabas o transcribes para descartar el dictado sin pegarlo. En el modo de transcripción en vivo el texto se escribe mientras hablas, así que solo detiene la transmisión; lo ya escrito se queda."
+            "value": "Púlsalo mientras grabas para descartar el dictado sin pegarlo. Una vez que empieza la transcripción deja de escuchar, para que un Esc pensado para otra app no descarte el dictado; usa entonces el botón de cancelar de la píldora o de la barra de menús. En el modo de transcripción en vivo el texto se escribe mientras hablas, así que solo detiene la transmisión; lo ya escrito se queda."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Appuyez pendant l'enregistrement ou la transcription pour abandonner la dictée sans coller. En mode Transcription en direct, le texte est saisi pendant que vous parlez : le raccourci arrête seulement le flux et ce qui est déjà saisi reste."
+            "value": "Appuyez dessus pendant l'enregistrement pour supprimer la dictée sans la coller. Une fois la transcription commencée, il n'écoute plus, afin qu'un Échap destiné à une autre app ne supprime pas la dictée ; utilisez alors le bouton d'annulation de la pilule ou de la barre des menus. En mode Transcription en direct, le texte est saisi pendant que vous parlez, il arrête donc seulement le flux ; ce qui a déjà été saisi reste."
           }
         }
       }
@@ -14583,6 +14813,29 @@
         }
       }
     },
+    "Secure Input was on, so this dictation was pasted as spoken: it was not post-processed or saved to history.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die sichere Eingabe war aktiv, daher wurde dieses Diktat unverändert eingefügt: Es wurde weder nachbearbeitet noch im Verlauf gespeichert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La entrada segura estaba activada, así que este dictado se pegó tal cual: no se posprocesó ni se guardó en el historial."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La saisie sécurisée était active, cette dictée a donc été collée telle quelle : elle n'a pas été post-traitée ni enregistrée dans l'historique."
+          }
+        }
+      }
+    },
     "Secure input": {
       "extractionState": "manual",
       "localizations": {
@@ -15618,25 +15871,25 @@
         }
       }
     },
-    "Skip clips with no speech and trim silence from them; in Live Transcription Mode, pause transcribing while you are silent": {
+    "Skip clips with no speech and trim silence from them; in Live Transcription Mode, pause transcribing while you are silent. A skipped clip shows \"No speech detected\" in the menu bar. On by default for new installs; left off when updating from a version without it.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Überspringt Clips ohne Sprache und schneidet Stille heraus; im Live-Transkriptionsmodus pausiert die Transkription, während du schweigst"
+            "value": "Überspringt Aufnahmen ohne Sprache und schneidet Stille heraus; im Live-Transkriptionsmodus pausiert die Transkription, während du schweigst. Eine übersprungene Aufnahme zeigt „Keine Sprache erkannt“ in der Menüleiste. Bei Neuinstallationen standardmäßig an; bleibt aus beim Update von einer Version ohne diese Funktion."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Omite los clips sin voz y recorta sus silencios; en el modo de transcripción en vivo, pausa la transcripción mientras estás en silencio"
+            "value": "Omite los clips sin voz y recorta sus silencios; en el modo de transcripción en vivo, pausa la transcripción mientras estás en silencio. Un clip omitido muestra «No se detectó voz» en la barra de menús. Activado por defecto en instalaciones nuevas; desactivado al actualizar desde una versión que no lo tenía."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ignore les extraits sans parole et en retire les silences ; en mode Transcription en direct, met la transcription en pause pendant que vous vous taisez"
+            "value": "Ignore les extraits sans parole et en retire les silences ; en mode Transcription en direct, met la transcription en pause pendant vos silences. Un extrait ignoré affiche « Aucune parole détectée » dans la barre des menus. Activé par défaut pour les nouvelles installations ; laissé désactivé lors d'une mise à jour depuis une version qui ne l'avait pas."
           }
         }
       }
@@ -16860,6 +17113,29 @@
         }
       }
     },
+    "That key can't be used. Press Command, Option, Control or Shift + another key": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Taste kann nicht verwendet werden. Drücke Befehl, Wahl, Control oder Umschalt + eine weitere Taste"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esa tecla no se puede usar. Pulsa Comando, Opción, Control o Mayúsculas + otra tecla"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette touche ne peut pas être utilisée. Appuyez sur Commande, Option, Contrôle ou Maj + une autre touche"
+          }
+        }
+      }
+    },
     "The Parakeet vocabulary file is damaged.": {
       "extractionState": "manual",
       "localizations": {
@@ -17090,6 +17366,29 @@
         }
       }
     },
+    "The model is still loading, so this dictation could not be transcribed. Try again once it is ready, or pick another model in Settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Modell wird noch geladen, daher konnte dieses Diktat nicht transkribiert werden. Versuche es erneut, sobald es bereit ist, oder wähle in den Einstellungen ein anderes Modell."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modelo todavía se está cargando, así que este dictado no se pudo transcribir. Vuelve a intentarlo cuando esté listo o elige otro modelo en Ajustes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le modèle est encore en cours de chargement, cette dictée n'a donc pas pu être transcrite. Réessayez quand il sera prêt ou choisissez un autre modèle dans les Réglages."
+          }
+        }
+      }
+    },
     "The model returned %lld characters, more than the %lld allowed for this transcript": {
       "extractionState": "manual",
       "localizations": {
@@ -17270,6 +17569,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le dépôt doit contenir des dossiers de modèles CoreML WhisperKit. Saisissez le dépôt et le nom du dossier, ou collez un lien vers le dossier."
+          }
+        }
+      }
+    },
+    "The shortcut \"%@\" could not be read, so it was reset to %@. Choose another one in Settings > General.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Kürzel „%@“ konnte nicht gelesen werden und wurde auf %@ zurückgesetzt. Wähle unter Einstellungen > Allgemein ein anderes."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer el atajo «%@», así que se restableció a %@. Elige otro en Ajustes > General."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le raccourci « %@ » n'a pas pu être lu, il a donc été réinitialisé sur %@. Choisissez-en un autre dans Réglages > Général."
+          }
+        }
+      }
+    },
+    "The transcript stays on the clipboard at least this long after Cmd-V before the previous clipboard returns": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Transkript bleibt nach Cmd-V mindestens so lange in der Zwischenablage, bevor der vorherige Inhalt zurückkehrt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcripción permanece en el portapapeles al menos este tiempo después de Cmd-V antes de que vuelva el contenido anterior"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcription reste dans le presse-papiers au moins aussi longtemps après Cmd-V avant que le contenu précédent revienne"
           }
         }
       }
@@ -18654,6 +18999,29 @@
         }
       }
     },
+    "Turn Off History": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verlauf ausschalten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desactivar historial"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactiver l'historique"
+          }
+        }
+      }
+    },
     "Turn on Apple Intelligence in System Settings": {
       "extractionState": "manual",
       "localizations": {
@@ -20034,6 +20402,52 @@
         }
       }
     },
+    "Whispera couldn't paste because Accessibility access is off. The transcript is on the clipboard. Turn Whispera on in System Settings > Privacy & Security > Accessibility.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera konnte nicht einfügen, weil der Bedienungshilfen-Zugriff aus ist. Das Transkript liegt in der Zwischenablage. Aktiviere Whispera unter Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera no pudo pegar porque el acceso de Accesibilidad está desactivado. La transcripción está en el portapapeles. Activa Whispera en Ajustes del Sistema > Privacidad y seguridad > Accesibilidad."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera n'a pas pu coller car l'accès Accessibilité est désactivé. La transcription est dans le presse-papiers. Activez Whispera dans Réglages Système > Confidentialité et sécurité > Accessibilité."
+          }
+        }
+      }
+    },
+    "Whispera couldn't type because Accessibility access is off. Turn Whispera on in System Settings > Privacy & Security > Accessibility.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera konnte nicht tippen, weil der Bedienungshilfen-Zugriff aus ist. Aktiviere Whispera unter Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera no pudo escribir porque el acceso de Accesibilidad está desactivado. Activa Whispera en Ajustes del Sistema > Privacidad y seguridad > Accesibilidad."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera n'a pas pu saisir le texte car l'accès Accessibilité est désactivé. Activez Whispera dans Réglages Système > Confidentialité et sécurité > Accessibilité."
+          }
+        }
+      }
+    },
     "Whispera is now configured and ready to use.": {
       "extractionState": "manual",
       "localizations": {
@@ -20053,6 +20467,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Whispera est configuré et prêt à l'emploi."
+          }
+        }
+      }
+    },
+    "Whispera needs access to your microphone to transcribe audio. Please grant permission in System Settings > Privacy & Security > Microphone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera braucht Zugriff auf dein Mikrofon, um Audio zu transkribieren. Erteile die Berechtigung unter Systemeinstellungen > Datenschutz & Sicherheit > Mikrofon."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera necesita acceso al micrófono para transcribir audio. Concede el permiso en Ajustes del Sistema > Privacidad y seguridad > Micrófono."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera a besoin d'accéder à votre micro pour transcrire l'audio. Accordez l'autorisation dans Réglages Système > Confidentialité et sécurité > Micro."
           }
         }
       }
