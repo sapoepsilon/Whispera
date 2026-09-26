@@ -33,6 +33,31 @@ final class RecordingKeyPoster: KeyEventPosting {
 	}
 }
 
+@MainActor
+final class SlowReadingKeyPoster: KeyEventPosting {
+	let pasteboard: NSPasteboard
+	let readDelayMs: UInt64
+	var pastedText: String?
+	var readTask: Task<Void, Never>?
+
+	init(pasteboard: NSPasteboard, readDelayMs: UInt64) {
+		self.pasteboard = pasteboard
+		self.readDelayMs = readDelayMs
+	}
+
+	nonisolated func postUnicode(_ units: [UniChar]) {}
+
+	nonisolated func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
+		guard keyCode == KeyCode.v else { return }
+		MainActor.assumeIsolated {
+			readTask = Task { @MainActor in
+				try? await Task.sleep(nanoseconds: readDelayMs * 1_000_000)
+				pastedText = pasteboard.string(forType: .string)
+			}
+		}
+	}
+}
+
 private func makePasteboard() -> NSPasteboard {
 	NSPasteboard(name: NSPasteboard.Name("whispera.tests.\(UUID().uuidString)"))
 }
@@ -117,6 +142,22 @@ struct TextInserterClipboardTests {
 			poster.events == [
 				.init(keyCode: KeyCode.v, flags: .maskCommand, clipboardText: "hello world")
 			])
+		#expect(pasteboard.string(forType: .string) == "user copy")
+	}
+
+	@Test func waitsForASlowTargetAppToReadTheTranscriptBeforeRestoring() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("user copy", forType: .string)
+		let poster = SlowReadingKeyPoster(pasteboard: pasteboard, readDelayMs: 300)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, settingsProvider: { fastSettings() })
+
+		await inserter.insert("hello world", context: .finalTranscript).value
+		await poster.readTask?.value
+
+		#expect(poster.pastedText == "hello world")
 		#expect(pasteboard.string(forType: .string) == "user copy")
 	}
 

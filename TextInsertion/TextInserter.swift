@@ -46,13 +46,16 @@ final class TextInserter {
 	private let logger = AppLogger.shared.general
 	private let typingStepDelayMs = 4
 	private let autoSubmitDelayMs = 50
+	private let minimumRestoreHoldMs: Int
 	private var pendingInsertion: Task<Void, Never>?
 
 	init(
 		pasteboard: NSPasteboard = .general,
 		keyPoster: KeyEventPosting = CGKeyEventPoster(),
-		settingsProvider: @escaping () -> TextInsertionSettings = { .current }
+		settingsProvider: @escaping () -> TextInsertionSettings = { .current },
+		minimumRestoreHoldMs: Int = 500
 	) {
+		self.minimumRestoreHoldMs = minimumRestoreHoldMs
 		self.pasteboard = pasteboard
 		self.keyPoster = keyPoster
 		self.settingsProvider = settingsProvider
@@ -134,7 +137,9 @@ final class TextInserter {
 
 		await sleep(milliseconds: settings.pasteDelayBeforeMs)
 		keyPoster.postKey(KeyCode.v, flags: .maskCommand)
-		await sleep(milliseconds: settings.pasteDelayAfterMs)
+		// A busy target app can read the clipboard well after Cmd-V; restoring first pastes the old contents
+		let restoreHoldMs = snapshot == nil ? 0 : minimumRestoreHoldMs
+		await sleep(milliseconds: max(settings.pasteDelayAfterMs, restoreHoldMs))
 
 		guard let snapshot else { return }
 		if ClipboardWriter.shouldRestore(
