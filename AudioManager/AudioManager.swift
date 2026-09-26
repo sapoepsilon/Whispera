@@ -2,6 +2,7 @@ import AVFoundation
 import AppKit
 import Foundation
 import SwiftUI
+import WhisperKit
 
 enum RecordingMode {
 	case text
@@ -472,7 +473,32 @@ extension AudioManager {
 
 // MARK: - Transcription
 extension AudioManager {
+	/// Returns the clip trimmed to its speech, or nil when it holds no speech and
+	/// must not be transcribed.
+	fileprivate func applyVoiceActivityDetection(_ samples: [Float]) async -> [Float]? {
+		let settings = VoiceActivitySettings(defaults: .standard)
+		guard settings.enabled else { return samples }
+
+		let trimmer = VoiceActivityTrimmer(sensitivity: settings.sensitivity)
+		let result = await Task.detached(priority: .userInitiated) {
+			trimmer.process(samples)
+		}.value
+
+		switch result {
+		case .noSpeech:
+			AppLogger.shared.audioManager.info(
+				"VAD found no speech in \(samples.count) samples, skipping transcription")
+			return nil
+		case .speech(let trimmed):
+			AppLogger.shared.audioManager.debug(
+				"VAD trimmed clip from \(samples.count) to \(trimmed.count) samples")
+			return trimmed
+		}
+	}
+
 	fileprivate func transcribeAudioBuffer(audioArray: [Float], enableTranslation: Bool) async {
+		guard let audioArray = await applyVoiceActivityDetection(audioArray) else { return }
+
 		isTranscribing = true
 		transcriptionError = nil
 
@@ -497,6 +523,19 @@ extension AudioManager {
 		}
 	}
 	fileprivate func transcribeAudio(fileURL: URL, enableTranslation: Bool) async {
+		if VoiceActivitySettings(defaults: .standard).enabled {
+			let path = fileURL.path
+			let samples = await Task.detached(priority: .userInitiated) {
+				try? AudioProcessor.loadAudioAsFloatArray(fromPath: path)
+			}.value
+			if let samples {
+				try? FileManager.default.removeItem(at: fileURL)
+				await transcribeAudioBuffer(audioArray: samples, enableTranslation: enableTranslation)
+				return
+			}
+			AppLogger.shared.audioManager.error("VAD could not load recording, transcribing untrimmed file")
+		}
+
 		isTranscribing = true
 		transcriptionError = nil
 

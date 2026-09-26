@@ -366,6 +366,8 @@ struct SettingsView: View {
 							}
 							.padding(.top, 4)
 						}
+
+						AudioInputSettingsRows()
 					}
 					Divider()
 
