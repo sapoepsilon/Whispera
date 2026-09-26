@@ -63,7 +63,15 @@ final class AudioManager: NSObject {
 		}
 	}
 	var lastTranscription: String?
-	var transcriptionError: String?
+	var transcriptionError: String? {
+		didSet { transcriptionErrorIsNotice = transcriptionError != nil && isPostingNotice }
+	}
+	/// True when `transcriptionError` is routine information (no speech heard, a recording that
+	/// stopped early, Secure Input skipping post-processing) rather than a failure needing the user,
+	/// so it is shown in the menu bar without a system notification.
+	private(set) var transcriptionErrorIsNotice = false
+	@ObservationIgnored
+	private var isPostingNotice = false
 	/// Shown on the listening pill when the recording had to change microphones.
 	var inputNotice: String?
 	var currentRecordingMode: RecordingMode = .text
@@ -99,8 +107,13 @@ final class AudioManager: NSObject {
 
 	// MARK: - Settings
 
+	/// Observed so the popover's mode control, caption and header follow changes made in Settings.
 	@ObservationIgnored
-	@AppStorage("enableTranslation") var enableTranslation = false
+	private let translationSetting = ObservedDefaultsFlag(key: "enableTranslation", defaultValue: false)
+	var enableTranslation: Bool {
+		get { translationSetting.value }
+		set { translationSetting.set(newValue) }
+	}
 	@ObservationIgnored
 	@AppStorage("useStreamingTranscription") var useStreamingTranscription = true
 	@ObservationIgnored
@@ -277,11 +290,7 @@ final class AudioManager: NSObject {
 		// Only the capture is cancelled while one runs, so an earlier dictation that is
 		// still transcribing is not thrown away with it.
 		let cancelled = capturing && ledger.capturing == nil ? [] : ledger.cancel()
-		for session in cancelled {
-			transcriptionTasks.removeValue(forKey: session.id)?.cancel()
-			releaseModel(for: session.id)
-			stopNotices[session.id] = nil
-		}
+		abandon(cancelled)
 
 		if capturing {
 			pendingStopAfterStart = false
@@ -319,6 +328,30 @@ final class AudioManager: NSObject {
 
 		syncTranscribingState()
 		AppLogger.shared.audioManager.info("Recording cancelled; audio discarded")
+	}
+
+	/// Abandons the dictations still transcribing. Unlike `cancelRecording`, a recording that is
+	/// running keeps going, so "Cancel Transcription" never throws away what is being dictated now.
+	func cancelTranscriptions() {
+		let cancelled = ledger.cancelTranscriptions()
+		guard !cancelled.isEmpty else { return }
+		abandon(cancelled)
+		syncTranscribingState()
+		AppLogger.shared.audioManager.info("Cancelled \(cancelled.count) transcription(s) in flight")
+	}
+
+	private func abandon(_ sessions: [DictationSession]) {
+		for session in sessions {
+			transcriptionTasks.removeValue(forKey: session.id)?.cancel()
+			releaseModel(for: session.id)
+			stopNotices[session.id] = nil
+		}
+	}
+
+	func postNotice(_ notice: String) {
+		isPostingNotice = true
+		defer { isPostingNotice = false }
+		transcriptionError = notice
 	}
 
 	func switchInputDevice(to uid: String) {
@@ -989,7 +1022,7 @@ extension AudioManager {
 		stopRecording()
 		// Live mode and empty recordings have no session to carry the notice
 		if let unclaimed = pendingStopNotice {
-			transcriptionError = unclaimed
+			postNotice(unclaimed)
 			pendingStopNotice = nil
 		}
 	}
@@ -1093,7 +1126,7 @@ extension AudioManager {
 
 		let session = whisperKitTranscriber.takeLastLiveSession()
 		if session.text.isEmpty, VoiceActivitySettings(defaults: .standard).enabled {
-			transcriptionError = VoiceActivitySettings.noSpeechNotice
+			postNotice(VoiceActivitySettings.noSpeechNotice)
 		}
 		if !session.text.isEmpty {
 			recordHistory(
@@ -1137,7 +1170,7 @@ extension AudioManager {
 		case .noSpeech:
 			AppLogger.shared.audioManager.info(
 				"VAD found no speech in \(samples.count) samples, skipping transcription")
-			transcriptionError = VoiceActivitySettings.noSpeechNotice
+			postNotice(VoiceActivitySettings.noSpeechNotice)
 			return nil
 		case .speech(let trimmed):
 			AppLogger.shared.audioManager.debug(
@@ -1164,7 +1197,12 @@ extension AudioManager {
 		releaseModel(for: id)
 		syncTranscribingState()
 		if let notice = stopNotices.removeValue(forKey: id) {
-			transcriptionError = [notice, transcriptionError].compactMap { $0 }.joined(separator: "\n")
+			let combined = [notice, transcriptionError].compactMap { $0 }.joined(separator: "\n")
+			if transcriptionError == nil || transcriptionErrorIsNotice {
+				postNotice(combined)
+			} else {
+				transcriptionError = combined
+			}
 		}
 	}
 
@@ -1253,7 +1291,7 @@ extension AudioManager {
 				postProcessRequested: session.postProcess,
 				secureInput: secureBeforeProcessing || SecureDictation.isSecureInputActive)
 			{
-				transcriptionError = notice
+				postNotice(notice)
 			}
 			if policy.rememberAsLastTranscription {
 				lastTranscription = transcription

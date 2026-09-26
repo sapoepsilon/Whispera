@@ -86,7 +86,9 @@ struct MenuBarView: View {
 		.onAppear { registerOpenSettings { openSettings() } }
 		.onChange(of: audioManager.transcriptionError) { _, newValue in
 			if let error = newValue {
-				toastCenter.show(error, type: .error)
+				// Routine notices stay in the menu bar; only failures that need the user notify
+				toastCenter.show(
+					error, type: .error, notifyWhenHidden: !audioManager.transcriptionErrorIsNotice)
 			}
 		}
 		.onDrop(
@@ -561,43 +563,42 @@ struct MenuBarStatusModel {
 		networkDownloader: NetworkFileDownloader,
 		shortcutKey: String
 	) {
-		let needsPermissions = permissionManager.needsPermissions
-		let isDownloading = whisperKit.isDownloadingModel || networkDownloader.isDownloading
-		let isTranscribing = audioManager.isTranscribing || fileTranscriptionManager.isTranscribing
-		let isRecording = audioManager.isRecording
+		let phase = MenuBarStatusPhase.resolve(
+			downloadingFile: networkDownloader.isDownloading,
+			transcribingFile: fileTranscriptionManager.isTranscribing,
+			needsPermissions: permissionManager.needsPermissions,
+			recording: audioManager.isSessionActive,
+			downloadingModel: whisperKit.isDownloadingModel,
+			transcribing: audioManager.isTranscribing)
 
-		if needsPermissions {
-			color = .orange
-			systemImage = "exclamationmark.triangle.fill"
-		} else if isDownloading {
+		switch phase {
+		case .downloadingFile:
 			color = .orange
 			systemImage = "arrow.down.circle.fill"
-		} else if isTranscribing {
-			color = .blue
-			systemImage = "waveform"
-		} else if isRecording {
-			color = .red
-			systemImage = "mic.fill"
-		} else {
-			color = .green
-			systemImage = "checkmark.circle.fill"
-		}
-
-		// Title/subtitle layer file operations above the dictation states.
-		if networkDownloader.isDownloading {
 			title = String(localized: "Downloading File...")
 			subtitle = String(localized: "Progress: \(Int(networkDownloader.downloadProgress * 100))%")
-		} else if fileTranscriptionManager.isTranscribing {
+		case .transcribingFile:
+			color = .blue
+			systemImage = "waveform"
 			title = String(localized: "Transcribing File...")
 			if let filename = fileTranscriptionManager.currentFileName {
 				subtitle = String(localized: "Processing: \(filename)")
 			} else {
 				subtitle = String(localized: "Processing file...")
 			}
-		} else if needsPermissions {
+		case .needsPermissions:
+			color = .orange
+			systemImage = "exclamationmark.triangle.fill"
 			title = String(localized: "Permissions Required")
 			subtitle = String(localized: "Grant required permissions to continue")
-		} else if whisperKit.isDownloadingModel {
+		case .recording:
+			color = .red
+			systemImage = "mic.fill"
+			title = String(localized: "Recording...")
+			subtitle = String(localized: "\(shortcutKey) to stop")
+		case .downloadingModel:
+			color = .orange
+			systemImage = "arrow.down.circle.fill"
 			title = String(localized: "Downloading Model...")
 			if let model = whisperKit.downloadingModelName {
 				let cleanName = model.replacingOccurrences(of: "openai_whisper-", with: "")
@@ -605,16 +606,55 @@ struct MenuBarStatusModel {
 			} else {
 				subtitle = String(localized: "Installing Whisper model")
 			}
-		} else if audioManager.isTranscribing {
+		case .transcribing:
 			let translating = audioManager.enableTranslation
+			color = .blue
+			systemImage = "waveform"
 			title = translating ? String(localized: "Translating...") : String(localized: "Transcribing...")
 			subtitle = translating ? String(localized: "Converting speech to English") : String(localized: "Converting speech to text")
-		} else if audioManager.isRecording {
-			title = String(localized: "Recording...")
-			subtitle = String(localized: "\(shortcutKey) to stop")
-		} else {
+		case .ready:
+			color = .green
+			systemImage = "checkmark.circle.fill"
 			title = String(localized: "Ready")
 			subtitle = String(localized: "Press \(shortcutKey) to dictate")
+		}
+	}
+}
+
+/// One priority order for the header's color, glyph and text. A recording that is running outranks
+/// an earlier dictation still transcribing, because that is what the stop shortcut acts on.
+enum MenuBarStatusPhase: Equatable {
+	case downloadingFile, transcribingFile, needsPermissions, recording, downloadingModel, transcribing, ready
+
+	static func resolve(
+		downloadingFile: Bool, transcribingFile: Bool, needsPermissions: Bool, recording: Bool,
+		downloadingModel: Bool, transcribing: Bool
+	) -> MenuBarStatusPhase {
+		if downloadingFile { return .downloadingFile }
+		if transcribingFile { return .transcribingFile }
+		if needsPermissions { return .needsPermissions }
+		if recording { return .recording }
+		if downloadingModel { return .downloadingModel }
+		if transcribing { return .transcribing }
+		return .ready
+	}
+}
+
+/// What the popover's primary button does. Stop stays available while a recording runs even if an
+/// earlier dictation is still transcribing; the spinner only shows when nothing is capturing.
+enum RecordButtonMode: Equatable {
+	case start, stop, transcribing
+
+	static func resolve(capturing: Bool, transcribing: Bool) -> RecordButtonMode {
+		if capturing { return .stop }
+		return transcribing ? .transcribing : .start
+	}
+
+	func isEnabled(blocked: Bool) -> Bool {
+		switch self {
+		case .stop: return true
+		case .transcribing: return false
+		case .start: return !blocked
 		}
 	}
 }
@@ -1129,17 +1169,18 @@ final class ToastCenter {
 	@ObservationIgnored var isPopoverVisible: () -> Bool = { false }
 
 	@ObservationIgnored private var dismissTask: Task<Void, Never>?
+	@ObservationIgnored var deliverSystemNotification: (Toast) -> Void = ToastCenter.postSystemNotification
 
 	private static let successDuration: TimeInterval = 3.0
 	private static let errorDuration: TimeInterval = 8.0
 
-	func show(_ message: String, type: BannerType) {
+	func show(_ message: String, type: BannerType, notifyWhenHidden: Bool = true) {
 		let toast = Toast(message: message, type: type)
 		current = toast
 		lastMessage = toast
 
-		if !isPopoverVisible() {
-			postSystemNotification(toast)
+		if notifyWhenHidden, !isPopoverVisible() {
+			deliverSystemNotification(toast)
 		}
 
 		let duration = type == .error ? ToastCenter.errorDuration : ToastCenter.successDuration
@@ -1163,7 +1204,7 @@ final class ToastCenter {
 		show(last.message, type: last.type)
 	}
 
-	private func postSystemNotification(_ toast: Toast) {
+	private static func postSystemNotification(_ toast: Toast) {
 		let notification = NSUserNotification()
 		notification.title = "Whispera"
 		notification.subtitle = toast.type == .error ? String(localized: "Error") : ""
@@ -1198,7 +1239,8 @@ struct ToastOverlay: View {
 
 // Native pull-down so opening the picker changes no popover height. The label
 // shows the precomputed active device (no O(n) scan per render); the inline
-// Picker draws a checkmark on the current selection. Locked during capture.
+// Picker draws a checkmark on the current selection. Picking a device mid-recording moves the
+// capture onto it and keeps the audio already recorded.
 struct MicMenu: View {
 	@Bindable var audioManager: AudioManager
 	@State private var deviceManager = AudioDeviceManager.shared
@@ -1254,7 +1296,6 @@ struct MicMenu: View {
 		// Borderless menus render as NSPopUpButton and size to intrinsic width;
 		// without a hard cap a long device name pushes past the popover edge.
 		.frame(maxWidth: 150, alignment: .trailing)
-		.disabled(audioManager.isRecording)
 	}
 }
 
@@ -1442,10 +1483,11 @@ struct DictateLane: View {
 		VStack(spacing: 12) {
 			RecordButton(audioManager: audioManager, isBlocked: isBlocked)
 
-			// The cancel shortcut is not armed while transcribing, so this is the way out
+			// The cancel shortcut is not armed while transcribing, so this is the way out. It only
+			// abandons transcriptions: a recording started meanwhile keeps running.
 			if audioManager.isTranscribing {
 				Button("Cancel Transcription") {
-					audioManager.cancelRecording()
+					audioManager.cancelTranscriptions()
 				}
 				.buttonStyle(TertiaryButtonStyle())
 				.accessibilityIdentifier("menuBarCancelTranscriptionButton")
@@ -1467,28 +1509,39 @@ struct RecordButton: View {
 	@Bindable var audioManager: AudioManager
 	let isBlocked: Bool
 
+	private var mode: RecordButtonMode {
+		RecordButtonMode.resolve(
+			capturing: audioManager.isSessionActive, transcribing: audioManager.isTranscribing)
+	}
+
 	var body: some View {
+		let mode = mode
 		Button {
 			audioManager.toggleRecording()
 		} label: {
 			HStack(spacing: 8) {
-				if audioManager.isTranscribing {
+				switch mode {
+				case .transcribing:
 					ProgressView()
 						.controlSize(.small)
 						.tint(.white)
 					Text("Transcribing…")
 						.font(.system(.body, design: .rounded, weight: .medium))
-				} else {
-					Image(systemName: audioManager.isRecording ? "stop.fill" : "mic.fill")
-					Text(audioManager.isRecording ? String(localized: "Stop Recording") : String(localized: "Start Recording"))
+				case .stop:
+					Image(systemName: "stop.fill")
+					Text(String(localized: "Stop Recording"))
+						.font(.system(.body, design: .rounded, weight: .medium))
+				case .start:
+					Image(systemName: "mic.fill")
+					Text(String(localized: "Start Recording"))
 						.font(.system(.body, design: .rounded, weight: .medium))
 				}
 			}
 			.frame(maxWidth: .infinity)
 			.frame(height: 40)
 		}
-		.buttonStyle(PrimaryButtonStyle(isRecording: audioManager.isRecording))
-		.disabled(audioManager.isTranscribing || isBlocked)
+		.buttonStyle(PrimaryButtonStyle(isRecording: mode == .stop))
+		.disabled(!mode.isEnabled(blocked: isBlocked))
 	}
 }
 

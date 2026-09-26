@@ -55,6 +55,11 @@ struct DictationSessionLedger {
 			capturing = nil
 			return [session]
 		}
+		return cancelTranscriptions()
+	}
+
+	/// Abandons every transcription still in flight and leaves a running capture alone.
+	mutating func cancelTranscriptions() -> [DictationSession] {
 		let sessions = transcribing
 		transcribing.removeAll()
 		cancelled.formUnion(sessions.map(\.id))
