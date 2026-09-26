@@ -29,6 +29,15 @@ struct WhatsNewTracker {
 		return AppVersion(currentVersion) > AppVersion(lastSeenVersion)
 	}
 
+	/// Sparkle's automatic-check setting (the Settings toggle) and the legacy update checker's
+	/// setting. When either is off the user opted out of update traffic, so the release notes
+	/// shown at launch are not fetched until asked for.
+	var updateChecksEnabled: Bool {
+		let sparkle = defaults.object(forKey: "SUEnableAutomaticChecks") as? Bool ?? true
+		let legacy = defaults.object(forKey: "autoCheckForUpdates") as? Bool ?? true
+		return sparkle && legacy
+	}
+
 	func evaluateLaunch(currentVersion: String) -> Bool {
 		let show = Self.shouldShow(
 			lastSeenVersion: defaults.string(forKey: Self.lastSeenVersionKey),
@@ -76,13 +85,15 @@ final class WhatsNewController {
 		let version = AppVersion.Constants.currentVersionString
 		guard tracker.evaluateLaunch(currentVersion: version), !suppress else { return }
 		AppLogger.shared.general.info("Showing What's New for \(version)")
-		show(version: version)
+		show(version: version, fetchNotes: tracker.updateChecksEnabled)
 	}
 
-	func show(version: String = AppVersion.Constants.currentVersionString) {
+	/// `fetchNotes` false shows the window without touching the network; the user can still load
+	/// the notes from it. "Show Now" in Settings is an explicit request, so it fetches.
+	func show(version: String = AppVersion.Constants.currentVersionString, fetchNotes: Bool = true) {
 		window?.close()
 
-		let view = WhatsNewView(version: version) { [weak self] in
+		let view = WhatsNewView(version: version, fetchesAutomatically: fetchNotes) { [weak self] in
 			self?.window?.close()
 			self?.window = nil
 		}
@@ -104,11 +115,13 @@ final class WhatsNewController {
 
 struct WhatsNewView: View {
 	let version: String
+	var fetchesAutomatically = true
 	let onClose: () -> Void
 
 	@AppStorage(WhatsNewTracker.enabledKey) private var showOnUpdate = true
 	@State private var notes: String?
 	@State private var loadFailed = false
+	@State private var loadRequested = false
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -134,6 +147,11 @@ struct WhatsNewView: View {
 				Group {
 					if let notes {
 						Markdown(notes)
+					} else if !fetchesAutomatically && !loadRequested {
+						VStack(alignment: .leading, spacing: 8) {
+							Text("Update checks are off, so the release notes were not downloaded.")
+							Button("Load Release Notes") { loadRequested = true }
+						}
 					} else if loadFailed {
 						VStack(alignment: .leading, spacing: 8) {
 							Text("Release notes couldn't be loaded.")
@@ -162,7 +180,8 @@ struct WhatsNewView: View {
 			.padding(16)
 		}
 		.frame(minWidth: 460, minHeight: 420)
-		.task {
+		.task(id: loadRequested) {
+			guard fetchesAutomatically || loadRequested, notes == nil else { return }
 			do {
 				notes = try await WhatsNewReleaseNotes.fetch(version: version)
 			} catch {
