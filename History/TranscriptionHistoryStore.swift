@@ -86,7 +86,8 @@ final class TranscriptionHistoryStore {
 		modelName: String?,
 		language: String?,
 		errorMessage: String? = nil,
-		postProcessing: HistoryPostProcessing? = nil
+		postProcessing: HistoryPostProcessing? = nil,
+		postProcessRequested: Bool = false
 	) -> TranscriptionHistoryEntry? {
 		let settings = self.settings
 		guard settings.isEnabled, let context else { return nil }
@@ -117,6 +118,10 @@ final class TranscriptionHistoryStore {
 			errorMessage: errorMessage
 		)
 		entry.apply(transcript: trimmed, postProcessing: postProcessing)
+		// A failed transcription never reached post-processing but must remember it was asked for
+		if postProcessRequested {
+			entry.postProcessRequested = true
+		}
 		context.insert(entry)
 		guard save() else {
 			if let audioFileName {

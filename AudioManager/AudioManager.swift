@@ -14,6 +14,14 @@ enum CapturePath {
 	case live
 	case file
 	case stream
+
+	/// The path a stop must tear down. It is always the one the session started on: the
+	/// streaming setting can change mid-recording, and a failed stream start falls back to file.
+	static func toStop(active: CapturePath?, mode: RecordingMode) -> CapturePath {
+		if let active { return active }
+		// Nothing is capturing; the stream path only finishes the ledger and resets state
+		return mode == .liveTranscription ? .live : .stream
+	}
 }
 
 enum AudioState {
@@ -482,11 +490,12 @@ extension AudioManager {
 		}
 	}
 	fileprivate func stopRecording() {
-		if currentRecordingMode == .liveTranscription {
+		switch CapturePath.toStop(active: activeCapturePath, mode: currentRecordingMode) {
+		case .live:
 			stopLiveTranscription()
-		} else if useStreamingTranscription {
+		case .stream:
 			stopStreamingRecording()
-		} else {
+		case .file:
 			stopFileBasedRecording()
 		}
 	}
@@ -634,9 +643,11 @@ extension AudioManager {
 			} catch {
 				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				isMicrophoneInitializing = false
-				AppLogger.shared.audioManager.error("Failed to start streaming: \(error)")
+				// Only this session falls back: turning the setting off would also silently
+				// disable the kept-open microphone policies for good
+				AppLogger.shared.audioManager.error(
+					"Failed to start streaming, recording to a file instead: \(error)")
 				shutdownStreamingEngine()
-				useStreamingTranscription = false
 				startFileBasedRecording()
 			}
 		}
@@ -902,21 +913,30 @@ extension AudioManager {
 		muteOutputAfterStartSound()
 		whisperKitTranscriber.clearLiveTranscriptionState()
 		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
+		let session = ledger.capturing?.id
 
 		deviceActivationTask = Task {
 			do {
 				try await whisperKitTranscriber.liveStream()
-				guard !Task.isCancelled else { return }
+				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.info("Live transcription started")
 			} catch {
-				guard !Task.isCancelled else { return }
+				// A stop, cancel or newer session already owns the state
+				guard !Task.isCancelled, !(error is CancellationError), isCurrentCapture(session) else {
+					return
+				}
+				deviceActivationTask = nil
 				isMicrophoneInitializing = false
 				isRecording = false
 				timer.stop()
 				restoreSystemOutput()
 				activeCapturePath = nil
 				ledger.dropCapture()
+				deviceManager.restoreSystemDefault()
+				deviceManager.endRecordingSession()
+				levelMonitor.reset()
+				scheduleTimerReset()
 				AppLogger.shared.audioManager.error("Failed to start live transcription: \(error)")
 			}
 		}
@@ -1078,7 +1098,10 @@ extension AudioManager {
 			transcriptionError = error.localizedDescription
 			lastTranscription = "Transcription failed: \(error.localizedDescription)"
 			finishTranscription(id)
-			recordHistory(text: "", audio: historyAudio, errorMessage: error.localizedDescription)
+			// Keeps the request so a retry from history post-processes like the original would have
+			recordHistory(
+				text: "", audio: historyAudio, errorMessage: error.localizedDescription,
+				postProcessRequested: session.postProcess)
 		}
 	}
 
@@ -1089,7 +1112,7 @@ extension AudioManager {
 	fileprivate func recordHistory(
 		text: String, audio: TranscriptionHistoryAudio?,
 		source: TranscriptionHistorySource = .dictation, errorMessage: String? = nil,
-		postProcessing: HistoryPostProcessing? = nil
+		postProcessing: HistoryPostProcessing? = nil, postProcessRequested: Bool = false
 	) {
 		TranscriptionHistoryStore.shared.record(
 			text: text,
@@ -1098,7 +1121,8 @@ extension AudioManager {
 			modelName: whisperKitTranscriber.currentModel ?? whisperKitTranscriber.selectedModel,
 			language: selectedLanguage,
 			errorMessage: errorMessage,
-			postProcessing: postProcessing
+			postProcessing: postProcessing,
+			postProcessRequested: postProcessRequested
 		)
 	}
 }

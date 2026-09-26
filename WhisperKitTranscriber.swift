@@ -49,6 +49,7 @@ import WhisperKit
 	}
 
 	func clearLiveTranscriptionState() {
+		liveSession.end()
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
 		isWaitingForModel = false
@@ -406,7 +407,8 @@ import WhisperKit
 	@MainActor var whisperKit: WhisperKit?
 	@MainActor private(set) var parakeetEngine: ParakeetEngine?
 	private var transcriptionTask: Task<Void, Never>?
-	@MainActor private var liveStreamStartupTask: Task<Void, Never>?
+	@MainActor private var liveStreamStartupTask: Task<Void, Error>?
+	@ObservationIgnored private var liveSession = LiveSessionGate()
 	private var lastBufferSize: Int = 0
 	private var realtimeDelayInterval: Float = 0.3
 	@MainActor private var initializationTask: Task<Void, Never>?
@@ -418,6 +420,8 @@ import WhisperKit
 	@ObservationIgnored private let idleUnloadTimer = DeferredAction()
 	@ObservationIgnored private var activeModelUses = 0
 	@ObservationIgnored private var liveStreamHoldsModel = false
+	@ObservationIgnored private var retiredParakeetEngines = DeferredEngineRelease<ParakeetEngine>()
+	@ObservationIgnored private var idleUnloadRetry = IdleUnloadRetryPolicy()
 	@ObservationIgnored private var pendingLoadTask: Task<Void, Error>?
 	@ObservationIgnored private var lastObservedUnloadTimeout: ModelUnloadTimeout?
 	@ObservationIgnored private var settingsObserver: DefaultsKeyObserver?
@@ -587,10 +591,11 @@ import WhisperKit
 		}
 
 		liveStreamStartupTask?.cancel()
-		liveStreamStartupTask = Task { @MainActor in
+		let generation = liveSession.begin()
+		let startup = Task { @MainActor in
 			do {
 				try await ensureModelReadyForLiveTranscription()
-				try Task.checkCancellation()
+				try checkLiveStartupIsCurrent(generation)
 				if parakeetEngine != nil {
 					waitingForModelStatusText = String(
 						localized: "Live Transcription Mode needs a Whisper model.")
@@ -613,40 +618,79 @@ import WhisperKit
 				liveDetectedLanguage = nil
 
 				await AudioDeviceManager.shared.activateSelectedDevice()
+				guard liveSession.isCurrent(generation), !Task.isCancelled else {
+					// Stop already restored the input before this activation finished
+					if !liveSession.isActive {
+						AudioDeviceManager.shared.restoreSystemDefault()
+					}
+					throw CancellationError()
+				}
 				let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
-				try? whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) { [weak self] samples in
+				try whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) {
+					[weak self] samples in
 					Task { @MainActor in
-						self?.shouldShowLiveTranscriptionWindow = true
-						self?.onLiveAudioSamples?(samples)
+						guard let self, self.liveSession.isCurrent(generation) else { return }
+						self.shouldShowLiveTranscriptionWindow = true
+						self.onLiveAudioSamples?(samples)
 					}
 				}
-				realtimeLoop()
+				realtimeLoop(generation: generation)
 			} catch {
-				if Task.isCancelled { return }
-				isWaitingForModel = false
-				isTranscribing = false
-				if waitingForModelStatusText.isEmpty {
-					waitingForModelStatusText = String(localized: "Unable to start dictation.")
+				guard liveSession.isCurrent(generation), !Task.isCancelled, !(error is CancellationError) else {
+					throw CancellationError()
 				}
-				shouldShowLiveTranscriptionWindow = true
-				AppLogger.shared.transcriber.error("Failed to start live stream: \(error)")
+				failLiveStartup(error)
+				throw error
 			}
 		}
+		liveStreamStartupTask = startup
+		defer {
+			// A stopped session's continuation must not clear the handle of the session after it
+			if liveStreamStartupTask == startup {
+				liveStreamStartupTask = nil
+			}
+		}
+		try await startup.value
+	}
 
-		try await liveStreamStartupTask?.value
-		liveStreamStartupTask = nil
+	private func checkLiveStartupIsCurrent(_ generation: Int) throws {
+		guard liveSession.isCurrent(generation), !Task.isCancelled else { throw CancellationError() }
+	}
+
+	/// Undoes a live startup that failed on its own, so the caller can reset the recording.
+	/// The waiting text stays up to tell the user why dictation did not start.
+	private func failLiveStartup(_ error: Error) {
+		liveSession.end()
+		transcriptionTask?.cancel()
+		transcriptionTask = nil
+		whisperKit?.audioProcessor.stopRecording()
+		AudioDeviceManager.shared.restoreSystemDefault()
+		isWaitingForModel = false
+		isTranscribing = false
+		isLiveTranscriptionMode = false
+		dictationWordTracker?.endSession()
+		if waitingForModelStatusText.isEmpty {
+			waitingForModelStatusText = String(localized: "Unable to start dictation.")
+		}
+		shouldShowLiveTranscriptionWindow = true
+		releaseLiveStreamModelUse()
+		AppLogger.shared.transcriber.error("Failed to start live stream: \(error)")
 	}
 	func switchLiveStreamDevice() async {
 		guard isLiveTranscriptionMode, let whisperKit else { return }
+		let generation = liveSession.generation
 
 		await AudioDeviceManager.shared.activateSelectedDevice()
+		// The session may have stopped while the device switched; resuming would reopen the mic
+		guard liveSession.isCurrent(generation) else { return }
 		let newDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
 		whisperKit.audioProcessor.pauseRecording()
 
 		do {
 			try whisperKit.audioProcessor.resumeRecordingLive(inputDeviceID: newDeviceID) { [weak self] samples in
 				Task { @MainActor in
-					self?.onLiveAudioSamples?(samples)
+					guard let self, self.liveSession.isCurrent(generation) else { return }
+					self.onLiveAudioSamples?(samples)
 				}
 			}
 			let deviceName = newDeviceID.flatMap { id -> String? in
@@ -666,6 +710,7 @@ import WhisperKit
 		let keepsAudio = wasLive && HistorySettings(defaults: .standard).keepsAudio
 		let sessionSamples = keepsAudio ? Array(whisperKit?.audioProcessor.audioSamples ?? []) : []
 
+		liveSession.end()
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
 		isWaitingForModel = false
@@ -690,6 +735,7 @@ import WhisperKit
 		isLiveTranscriptionMode = false
 		dictationWordTracker?.endSession()
 		transcriptionTask?.cancel()
+		transcriptionTask = nil
 		releaseLiveStreamModelUse()
 		AppLogger.shared.transcriber.info("Live streaming stopped")
 	}
@@ -777,6 +823,7 @@ import WhisperKit
 	/// Stops live dictation without committing the pending (unconfirmed) text.
 	/// Text already confirmed and typed into the focused app stays where it is.
 	func cancelLiveStream() {
+		liveSession.end()
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
 		transcriptionTask?.cancel()
@@ -803,15 +850,18 @@ import WhisperKit
 		liveStreamHoldsModel = false
 		endModelUse()
 	}
-	private func realtimeLoop() {
+	private func realtimeLoop(generation: Int) {
 		transcriptionTask = Task {
-			while isTranscribing {
+			while isTranscribing, liveSession.isCurrent(generation), !Task.isCancelled {
 				do {
-					try await transcribeCurrentBuffer(delayInterval: realtimeDelayInterval)
+					try await transcribeCurrentBuffer(
+						delayInterval: realtimeDelayInterval, generation: generation)
 				} catch {
-					AppLogger.shared.liveTranscriber.error(
-						"Transcription error: \(error.localizedDescription)"
-					)
+					if liveSession.isCurrent(generation) {
+						AppLogger.shared.liveTranscriber.error(
+							"Transcription error: \(error.localizedDescription)"
+						)
+					}
 					break
 				}
 			}
@@ -819,8 +869,8 @@ import WhisperKit
 	}
 
 	// TODO: Allow a user to choose between pending text, and the confirmed text. Do not impelment it the og author will do it
-	private func transcribeCurrentBuffer(delayInterval: Float = 0.3) async throws {
-		guard let whisperKit = whisperKit else { return }
+	private func transcribeCurrentBuffer(delayInterval: Float = 0.3, generation: Int) async throws {
+		guard let whisperKit = whisperKit, liveSession.isCurrent(generation) else { return }
 
 		let currentBuffer = whisperKit.audioProcessor.audioSamples
 		let nextBufferSize = currentBuffer.count - lastBufferSize
@@ -828,7 +878,7 @@ import WhisperKit
 
 		guard nextBufferSeconds > delayInterval else {
 			await MainActor.run {
-				if pendingText.isEmpty && confirmedText.isEmpty {
+				if liveSession.isCurrent(generation), pendingText.isEmpty && confirmedText.isEmpty {
 					pendingText = Self.liveWaitingPlaceholder
 					shouldShowLiveTranscriptionWindow = true
 				}
@@ -841,7 +891,7 @@ import WhisperKit
 		let recentSamples = Array(currentBuffer[lastBufferSize...].suffix(Self.liveVADWindowSamples))
 		guard Self.liveChunkHasSpeech(recentSamples, settings: VoiceActivitySettings(defaults: .standard))
 		else {
-			if pendingText.isEmpty && confirmedText.isEmpty {
+			if liveSession.isCurrent(generation), pendingText.isEmpty && confirmedText.isEmpty {
 				pendingText = Self.liveWaitingPlaceholder
 				shouldShowLiveTranscriptionWindow = true
 			}
@@ -850,9 +900,11 @@ import WhisperKit
 		}
 
 		lastBufferSize = currentBuffer.count
-		let transcription = try await transcribeAudioSamples(Array(currentBuffer))
+		let transcription = try await transcribeAudioSamples(Array(currentBuffer), generation: generation)
 
 		await MainActor.run {
+			// A pass that outlived its session must not confirm, and so type, its text into the next one
+			guard liveSession.isCurrent(generation) else { return }
 			guard let segments = transcription?.segments, !segments.isEmpty else {
 				return
 			}
@@ -897,7 +949,7 @@ import WhisperKit
 		}
 	}
 
-	private func transcribeAudioSamples(_ samples: [Float]) async throws -> TranscriptionResult? {
+	private func transcribeAudioSamples(_ samples: [Float], generation: Int) async throws -> TranscriptionResult? {
 		guard let whisperKit = whisperKit else { return nil }
 
 		guard let options = decodingOptions else {
@@ -908,6 +960,7 @@ import WhisperKit
 
 		let decodingCallback: ((TranscriptionProgress) -> Bool?) = { progress in
 			Task { @MainActor in
+				guard self.liveSession.isCurrent(generation) else { return }
 				self.pendingText = progress.text
 			}
 			return nil
@@ -1775,7 +1828,7 @@ import WhisperKit
 		downloadProgress = 0.0
 	}
 
-	private func loadModel(_ modelName: String) async throws {
+	func loadModel(_ modelName: String) async throws {
 		if let parakeet = ParakeetModel(rawValue: modelName) {
 			try await loadParakeetModel(parakeet)
 			scheduleIdleUnload()
@@ -1783,6 +1836,12 @@ import WhisperKit
 		}
 		isModelLoading = true
 		loadProgress = 0.0
+		defer {
+			// WhisperKit's state callback never fires when the config or init throws first
+			isModelLoading = false
+			loadProgress = 0.0
+			scheduleIdleUnload()
+		}
 
 		do {
 			await updateLoadProgress(0.2, "Preparing to load \(modelName)...")
@@ -1791,8 +1850,7 @@ import WhisperKit
 			AppLogger.shared.transcriber.debug("Recommended models: \(recommendedModels)")
 
 			await updateLoadProgress(0.6, "Loading \(modelName)...")
-			unloadParakeetEngine()
-			whisperKit = try await Task { @MainActor in
+			let loaded = try await Task { @MainActor in
 				let config = try whisperKitConfig(forModel: modelName)
 				let prewarmKey = Self.prewarmKey(model: modelName, computeOptions: config.computeOptions)
 				if prewarmedModelKeys.contains(prewarmKey) {
@@ -1806,6 +1864,9 @@ import WhisperKit
 				self.setupModelStateCallback(for: whisperKitInstance)
 				return whisperKitInstance
 			}.value
+			// Only now, so a failed load keeps the Parakeet engine that was working
+			unloadParakeetEngine()
+			whisperKit = loaded
 
 			await updateLoadProgress(0.9, "Finalizing model setup...")
 			currentModel = modelName
@@ -1828,10 +1889,6 @@ import WhisperKit
 			throw WhisperKitError.transcriptionFailed(
 				"Failed to load model: \(error.localizedDescription)")
 		}
-
-		isModelLoading = false
-		loadProgress = 0.0
-		scheduleIdleUnload()
 	}
 
 	nonisolated static func prewarmKey(model: String, computeOptions: ModelComputeOptions?) -> String {
@@ -1866,6 +1923,11 @@ import WhisperKit
 
 	func endModelUse() {
 		activeModelUses = max(0, activeModelUses - 1)
+		for engine in retiredParakeetEngines.drain(activeUses: activeModelUses) {
+			engine.unload()
+			AppLogger.shared.transcriber.log(
+				"Unloaded replaced Parakeet model \(engine.modelID) after its last use")
+		}
 		scheduleIdleUnload()
 	}
 
@@ -1907,6 +1969,7 @@ import WhisperKit
 			return
 		}
 		guard activeModelUses == 0, hasLoadedEngine else { return }
+		idleUnloadRetry.reset()
 		idleUnloadTimer.schedule(after: interval) { [weak self] in
 			await self?.unloadModelIfIdle()
 		}
@@ -1916,7 +1979,12 @@ import WhisperKit
 		guard hasLoadedEngine, activeModelUses == 0, !isLiveTranscriptionMode else { return }
 		guard canUnloadModel else {
 			// A model operation or load is still settling; try again once it has.
-			idleUnloadTimer.schedule(after: 2) { [weak self] in
+			guard idleUnloadRetry.shouldRetry() else {
+				AppLogger.shared.transcriber.info(
+					"Idle unload gave up while blocked by \(self.idleUnloadBlockers.joined(separator: ", "))")
+				return
+			}
+			idleUnloadTimer.schedule(after: IdleUnloadRetryPolicy.interval) { [weak self] in
 				await self?.unloadModelIfIdle()
 			}
 			return
@@ -2093,10 +2161,10 @@ import WhisperKit
 		}
 
 		do {
-			unloadParakeetEngine()
 			let engine = try await ParakeetEngine.load(
 				model, modelsBase: base,
 				computeUnits: ComputeUnitPreference.load().parakeetComputeUnits)
+			unloadParakeetEngine()
 			whisperKit = nil
 			parakeetEngine = engine
 			currentModel = model.rawValue
@@ -2115,11 +2183,18 @@ import WhisperKit
 		}
 	}
 
+	/// A transcription that already captured the engine keeps using it, so while any model hold
+	/// is active the engine is only detached and torn down when the last hold ends.
 	private func unloadParakeetEngine() {
 		guard let engine = parakeetEngine else { return }
-		engine.unload()
 		parakeetEngine = nil
-		AppLogger.shared.transcriber.log("Unloaded Parakeet model \(engine.modelID)")
+		guard let idle = retiredParakeetEngines.release(engine, activeUses: activeModelUses) else {
+			AppLogger.shared.transcriber.log(
+				"Detached Parakeet model \(engine.modelID); unloading once its transcriptions finish")
+			return
+		}
+		idle.unload()
+		AppLogger.shared.transcriber.log("Unloaded Parakeet model \(idle.modelID)")
 	}
 
 	private func publishEngineState(from oldState: String, to newState: String) {

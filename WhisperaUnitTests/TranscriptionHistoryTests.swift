@@ -624,6 +624,39 @@ struct PostProcessedHistoryStoreTests {
 		#expect(!entry.didFail, "A failed LLM pass is not a failed transcription")
 	}
 
+	@Test func failedPostProcessedDictationIsRetriedWithPostProcessing() async throws {
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
+		let entry = try #require(
+			store.record(
+				text: "", audio: .samples(tone(seconds: 0.5), sampleRate: 16000), source: .dictation,
+				modelName: nil, language: nil, errorMessage: "model not ready", postProcessRequested: true))
+		#expect(entry.didFail)
+		#expect(entry.postProcessRequested, "A failed transcription must remember it asked for post-processing")
+		await store.flushPendingAudioWrites()
+
+		let seen = SeenInputs()
+		try await store.retranscribe(
+			entry,
+			postProcessor: { input in
+				await seen.append(input)
+				return run(.processed(input.uppercased()))
+			},
+			using: { _ in ("hello there", "tiny") })
+
+		#expect(await seen.values == ["hello there"])
+		#expect(entry.text == "HELLO THERE")
+		#expect(entry.rawText == "hello there")
+	}
+
+	@Test func failedPlainDictationIsNotPostProcessedOnRetry() throws {
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
+		let entry = try #require(
+			store.record(
+				text: "", audio: nil, source: .dictation, modelName: nil, language: nil,
+				errorMessage: "model not ready"))
+		#expect(!entry.postProcessRequested)
+	}
+
 	@Test func plainDictationHasNoPostProcessingFields() throws {
 		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
 		let entry = try #require(
