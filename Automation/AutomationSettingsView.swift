@@ -45,7 +45,7 @@ struct AutomationSettingsView: View {
 			.opacity(urlSchemeEnabled ? 1 : 0.5)
 
 			Text(
-				"Shortcuts and Spotlight also list Toggle, Start, Stop and Cancel Dictation, Set Dictation Language and Transcribe Audio File actions. They work even when links are off."
+				"Shortcuts and Spotlight also list Toggle, Start, Stop and Cancel Dictation, Set Dictation Language, Copy Last Transcript, Open Transcription History, Add Word to Dictionary and Transcribe Audio File actions. They work even when links are off."
 			)
 			.font(.caption)
 			.foregroundColor(.secondary)
