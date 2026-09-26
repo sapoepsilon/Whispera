@@ -13,6 +13,8 @@ class GlobalShortcutManager: ObservableObject {
 	private var networkDownloader: NetworkFileDownloader?
 	private var queueManager: TranscriptionQueueManager?
 	private var isProcessingFileOperation = false
+	private var requestedBackend = HotkeyBackend.preferred()
+	private var activeBackend = HotkeyBackend.eventMonitor
 	private let logger = AppLogger.shared.general
 	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
 	var fileSelectionShortcut: String =
@@ -32,6 +34,13 @@ class GlobalShortcutManager: ObservableObject {
 		) { [weak self] _ in
 			let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
 			let newFileShortcut = UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
+			let newBackend = HotkeyBackend.preferred()
+
+			if newBackend != self?.requestedBackend {
+				self?.logger.info("Hotkey backend changed to \(newBackend.rawValue)")
+				self?.requestedBackend = newBackend
+				self?.setupShortcut()
+			}
 
 			if newShortcut != self?.currentShortcut {
 				self?.logger.info(
@@ -84,7 +93,9 @@ class GlobalShortcutManager: ObservableObject {
 			logger.error("PROBLEM: No accessibility permissions - shortcuts will NOT work")
 			logger.error("Go to System Settings > Privacy & Security > Accessibility")
 			logger.error("Add Whispera to the list and enable it")
-		} else if globalMonitor == nil || fileSelectionGlobalMonitor == nil {
+		} else if activeBackend == .eventMonitor
+			&& (globalMonitor == nil || fileSelectionGlobalMonitor == nil)
+		{
 			logger.error("PROBLEM: Some global monitors not set up despite having permissions")
 			setupShortcut()
 		}
@@ -111,6 +122,7 @@ class GlobalShortcutManager: ObservableObject {
 			self.fileSelectionLocalMonitor = nil
 			logger.info("Removed old file selection local monitor")
 		}
+		CarbonHotKeyCenter.shared.unregisterAll()
 
 		let (textModifiers, textKeyCode) = parseShortcut(currentShortcut)
 		logger.info(
@@ -121,6 +133,30 @@ class GlobalShortcutManager: ObservableObject {
 		logger.info(
 			"Setting up file selection shortcut for \(fileSelectionShortcut) (keyCode: \(fileKeyCode), modifiers: \(fileModifiers.rawValue))"
 		)
+
+		if requestedBackend == .carbon {
+			do {
+				try CarbonHotKeyCenter.shared.register(keyCode: textKeyCode, modifiers: textModifiers) {
+					[weak self] in
+					self?.handleTextHotKey()
+				}
+				try CarbonHotKeyCenter.shared.register(keyCode: fileKeyCode, modifiers: fileModifiers) {
+					[weak self] in
+					self?.handleFileSelectionHotKey()
+				}
+				publishBackend(active: .carbon, message: nil)
+				logger.info("Registered system hotkeys for text and file selection shortcuts")
+				return
+			} catch {
+				CarbonHotKeyCenter.shared.unregisterAll()
+				logger.error("System hotkey registration failed, using event monitors: \(error.localizedDescription)")
+				publishBackend(
+					active: .eventMonitor,
+					message: "System hotkey unavailable (\(error.localizedDescription)); using the event monitor.")
+			}
+		} else {
+			publishBackend(active: .eventMonitor, message: nil)
+		}
 
 		logger.info("Installing global monitors...")
 		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -184,6 +220,14 @@ class GlobalShortcutManager: ObservableObject {
 		logger.info(
 			"File monitors installed - File Global: \(fileSelectionGlobalMonitor != nil), File Local: \(fileSelectionLocalMonitor != nil)"
 		)
+	}
+
+	private func publishBackend(active: HotkeyBackend, message: String?) {
+		activeBackend = active
+		let requested = requestedBackend
+		Task { @MainActor in
+			KeyboardDiagnostics.shared.updateBackend(requested: requested, active: active, message: message)
+		}
 	}
 
 	private func parseShortcut(_ shortcut: String) -> (NSEvent.ModifierFlags, UInt16) {
@@ -369,7 +413,9 @@ class GlobalShortcutManager: ObservableObject {
 	}
 
 	private func handleTextHotKey() {
+		let backend = activeBackend
 		Task { @MainActor in
+			KeyboardDiagnostics.shared.recordShortcut(.dictation, backend: backend)
 			// Check if haptic feedback is enabled
 			if UserDefaults.standard.bool(forKey: "shortcutHapticFeedback") {
 				NSHapticFeedbackManager.defaultPerformer
@@ -380,7 +426,9 @@ class GlobalShortcutManager: ObservableObject {
 	}
 
 	private func handleFileSelectionHotKey() {
+		let backend = activeBackend
 		Task { @MainActor in
+			KeyboardDiagnostics.shared.recordShortcut(.fileSelection, backend: backend)
 			logger.info("File selection shortcut activated")
 
 			// Prevent duplicate processing
@@ -756,6 +804,7 @@ class GlobalShortcutManager: ObservableObject {
 	}
 
 	deinit {
+		CarbonHotKeyCenter.shared.unregisterAll()
 		if let monitor = globalMonitor {
 			NSEvent.removeMonitor(monitor)
 		}

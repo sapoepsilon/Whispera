@@ -10,6 +10,7 @@ struct AutomationSettingsView: View {
 				remoteControlSection
 				LauncherSettingsSection()
 				CommandLineSettingsSection()
+				HotkeySettingsSection()
 			}
 			.padding(20)
 		}
