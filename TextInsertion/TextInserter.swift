@@ -43,6 +43,7 @@ final class TextInserter {
 	private let pasteboard: NSPasteboard
 	private let settingsProvider: () -> TextInsertionSettings
 	private let keyPoster: KeyEventPosting
+	private let isSecureInputActive: () -> Bool
 	private let logger = AppLogger.shared.general
 	private let typingStepDelayMs = 4
 	private let autoSubmitDelayMs = 50
@@ -56,21 +57,23 @@ final class TextInserter {
 		pasteboard: NSPasteboard = .general,
 		keyPoster: KeyEventPosting = CGKeyEventPoster(),
 		readTimeoutMs: Int = TextInserter.defaultReadTimeoutMs,
+		isSecureInputActive: @escaping () -> Bool = { SecureDictation.isSecureInputActive },
 		settingsProvider: @escaping () -> TextInsertionSettings = { .current }
 	) {
 		self.pasteboard = pasteboard
 		self.keyPoster = keyPoster
+		self.isSecureInputActive = isSecureInputActive
 		self.readTimeoutMs = readTimeoutMs
 		self.settingsProvider = settingsProvider
 	}
 
 	// Serialized so a live segment never restores the clipboard under the next segment's paste
 	@discardableResult
-	func insert(_ text: String, context: InsertionContext) -> Task<Void, Never> {
+	func insert(_ text: String, context: InsertionContext, concealed: Bool = false) -> Task<Void, Never> {
 		let previous = pendingInsertion
 		let task = Task { @MainActor [weak self] in
 			await previous?.value
-			await self?.perform(text, context: context)
+			await self?.perform(text, context: context, concealed: concealed)
 		}
 		pendingInsertion = task
 		return task
@@ -93,25 +96,29 @@ final class TextInserter {
 		return task
 	}
 
-	private func perform(_ rawText: String, context: InsertionContext) async {
+	private func perform(_ rawText: String, context: InsertionContext, concealed: Bool) async {
 		guard !rawText.isEmpty else { return }
 		let settings = settingsProvider()
 		let text = settings.preparedText(rawText, for: context)
 		let method = settings.effectiveMethod(for: context)
+		// Checked again here because live segments reach the inserter without going through the
+		// dictation's own secure-input check
+		let concealed = concealed || isSecureInputActive()
 		var inserted = true
 
 		switch method {
 		case .commandV:
-			await pasteViaClipboard(text, settings: settings)
+			await pasteViaClipboard(text, settings: settings, concealed: concealed)
 		case .typeCharacters:
 			await typeCharacters(text)
 		case .copyOnly:
-			ClipboardWriter.write(text, to: pasteboard, transient: false)
+			ClipboardWriter.write(text, to: pasteboard, transient: false, concealed: concealed)
 		case .externalScript:
-			inserted = await runScript(text, settings: settings)
+			inserted = await runScript(text, settings: settings, concealed: concealed)
 		}
 
-		if context == .finalTranscript, settings.clipboardHandling == .keepTranscript,
+		// A secret typed into a password field is not left behind on the clipboard
+		if context == .finalTranscript, settings.clipboardHandling == .keepTranscript, !concealed,
 			method == .typeCharacters || method == .externalScript
 		{
 			ClipboardWriter.write(text, to: pasteboard, transient: false)
@@ -133,30 +140,40 @@ final class TextInserter {
 		}
 	}
 
-	private func runScript(_ text: String, settings: TextInsertionSettings) async -> Bool {
+	private func runScript(_ text: String, settings: TextInsertionSettings, concealed: Bool) async -> Bool {
 		do {
 			try await ExternalScriptRunner.run(path: settings.externalScriptPath, text: text)
 			logger.info("Insertion script finished for a \(text.count)-character transcript")
 			return true
 		} catch {
 			// Keep the words recoverable when the script cannot deliver them
-			ClipboardWriter.write(text, to: pasteboard, transient: false)
+			ClipboardWriter.write(text, to: pasteboard, transient: false, concealed: concealed)
 			logger.error(
 				"Insertion script failed, transcript copied to clipboard: \(error.localizedDescription)")
 			return false
 		}
 	}
 
-	private func pasteViaClipboard(_ text: String, settings: TextInsertionSettings) async {
+	private func pasteViaClipboard(_ text: String, settings: TextInsertionSettings, concealed: Bool) async {
 		let restoreClipboard = settings.clipboardHandling == .restore
 		let capture = restoreClipboard ? await ClipboardSnapshot.inspectInBackground(pasteboard) : nil
 		let receipt = PasteReadReceipt(text: text)
 		let changeCountAfterWrite = ClipboardWriter.write(
-			receipt, to: pasteboard, transient: restoreClipboard)
+			receipt, to: pasteboard, transient: restoreClipboard, concealed: concealed)
 
 		await sleep(milliseconds: settings.pasteDelayBeforeMs)
 		keyPoster.postKey(KeyCode.v, flags: .maskCommand)
-		guard let capture else { return }
+		guard let capture else {
+			if concealed {
+				// "Keep transcript" never applies to a secret: take it back once the app has read it
+				_ = await receipt.waitForRead(timeoutMs: max(readTimeoutMs, settings.pasteDelayAfterMs))
+				await sleep(milliseconds: settings.pasteDelayAfterMs)
+				if pasteboard.changeCount == changeCountAfterWrite {
+					pasteboard.clearContents()
+				}
+			}
+			return
+		}
 
 		// Apps read the pasteboard asynchronously after Cmd-V, Electron and remote desktops often
 		// well past 100 ms, so restoring on a timer can paste the old clipboard instead.
