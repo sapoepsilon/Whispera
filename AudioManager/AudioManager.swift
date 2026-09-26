@@ -972,10 +972,24 @@ extension AudioManager {
 		let settings = VoiceActivitySettings(defaults: .standard)
 		guard settings.enabled else { return samples }
 
-		let trimmer = VoiceActivityTrimmer(sensitivity: settings.sensitivity)
-		let result = await Task.detached(priority: .userInitiated) {
-			trimmer.process(samples)
-		}.value
+		var neuralResult: VoiceActivityResult?
+		if settings.engine == .neural {
+			do {
+				neuralResult = try await NeuralVoiceActivityDetector.shared.process(
+					samples, sensitivity: settings.sensitivity)
+			} catch {
+				AppLogger.shared.audioManager.error("Neural VAD failed, using the energy detector: \(error)")
+			}
+		}
+		let result: VoiceActivityResult
+		if let neuralResult {
+			result = neuralResult
+		} else {
+			let trimmer = VoiceActivityTrimmer(sensitivity: settings.sensitivity)
+			result = await Task.detached(priority: .userInitiated) {
+				trimmer.process(samples)
+			}.value
+		}
 
 		switch result {
 		case .noSpeech:

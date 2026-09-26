@@ -90,6 +90,7 @@ struct VoiceActivitySettingsRows: View {
 		.defaultEnabled
 	@AppStorage(VoiceActivitySettings.sensitivityKey) private var vadSensitivity = VoiceActivitySettings
 		.defaultSensitivity.rawValue
+	@AppStorage(VADEngine.defaultsKey) private var vadEngine = VADEngine.defaultValue.rawValue
 
 	var body: some View {
 		SettingRow(
@@ -101,6 +102,31 @@ struct VoiceActivitySettingsRows: View {
 		}
 
 		if vadEnabled {
+			SettingRow(
+				"Speech Detection",
+				description:
+					"Neural uses the Silero model (downloaded once, about 1 MB) for recorded clips and is better at ignoring noise; Live Transcription Mode always uses Energy"
+			) {
+				Picker("", selection: $vadEngine) {
+					ForEach(VADEngine.allCases) { engine in
+						Text(engine.displayName).tag(engine.rawValue)
+					}
+				}
+				.labelsHidden()
+				.frame(width: 150)
+				.onChange(of: vadEngine) { _, newValue in
+					guard newValue == VADEngine.neural.rawValue else { return }
+					// Fetch the model now so the first dictation does not wait for the download
+					Task.detached(priority: .utility) {
+						do {
+							try await NeuralVoiceActivityDetector.shared.prepare()
+						} catch {
+							AppLogger.shared.audioManager.error("Could not prepare the neural VAD model: \(error)")
+						}
+					}
+				}
+			}
+
 			SettingRow(
 				"Speech Sensitivity",
 				description: "Raise it if quiet speech gets skipped; lower it in noisy rooms"
