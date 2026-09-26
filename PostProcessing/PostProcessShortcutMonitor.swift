@@ -5,12 +5,9 @@ import Foundation
 /// Installed only while post-processing is enabled so the default binding never steals a key
 /// from users who have not opted in.
 final class PostProcessShortcutMonitor {
-	typealias ShortcutParser = (String) -> (NSEvent.ModifierFlags, UInt16)
-
 	private var globalMonitor: Any?
 	private var localMonitor: Any?
 	private weak var audioManager: AudioManager?
-	private var parser: ShortcutParser?
 	private var defaultsObserver: DefaultsKeyObserver?
 	private var installedSignature: String?
 	private let carbonHotKey = CarbonHotKey()
@@ -33,9 +30,8 @@ final class PostProcessShortcutMonitor {
 		removeMonitors()
 	}
 
-	func attach(audioManager: AudioManager, parser: @escaping ShortcutParser) {
+	func attach(audioManager: AudioManager) {
 		self.audioManager = audioManager
-		self.parser = parser
 		reinstall()
 	}
 
@@ -47,23 +43,46 @@ final class PostProcessShortcutMonitor {
 	}
 
 	static func isUsableShortcut(_ shortcut: String) -> Bool {
-		let modifiers: Set<Character> = ["⌘", "⌥", "⌃", "⇧"]
-		let key = shortcut.filter { !modifiers.contains($0) }.trimmingCharacters(in: .whitespaces)
-		return !key.isEmpty
+		ShortcutCombo(shortcut) != nil
+	}
+
+	/// The other Whispera shortcut that is the same key combination, if any. The post-processing
+	/// hotkey swallows its keystroke, so a clash would take over the dictation or file shortcut.
+	static func conflictingShortcut(for shortcut: String, defaults: UserDefaults = .standard) -> String? {
+		guard let combo = ShortcutCombo(shortcut) else { return nil }
+		let others = [
+			defaults.string(forKey: "globalShortcut") ?? "⌥⌘R",
+			defaults.string(forKey: "fileSelectionShortcut") ?? "⌃F",
+		]
+		if let clash = others.first(where: { ShortcutCombo($0) == combo }) {
+			return clash
+		}
+		let cancel = RecordingControlSettings(defaults: defaults).cancelShortcut
+		return cancel.matches(keyCode: combo.keyCode, modifiers: combo.modifiers) ? cancel.display : nil
 	}
 
 	private func reinstallIfChanged() {
 		let shortcut = settings.shortcut
 		let needsKeyRelease = RecordingControlSettings().activationMode.needsKeyRelease
-		let signature = "\(settings.isEnabled)|\(shortcut)|\(AXIsProcessTrusted())|\(needsKeyRelease)"
-		guard signature != installedSignature, let parser else { return }
+		let conflict = Self.conflictingShortcut(for: shortcut, defaults: settings.defaults)
+		let signature =
+			"\(settings.isEnabled)|\(shortcut)|\(AXIsProcessTrusted())|\(needsKeyRelease)|\(conflict ?? "")"
+		guard signature != installedSignature, audioManager != nil else { return }
 		installedSignature = signature
 		removeMonitors()
 		// A release in flight is lost when the monitors are replaced
 		Task { @MainActor [weak self] in self?.activation.reset() }
 
-		guard settings.isEnabled, Self.isUsableShortcut(shortcut) else { return }
-		let (modifiers, keyCode) = parser(shortcut)
+		guard settings.isEnabled else { return }
+		guard let combo = ShortcutCombo(shortcut) else {
+			logger.error("Post-processing shortcut '\(shortcut)' names an unknown key; not installed")
+			return
+		}
+		if let conflict {
+			logger.error("Post-processing shortcut \(shortcut) is the same as \(conflict); not installed")
+			return
+		}
+		let (modifiers, keyCode) = (combo.modifiers, combo.keyCode)
 
 		// A system hotkey swallows the keystroke, so the default Option-Shift-Space no longer types
 		// non-breaking spaces into the focused app; this holds whichever backend dictation uses
