@@ -25,6 +25,23 @@ struct CGKeyEventPoster: KeyEventPosting {
 		keyUp?.flags = flags
 		keyDown?.post(tap: .cghidEventTap)
 		keyUp?.post(tap: .cghidEventTap)
+		// A key-up that still carries Command leaves the session believing Command is held, so
+		// the next mouse click became a Cmd-click (a menu-bar icon then starts a rearrange drag
+		// instead of opening its menu) until the user pressed and released Command.
+		for modifier in Self.modifierKeyCodes(in: flags) {
+			let release = CGEvent(keyboardEventSource: source, virtualKey: modifier, keyDown: false)
+			release?.flags = []
+			release?.post(tap: .cghidEventTap)
+		}
+	}
+
+	static func modifierKeyCodes(in flags: CGEventFlags) -> [CGKeyCode] {
+		var codes: [CGKeyCode] = []
+		if flags.contains(.maskCommand) { codes.append(KeyCode.command) }
+		if flags.contains(.maskShift) { codes.append(KeyCode.shift) }
+		if flags.contains(.maskAlternate) { codes.append(KeyCode.option) }
+		if flags.contains(.maskControl) { codes.append(KeyCode.control) }
+		return codes
 	}
 
 	func postUnicode(_ units: [UniChar]) {
@@ -44,6 +61,10 @@ struct CGKeyEventPoster: KeyEventPosting {
 enum KeyCode {
 	static let v: CGKeyCode = 0x09
 	static let returnKey: CGKeyCode = 0x24
+	static let command: CGKeyCode = 0x37
+	static let shift: CGKeyCode = 0x38
+	static let option: CGKeyCode = 0x3A
+	static let control: CGKeyCode = 0x3B
 }
 
 /// Why a transcript did not reach the focused app, so the user hears about it instead of the
@@ -98,6 +119,9 @@ final class TextInserter {
 	private var pendingInsertion: Task<Void, Never>?
 	/// Called on the main actor when a transcript could not be delivered.
 	var onProblem: ((InsertionProblem) -> Void)?
+	/// Awaited before keystrokes are posted, so Whispera's own menu-bar popover can close and
+	/// hand focus back; with it open the Cmd-V went to the popover and the transcript was lost.
+	var prepareForKeystrokes: (@MainActor () async -> Void)?
 
 	static let defaultReadTimeoutMs = 1500
 	static let defaultConcealedClipboardLifetime: Duration = .seconds(60)
@@ -169,6 +193,10 @@ final class TextInserter {
 			logger.error("Accessibility access is off; cannot post keystrokes, transcript copied: \(copied)")
 			onProblem?(.accessibilityDenied(transcriptOnClipboard: copied))
 			return
+		}
+
+		if method == .commandV || method == .typeCharacters {
+			await prepareForKeystrokes?()
 		}
 
 		switch method {

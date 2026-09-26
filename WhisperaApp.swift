@@ -269,6 +269,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		}
 		popover.behavior = .semitransient
 		popover.delegate = self
+		TextInserter.shared.prepareForKeystrokes = { [weak self] in
+			await self?.closePopoverBeforeInsertion()
+		}
 		applyMenuBarIconVisibility()
 		menuBarIconObserver = DefaultsKeyObserver(keys: [MenuBarIconVisibility.defaultsKey]) { [weak self] in
 			guard let self else { return }
@@ -304,19 +307,50 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 	/// Shows the menu, first bringing back a hidden icon so the popover has somewhere to anchor.
 	private func showPopoverFromReopen() {
-		if menuBarIcon.revealForReopen() {
+		let revealed = menuBarIcon.revealForReopen()
+		if revealed {
 			applyMenuBarIconVisibility()
 		}
-		// The revealed button gets its window on the next pass of the run loop
+		// The revealed button gets its window on the next pass of the run loop, and only reaches
+		// its menu bar slot after the status bar lays it out
 		DispatchQueue.main.async { [weak self] in
-			guard let self, self.statusItem?.button != nil, !self.popover.isShown else { return }
-			self.togglePopover()
+			self?.showPopoverOnceStatusItemSettles(poll: revealed ? 0 : StatusItemPlacement.maxPolls, previousFrame: nil)
 		}
+	}
+
+	private func showPopoverOnceStatusItemSettles(poll: Int, previousFrame: NSRect?) {
+		guard let button = statusItem?.button, !popover.isShown else { return }
+		let frame = button.window?.frame
+		if poll < StatusItemPlacement.maxPolls, let frame,
+			!StatusItemPlacement.isSettled(
+				windowFrame: frame, previousFrame: previousFrame, screenFrames: NSScreen.screens.map(\.frame))
+		{
+			DispatchQueue.main.asyncAfter(deadline: .now() + StatusItemPlacement.pollInterval) { [weak self] in
+				self?.showPopoverOnceStatusItemSettles(poll: poll + 1, previousFrame: frame)
+			}
+			return
+		}
+		togglePopover()
 	}
 
 	func popoverDidClose(_ notification: Notification) {
 		menuBarIcon.menuClosed()
 		applyMenuBarIconVisibility()
+	}
+
+	/// Keystrokes go to the active app, which is Whispera while its menu is open.
+	private func closePopoverBeforeInsertion() async {
+		guard popover.isShown else { return }
+		popover.performClose(nil)
+		guard NSApp.isActive else { return }
+		NSApp.deactivate()
+		let me = NSRunningApplication.current
+		for _ in 0..<40 where NSApp.isActive || NSWorkspace.shared.frontmostApplication == me {
+			try? await Task.sleep(for: .milliseconds(25))
+		}
+		// The next app is frontmost before its key window takes keyboard focus
+		try? await Task.sleep(for: .milliseconds(200))
+		AppLogger.shared.general.info("Closed the menu before inserting the transcript")
 	}
 
 	@objc func togglePopover() {
@@ -569,9 +603,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		)
 
 		let hostingController = NSHostingController(rootView: onboardingView)
+		// The window is sized to the screen below; the view must not push its ideal height back
+		hostingController.sizingOptions = []
 
 		onboardingWindow = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
+			contentRect: NSRect(
+				x: 0, y: 0, width: OnboardingWindowSize.width, height: OnboardingWindowSize.preferredHeight),
 			styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
 			backing: .buffered,
 			defer: false
@@ -584,6 +621,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		onboardingWindow?.backgroundColor = .clear
 		onboardingWindow?.contentViewController = hostingController
 		onboardingWindow?.center()
+		if let window = onboardingWindow, let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+			let chrome = window.frame.height - window.contentRect(forFrameRect: window.frame).height
+			let height = OnboardingWindowSize.contentHeight(availableHeight: visible.height - chrome)
+			window.setContentSize(NSSize(width: OnboardingWindowSize.width, height: height))
+			window.setFrameOrigin(OnboardingWindowSize.origin(for: window.frame.size, in: visible))
+		}
 		onboardingWindow?.makeKeyAndOrderFront(nil)
 
 		NSApp.setActivationPolicy(.regular)

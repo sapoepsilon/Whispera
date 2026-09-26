@@ -84,7 +84,8 @@ struct OnboardingView: View {
 			)
 			.allowsHitTesting(false)
 		)
-		.frame(width: 600, height: 750)
+		.frame(width: OnboardingWindowSize.width)
+		.frame(minHeight: OnboardingWindowSize.minimumHeight, maxHeight: .infinity)
 		.onAppear {
 			checkPermissions()
 			customShortcut = globalShortcut

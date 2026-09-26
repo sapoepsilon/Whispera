@@ -42,6 +42,23 @@ struct MenuBarIconVisibility: Equatable {
 	}
 }
 
+/// A status item that was just made visible gets its button window before the status bar has
+/// moved it into place, so a popover anchored to it right away opens at a screen edge.
+enum StatusItemPlacement {
+	static let pollInterval: TimeInterval = 0.05
+	static let maxPolls = 20
+
+	/// True once the button's window sits fully inside a screen, flush with that screen's top
+	/// edge (the menu bar), and has not moved since the previous poll.
+	static func isSettled(windowFrame: NSRect, previousFrame: NSRect?, screenFrames: [NSRect]) -> Bool {
+		guard windowFrame.width > 0, windowFrame.height > 0, windowFrame == previousFrame else { return false }
+		return screenFrames.contains { screen in
+			windowFrame.minX >= screen.minX && windowFrame.maxX <= screen.maxX
+				&& abs(screen.maxY - windowFrame.maxY) <= 1
+		}
+	}
+}
+
 struct MenuBarIconSettingRow: View {
 	@AppStorage(MenuBarIconVisibility.defaultsKey) private var showIcon = MenuBarIconVisibility.defaultShown
 	@State private var confirmingHide = false
