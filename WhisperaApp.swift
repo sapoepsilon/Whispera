@@ -265,6 +265,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		}
 		popover.behavior = .semitransient
 		popover.delegate = self
+		TextInserter.shared.prepareForKeystrokes = { [weak self] in
+			await self?.closePopoverBeforeInsertion()
+		}
 		applyMenuBarIconVisibility()
 		menuBarIconObserver = DefaultsKeyObserver(keys: [MenuBarIconVisibility.defaultsKey]) { [weak self] in
 			guard let self else { return }
@@ -313,6 +316,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	func popoverDidClose(_ notification: Notification) {
 		menuBarIcon.menuClosed()
 		applyMenuBarIconVisibility()
+	}
+
+	/// Keystrokes go to the active app, which is Whispera while its menu is open.
+	private func closePopoverBeforeInsertion() async {
+		guard popover.isShown else { return }
+		popover.performClose(nil)
+		guard NSApp.isActive else { return }
+		NSApp.deactivate()
+		for _ in 0..<20 where NSApp.isActive {
+			try? await Task.sleep(for: .milliseconds(25))
+		}
+		AppLogger.shared.general.info("Closed the menu before inserting the transcript")
 	}
 
 	@objc func togglePopover() {

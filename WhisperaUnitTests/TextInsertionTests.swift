@@ -1262,6 +1262,44 @@ final class InMemoryScriptApprovalKeyStore: ScriptApprovalKeyStore, @unchecked S
 	}
 }
 
+@MainActor
+struct InsertionFocusTests {
+	/// With Whispera's menu open the Cmd-V went to the menu itself and the transcript was lost.
+	@Test func keystrokesWaitForTheMenuToHandBackFocus() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, readTimeoutMs: 100, isSecureInputActive: { false },
+			settingsProvider: { fastSettings() })
+		var order: [String] = []
+		inserter.prepareForKeystrokes = {
+			try? await Task.sleep(for: .milliseconds(30))
+			order.append("prepared with \(poster.events.count) key events")
+		}
+		poster.onPaste = { _ in order.append("pasted") }
+
+		await inserter.insert("hello", context: .finalTranscript).value
+
+		#expect(order == ["prepared with 0 key events", "pasted"])
+	}
+
+	@Test func copyOnlyDoesNotTouchFocus() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, isSecureInputActive: { false },
+			settingsProvider: { fastSettings { $0.pasteMethod = .copyOnly } })
+		var prepared = false
+		inserter.prepareForKeystrokes = { prepared = true }
+
+		await inserter.insert("hello", context: .finalTranscript).value
+
+		#expect(!prepared)
+		#expect(poster.events.isEmpty)
+	}
+}
 
 struct ModifierReleaseTests {
 	@Test func commandPasteReleasesCommandAfterwards() {

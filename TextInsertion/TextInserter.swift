@@ -117,6 +117,9 @@ final class TextInserter {
 	private var pendingInsertion: Task<Void, Never>?
 	/// Called on the main actor when a transcript could not be delivered.
 	var onProblem: ((InsertionProblem) -> Void)?
+	/// Awaited before keystrokes are posted, so Whispera's own menu-bar popover can close and
+	/// hand focus back; with it open the Cmd-V went to the popover and the transcript was lost.
+	var prepareForKeystrokes: (@MainActor () async -> Void)?
 
 	static let defaultReadTimeoutMs = 1500
 
@@ -185,6 +188,10 @@ final class TextInserter {
 			logger.error("Accessibility access is off; cannot post keystrokes, transcript copied: \(copied)")
 			onProblem?(.accessibilityDenied(transcriptOnClipboard: copied))
 			return
+		}
+
+		if method == .commandV || method == .typeCharacters {
+			await prepareForKeystrokes?()
 		}
 
 		switch method {
