@@ -59,3 +59,90 @@ struct CancelRecordingIdleTests {
 		#expect(manager.lastTranscription == nil)
 	}
 }
+
+struct CancelShortcutBindingTests {
+	private func makeDefaults() -> UserDefaults {
+		UserDefaults(suiteName: "CancelShortcutBindingTests.\(UUID().uuidString)")!
+	}
+
+	@Test func defaultsToEscape() {
+		let settings = RecordingControlSettings(defaults: makeDefaults())
+		#expect(settings.cancelShortcut == .escape)
+		#expect(settings.cancelShortcut.display == "Esc")
+	}
+
+	@Test func roundTripsThroughUserDefaults() throws {
+		let defaults = makeDefaults()
+		let settings = RecordingControlSettings(defaults: defaults)
+		let binding = try #require(
+			CancelShortcutBinding(keyCode: 40, modifiers: [.command, .shift, .capsLock], characters: "k"))
+		settings.cancelShortcut = binding
+
+		let reloaded = RecordingControlSettings(defaults: defaults).cancelShortcut
+		#expect(reloaded == binding)
+		#expect(reloaded.display == "⌘⇧K")
+		#expect(reloaded.modifiers == [.command, .shift], "Caps Lock must not become part of the binding")
+	}
+
+	@Test func settingEscapeOrResettingClearsStoredValues() throws {
+		let defaults = makeDefaults()
+		let settings = RecordingControlSettings(defaults: defaults)
+		settings.cancelShortcut = try #require(CancelShortcutBinding(keyCode: 111, modifiers: [], characters: nil))
+		#expect(defaults.object(forKey: RecordingControlSettings.CancelKey.keyCode) != nil)
+		settings.cancelShortcut = .escape
+		#expect(defaults.object(forKey: RecordingControlSettings.CancelKey.keyCode) == nil)
+
+		settings.cancelShortcut = try #require(CancelShortcutBinding(keyCode: 111, modifiers: [], characters: nil))
+		settings.resetCancelShortcut()
+		#expect(settings.cancelShortcut == .escape)
+	}
+
+	@Test func matchesOnlyItsOwnKeyAndModifiers() throws {
+		let binding = try #require(CancelShortcutBinding(keyCode: 40, modifiers: [.command], characters: "k"))
+		#expect(binding.matches(keyCode: 40, modifiers: [.command]))
+		#expect(binding.matches(keyCode: 40, modifiers: [.command, .function, .capsLock]))
+		#expect(!binding.matches(keyCode: 40, modifiers: []))
+		#expect(!binding.matches(keyCode: 40, modifiers: [.command, .shift]))
+		#expect(!binding.matches(keyCode: 53, modifiers: []))
+		#expect(CancelShortcut.matches(keyCode: 40, modifiers: [.command], binding: binding))
+	}
+
+	@Test func namesSpecialKeys() {
+		#expect(CancelShortcutBinding(keyCode: 111, modifiers: [], characters: nil)?.display == "F12")
+		#expect(CancelShortcutBinding(keyCode: 122, modifiers: [.option], characters: nil)?.display == "⌥F1")
+		#expect(CancelShortcutBinding(keyCode: 49, modifiers: [.control], characters: " ")?.display == "⌃Space")
+		#expect(CancelShortcutBinding(keyCode: 53, modifiers: [], characters: "\u{1b}") == .escape)
+		#expect(CancelShortcutBinding(keyCode: 999, modifiers: [], characters: nil) == nil)
+	}
+
+	@Test func bareTypingKeysNeedAModifier() throws {
+		let bareK = try #require(CancelShortcutBinding(keyCode: 40, modifiers: [], characters: "k"))
+		#expect(bareK.rejection(taken: []) == .needsModifier)
+		let bareSpace = try #require(CancelShortcutBinding(keyCode: 49, modifiers: [], characters: " "))
+		#expect(bareSpace.rejection(taken: []) == .needsModifier)
+
+		let bareF5 = try #require(CancelShortcutBinding(keyCode: 96, modifiers: [], characters: nil))
+		#expect(bareF5.rejection(taken: []) == nil)
+		let bareDelete = try #require(CancelShortcutBinding(keyCode: 51, modifiers: [], characters: nil))
+		#expect(bareDelete.rejection(taken: []) == nil)
+	}
+
+	@Test func rejectsAnotherWhisperaShortcut() throws {
+		let binding = try #require(CancelShortcutBinding(keyCode: 15, modifiers: [.command, .option], characters: "r"))
+		#expect(binding.rejection(taken: ["⌘⌥R", "⌃F"]) == .sameAsShortcut("⌘⌥R"))
+		#expect(binding.rejection(taken: ["⌃F"]) == nil)
+	}
+
+	@MainActor
+	@Test func monitorReadsTheConfiguredBinding() throws {
+		let binding = try #require(CancelShortcutBinding(keyCode: 96, modifiers: [], characters: nil))
+		var reads = 0
+		let monitor = CancelShortcutMonitor(binding: {
+			reads += 1
+			return binding
+		}) {}
+		monitor.setActive(true)
+		#expect(reads == 1)
+		monitor.setActive(false)
+	}
+}
