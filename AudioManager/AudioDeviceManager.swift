@@ -172,6 +172,7 @@ final class AudioDeviceManager {
 		if savedSystemDefaultDeviceID == nil {
 			savedSystemDefaultDeviceID = currentDefault
 		}
+		let originalDefault = savedSystemDefaultDeviceID
 		activeSessionDevice = device
 
 		let targetDeviceID = device.id
@@ -179,6 +180,15 @@ final class AudioDeviceManager {
 		await Task.detached(priority: .userInitiated) {
 			Self.setSystemDefaultInputDeviceSync(targetDeviceID)
 		}.value
+
+		// The recording stopped while the switch was in flight and already restored the
+		// default, so this late switch would otherwise leave the system on our device
+		if Task.isCancelled, savedSystemDefaultDeviceID == nil, let originalDefault {
+			AppLogger.shared.deviceManager.info("activateSelectedDevice: cancelled mid-switch, restoring original default")
+			activeSessionDevice = nil
+			setSystemDefaultInputDevice(originalDefault)
+			return
+		}
 
 		let newDefault = getSystemDefaultInputDeviceID()
 		let newDefaultName = newDefault.flatMap { getDeviceName(for: $0) } ?? "unknown"

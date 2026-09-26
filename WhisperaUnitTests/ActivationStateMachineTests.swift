@@ -30,7 +30,37 @@ struct ActivationStateMachineTests {
 		var m = machine(.toggle)
 		#expect(m.keyDown(at: t0, isRepeat: false, isSessionActive: false) == .start)
 		#expect(m.keyDown(at: t0.addingTimeInterval(0.5), isRepeat: true, isSessionActive: true) == .none)
-		#expect(m.keyDown(at: t0.addingTimeInterval(0.6), isRepeat: false, isSessionActive: true) == .none)
+		#expect(m.keyDown(at: t0.addingTimeInterval(5), isRepeat: true, isSessionActive: true) == .none)
+	}
+
+	@Test func duplicatePressFromASecondSourceIsIgnored() {
+		var m = machine(.toggle)
+		#expect(m.keyDown(at: t0, isRepeat: false, isSessionActive: false) == .start)
+		#expect(m.keyDown(at: t0.addingTimeInterval(0.1), isRepeat: false, isSessionActive: true) == .none)
+	}
+
+	@Test func missedKeyUpDoesNotDeadenTheShortcutInToggleMode() {
+		var m = machine(.toggle)
+		#expect(m.keyDown(at: t0, isRepeat: false, isSessionActive: false) == .start)
+		// No keyUp delivered
+		#expect(m.keyDown(at: t0.addingTimeInterval(2), isRepeat: false, isSessionActive: true) == .stop)
+		#expect(m.keyUp(at: t0.addingTimeInterval(2.1), isSessionActive: false) == .none)
+		#expect(m.keyDown(at: t0.addingTimeInterval(4), isRepeat: false, isSessionActive: false) == .start)
+	}
+
+	@Test func missedKeyUpInPushToTalkLetsTheNextPressStop() {
+		var m = machine(.pushToTalk)
+		#expect(m.keyDown(at: t0, isRepeat: false, isSessionActive: false) == .start)
+		#expect(m.keyDown(at: t0.addingTimeInterval(3), isRepeat: false, isSessionActive: true) == .stop)
+		#expect(m.keyUp(at: t0.addingTimeInterval(3.2), isSessionActive: false) == .none)
+	}
+
+	@Test func resetClearsAStuckPress() {
+		var m = machine(.pushToTalk)
+		_ = m.keyDown(at: t0, isRepeat: false, isSessionActive: false)
+		m.reset()
+		#expect(!m.isPressed)
+		#expect(m.keyDown(at: t0.addingTimeInterval(0.1), isRepeat: false, isSessionActive: false) == .start)
 	}
 
 	// MARK: Push to talk

@@ -45,10 +45,10 @@ enum MicStreamPolicy: String, CaseIterable, Identifiable {
 		case .onDemand: return "The microphone opens when you start and closes when you stop"
 		case .lazyClose:
 			return
-				"The microphone stays open for a few seconds after stopping so a quick follow-up starts instantly"
+				"The microphone stays open for a few seconds after stopping so a quick follow-up starts instantly; the mic indicator stays on until it closes"
 		case .alwaysOn:
 			return
-				"The microphone stays open while Whispera runs for the fastest start; the mic indicator stays on"
+				"The microphone stays open while Whispera runs for the fastest start. The mic indicator stays on, it uses more battery and keeps the Mac from idle sleeping. It closes during sleep, screen lock and Low Power Mode"
 		}
 	}
 }

@@ -173,7 +173,7 @@ final class AudioEngineController {
 
 	func installTap(
 		bufferSize: AVAudioFrameCount = 1024,
-		handler: @escaping (AVAudioPCMBuffer, AVAudioFormat) -> Void
+		handler: @escaping @Sendable (AVAudioPCMBuffer, AVAudioFormat) -> Void
 	) throws {
 		guard let node = inputNode else {
 			throw AudioEngineError.noInputNode

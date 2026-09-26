@@ -160,6 +160,8 @@ class GlobalShortcutManager: ObservableObject {
 			logger.info("Removed old file selection local monitor")
 		}
 		CarbonHotKeyCenter.shared.unregisterAll()
+		// A release in flight is lost when the monitors or hotkeys are replaced
+		Task { @MainActor [weak self] in self?.activation.reset() }
 
 		let (textModifiers, textKeyCode) = parseShortcut(currentShortcut)
 		logger.info(
