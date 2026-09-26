@@ -15,6 +15,8 @@ class GlobalShortcutManager: ObservableObject {
 	private var isProcessingFileOperation = false
 	private let logger = AppLogger.shared.general
 	@MainActor private var cancelMonitor: CancelShortcutMonitor?
+	@MainActor private var activation = ActivationStateMachine(
+		mode: .toggle, holdThreshold: TimeInterval(RecordingControlSettings.defaultHoldThresholdMs) / 1000)
 	private var recordingStateObserver: NSObjectProtocol?
 	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
 	var fileSelectionShortcut: String =
@@ -153,12 +155,21 @@ class GlobalShortcutManager: ObservableObject {
 		)
 
 		logger.info("Installing global monitors...")
-		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp]) {
+			[weak self] event in
+			if event.type == .keyUp {
+				if event.keyCode == textKeyCode {
+					self?.handleTextHotKeyRelease()
+				}
+				return
+			}
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: textModifiers, expectedKeyCode: textKeyCode) == true
 			{
-				self?.logger.info("Global text shortcut detected!")
-				self?.handleTextHotKey()
+				if !event.isARepeat {
+					self?.logger.info("Global text shortcut detected!")
+				}
+				self?.handleTextHotKey(isRepeat: event.isARepeat)
 			} else if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
 			{
@@ -179,12 +190,21 @@ class GlobalShortcutManager: ObservableObject {
 
 		// Also set up local monitors as fallback (works when app is focused)
 		logger.info("Installing local monitors as fallback...")
-		localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+		localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) {
+			[weak self] event in
+			if event.type == .keyUp {
+				if event.keyCode == textKeyCode {
+					self?.handleTextHotKeyRelease()
+				}
+				return event
+			}
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: textModifiers, expectedKeyCode: textKeyCode) == true
 			{
-				self?.logger.info("Local text shortcut detected!")
-				self?.handleTextHotKey()
+				if !event.isARepeat {
+					self?.logger.info("Local text shortcut detected!")
+				}
+				self?.handleTextHotKey(isRepeat: event.isARepeat)
 				return nil  // Consume the event
 			} else if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
@@ -398,14 +418,46 @@ class GlobalShortcutManager: ObservableObject {
 		}
 	}
 
-	private func handleTextHotKey() {
+	private func handleTextHotKey(isRepeat: Bool) {
+		let pressedAt = Date()
 		Task { @MainActor in
-			// Check if haptic feedback is enabled
-			if UserDefaults.standard.bool(forKey: "shortcutHapticFeedback") {
-				NSHapticFeedbackManager.defaultPerformer
-					.perform(.levelChange, performanceTime: .now)
+			guard let audioManager else { return }
+			let settings = RecordingControlSettings()
+			activation.mode = settings.activationMode
+			activation.holdThreshold = settings.holdThreshold
+			let action = activation.keyDown(
+				at: pressedAt, isRepeat: isRepeat, isSessionActive: audioManager.isSessionActive)
+			perform(action, on: audioManager)
+		}
+	}
+
+	private func handleTextHotKeyRelease() {
+		let releasedAt = Date()
+		Task { @MainActor in
+			guard let audioManager else { return }
+			let action = activation.keyUp(
+				at: releasedAt, isSessionActive: audioManager.isSessionActive)
+			if action != .none {
+				logger.info("Text shortcut released after hold; stopping recording")
 			}
-			audioManager?.toggleRecording()
+			perform(action, on: audioManager)
+		}
+	}
+
+	@MainActor
+	private func perform(_ action: ActivationAction, on audioManager: AudioManager) {
+		guard action != .none else { return }
+		if UserDefaults.standard.bool(forKey: "shortcutHapticFeedback") {
+			NSHapticFeedbackManager.defaultPerformer
+				.perform(.levelChange, performanceTime: .now)
+		}
+		switch action {
+		case .start:
+			audioManager.startRecordingSession()
+		case .stop:
+			audioManager.requestStop()
+		case .none:
+			break
 		}
 	}
 

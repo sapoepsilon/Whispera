@@ -122,6 +122,8 @@ final class AudioManager: NSObject {
 	private var transcribingSession: Int?
 	@ObservationIgnored
 	private var cancelledSessions: Set<Int> = []
+	@ObservationIgnored
+	private var pendingStopAfterStart = false
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -144,15 +146,46 @@ final class AudioManager: NSObject {
 
 	// MARK: - Public API
 
+	/// True from the moment a recording is requested until its audio is finalized,
+	/// including microphone startup.
+	var isSessionActive: Bool {
+		isRecording || isMicrophoneInitializing
+	}
+
 	func toggleRecording() {
-		if isRecording {
-			// Keep the mode the session started with: re-reading enableStreaming here
-			// would route stop to the wrong path if the setting changed mid-recording.
-			stopRecording()
+		if isSessionActive {
+			requestStop()
 		} else {
-			currentRecordingMode = enableStreaming ? .liveTranscription : .text
-			startRecording()
+			startRecordingSession()
 		}
+	}
+
+	func startRecordingSession() {
+		guard !isSessionActive else { return }
+		pendingStopAfterStart = false
+		currentRecordingMode = enableStreaming ? .liveTranscription : .text
+		startRecording()
+	}
+
+	/// Stops the active recording and transcribes it. A stop that arrives while the
+	/// microphone is still starting is deferred until capture begins, so a short
+	/// push-to-talk press is never lost.
+	func requestStop() {
+		if currentRecordingMode != .liveTranscription && isMicrophoneInitializing && !isRecording {
+			pendingStopAfterStart = true
+			return
+		}
+		guard isRecording else { return }
+		// Keep the mode the session started with: re-reading enableStreaming here
+		// would route stop to the wrong path if the setting changed mid-recording.
+		stopRecording()
+	}
+
+	fileprivate func applyPendingStopIfNeeded() {
+		guard pendingStopAfterStart else { return }
+		pendingStopAfterStart = false
+		AppLogger.shared.audioManager.info("Applying stop requested during microphone startup")
+		requestStop()
 	}
 
 	/// Discards the current recording: no transcription, no paste. A transcription
@@ -161,6 +194,7 @@ final class AudioManager: NSObject {
 		let capturing = isRecording || isMicrophoneInitializing
 		guard capturing || isTranscribing else { return }
 
+		pendingStopAfterStart = false
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
 
@@ -355,9 +389,11 @@ extension AudioManager {
 				playFeedbackSound(start: true)
 				startMeteringTimer()
 				AppLogger.shared.audioManager.debug("File-based recording started")
+				applyPendingStopIfNeeded()
 			} catch {
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start recording: \(error)")
+				pendingStopAfterStart = false
 				releaseModel(for: sessionID)
 				showRecordingErrorAlert(error)
 			}
@@ -431,6 +467,7 @@ extension AudioManager {
 				isRecording = true
 				timer.start()
 				playFeedbackSound(start: true)
+				applyPendingStopIfNeeded()
 
 			} catch {
 				isMicrophoneInitializing = false

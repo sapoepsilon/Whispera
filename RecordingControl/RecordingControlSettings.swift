@@ -1,5 +1,30 @@
 import Foundation
 
+enum ActivationMode: String, CaseIterable, Identifiable {
+	case toggle
+	case pushToTalk
+	case holdOrToggle
+
+	var id: String { rawValue }
+
+	var displayName: String {
+		switch self {
+		case .toggle: return "Toggle"
+		case .pushToTalk: return "Push to Talk"
+		case .holdOrToggle: return "Hold or Toggle"
+		}
+	}
+
+	var summary: String {
+		switch self {
+		case .toggle: return "Press once to start, press again to stop"
+		case .pushToTalk: return "Record while the shortcut is held down"
+		case .holdOrToggle:
+			return "A short tap toggles recording; holding past the threshold records until release"
+		}
+	}
+}
+
 enum ModelUnloadTimeout: String, CaseIterable, Identifiable {
 	case never
 	case immediately
@@ -39,14 +64,28 @@ enum ModelUnloadTimeout: String, CaseIterable, Identifiable {
 
 struct RecordingControlSettings {
 	enum Key {
+		static let activationMode = "activationMode"
+		static let holdThresholdMs = "holdThresholdMs"
 		static let cancelShortcutEnabled = "cancelShortcutEnabled"
 		static let modelUnloadTimeout = "modelUnloadTimeout"
 	}
+
+	static let defaultHoldThresholdMs = 300
+	static let holdThresholdRange = 100...1000
 
 	let defaults: UserDefaults
 
 	init(defaults: UserDefaults = .standard) {
 		self.defaults = defaults
+	}
+
+	var activationMode: ActivationMode {
+		defaults.string(forKey: Key.activationMode).flatMap(ActivationMode.init(rawValue:)) ?? .toggle
+	}
+
+	var holdThreshold: TimeInterval {
+		let stored = defaults.object(forKey: Key.holdThresholdMs) as? Int ?? Self.defaultHoldThresholdMs
+		return TimeInterval(stored.clamped(to: Self.holdThresholdRange)) / 1000
 	}
 
 	var cancelShortcutEnabled: Bool {
@@ -56,5 +95,11 @@ struct RecordingControlSettings {
 	var modelUnloadTimeout: ModelUnloadTimeout {
 		defaults.string(forKey: Key.modelUnloadTimeout).flatMap(ModelUnloadTimeout.init(rawValue:))
 			?? .never
+	}
+}
+
+extension Comparable {
+	fileprivate func clamped(to range: ClosedRange<Self>) -> Self {
+		min(max(self, range.lowerBound), range.upperBound)
 	}
 }
