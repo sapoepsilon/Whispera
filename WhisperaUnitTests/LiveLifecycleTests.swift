@@ -193,7 +193,7 @@ struct ShortcutSourceDeduplicationTests {
 
 /// A failed load used to leave `isModelLoading` set, which blocked idle unload for the rest of the run.
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .sharedTranscriber)
 struct ModelLoadFailureTests {
 	@Test(.timeLimit(.minutes(5)))
 	func failedLoadClearsTheLoadingState() async throws {
