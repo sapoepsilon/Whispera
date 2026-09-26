@@ -124,6 +124,10 @@ final class AudioManager: NSObject {
 	private var cancelledSessions: Set<Int> = []
 	@ObservationIgnored
 	private var pendingStopAfterStart = false
+	@ObservationIgnored
+	private let tailStop = DeferredAction()
+	@ObservationIgnored
+	private var isFinalizingStop = false
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -171,13 +175,31 @@ final class AudioManager: NSObject {
 	/// microphone is still starting is deferred until capture begins, so a short
 	/// push-to-talk press is never lost.
 	func requestStop() {
+		guard !isFinalizingStop else { return }
 		if currentRecordingMode != .liveTranscription && isMicrophoneInitializing && !isRecording {
 			pendingStopAfterStart = true
 			return
 		}
 		guard isRecording else { return }
-		// Keep the mode the session started with: re-reading enableStreaming here
-		// would route stop to the wrong path if the setting changed mid-recording.
+
+		let tail = RecordingControlSettings().extraRecordingBuffer
+		guard tail > 0 else {
+			// Keep the mode the session started with: re-reading enableStreaming here
+			// would route stop to the wrong path if the setting changed mid-recording.
+			stopRecording()
+			return
+		}
+		// Capture a little past the stop press so the last syllable is not clipped.
+		isFinalizingStop = true
+		AppLogger.shared.audioManager.debug("Capturing \(Int(tail * 1000)) ms tail before stopping")
+		tailStop.schedule(after: tail) { [weak self] in
+			self?.finishTailStop()
+		}
+	}
+
+	private func finishTailStop() {
+		guard isFinalizingStop else { return }
+		isFinalizingStop = false
 		stopRecording()
 	}
 
@@ -195,6 +217,8 @@ final class AudioManager: NSObject {
 		guard capturing || isTranscribing else { return }
 
 		pendingStopAfterStart = false
+		tailStop.cancel()
+		isFinalizingStop = false
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
 

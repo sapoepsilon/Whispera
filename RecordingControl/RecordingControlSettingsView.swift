@@ -7,6 +7,7 @@ struct RecordingControlSettingsView: View {
 		RecordingControlSettings.defaultHoldThresholdMs
 	@AppStorage(RecordingControlSettings.Key.cancelShortcutEnabled) private var cancelShortcutEnabled =
 		true
+	@AppStorage(RecordingControlSettings.Key.extraRecordingBufferMs) private var extraRecordingBufferMs = 0
 
 	private var activationMode: ActivationMode {
 		ActivationMode(rawValue: activationModeRaw) ?? .toggle
@@ -39,6 +40,20 @@ struct RecordingControlSettingsView: View {
 					.frame(width: 180, alignment: .trailing)
 					.accessibilityIdentifier("holdThresholdStepper")
 				}
+			}
+
+			SettingRow(
+				"Extra Recording After Stop",
+				description: "Keep capturing briefly after you stop so trailing words are not cut off"
+			) {
+				Stepper(
+					extraRecordingBufferMs == 0 ? "Off" : "\(extraRecordingBufferMs) ms",
+					value: $extraRecordingBufferMs,
+					in: RecordingControlSettings.extraRecordingBufferRange,
+					step: 50
+				)
+				.frame(width: 180, alignment: .trailing)
+				.accessibilityIdentifier("extraRecordingBufferStepper")
 			}
 
 			SettingRow(

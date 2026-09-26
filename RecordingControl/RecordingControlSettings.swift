@@ -67,11 +67,13 @@ struct RecordingControlSettings {
 		static let activationMode = "activationMode"
 		static let holdThresholdMs = "holdThresholdMs"
 		static let cancelShortcutEnabled = "cancelShortcutEnabled"
+		static let extraRecordingBufferMs = "extraRecordingBufferMs"
 		static let modelUnloadTimeout = "modelUnloadTimeout"
 	}
 
 	static let defaultHoldThresholdMs = 300
 	static let holdThresholdRange = 100...1000
+	static let extraRecordingBufferRange = 0...500
 
 	let defaults: UserDefaults
 
@@ -90,6 +92,11 @@ struct RecordingControlSettings {
 
 	var cancelShortcutEnabled: Bool {
 		defaults.object(forKey: Key.cancelShortcutEnabled) as? Bool ?? true
+	}
+
+	var extraRecordingBuffer: TimeInterval {
+		let stored = defaults.object(forKey: Key.extraRecordingBufferMs) as? Int ?? 0
+		return TimeInterval(stored.clamped(to: Self.extraRecordingBufferRange)) / 1000
 	}
 
 	var modelUnloadTimeout: ModelUnloadTimeout {
