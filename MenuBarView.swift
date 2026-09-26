@@ -1166,7 +1166,8 @@ struct ErrorBannerView: View {
 			Text(error)
 				.font(.caption)
 				.foregroundColor(.red)
-				.lineLimit(2)
+				.lineLimit(5)
+				.fixedSize(horizontal: false, vertical: true)
 
 			Spacer()
 		}
