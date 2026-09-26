@@ -126,9 +126,7 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	private var pendingStopAfterStart = false
 	@ObservationIgnored
-	private let tailStop = DeferredAction()
-	@ObservationIgnored
-	private var isFinalizingStop = false
+	private let tailStop = TailStopCoordinator()
 	@ObservationIgnored
 	private let lazyStreamClose = DeferredAction()
 	@ObservationIgnored
@@ -215,7 +213,7 @@ final class AudioManager: NSObject {
 	/// microphone is still starting is deferred until capture begins, so a short
 	/// push-to-talk press is never lost.
 	func requestStop() {
-		guard !isFinalizingStop else { return }
+		guard !tailStop.isFinalizing else { return }
 		if currentRecordingMode != .liveTranscription && isMicrophoneInitializing && !isRecording {
 			pendingStopAfterStart = true
 			return
@@ -223,24 +221,14 @@ final class AudioManager: NSObject {
 		guard isRecording else { return }
 
 		let tail = RecordingControlSettings().extraRecordingBuffer
-		guard tail > 0 else {
-			// Keep the mode the session started with: re-reading enableStreaming here
-			// would route stop to the wrong path if the setting changed mid-recording.
-			stopRecording()
-			return
+		if tail > 0 {
+			AppLogger.shared.audioManager.debug("Capturing \(Int(tail * 1000)) ms tail before stopping")
 		}
-		// Capture a little past the stop press so the last syllable is not clipped.
-		isFinalizingStop = true
-		AppLogger.shared.audioManager.debug("Capturing \(Int(tail * 1000)) ms tail before stopping")
-		tailStop.schedule(after: tail) { [weak self] in
-			self?.finishTailStop()
+		// Keep the mode the session started with: re-reading enableStreaming here
+		// would route stop to the wrong path if the setting changed mid-recording.
+		tailStop.requestStop(tail: tail) { [weak self] in
+			self?.stopRecording()
 		}
-	}
-
-	private func finishTailStop() {
-		guard isFinalizingStop else { return }
-		isFinalizingStop = false
-		stopRecording()
 	}
 
 	fileprivate func applyPendingStopIfNeeded() {
@@ -267,7 +255,6 @@ final class AudioManager: NSObject {
 		if capturing {
 			pendingStopAfterStart = false
 			tailStop.cancel()
-			isFinalizingStop = false
 			deviceActivationTask?.cancel()
 			deviceActivationTask = nil
 			switch activeCapturePath {
