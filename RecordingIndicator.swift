@@ -18,141 +18,28 @@ class RecordingIndicatorWindow: NSWindow {
 		self.hasShadow = false
 		self.isMovable = false
 		self.ignoresMouseEvents = true
+		self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
 		let hostingView = NSHostingView(rootView: RecordingIndicatorView())
 		self.contentView = hostingView
 	}
 
-	func showNearCaret() {
-		logger.debug("showNearCaret called")
-
-		// Try to get the active text field/view insertion point
-		let caretPosition = getCaretPosition()
-
-		// If we can't find the caret, don't show the indicator
-		if caretPosition == NSPoint.zero {
-			logger.debug("Could not find caret position - not showing indicator")
+	func show(position: RecordingOverlayPosition) {
+		guard let screen = NSScreen.main else {
+			logger.debug("No main screen; not showing the minimal recording indicator")
 			return
-		} else {
-			logger.debug("Using caret position: \(caretPosition)")
 		}
+		let origin = RecordingOverlayPolicy.origin(
+			for: frame.size, in: screen.visibleFrame, position: position)
+		setFrameOrigin(origin)
+		orderFront(nil)
 
-		// Position the window precisely at the caret
-		let windowFrame = NSRect(
-			x: caretPosition.x - 30,
-			y: caretPosition.y - 30,
-			width: 60,
-			height: 60
-		)
-
-		logger.debug("Setting window frame: \(windowFrame)")
-		self.setFrame(windowFrame, display: true)
-		self.orderFront(nil)
-
-		// Animate in
-		self.alphaValue = 0
+		alphaValue = 0
 		NSAnimationContext.runAnimationGroup { context in
 			context.duration = 0.3
 			context.allowsImplicitAnimation = true
 			self.animator().alphaValue = 1.0
 		}
-	}
-
-	private func getCaretPosition() -> NSPoint {
-		logger.debug("Getting caret position using native-only detection...")
-
-		// Check if we have accessibility permissions
-		let trusted = AXIsProcessTrusted()
-		if !trusted {
-			logger.error("App doesn't have accessibility permissions")
-			let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true]
-			let trustedWithPrompt = AXIsProcessTrustedWithOptions(options as CFDictionary)
-			logger.info("Requested accessibility permissions: \(trustedWithPrompt)")
-			return NSPoint.zero
-		}
-
-		logger.debug("App has accessibility permissions")
-
-		// Only try exact caret position method
-
-		// Get exact caret position using focused element
-		if let position = tryDirectFocusedElementMethod() {
-			return position
-		}
-
-		logger.debug("Native caret detection failed - not showing indicator")
-		return NSPoint.zero
-	}
-	private func tryDirectFocusedElementMethod() -> NSPoint? {
-		logger.debug("Trying direct focused element method...")
-
-		let system = AXUIElementCreateSystemWide()
-		var application: CFTypeRef?
-		var focusedElement: CFTypeRef?
-
-		// Step 1: Find the currently focused application
-		guard
-			AXUIElementCopyAttributeValue(
-				system, kAXFocusedApplicationAttribute as CFString, &application) == .success
-		else {
-			logger.error("Could not get focused application")
-			return nil
-		}
-
-		// Step 2: Find the currently focused UI Element in that application
-		guard
-			AXUIElementCopyAttributeValue(
-				application! as! AXUIElement, kAXFocusedUIElementAttribute as CFString, &focusedElement)
-				== .success
-		else {
-			logger.error("Could not get focused UI element")
-			return nil
-		}
-
-		return getCaretFromElement(focusedElement! as! AXUIElement)
-	}
-
-	private func getCaretFromElement(_ element: AXUIElement) -> NSPoint? {
-		// Check if element has selection range attribute
-		var rangeValueRef: CFTypeRef?
-		guard
-			AXUIElementCopyAttributeValue(
-				element, kAXSelectedTextRangeAttribute as CFString, &rangeValueRef) == .success
-		else {
-			return nil
-		}
-
-		let rangeValue = rangeValueRef! as! AXValue
-		var cfRange = CFRange()
-		guard AXValueGetValue(rangeValue, .cfRange, &cfRange) else {
-			return nil
-		}
-
-		// Get screen bounds for the cursor position
-		var bounds: CFTypeRef?
-		guard
-			AXUIElementCopyParameterizedAttributeValue(
-				element, kAXBoundsForRangeParameterizedAttribute as CFString, rangeValue, &bounds)
-				== .success
-		else {
-			return nil
-		}
-
-		var screenRect = CGRect.zero
-		guard AXValueGetValue(bounds! as! AXValue, .cgRect, &screenRect) else {
-			return nil
-		}
-
-		return carbonToCocoa(carbonPoint: NSPoint(x: screenRect.origin.x, y: screenRect.origin.y))
-	}
-
-	private func carbonToCocoa(carbonPoint: NSPoint) -> NSPoint {
-		// Convert Carbon screen coordinates to Cocoa screen coordinates
-		guard let mainScreen = NSScreen.main else {
-			return carbonPoint
-		}
-		let screenHeight = mainScreen.frame.size.height
-		return NSPoint(x: carbonPoint.x, y: screenHeight - carbonPoint.y)
 	}
 
 	func hide() {
@@ -236,10 +123,10 @@ struct RecordingIndicatorView: View {
 class RecordingIndicatorManager: ObservableObject {
 	private var indicatorWindow: RecordingIndicatorWindow?
 
-	func showIndicator() {
+	func showIndicator(position: RecordingOverlayPosition) {
 		hideIndicator()
 		indicatorWindow = RecordingIndicatorWindow()
-		indicatorWindow?.showNearCaret()
+		indicatorWindow?.show(position: position)
 	}
 
 	func hideIndicator() {

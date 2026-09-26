@@ -36,7 +36,7 @@ struct SettingsSection<Content: View>: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
-			Text(title)
+			Text(LocalizedStringKey(title))
 				.font(.headline)
 			content
 		}
@@ -57,10 +57,10 @@ struct SettingRow<Content: View>: View {
 	var body: some View {
 		HStack(spacing: 12) {
 			VStack(alignment: .leading, spacing: 2) {
-				Text(label)
+				Text(LocalizedStringKey(label))
 					.font(.subheadline)
 				if let description = description {
-					Text(description)
+					Text(LocalizedStringKey(description))
 						.font(.caption)
 						.foregroundColor(.secondary)
 						.fixedSize(horizontal: false, vertical: true)
@@ -200,7 +200,7 @@ struct SettingsView: View {
 
 	// Extended logging settings
 	@AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
-	@AppStorage("enableDebugLogging") private var enableDebugLogging = false
+	@AppStorage(DebugMode.defaultsKey) private var debugModeEnabled = false
 
 	var body: some View {
 		TabView {
@@ -245,6 +245,8 @@ struct SettingsView: View {
 						) {
 							Toggle("", isOn: $softwareUpdater.automaticallyDownloadsUpdates)
 						}
+
+						WhatsNewSettingRow()
 					}
 
 					Divider()
@@ -306,6 +308,8 @@ struct SettingsView: View {
 						) {
 							Toggle("", isOn: $shortcutHapticFeedback)
 						}
+
+						RecordingOverlaySettingRows()
 
 						SettingRow(
 							"Recording Glow",
@@ -533,6 +537,10 @@ struct SettingsView: View {
 							Toggle("", isOn: $launchAtStartup)
 						}
 
+						ThemeSettingRow()
+
+						AppLanguageSettingRow()
+
 						SettingRow(
 							"Window Transparency",
 							description: "Adjust transparency level for all windows"
@@ -754,18 +762,14 @@ struct SettingsView: View {
 							VStack(alignment: .leading, spacing: 8) {
 								Divider()
 
+								LogLevelSettingRow()
+
 								SettingRow(
 									"Debug Mode",
-									description: "Include detailed debug messages in logs"
+									description: "Show the Debug tab with a live log viewer (⇧⌘D)"
 								) {
-									Toggle("", isOn: $enableDebugLogging)
+									Toggle("", isOn: $debugModeEnabled)
 								}
-
-								Text(
-									"By default, only info, error, and fault messages are logged. Enable debug mode to capture detailed debug information."
-								)
-								.font(.caption)
-								.foregroundColor(.secondary)
 							}
 						}
 					}
@@ -1135,7 +1139,15 @@ struct SettingsView: View {
 				.tabItem {
 					Label("Post-Processing", systemImage: "wand.and.stars")
 				}
+
+			if debugModeEnabled {
+				LogViewerView()
+					.tabItem {
+						Label("Debug", systemImage: "ladybug")
+					}
+			}
 		}
+		.background(DebugModeShortcut())
 		.frame(maxWidth: 600)
 		.onAppear {
 			loadAvailableModels()

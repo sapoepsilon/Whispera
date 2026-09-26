@@ -1,0 +1,64 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSAppleEventsUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera benötigt Bedienungshilfen-Zugriff, um globale Tastaturkurzbefehle zu erkennen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera needs accessibility access to monitor global keyboard shortcuts."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera necesita acceso de accesibilidad para detectar los atajos de teclado globales."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera a besoin de l'accès d'accessibilité pour surveiller les raccourcis clavier globaux."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera benötigt Zugriff auf dein Mikrofon, um Audio zu transkribieren."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera needs access to your microphone to transcribe audio."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera necesita acceso al micrófono para transcribir audio."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera a besoin d'accéder à votre microphone pour transcrire l'audio."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

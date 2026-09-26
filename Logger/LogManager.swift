@@ -80,10 +80,8 @@ class LogManager {
 			return
 		}
 
-		// Check if we should log based on level
-		let debugMode = UserDefaults.standard.bool(forKey: "enableDebugLogging")
-		if !debugMode && level == .debug {
-			return  // Skip debug logs when debug mode is off
+		guard LogLevel.stored().allows(level) else {
+			return
 		}
 
 		logQueue.async { [weak self] in

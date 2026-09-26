@@ -52,13 +52,14 @@ class ListeningWindow: NSWindow {
 	}
 
 	private func updateVisibility() {
-		let shouldShow = RecordingWindowPolicy.shouldShowListeningWindow(
+		let shouldShow = RecordingOverlayPolicy.shouldShowPill(
 			state: audioManager.currentState,
-			mode: audioManager.currentRecordingMode
+			mode: audioManager.currentRecordingMode,
+			style: RecordingOverlayStyle.stored()
 		)
 
 		if shouldShow && !isVisible {
-			positionAtBottomCenter()
+			positionOnScreen()
 			orderFront(nil)
 		} else if !shouldShow && isVisible {
 			hidePickerWindow()
@@ -184,11 +185,10 @@ class ListeningWindow: NSWindow {
 		)
 	}
 
-	private func positionAtBottomCenter() {
+	private func positionOnScreen() {
 		guard let screen = NSScreen.main else { return }
-		let screenFrame = screen.visibleFrame
-		let windowX = screenFrame.origin.x + (screenFrame.width - frame.width) / 2
-		let windowY = screenFrame.origin.y + (screenFrame.height * 0.1)
-		setFrameOrigin(NSPoint(x: windowX, y: windowY))
+		let origin = RecordingOverlayPolicy.origin(
+			for: frame.size, in: screen.visibleFrame, position: RecordingOverlayPosition.stored())
+		setFrameOrigin(origin)
 	}
 }
