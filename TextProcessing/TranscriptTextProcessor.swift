@@ -61,12 +61,28 @@ struct TranscriptTextProcessor {
 		if !configuration.customWords.isEmpty {
 			result = Self.applyCustomWords(
 				result, customWords: configuration.customWords,
-				threshold: configuration.wordCorrectionThreshold)
+				threshold: configuration.wordCorrectionThreshold,
+				preservingLineBreaks: configuration.preservesLineBreaks)
 		}
 		result = Self.convertChineseScript(
 			result, to: configuration.chineseScript, language: language,
 			preferredLanguages: configuration.preferredLanguages)
 		return result
+	}
+}
+
+extension TranscriptTextProcessor {
+	/// Correction re-joins words with single spaces, so a transcript that keeps its line
+	/// breaks is corrected one line at a time. A custom word never spans a line break.
+	static func applyCustomWords(
+		_ text: String, customWords: [String], threshold: Double, preservingLineBreaks: Bool
+	) -> String {
+		guard preservingLineBreaks, text.contains(where: \.isNewline) else {
+			return applyCustomWords(text, customWords: customWords, threshold: threshold)
+		}
+		return text.split(separator: "\n", omittingEmptySubsequences: false)
+			.map { applyCustomWords(String($0), customWords: customWords, threshold: threshold) }
+			.joined(separator: "\n")
 	}
 }
 

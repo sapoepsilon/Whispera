@@ -283,3 +283,26 @@ struct CustomWordsModelTests {
 		#expect(TextProcessingSettings.customWords(from: defaults) == ["Grafana", "Loki"])
 	}
 }
+
+struct CustomWordLineBreakTests {
+	@Test func fileTranscriptsKeepTheirLineBreaks() {
+		var configuration = TextProcessingConfiguration()
+		configuration.customWords = ["ChargeBee"]
+		configuration.fillerWordRemovalEnabled = false
+		configuration.preservesLineBreaks = true
+		let processor = TranscriptTextProcessor(configuration: configuration)
+
+		let result = processor.process("We use Charge Bee.\nIt bills monthly.\n\nDone.", language: .unknown)
+
+		#expect(result == "We use ChargeBee.\nIt bills monthly.\n\nDone.")
+	}
+
+	@Test func dictationStillFlattens() {
+		var configuration = TextProcessingConfiguration()
+		configuration.customWords = ["ChargeBee"]
+		configuration.fillerWordRemovalEnabled = false
+		let processor = TranscriptTextProcessor(configuration: configuration)
+
+		#expect(processor.process("We use Charge Bee.\nDone.", language: .unknown) == "We use ChargeBee. Done.")
+	}
+}
