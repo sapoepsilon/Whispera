@@ -164,11 +164,11 @@ final class TextInserter {
 
 		await sleep(milliseconds: settings.pasteDelayBeforeMs)
 		keyPoster.postKey(KeyCode.v, flags: .maskCommand)
+		let pastedAt = ContinuousClock.now
 		guard let capture else {
 			if concealed {
 				// "Keep transcript" never applies to a secret: take it back once the app has read it
-				_ = await receipt.waitForRead(timeoutMs: max(readTimeoutMs, settings.pasteDelayAfterMs))
-				await sleep(milliseconds: settings.pasteDelayAfterMs)
+				await holdAfterPaste(since: pastedAt, receipt: receipt, settings: settings)
 				if pasteboard.changeCount == changeCountAfterWrite {
 					pasteboard.clearContents()
 				}
@@ -176,13 +176,7 @@ final class TextInserter {
 			return
 		}
 
-		// Apps read the pasteboard asynchronously after Cmd-V, Electron and remote desktops often
-		// well past 100 ms, so restoring on a timer can paste the old clipboard instead.
-		let wasRead = await receipt.waitForRead(timeoutMs: max(readTimeoutMs, settings.pasteDelayAfterMs))
-		await sleep(milliseconds: settings.pasteDelayAfterMs)
-		if !wasRead {
-			logger.info("No app read the transcript within \(readTimeoutMs) ms of Cmd-V")
-		}
+		await holdAfterPaste(since: pastedAt, receipt: receipt, settings: settings)
 
 		guard
 			ClipboardWriter.shouldRestore(
@@ -200,6 +194,25 @@ final class TextInserter {
 			logger.info("Previous clipboard was concealed or transient; cleared instead of restoring it")
 		case .tooLarge:
 			logger.info("Previous clipboard was too large to snapshot; leaving the transcript in place")
+		}
+	}
+
+	/// Apps read the pasteboard asynchronously after Cmd-V, Electron and remote desktops often
+	/// well past 100 ms. A read receipt alone cannot tell the target app apart from a clipboard
+	/// watcher that read the transcript before Cmd-V was even posted, so restoring waits for both
+	/// a read and a minimum hold measured from Cmd-V.
+	private func holdAfterPaste(
+		since pastedAt: ContinuousClock.Instant, receipt: PasteReadReceipt, settings: TextInsertionSettings
+	) async {
+		let wasRead = await receipt.waitForRead(timeoutMs: max(readTimeoutMs, settings.pasteDelayAfterMs))
+		await sleep(milliseconds: settings.pasteDelayAfterMs)
+		if !wasRead {
+			logger.info("No app read the transcript within \(readTimeoutMs) ms of Cmd-V")
+		}
+		let hold = Duration.milliseconds(TextInsertionSettings.clampedHold(settings.clipboardRestoreHoldMs))
+		let remaining = pastedAt + hold - ContinuousClock.now
+		if remaining > .zero {
+			try? await Task.sleep(for: remaining)
 		}
 	}
 

@@ -20,6 +20,8 @@ struct TextInsertionSettingsView: View {
 	private var pasteDelayBeforeMs = TextInsertionSettings.defaultPasteDelayMs
 	@AppStorage(TextInsertionSettings.Keys.pasteDelayAfterMs)
 	private var pasteDelayAfterMs = TextInsertionSettings.defaultPasteDelayAfterMs
+	@AppStorage(TextInsertionSettings.Keys.clipboardRestoreHoldMs)
+	private var clipboardRestoreHoldMs = TextInsertionSettings.defaultClipboardRestoreHoldMs
 
 	var body: some View {
 		ScrollView {
@@ -124,6 +126,25 @@ struct TextInsertionSettingsView: View {
 							"Extra wait after the app reads the transcript before the clipboard is restored; raise it if an app pastes your old clipboard"
 					) {
 						delayStepper(value: $pasteDelayAfterMs)
+					}
+
+					SettingRow(
+						"Minimum Hold After Paste",
+						description:
+							"The transcript stays on the clipboard at least this long after Cmd-V before the previous clipboard returns"
+					) {
+						Stepper(
+							value: Binding(
+								get: { clipboardRestoreHoldMs },
+								set: { clipboardRestoreHoldMs = TextInsertionSettings.clampedHold($0) }
+							),
+							in: TextInsertionSettings.restoreHoldRange,
+							step: 50
+						) {
+							Text("\(clipboardRestoreHoldMs) ms")
+								.font(.system(.body, design: .monospaced))
+								.frame(minWidth: 70, alignment: .trailing)
+						}
 					}
 				}
 			}
