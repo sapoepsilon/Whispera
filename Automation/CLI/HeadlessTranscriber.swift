@@ -324,7 +324,9 @@ final class HeadlessTranscriber {
 		case .parakeet(let parakeet):
 			// Device 0 keeps the app's own Parakeet placement; the others pin the encoder's units
 			let units = device.index == 0 ? ComputeUnitPreference.load().parakeetComputeUnits : device.encoder
-			backend = .parakeet(try await ParakeetEngine.load(parakeet, modelsBase: downloadBase, computeUnits: units))
+			backend = .parakeet(
+				try await ParakeetEngine.load(
+					parakeet, modelsBase: downloadBase, computeUnits: units, repairIfCorrupt: false))
 		}
 		self.model = model
 		self.device = device

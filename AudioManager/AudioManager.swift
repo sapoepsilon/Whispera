@@ -141,6 +141,9 @@ final class AudioManager: NSObject {
 	private let lazyStreamClose = DeferredAction()
 	@ObservationIgnored
 	private var openStreamDeviceID: AudioDeviceID?
+	/// The input a recording should use as of when the stream opened; the watchdog follows changes.
+	@ObservationIgnored
+	private var openStreamExpectedDeviceID: AudioDeviceID?
 	@ObservationIgnored
 	private var warmStreamTask: Task<Void, Never>?
 	@ObservationIgnored
@@ -157,6 +160,15 @@ final class AudioManager: NSObject {
 	private var outputMuteTask: Task<Void, Never>?
 	@ObservationIgnored
 	private var deviceLostObserver: NSObjectProtocol?
+	@ObservationIgnored
+	private var interruptionPolicy = CaptureInterruptionPolicy()
+	@ObservationIgnored
+	private var captureWatchdog: Timer?
+	/// Why the recording being stopped right now ended early; moved onto its session at finish.
+	@ObservationIgnored
+	private var pendingStopNotice: String?
+	@ObservationIgnored
+	private var stopNotices: [Int: String] = [:]
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -171,6 +183,11 @@ final class AudioManager: NSObject {
 			// WhisperKit delivers per-buffer chunks; cap the window so level
 			// math stays cheap even if a large backlog arrives at once
 			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
+		}
+		captureBuffer.onLimitReached = { [weak self] in
+			Task { @MainActor in
+				_ = self?.handleCaptureInterruption(.captureLimitReached)
+			}
 		}
 		observeMicStreamPolicy()
 		observePowerState()
@@ -260,6 +277,7 @@ final class AudioManager: NSObject {
 		for session in cancelled {
 			transcriptionTasks.removeValue(forKey: session.id)?.cancel()
 			releaseModel(for: session.id)
+			stopNotices[session.id] = nil
 		}
 
 		if capturing {
@@ -390,18 +408,14 @@ final class AudioManager: NSObject {
 					AppLogger.shared.audioManager.info("Switched input device while recording")
 				} catch {
 					guard !Task.isCancelled, isCurrentCapture(session) else { return }
-					isMicrophoneInitializing = false
 					AppLogger.shared.audioManager.error("Failed to switch device: \(error)")
-					isRecording = false
-					timer.stop()
-					captureBuffer.discard()
-					activeCapturePath = nil
-					if let dropped = ledger.dropCapture() {
-						releaseModel(for: dropped.id)
-					}
-					restoreSystemOutput()
-					deviceManager.restoreSystemDefault()
-					deviceManager.endRecordingSession()
+					// The audio captured before the switch is still worth transcribing
+					deviceActivationTask = nil
+					finishInterruptedRecording(
+						notice: String(
+							localized: "The microphone stopped working, so the recording was stopped early. What was captured was transcribed."
+						))
+					return
 				}
 			} else {
 				deviceManager.restoreSystemDefault()
@@ -470,6 +484,8 @@ extension AudioManager {
 		if mode != .liveTranscription {
 			holdModel(for: session.id)
 		}
+		interruptionPolicy.reset()
+		startCaptureWatchdog()
 		if mode == .liveTranscription {
 			startLiveTranscription()
 		} else if useStreamingTranscription {
@@ -566,6 +582,7 @@ extension AudioManager {
 
 		activeCapturePath = nil
 		if let audioFileURL, let session = ledger.finishCapture() {
+			attachStopNotice(to: session)
 			let translate = enableTranslation
 			let channel = fileCaptureChannel
 			startTranscription(session) { manager in
@@ -665,6 +682,7 @@ extension AudioManager {
 
 		activeCapturePath = nil
 		if !capturedAudio.isEmpty, let session = ledger.finishCapture() {
+			attachStopNotice(to: session)
 			let translate = enableTranslation
 			startTranscription(session) { manager in
 				await manager.transcribeAudioBuffer(
@@ -694,6 +712,7 @@ extension AudioManager {
 			}
 		}
 		openStreamDeviceID = deviceID
+		openStreamExpectedDeviceID = deviceManager.expectedInputDeviceID()
 		engineController.onRouteChange = { [weak self] in
 			self?.handleStreamRouteChange()
 		}
@@ -749,6 +768,7 @@ extension AudioManager {
 		engineController.onRouteChange = nil
 		engineController.cleanup()
 		openStreamDeviceID = nil
+		openStreamExpectedDeviceID = nil
 	}
 
 	/// The open-stream policies only apply to the buffered streaming path; live
@@ -799,7 +819,11 @@ extension AudioManager {
 	}
 
 	private func handleStreamRouteChange() {
-		guard !isSessionActive else { return }
+		guard !isSessionActive else {
+			// The engine has stopped itself; without a restart the recording keeps "running" on silence
+			handleCaptureInterruption(.engineStopped)
+			return
+		}
 		AppLogger.shared.audioManager.info("Audio route changed while stream idle; reopening per policy")
 		shutdownStreamingEngine()
 		applyMicStreamPolicy()
@@ -863,6 +887,17 @@ extension AudioManager {
 			}
 			powerStateObservers.append((workspace, token))
 		}
+		for (name, interruption) in [
+			(NSWorkspace.willSleepNotification, CaptureInterruption.systemSleep),
+			(NSWorkspace.sessionDidResignActiveNotification, CaptureInterruption.sessionResigned),
+		] {
+			let token = workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+				MainActor.assumeIsolated {
+					_ = self?.handleCaptureInterruption(interruption)
+				}
+			}
+			powerStateObservers.append((workspace, token))
+		}
 		let wake = workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) {
 			[weak self] _ in
 			MainActor.assumeIsolated {
@@ -914,6 +949,82 @@ extension AudioManager {
 	private func streamPolicySnapshot() -> String {
 		let settings = RecordingControlSettings()
 		return "\(settings.micStreamPolicy.rawValue)|\(captureRoute)"
+	}
+}
+
+// MARK: - Interruptions
+extension AudioManager {
+	@discardableResult
+	func handleCaptureInterruption(_ interruption: CaptureInterruption) -> CaptureInterruptionResponse {
+		let response = interruptionPolicy.respond(
+			to: interruption, isRecording: isRecording, isStarting: isMicrophoneInitializing && !isRecording,
+			path: activeCapturePath, isRestarting: deviceActivationTask != nil)
+		switch response {
+		case .ignore:
+			break
+		case .restartInput:
+			AppLogger.shared.audioManager.info("Restarting the microphone mid-recording after \(interruption)")
+			reactivateInputDuringRecording()
+		case .finish(let notice):
+			AppLogger.shared.audioManager.info("Stopping the recording early after \(interruption)")
+			finishInterruptedRecording(notice: notice)
+		case .cancelStartup:
+			AppLogger.shared.audioManager.info("Abandoning microphone startup after \(interruption)")
+			cancelRecording()
+		}
+		return response
+	}
+
+	/// Stops without the tail and transcribes what was captured, telling the user why it ended.
+	fileprivate func finishInterruptedRecording(notice: String) {
+		tailStop.cancel()
+		pendingStopNotice = notice
+		stopRecording()
+		// Live mode and empty recordings have no session to carry the notice
+		if let unclaimed = pendingStopNotice {
+			transcriptionError = unclaimed
+			pendingStopNotice = nil
+		}
+	}
+
+	fileprivate func attachStopNotice(to session: DictationSession) {
+		guard let notice = pendingStopNotice else { return }
+		stopNotices[session.id] = notice
+		pendingStopNotice = nil
+	}
+
+	/// AVAudioEngine does not always announce that it stopped (a wake from sleep, a device that
+	/// vanished mid-reconfiguration), and a closed lid does not change the open device by itself,
+	/// so a recording checks its own stream once a second.
+	fileprivate func startCaptureWatchdog() {
+		captureWatchdog?.invalidate()
+		captureWatchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+			MainActor.assumeIsolated {
+				guard let self, self.isSessionActive else {
+					timer.invalidate()
+					return
+				}
+				self.checkCaptureHealth()
+			}
+		}
+	}
+
+	private func checkCaptureHealth() {
+		guard activeCapturePath == .stream, isRecording, !isMicrophoneInitializing, deviceActivationTask == nil
+		else { return }
+		if !engineController.isEngineRunning {
+			handleCaptureInterruption(.engineStopped)
+			return
+		}
+		// Compared with what was expected when the stream opened, not with what the audio unit
+		// reports, so a device that reports a different ID cannot trigger endless restarts
+		guard let expected = deviceManager.expectedInputDeviceID(), expected != openStreamExpectedDeviceID
+		else { return }
+		let name = deviceManager.deviceName(forID: expected) ?? String(localized: "the new microphone")
+		AppLogger.shared.audioManager.info("Recording input moved to \(name); following it")
+		if handleCaptureInterruption(.inputDeviceChanged) == .restartInput {
+			inputNotice = String(localized: "Switched to \(name).")
+		}
 	}
 }
 
@@ -1040,6 +1151,9 @@ extension AudioManager {
 		transcriptionTasks[id] = nil
 		releaseModel(for: id)
 		syncTranscribingState()
+		if let notice = stopNotices.removeValue(forKey: id) {
+			transcriptionError = [notice, transcriptionError].compactMap { $0 }.joined(separator: "\n")
+		}
 	}
 
 	fileprivate func syncTranscribingState() {

@@ -25,18 +25,61 @@ struct PostProcessingService {
 	let settings: PostProcessingSettings
 	let secrets: PostProcessingSecretStore
 	let session: URLSession
+	/// Replaces the provider's processor; tests use it to simulate hung or runaway models.
+	let processorOverride: (@Sendable (PostProcessingProvider) throws -> TextPostProcessor)?
 
 	init(
 		settings: PostProcessingSettings = PostProcessingSettings(),
 		secrets: PostProcessingSecretStore = KeychainSecretStore(),
-		session: URLSession = .shared
+		session: URLSession = .shared,
+		processorOverride: (@Sendable (PostProcessingProvider) throws -> TextPostProcessor)? = nil
 	) {
 		self.settings = settings
 		self.secrets = secrets
 		self.session = session
+		self.processorOverride = processorOverride
+	}
+
+	/// The model may rewrite, but a reply this much longer than the dictation is a loop or a
+	/// chatty answer, and pasting tens of kilobytes into the user's document is worse than raw text.
+	static func outputLimit(forTranscript transcript: String) -> Int {
+		max(transcript.count * 5, 1000)
+	}
+
+	/// `URLRequest.timeoutInterval` only fires when no bytes arrive for that long, so a server that
+	/// trickles a response, and the on-device model, which has no timeout, need a hard deadline.
+	/// The caller is released at the deadline even when the operation ignores cancellation: a task
+	/// group would wait for the child to finish before returning.
+	static func withDeadline<T: Sendable>(
+		seconds: Double, _ operation: @escaping @Sendable () async throws -> T
+	) async throws -> T {
+		let work = Task { try await operation() }
+		let gate = ResumeOnce<T>()
+		return try await withTaskCancellationHandler {
+			try await withCheckedThrowingContinuation { continuation in
+				gate.set(continuation)
+				let timer = Task {
+					try? await Task.sleep(for: .seconds(seconds))
+					guard !Task.isCancelled else { return }
+					work.cancel()
+					gate.resume(with: .failure(PostProcessingError.timedOut(seconds: Int(seconds.rounded(.up)))))
+				}
+				Task {
+					let result = await work.result
+					timer.cancel()
+					gate.resume(with: result)
+				}
+			}
+		} onCancel: {
+			work.cancel()
+			gate.resume(with: .failure(CancellationError()))
+		}
 	}
 
 	func makeProcessor(for provider: PostProcessingProvider) throws -> TextPostProcessor {
+		if let processorOverride {
+			return try processorOverride(provider)
+		}
 		switch provider.kind {
 		case .appleIntelligence:
 			return AppleIntelligenceProcessor()
@@ -72,7 +115,14 @@ struct PostProcessingService {
 		do {
 			let processor = try makeProcessor(for: provider)
 			let started = Date()
-			let result = try await processor.process(prompt.messages(for: transcript))
+			let messages = prompt.messages(for: transcript)
+			let result = try await Self.withDeadline(seconds: settings.timeoutSeconds) {
+				try await processor.process(messages)
+			}
+			let limit = Self.outputLimit(forTranscript: transcript)
+			guard result.count <= limit else {
+				throw PostProcessingError.responseTooLong(characters: result.count, limit: limit)
+			}
 			logger.info(
 				"Post-processing via \(provider.id) with prompt '\(prompt.id)' took \(String(format: "%.2f", Date().timeIntervalSince(started)))s (\(transcript.count) -> \(result.count) chars)"
 			)
@@ -83,5 +133,41 @@ struct PostProcessingService {
 			logger.error("Post-processing via \(provider.id) failed: \(error.localizedDescription)")
 			return .failed(original: transcript, error: error.localizedDescription)
 		}
+	}
+}
+
+private final class ResumeOnce<T: Sendable>: @unchecked Sendable {
+	private let lock = NSLock()
+	private var continuation: CheckedContinuation<T, Error>?
+	private var pending: Result<T, Error>?
+	private var finished = false
+
+	func set(_ continuation: CheckedContinuation<T, Error>) {
+		lock.lock()
+		if let pending {
+			lock.unlock()
+			continuation.resume(with: pending)
+			return
+		}
+		self.continuation = continuation
+		lock.unlock()
+	}
+
+	func resume(with result: Result<T, Error>) {
+		lock.lock()
+		guard !finished else {
+			lock.unlock()
+			return
+		}
+		finished = true
+		guard let continuation else {
+			// Cancelled before the continuation existed; hand the result over in set()
+			pending = result
+			lock.unlock()
+			return
+		}
+		self.continuation = nil
+		lock.unlock()
+		continuation.resume(with: result)
 	}
 }

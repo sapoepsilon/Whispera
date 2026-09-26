@@ -99,6 +99,9 @@ struct TranscriptionHistoryView: View {
 		.onAppear {
 			store.reload()
 			store.viewDidAppear()
+			if let notice = store.acknowledgeStoreNotice() {
+				errorMessage = notice
+			}
 		}
 		.onDisappear {
 			store.viewDidDisappear()

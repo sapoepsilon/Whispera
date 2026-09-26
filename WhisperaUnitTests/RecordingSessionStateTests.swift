@@ -141,12 +141,38 @@ struct StreamCaptureBufferTests {
 		#expect(buffer.finishCapture() == [1, 2, 3])
 	}
 
-	@Test func capDropsTheOldestSamples() {
+	/// The cap used to overwrite the start of a long recording without telling anyone.
+	@Test func capKeepsTheBeginningAndSignalsOnce() {
 		let buffer = StreamCaptureBuffer(maxSamples: 4)
+		let signals = LockedCounter()
+		buffer.onLimitReached = { signals.increment() }
 		buffer.beginCapture(channelSelection: InputChannelSelection.mixAllChannels)
-		buffer.append([1, 2, 3])
-		buffer.append([4, 5, 6])
-		#expect(buffer.finishCapture() == [3, 4, 5, 6])
+		#expect(buffer.append([1, 2, 3]))
+		#expect(buffer.append([4, 5, 6]))
+		#expect(!buffer.append([7]))
+		#expect(buffer.reachedLimit)
+		#expect(signals.value == 1)
+		#expect(buffer.finishCapture() == [1, 2, 3, 4])
+
+		// The next recording starts fresh and can signal again
+		buffer.beginCapture(channelSelection: InputChannelSelection.mixAllChannels)
+		#expect(!buffer.reachedLimit)
+		buffer.append([1, 2, 3, 4, 5])
+		#expect(signals.value == 2)
+		#expect(buffer.finishCapture() == [1, 2, 3, 4])
+	}
+
+	@Test func defaultCapIsThirtyMinutes() {
+		let buffer = StreamCaptureBuffer()
+		buffer.beginCapture(channelSelection: InputChannelSelection.mixAllChannels)
+		let minute = [Float](repeating: 0, count: 16000 * 60)
+		for _ in 0..<StreamCaptureBuffer.maxMinutes {
+			buffer.append(minute)
+		}
+		#expect(!buffer.reachedLimit)
+		buffer.append([0])
+		#expect(buffer.reachedLimit)
+		#expect(buffer.finishCapture().count == 16000 * 60 * 30)
 	}
 
 	@Test func ingestKeepsSixteenKilohertzMonoUnchanged() {
@@ -260,4 +286,11 @@ struct MicStreamSuspensionTests {
 		#expect(MicStreamPolicy.alwaysOn.summary.contains("sleep"))
 		#expect(MicStreamPolicy.lazyClose.summary.contains("indicator"))
 	}
+}
+
+final class LockedCounter: @unchecked Sendable {
+	private let lock = NSLock()
+	private var count = 0
+	var value: Int { lock.withLock { count } }
+	func increment() { lock.withLock { count += 1 } }
 }

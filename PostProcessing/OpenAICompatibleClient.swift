@@ -13,6 +13,8 @@ enum PostProcessingError: LocalizedError, Equatable {
 	case malformedResponse
 	case appleIntelligenceUnavailable(reason: String)
 	case insecureKeyTransport(host: String)
+	case timedOut(seconds: Int)
+	case responseTooLong(characters: Int, limit: Int)
 
 	var errorDescription: String? {
 		switch self {
@@ -35,6 +37,11 @@ enum PostProcessingError: LocalizedError, Equatable {
 				localized:
 					"Refusing to send your API key to \(host) over plain http. Use an https:// base URL, or remove the key for a local server."
 			)
+		case .timedOut(let seconds):
+			return String(localized: "Post-processing took longer than \(seconds) seconds")
+		case .responseTooLong(let characters, let limit):
+			return String(
+				localized: "The model returned \(characters) characters, more than the \(limit) allowed for this transcript")
 		}
 	}
 }

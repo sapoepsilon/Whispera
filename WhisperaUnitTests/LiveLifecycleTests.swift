@@ -93,56 +93,7 @@ struct CaptureStopRoutingTests {
 	}
 }
 
-struct SampleRingTests {
-	@Test func keepsEverythingBelowCapacity() {
-		var ring = SampleRing(capacity: 5)
-		ring.append(contentsOf: [1, 2])
-		ring.append(contentsOf: [3])
-		#expect(ring.ordered() == [1, 2, 3])
-	}
-
-	@Test func overwritesTheOldestOnceFull() {
-		var ring = SampleRing(capacity: 4)
-		ring.append(contentsOf: [1, 2, 3])
-		ring.append(contentsOf: [4, 5, 6])
-		#expect(ring.ordered() == [3, 4, 5, 6])
-		ring.append(contentsOf: [7])
-		#expect(ring.ordered() == [4, 5, 6, 7])
-		ring.append(contentsOf: [8, 9, 10])
-		#expect(ring.ordered() == [7, 8, 9, 10])
-		#expect(ring.count == 4)
-	}
-
-	@Test func chunkLargerThanCapacityKeepsItsTail() {
-		var ring = SampleRing(capacity: 3)
-		ring.append(contentsOf: [1])
-		ring.append(contentsOf: [2, 3, 4, 5, 6])
-		#expect(ring.ordered() == [4, 5, 6])
-	}
-
-	@Test func removeAllStartsOver() {
-		var ring = SampleRing(capacity: 3)
-		ring.append(contentsOf: [1, 2, 3, 4])
-		ring.removeAll()
-		ring.append(contentsOf: [9])
-		#expect(ring.ordered() == [9])
-	}
-
-	@Test func matchesANaiveWindowOverManyAppends() {
-		var ring = SampleRing(capacity: 37)
-		var reference: [Float] = []
-		var next: Float = 0
-		for size in [1, 5, 36, 2, 37, 0, 13, 40, 7, 7, 7, 29, 3] {
-			let chunk = (0..<size).map { _ in
-				next += 1
-				return next
-			}
-			ring.append(contentsOf: chunk)
-			reference = Array((reference + chunk).suffix(37))
-			#expect(ring.ordered() == reference)
-		}
-	}
-
+struct CaptureBufferCapTests {
 	@Test func captureBufferPastTheCapIsCheapPerAppend() {
 		let cap = 16000 * 60
 		let buffer = StreamCaptureBuffer(maxSamples: cap)
@@ -151,7 +102,7 @@ struct SampleRingTests {
 		for _ in 0..<(cap / chunk.count + 1) {
 			buffer.append(chunk)
 		}
-		// Past the cap each append used to memmove the whole window; a ring only writes the chunk
+		// Audio past the cap is dropped without copying the recording
 		let clock = ContinuousClock()
 		let elapsed = clock.measure {
 			for _ in 0..<2000 {

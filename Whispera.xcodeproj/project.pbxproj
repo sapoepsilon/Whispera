@@ -93,6 +93,7 @@
 		D6MEB41479BBDDAB7053D000 /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF0255F5A4D1BC82EF000 /* TranscriptionEngine.swift */; };
 		D6MEBCAE525FEBA2D3DB0000 /* ParakeetEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF4E4C652F6D4ACDE5000 /* ParakeetEngine.swift */; };
 		D6MEBD07D33E802829E19000 /* ParakeetSettingsNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF58E48867B31EAEAE000 /* ParakeetSettingsNote.swift */; };
+		D6MEBFEE51BD19DDDD509000 /* SerialAsyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEFE83C36783064555E000 /* SerialAsyncQueue.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -200,6 +201,7 @@
 		D6MEF0255F5A4D1BC82EF000 /* TranscriptionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionEngine.swift; sourceTree = "<group>"; };
 		D6MEF4E4C652F6D4ACDE5000 /* ParakeetEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetEngine.swift; sourceTree = "<group>"; };
 		D6MEF58E48867B31EAEAE000 /* ParakeetSettingsNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetSettingsNote.swift; sourceTree = "<group>"; };
+		D6MEFE83C36783064555E000 /* SerialAsyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SerialAsyncQueue.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -427,6 +429,7 @@
 		D6MDLENG2F30000000000000 /* ModelEngines */ = {
 			isa = PBXGroup;
 			children = (
+				D6MEFE83C36783064555E000 /* SerialAsyncQueue.swift */,
 				D6MEF58E48867B31EAEAE000 /* ParakeetSettingsNote.swift */,
 				D6MEF4E4C652F6D4ACDE5000 /* ParakeetEngine.swift */,
 				D6MEF0255F5A4D1BC82EF000 /* TranscriptionEngine.swift */,
@@ -620,6 +623,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D6MEBFEE51BD19DDDD509000 /* SerialAsyncQueue.swift in Sources */,
 				D6MEBD07D33E802829E19000 /* ParakeetSettingsNote.swift in Sources */,
 				D6MEBCAE525FEBA2D3DB0000 /* ParakeetEngine.swift in Sources */,
 				D6MEB41479BBDDAB7053D000 /* TranscriptionEngine.swift in Sources */,

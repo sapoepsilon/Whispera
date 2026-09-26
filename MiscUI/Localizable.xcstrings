@@ -162,6 +162,29 @@
         }
       }
     },
+    "%@ is not downloaded. Download it again in Settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ist nicht geladen. Lade es in den Einstellungen erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ no está descargado. Vuelve a descargarlo en Ajustes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n'est pas téléchargé. Téléchargez-le à nouveau dans les Réglages."
+          }
+        }
+      }
+    },
     "%@ types text, so it needs a modifier such as ⌘, ⌥ or ⌃. Esc, Delete and the F-keys work on their own.": {
       "extractionState": "manual",
       "localizations": {
@@ -12007,6 +12030,29 @@
         }
       }
     },
+    "Post-processing took longer than %lld seconds": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Nachbearbeitung hat länger als %lld Sekunden gedauert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El posprocesamiento tardó más de %lld segundos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le post-traitement a pris plus de %lld secondes"
+          }
+        }
+      }
+    },
     "Preparing to load Whisper models...": {
       "extractionState": "manual",
       "localizations": {
@@ -13203,6 +13249,29 @@
         }
       }
     },
+    "Recording reached the %lld-minute limit and was stopped. Everything up to the limit was transcribed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Aufnahme hat das Limit von %lld Minuten erreicht und wurde beendet. Alles bis zum Limit wurde transkribiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La grabación alcanzó el límite de %lld minutos y se detuvo. Se transcribió todo hasta el límite."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'enregistrement a atteint la limite de %lld minutes et a été arrêté. Tout ce qui précède la limite a été transcrit."
+          }
+        }
+      }
+    },
     "Recording shortcut:": {
       "extractionState": "manual",
       "localizations": {
@@ -13222,6 +13291,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Raccourci d'enregistrement :"
+          }
+        }
+      }
+    },
+    "Recording stopped because another user took over the Mac. What was captured was transcribed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Aufnahme wurde beendet, weil ein anderer Benutzer den Mac übernommen hat. Das bis dahin Aufgenommene wurde transkribiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La grabación se detuvo porque otro usuario pasó a usar el Mac. Se transcribió lo que se había grabado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'enregistrement s'est arrêté car un autre utilisateur a pris la main sur le Mac. Ce qui avait été capturé a été transcrit."
+          }
+        }
+      }
+    },
+    "Recording stopped because the Mac went to sleep. What was captured was transcribed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Aufnahme wurde beendet, weil der Mac in den Ruhezustand gewechselt ist. Das bis dahin Aufgenommene wurde transkribiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La grabación se detuvo porque el Mac entró en reposo. Se transcribió lo que se había grabado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'enregistrement s'est arrêté car le Mac est passé en veille. Ce qui avait été capturé a été transcrit."
           }
         }
       }
@@ -16515,6 +16630,29 @@
         }
       }
     },
+    "Switched to %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu %@ gewechselt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se cambió a %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passage à %@."
+          }
+        }
+      }
+    },
     "System": {
       "extractionState": "manual",
       "localizations": {
@@ -16722,6 +16860,29 @@
         }
       }
     },
+    "The Parakeet vocabulary file is damaged.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Vokabulardatei von Parakeet ist beschädigt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El archivo de vocabulario de Parakeet está dañado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le fichier de vocabulaire de Parakeet est endommagé."
+          }
+        }
+      }
+    },
     "The app binary doubles as a headless CLI. It uses models you already downloaded and never opens a window.": {
       "extractionState": "manual",
       "localizations": {
@@ -16764,6 +16925,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "La première transcription peut être plus longue, le temps que le modèle se charge sur votre appareil, surtout s'il est volumineux."
+          }
+        }
+      }
+    },
+    "The microphone kept dropping out, so the recording was stopped early. What was captured was transcribed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Mikrofon ist immer wieder ausgefallen, daher wurde die Aufnahme vorzeitig beendet. Das bis dahin Aufgenommene wurde transkribiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El micrófono se cortaba una y otra vez, así que la grabación se detuvo antes de tiempo. Se transcribió lo que se había grabado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le micro décrochait sans cesse, l'enregistrement a donc été arrêté plus tôt. Ce qui avait été capturé a été transcrit."
           }
         }
       }
@@ -16879,6 +17063,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le microphone reste ouvert tant que Whispera tourne pour un démarrage immédiat ; le témoin du micro reste allumé"
+          }
+        }
+      }
+    },
+    "The microphone stopped working, so the recording was stopped early. What was captured was transcribed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Mikrofon funktioniert nicht mehr, daher wurde die Aufnahme vorzeitig beendet. Das bis dahin Aufgenommene wurde transkribiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El micrófono dejó de funcionar, así que la grabación se detuvo antes de tiempo. Se transcribió lo que se había grabado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le micro a cessé de fonctionner, l'enregistrement a donc été arrêté plus tôt. Ce qui avait été capturé a été transcrit."
+          }
+        }
+      }
+    },
+    "The model returned %lld characters, more than the %lld allowed for this transcript": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Modell hat %lld Zeichen geliefert, mehr als die %lld, die für dieses Transkript erlaubt sind"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modelo devolvió %lld caracteres, más de los %lld permitidos para esta transcripción"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le modèle a renvoyé %lld caractères, plus que les %lld autorisés pour cette transcription"
           }
         }
       }
@@ -18167,6 +18397,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Impossible d'ouvrir l'historique des transcriptions."
+          }
+        }
+      }
+    },
+    "Transcription history could not be saved to disk (%@). This session's dictations are kept until Whispera quits.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Transkriptionsverlauf konnte nicht gespeichert werden (%@). Die Diktate dieser Sitzung bleiben erhalten, bis Whispera beendet wird."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo guardar el historial de transcripciones en el disco (%@). Los dictados de esta sesión se conservan hasta que cierres Whispera."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'historique de transcriptions n'a pas pu être enregistré sur le disque (%@). Les dictées de cette session sont conservées jusqu'à la fermeture de Whispera."
           }
         }
       }
@@ -20241,6 +20494,29 @@
         }
       }
     },
+    "Your transcription history could not be opened, so Whispera started a new one. The old history was kept as %@ in the History folder.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Transkriptionsverlauf konnte nicht geöffnet werden, daher hat Whispera einen neuen begonnen. Der alte Verlauf wurde als %@ im Ordner History aufbewahrt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo abrir tu historial de transcripciones, así que Whispera empezó uno nuevo. El historial anterior se guardó como %@ en la carpeta History."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre historique de transcriptions n'a pas pu être ouvert, Whispera en a donc commencé un nouveau. L'ancien historique a été conservé sous le nom %@ dans le dossier History."
+          }
+        }
+      }
+    },
     "avg RTF": {
       "extractionState": "manual",
       "localizations": {
@@ -20375,6 +20651,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "propriétaire/dépôt ou lien huggingface.co"
+          }
+        }
+      }
+    },
+    "the new microphone": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "das neue Mikrofon"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "el nuevo micrófono"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "le nouveau micro"
           }
         }
       }

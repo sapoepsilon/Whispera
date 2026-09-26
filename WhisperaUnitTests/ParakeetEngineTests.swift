@@ -41,6 +41,144 @@ struct ParakeetModelTests {
 	}
 }
 
+struct ParakeetShortClipTests {
+	@Test func shortClipsArePaddedWithTrailingSilenceToOneSecond() {
+		let clip: [Float] = [0.5, -0.5, 0.25]
+		let padded = ParakeetEngine.paddedToMinimumLength(clip)
+		#expect(padded.count == ParakeetEngine.minimumSampleCount)
+		#expect(Array(padded.prefix(3)) == clip)
+		#expect(padded.dropFirst(3).allSatisfy { $0 == 0 })
+	}
+
+	@Test func clipsOfAtLeastOneSecondAreUntouched() {
+		let clip = [Float](repeating: 0.1, count: ParakeetEngine.minimumSampleCount + 5)
+		#expect(ParakeetEngine.paddedToMinimumLength(clip) == clip)
+	}
+}
+
+@MainActor
+struct SerialAsyncQueueTests {
+	@MainActor final class Probe {
+		var active = 0
+		var maxActive = 0
+		var order: [Int] = []
+	}
+
+	@Test func overlappingCallsNeverRunConcurrentlyAndKeepTheirOrder() async throws {
+		let queue = SerialAsyncQueue()
+		let probe = Probe()
+		try await withThrowingTaskGroup(of: Void.self) { group in
+			for index in 0..<6 {
+				group.addTask { @MainActor in
+					_ = try await queue.run {
+						probe.active += 1
+						probe.maxActive = max(probe.maxActive, probe.active)
+						probe.order.append(index)
+						try await Task.sleep(for: .milliseconds(20))
+						probe.active -= 1
+						return index
+					}
+				}
+			}
+			try await group.waitForAll()
+		}
+		#expect(probe.maxActive == 1)
+		#expect(probe.order.sorted() == Array(0..<6))
+	}
+
+	@Test func aFailedCallDoesNotBlockTheNextOne() async throws {
+		struct Boom: Error {}
+		let queue = SerialAsyncQueue()
+		await #expect(throws: Boom.self) {
+			_ = try await queue.run { () async throws -> Int in throw Boom() }
+		}
+		#expect(try await queue.run { 42 } == 42)
+	}
+}
+
+struct ModelFolderRepairTests {
+	private func makeFolder() throws -> (URL, URL) {
+		let root = FileManager.default.temporaryDirectory
+			.appendingPathComponent("ModelRepair-\(UUID().uuidString)", isDirectory: true)
+		let folder = root.appendingPathComponent("parakeet", isDirectory: true)
+		try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+		try Data("old".utf8).write(to: folder.appendingPathComponent("Encoder.bin"))
+		return (root, folder)
+	}
+
+	@Test func failedDownloadPutsTheOldModelBack() async throws {
+		let (root, folder) = try makeFolder()
+		defer { try? FileManager.default.removeItem(at: root) }
+		struct Offline: Error {}
+
+		await #expect(throws: Offline.self) {
+			try await ModelFolderRepair.replace(folder) {
+				// A partial download must not survive either
+				try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+				try Data("partial".utf8).write(to: folder.appendingPathComponent("Encoder.bin"))
+				throw Offline()
+			}
+		}
+		let restored = try String(contentsOf: folder.appendingPathComponent("Encoder.bin"), encoding: .utf8)
+		#expect(restored == "old")
+		#expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["parakeet"])
+	}
+
+	@Test func successfulDownloadReplacesTheOldModel() async throws {
+		let (root, folder) = try makeFolder()
+		defer { try? FileManager.default.removeItem(at: root) }
+
+		try await ModelFolderRepair.replace(folder) {
+			#expect(!FileManager.default.fileExists(atPath: folder.path))
+			try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+			try Data("new".utf8).write(to: folder.appendingPathComponent("Encoder.bin"))
+		}
+		let replaced = try String(contentsOf: folder.appendingPathComponent("Encoder.bin"), encoding: .utf8)
+		#expect(replaced == "new")
+		#expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["parakeet"])
+	}
+}
+
+@MainActor
+struct ParakeetLoadSafetyTests {
+	/// FluidAudio's loader deletes the folder after a failed load; Whispera's must leave it alone.
+	@Test func failedLoadWithoutRepairKeepsTheModelOnDisk() async throws {
+		let base = FileManager.default.temporaryDirectory
+			.appendingPathComponent("ParakeetLoad-\(UUID().uuidString)", isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: base) }
+		let folder = ParakeetEngine.directory(for: .v3, modelsBase: base)
+		for name in ["Preprocessor", "Encoder", "Decoder", "JointDecision"] {
+			let model = folder.appendingPathComponent("\(name).mlmodelc", isDirectory: true)
+			try FileManager.default.createDirectory(at: model, withIntermediateDirectories: true)
+			try Data("not a model".utf8).write(to: model.appendingPathComponent("coremldata.bin"))
+		}
+		try Data(#"{"0":"a"}"#.utf8).write(to: folder.appendingPathComponent("parakeet_vocab.json"))
+		#expect(ParakeetEngine.isDownloaded(.v3, modelsBase: base))
+
+		await #expect(throws: (any Error).self) {
+			_ = try await ParakeetEngine.load(.v3, modelsBase: base, computeUnits: .cpuOnly, repairIfCorrupt: false)
+		}
+		#expect(ParakeetEngine.isDownloaded(.v3, modelsBase: base))
+	}
+
+	@Test func missingModelIsReportedWithoutDownloading() async throws {
+		let base = FileManager.default.temporaryDirectory
+			.appendingPathComponent("ParakeetMissing-\(UUID().uuidString)", isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: base) }
+		await #expect(throws: ParakeetLoadError.notDownloaded(ParakeetModel.v3.displayName)) {
+			_ = try await ParakeetEngine.load(.v3, modelsBase: base, computeUnits: nil)
+		}
+		#expect(!FileManager.default.fileExists(atPath: ParakeetEngine.directory(for: .v3, modelsBase: base).path))
+	}
+
+	@Test func vocabularyParsesTokenIDs() throws {
+		let url = FileManager.default.temporaryDirectory.appendingPathComponent("vocab-\(UUID().uuidString).json")
+		defer { try? FileManager.default.removeItem(at: url) }
+		try Data(#"{"0":"<unk>","5":"▁the","x":"skip"}"#.utf8).write(to: url)
+		#expect(try ParakeetEngine.vocabulary(at: url) == [0: "<unk>", 5: "▁the"])
+	}
+}
+
 struct TranscriptSegmenterTests {
 
 	private func tokens(_ spec: [(String, Double, Double)]) -> [TimedToken] {
@@ -124,5 +262,52 @@ struct ParakeetTranscriptionTests {
 		let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: audio.path)
 		let fromSamples = try await cpuEngine.transcribe(samples: samples)
 		#expect(fromSamples.text.lowercased().contains("fox"))
+	}
+
+	private func loadedEngine() async throws -> ParakeetEngine {
+		if !ParakeetEngine.isDownloaded(.v3, modelsBase: Self.modelsBase) {
+			try await ParakeetEngine.download(.v3, modelsBase: Self.modelsBase)
+		}
+		return try await ParakeetEngine.load(.v3, modelsBase: Self.modelsBase, computeUnits: nil)
+	}
+
+	@Test(.enabled(if: enabled, "Parakeet v3 not downloaded; set WHISPERA_PARAKEET_E2E=1"))
+	func transcribesAOneWordClipShorterThanOneSecond() async throws {
+		let engine = try await loadedEngine()
+		defer { engine.unload() }
+		let directory = FileManager.default.temporaryDirectory
+			.appendingPathComponent("ParakeetShort-\(UUID().uuidString)", isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let audio = try SpeechFixture.make("Yes.", in: directory)
+		let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: audio.path)
+		#expect(samples.count < ParakeetEngine.minimumSampleCount)
+
+		let fromSamples = try await engine.transcribe(samples: samples)
+		#expect(fromSamples.text.lowercased().contains("yes"))
+		let fromFile = try await engine.transcribe(fileURL: audio)
+		#expect(fromFile.text.lowercased().contains("yes"))
+	}
+
+	@Test(.enabled(if: enabled, "Parakeet v3 not downloaded; set WHISPERA_PARAKEET_E2E=1"))
+	func overlappingTranscriptionsOnOneEngineStayIndependent() async throws {
+		let engine = try await loadedEngine()
+		defer { engine.unload() }
+		let directory = FileManager.default.temporaryDirectory
+			.appendingPathComponent("ParakeetOverlap-\(UUID().uuidString)", isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let first = try AudioProcessor.loadAudioAsFloatArray(
+			fromPath: try SpeechFixture.make("The quick brown fox jumps over the lazy dog.", in: directory).path)
+		let second = try AudioProcessor.loadAudioAsFloatArray(
+			fromPath: try SpeechFixture.make("Please send the invoice to the accounting team.", in: directory).path)
+
+		for _ in 0..<3 {
+			async let a = engine.transcribe(samples: first)
+			async let b = engine.transcribe(samples: second)
+			async let c = engine.transcribe(samples: first)
+			let (textA, textB, textC) = try await (a.text.lowercased(), b.text.lowercased(), c.text.lowercased())
+			#expect(textA.contains("fox") && textA.contains("lazy dog"))
+			#expect(textB.contains("invoice") && textB.contains("accounting"))
+			#expect(textC == textA)
+		}
 	}
 }

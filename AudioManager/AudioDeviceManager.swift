@@ -251,6 +251,22 @@ final class AudioDeviceManager {
 		return device.id
 	}
 
+	/// The device a recording in progress should be capturing from right now, resolved without the
+	/// logging and session bookkeeping of `resolveActiveDeviceID`, so it can be polled.
+	func expectedInputDeviceID() -> AudioDeviceID? {
+		let effectiveUID = effectiveDeviceUID
+		if effectiveUID != AudioDeviceManager.systemDefaultUID,
+			let device = availableDevices.first(where: { $0.uid == effectiveUID })
+		{
+			return device.id
+		}
+		return getSystemDefaultInputDeviceID()
+	}
+
+	func deviceName(forID deviceID: AudioDeviceID) -> String? {
+		availableDevices.first(where: { $0.id == deviceID })?.name ?? getDeviceName(for: deviceID)
+	}
+
 	/// Number of input channels the device exposes; `systemDefaultUID` means the
 	/// current default input. Returns 0 when the device is unknown.
 	func inputChannelCount(forUID uid: String) -> Int {

@@ -180,6 +180,38 @@ struct TranscriptionHistoryStoreTests {
 		#expect(try AVAudioFile(forReading: url).length == 32000)
 	}
 
+	@Test func unreadableStoreIsMovedAsideAndHistoryKeepsWorking() throws {
+		let directory = makeTempDirectory()
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		let garbage = Data(repeating: 0x5A, count: 8192)
+		try garbage.write(to: directory.appendingPathComponent("history.store"))
+
+		let store = TranscriptionHistoryStore(directory: directory, defaults: makeDefaults())
+
+		#expect(store.record(text: "after recovery", audio: nil, source: .dictation, modelName: nil, language: nil) != nil)
+		#expect(store.entries.map(\.text) == ["after recovery"])
+		let kept = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+			.filter { $0.hasPrefix("history-unreadable-") && $0.hasSuffix(".store") }
+		#expect(kept.count == 1)
+		#expect(try Data(contentsOf: directory.appendingPathComponent(kept[0])) == garbage)
+		let notice = try #require(store.acknowledgeStoreNotice())
+		#expect(notice.contains(kept[0]))
+		#expect(store.acknowledgeStoreNotice() == nil)
+
+		// The rebuilt database is a real one that survives a relaunch
+		let relaunched = TranscriptionHistoryStore(directory: directory, defaults: makeDefaults())
+		#expect(relaunched.entries.map(\.text) == ["after recovery"])
+		#expect(relaunched.storeNotice == nil)
+	}
+
+	@Test func outOfSpaceIsNotTreatedAsCorruption() {
+		let full = NSError(
+			domain: NSCocoaErrorDomain, code: 134_060,
+			userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))])
+		#expect(TranscriptionHistoryStore.isOutOfSpace(full))
+		#expect(!TranscriptionHistoryStore.isOutOfSpace(NSError(domain: NSCocoaErrorDomain, code: 259)))
+	}
+
 	@Test func skipsEmptyTextUnlessItFailed() async {
 		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
 		#expect(store.record(text: "   ", audio: nil, source: .dictation, modelName: nil, language: nil) == nil)
