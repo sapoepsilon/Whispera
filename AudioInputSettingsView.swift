@@ -22,7 +22,17 @@ struct InputChannelSettingsRow: View {
 		.mixAllChannels
 	@AppStorage("selectedAudioInputDeviceUID") private var deviceUID = AudioDeviceManager
 		.systemDefaultUID
+	@AppStorage("enableStreaming") private var liveTranscriptionEnabled = Constants.enableStreamingDefault
+	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@State private var deviceManager = AudioDeviceManager.shared
+
+	private var channelDescription: String {
+		// Live mode records through WhisperKit and file mode through AVAudioRecorder; both mix every channel
+		if liveTranscriptionEnabled || !useStreamingTranscription {
+			return "Only applies with Live Transcription Mode off; live dictation always mixes all channels"
+		}
+		return "Record a single channel of a multi-channel interface"
+	}
 
 	private var channelCount: Int {
 		_ = deviceManager.availableDevices
@@ -34,7 +44,7 @@ struct InputChannelSettingsRow: View {
 		if count > 1 {
 			SettingRow(
 				"Input Channel",
-				description: "Record a single channel of a multi-channel interface (dictation without live preview)"
+				description: channelDescription
 			) {
 				Picker("", selection: $selectedChannel) {
 					Text("All channels").tag(InputChannelSelection.mixAllChannels)
@@ -82,7 +92,8 @@ struct VoiceActivitySettingsRows: View {
 	var body: some View {
 		SettingRow(
 			"Skip Silence",
-			description: "Trim silence from dictation clips and skip clips with no speech"
+			description:
+				"Skip clips with no speech and trim silence from them; in Live Transcription Mode, pause transcribing while you are silent"
 		) {
 			Toggle("", isOn: $vadEnabled)
 		}

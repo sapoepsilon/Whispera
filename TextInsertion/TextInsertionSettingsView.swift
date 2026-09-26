@@ -57,7 +57,8 @@ struct TextInsertionSettingsView: View {
 
 					SettingRow(
 						"Auto-Submit",
-						description: "Press a key after inserting so chat boxes send the message"
+						description:
+							"Press a key after inserting so chat boxes send the message. Live dictation presses it once, when you stop."
 					) {
 						Toggle("", isOn: $autoSubmit)
 					}
