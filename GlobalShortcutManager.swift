@@ -13,7 +13,6 @@ class GlobalShortcutManager: ObservableObject {
 	private var networkDownloader: NetworkFileDownloader?
 	private var queueManager: TranscriptionQueueManager?
 	private var isProcessingFileOperation = false
-	private var lastTextHotKeyTrigger: Date?
 	private let postProcessShortcutMonitor = PostProcessShortcutMonitor()
 	private var requestedBackend = HotkeyBackend.preferred()
 	private var activeBackend = HotkeyBackend.eventMonitor
@@ -194,7 +193,7 @@ class GlobalShortcutManager: ObservableObject {
 					keyCode: textKeyCode, modifiers: textModifiers,
 					onRelease: { [weak self] in self?.handleTextHotKeyRelease() }
 				) { [weak self] in
-					self?.handleTextHotKey(isRepeat: false)
+					self?.handleTextHotKey(isRepeat: false, source: .systemHotKey)
 				}
 				try CarbonHotKeyCenter.shared.register(keyCode: fileKeyCode, modifiers: fileModifiers) {
 					[weak self] in
@@ -314,7 +313,7 @@ class GlobalShortcutManager: ObservableObject {
 				hotKeySpec: { spec },
 				action: { [weak self] in
 					self?.logger.info("Text shortcut detected through the secure input fallback")
-					self?.handleTextHotKey(isRepeat: false)
+					self?.handleTextHotKey(isRepeat: false, source: .secureInputFallback)
 				},
 				release: { [weak self] in
 					self?.handleTextHotKeyRelease()
@@ -513,14 +512,9 @@ class GlobalShortcutManager: ObservableObject {
 		}
 	}
 
-	private func handleTextHotKey(isRepeat: Bool) {
+	private func handleTextHotKey(isRepeat: Bool, source: ShortcutSource = .eventMonitor) {
 		let pressedAt = Date()
 		let backend = activeBackend
-		// The Carbon fallback and the event monitors can both see one press around a secure input transition
-		if !isRepeat {
-			if let last = lastTextHotKeyTrigger, pressedAt.timeIntervalSince(last) < 0.3 { return }
-			lastTextHotKeyTrigger = pressedAt
-		}
 		Task { @MainActor in
 			if !isRepeat {
 				KeyboardDiagnostics.shared.recordShortcut(.dictation, backend: backend)
@@ -530,7 +524,8 @@ class GlobalShortcutManager: ObservableObject {
 			activation.mode = settings.activationMode
 			activation.holdThreshold = settings.holdThreshold
 			let action = activation.keyDown(
-				at: pressedAt, isRepeat: isRepeat, isSessionActive: audioManager.isSessionActive)
+				at: pressedAt, isRepeat: isRepeat, isSessionActive: audioManager.isSessionActive,
+				source: source)
 			perform(action, on: audioManager)
 		}
 	}

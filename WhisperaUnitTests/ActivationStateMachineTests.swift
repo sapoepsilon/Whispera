@@ -36,7 +36,11 @@ struct ActivationStateMachineTests {
 	@Test func duplicatePressFromASecondSourceIsIgnored() {
 		var m = machine(.toggle)
 		#expect(m.keyDown(at: t0, isRepeat: false, isSessionActive: false) == .start)
-		#expect(m.keyDown(at: t0.addingTimeInterval(0.1), isRepeat: false, isSessionActive: true) == .none)
+		#expect(
+			m.keyDown(
+				at: t0.addingTimeInterval(0.1), isRepeat: false, isSessionActive: true,
+				source: .secureInputFallback)
+				== .none)
 	}
 
 	@Test func missedKeyUpDoesNotDeadenTheShortcutInToggleMode() {
@@ -75,7 +79,11 @@ struct ActivationStateMachineTests {
 		for mode in [ActivationMode.pushToTalk, .holdOrToggle] {
 			var m = machine(mode)
 			#expect(m.keyDown(at: t0, isRepeat: false, isSessionActive: false) == .start)
-			#expect(m.keyDown(at: t0.addingTimeInterval(0.1), isRepeat: false, isSessionActive: true) == .none)
+			#expect(
+				m.keyDown(
+					at: t0.addingTimeInterval(0.1), isRepeat: false, isSessionActive: true,
+					source: .systemHotKey)
+					== .none)
 		}
 	}
 
