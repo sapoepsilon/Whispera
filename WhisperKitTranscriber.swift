@@ -1089,13 +1089,15 @@ import WhisperKit
 	}
 
 	func processTranscriptText(
-		_ text: String, detectedLanguage: String?, enableTranslation: Bool, preservingLineBreaks: Bool = false
+		_ text: String, detectedLanguage: String?, enableTranslation: Bool, preservingLineBreaks: Bool = false,
+		engineHonorsLanguage: Bool = true
 	) -> String {
 		guard !text.isEmpty else { return text }
 		var configuration = TextProcessingSettings.configuration(from: textProcessingDefaults)
 		configuration.preservesLineBreaks = preservingLineBreaks
 		let evidence = TranscriptTextProcessor.languageEvidence(
-			selectedLanguageCode: Constants.decodingLanguageCode(for: selectedLanguage),
+			selectedLanguageCode: Self.pipelineLanguageCode(
+				selectedLanguage: selectedLanguage, engineHonorsLanguage: engineHonorsLanguage),
 			translating: enableTranslation,
 			modelDetectedLanguage: detectedLanguage,
 			text: text
@@ -1106,6 +1108,13 @@ import WhisperKit
 				"Text processing changed transcript (language evidence: \(evidence))")
 		}
 		return processed
+	}
+
+	/// Parakeet ignores the Source Language picker, so the picker says nothing about what was
+	/// spoken; passing it on would strip English fillers such as "um" from Portuguese speech.
+	/// Mirrors `CLITextPipeline`.
+	static func pipelineLanguageCode(selectedLanguage: String, engineHonorsLanguage: Bool) -> String? {
+		engineHonorsLanguage ? Constants.decodingLanguageCode(for: selectedLanguage) : nil
 	}
 
 	func updateDecodingOptions(
@@ -1462,7 +1471,8 @@ import WhisperKit
 			return transcript.segments.compactMap { segment in
 				let text = processTranscriptText(
 					segment.text.trimmingCharacters(in: .whitespacesAndNewlines),
-					detectedLanguage: nil, enableTranslation: false, preservingLineBreaks: true)
+					detectedLanguage: nil, enableTranslation: false, preservingLineBreaks: true,
+					engineHonorsLanguage: false)
 				guard !text.isEmpty else { return nil }
 				return TranscriptionSegment(text: text, startTime: segment.startTime, endTime: segment.endTime)
 			}
@@ -1530,7 +1540,7 @@ import WhisperKit
 				fromPath: url.path, startTime: startTime, endTime: endTime)
 			let text = processTranscriptText(
 				try await engine.transcribe(samples: samples).text, detectedLanguage: nil,
-				enableTranslation: false, preservingLineBreaks: true)
+				enableTranslation: false, preservingLineBreaks: true, engineHonorsLanguage: false)
 			return text.isEmpty ? "No speech detected in segment" : text
 		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
@@ -2237,7 +2247,8 @@ import WhisperKit
 				transcript = try await engine.transcribe(samples: samples)
 			}
 			// Parakeet reports no language, so the pipeline relies on the selected language or text detection
-			let text = processTranscriptText(transcript.text, detectedLanguage: nil, enableTranslation: false)
+			let text = processTranscriptText(
+				transcript.text, detectedLanguage: nil, enableTranslation: false, engineHonorsLanguage: false)
 			guard !text.isEmpty else {
 				AppLogger.shared.transcriber.log("\(engine.modelID) returned empty text")
 				return ""
