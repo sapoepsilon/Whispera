@@ -36,7 +36,7 @@ struct SettingsSection<Content: View>: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
-			Text(title)
+			Text(LocalizedStringKey(title))
 				.font(.headline)
 			content
 		}
@@ -57,10 +57,10 @@ struct SettingRow<Content: View>: View {
 	var body: some View {
 		HStack(spacing: 12) {
 			VStack(alignment: .leading, spacing: 2) {
-				Text(label)
+				Text(LocalizedStringKey(label))
 					.font(.subheadline)
 				if let description = description {
-					Text(description)
+					Text(LocalizedStringKey(description))
 						.font(.caption)
 						.foregroundColor(.secondary)
 						.fixedSize(horizontal: false, vertical: true)
@@ -532,6 +532,8 @@ struct SettingsView: View {
 						}
 
 						ThemeSettingRow()
+
+						AppLanguageSettingRow()
 
 						SettingRow(
 							"Window Transparency",
