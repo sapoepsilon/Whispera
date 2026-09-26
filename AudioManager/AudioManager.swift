@@ -105,6 +105,8 @@ final class AudioManager: NSObject {
 	private var meteringTimer: Timer?
 	@ObservationIgnored
 	private var deviceActivationTask: Task<Void, Never>?
+	@ObservationIgnored
+	private var outputMuteTask: Task<Void, Never>?
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -113,6 +115,7 @@ final class AudioManager: NSObject {
 
 	override init() {
 		super.init()
+		SystemOutputMuter.shared.recoverFromUncleanExit()
 		whisperKitTranscriber.startInitialization()
 		whisperKitTranscriber.onLiveAudioSamples = { [weak self] samples in
 			// WhisperKit delivers per-buffer chunks; cap the window so level
@@ -171,6 +174,7 @@ final class AudioManager: NSObject {
 					AppLogger.shared.audioManager.error("Failed to switch device: \(error)")
 					isRecording = false
 					timer.stop()
+					restoreSystemOutput()
 				}
 			} else {
 				deviceManager.restoreSystemDefault()
@@ -279,6 +283,7 @@ extension AudioManager {
 				isRecording = true
 				timer.start()
 				playFeedbackSound(start: true)
+				muteOutputAfterStartSound()
 				startMeteringTimer()
 				AppLogger.shared.audioManager.debug("File-based recording started")
 			} catch {
@@ -294,6 +299,7 @@ extension AudioManager {
 		audioRecorder = nil
 		isRecording = false
 		timer.stop()
+		restoreSystemOutput()
 		playFeedbackSound(start: false)
 		deviceManager.restoreSystemDefault()
 
@@ -346,6 +352,7 @@ extension AudioManager {
 				isRecording = true
 				timer.start()
 				playFeedbackSound(start: true)
+				muteOutputAfterStartSound()
 
 			} catch {
 				isMicrophoneInitializing = false
@@ -359,6 +366,7 @@ extension AudioManager {
 	fileprivate func stopStreamingRecording() {
 		isRecording = false
 		timer.stop()
+		restoreSystemOutput()
 		playFeedbackSound(start: false)
 
 		let capturedAudio = audioBuffer
@@ -437,6 +445,7 @@ extension AudioManager {
 		isRecording = true
 		timer.start()
 		playFeedbackSound(start: true)
+		muteOutputAfterStartSound()
 		whisperKitTranscriber.clearLiveTranscriptionState()
 		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
 
@@ -451,6 +460,7 @@ extension AudioManager {
 				isMicrophoneInitializing = false
 				isRecording = false
 				timer.stop()
+				restoreSystemOutput()
 				AppLogger.shared.audioManager.error("Failed to start live transcription: \(error)")
 			}
 		}
@@ -461,6 +471,7 @@ extension AudioManager {
 		isMicrophoneInitializing = false
 		isRecording = false
 		timer.stop()
+		restoreSystemOutput()
 		playFeedbackSound(start: false)
 
 		whisperKitTranscriber.stopLiveStream()
@@ -581,6 +592,33 @@ extension AudioManager {
 		DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
 			self.timer.reset()
 		}
+	}
+	/// Mutes system output once the start sound has had time to play, so the
+	/// user still hears the cue before their speakers go quiet.
+	fileprivate func muteOutputAfterStartSound() {
+		guard SystemOutputMuter.shared.isEnabled else { return }
+		outputMuteTask?.cancel()
+		let delay = startSoundDuration()
+		outputMuteTask = Task { [weak self] in
+			if delay > 0 {
+				try? await Task.sleep(for: .seconds(delay))
+			}
+			guard let self, !Task.isCancelled, self.isRecording || self.isMicrophoneInitializing else {
+				return
+			}
+			SystemOutputMuter.shared.mute()
+		}
+	}
+	fileprivate func restoreSystemOutput() {
+		outputMuteTask?.cancel()
+		outputMuteTask = nil
+		SystemOutputMuter.shared.restore()
+	}
+	fileprivate func startSoundDuration() -> TimeInterval {
+		guard UserDefaults.standard.bool(forKey: "soundFeedback") else { return 0 }
+		let name = UserDefaults.standard.string(forKey: "startSound") ?? "Tink"
+		guard name != "None" else { return 0 }
+		return NSSound(named: name)?.duration ?? 0
 	}
 	fileprivate func playFeedbackSound(start: Bool) {
 		guard UserDefaults.standard.bool(forKey: "soundFeedback") else { return }
