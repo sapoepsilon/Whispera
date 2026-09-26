@@ -9316,25 +9316,25 @@
         }
       }
     },
-    "Lets Stream Deck, launchers and scripts control dictation. Links that start dictation, switch the model or language, open or copy from history, or add words must carry this Mac's private token, so web pages cannot open the mic or read your transcripts. Stop and cancel links always work.": {
+    "Lets Stream Deck, launchers and scripts control dictation. Links that start dictation, switch the model or language, open or copy from history, or add words must carry this Mac's private token, so web pages cannot open the mic or read your transcripts. Stop and cancel links need no token and work even while this is off, since they only end a dictation you started: stop pastes what was heard so far, cancel discards it.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lässt Stream Deck, Launcher und Skripte das Diktat steuern. Links, die das Diktat starten, das Modell oder die Sprache wechseln, den Verlauf öffnen oder daraus kopieren oder Wörter hinzufügen, müssen das private Token dieses Macs enthalten, damit Webseiten weder das Mikrofon öffnen noch deine Transkripte lesen können. Links zum Stoppen und Abbrechen funktionieren immer."
+            "value": "Lässt Stream Deck, Launcher und Skripte das Diktat steuern. Links, die das Diktat starten, das Modell oder die Sprache wechseln, den Verlauf öffnen oder daraus kopieren oder Wörter hinzufügen, müssen das private Token dieses Macs enthalten, damit Webseiten weder das Mikrofon öffnen noch deine Transkripte lesen können. Links zum Stoppen und Abbrechen brauchen kein Token und funktionieren auch, wenn dies aus ist, da sie nur ein von dir gestartetes Diktat beenden: Stoppen fügt ein, was bis dahin gehört wurde, Abbrechen verwirft es."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permite que Stream Deck, los lanzadores y los scripts controlen el dictado. Los enlaces que inician el dictado, cambian el modelo o el idioma, abren o copian del historial o añaden palabras deben llevar el token privado de este Mac, para que las páginas web no puedan abrir el micrófono ni leer tus transcripciones. Los enlaces para detener y cancelar siempre funcionan."
+            "value": "Permite que Stream Deck, los lanzadores y los scripts controlen el dictado. Los enlaces que inician el dictado, cambian el modelo o el idioma, abren o copian del historial o añaden palabras deben llevar el token privado de este Mac, para que las páginas web no puedan abrir el micrófono ni leer tus transcripciones. Los enlaces para detener y cancelar no necesitan el token y funcionan aunque esto esté desactivado, porque solo terminan un dictado que tú empezaste: detener pega lo que se oyó hasta ese momento y cancelar lo descarta."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permet à Stream Deck, aux lanceurs et aux scripts de contrôler la dictée. Les liens qui démarrent la dictée, changent de modèle ou de langue, ouvrent ou copient l'historique ou ajoutent des mots doivent contenir le jeton privé de ce Mac, afin que les pages web ne puissent ni ouvrir le micro ni lire vos transcriptions. Les liens d'arrêt et d'annulation fonctionnent toujours."
+            "value": "Permet à Stream Deck, aux lanceurs et aux scripts de contrôler la dictée. Les liens qui démarrent la dictée, changent de modèle ou de langue, ouvrent ou copient l'historique ou ajoutent des mots doivent contenir le jeton privé de ce Mac, afin que les pages web ne puissent ni ouvrir le micro ni lire vos transcriptions. Les liens d'arrêt et d'annulation n'ont pas besoin du jeton et fonctionnent même si cette option est désactivée, car ils ne font que terminer une dictée que vous avez lancée : l'arrêt colle ce qui a été entendu jusque-là, l'annulation l'abandonne."
           }
         }
       }
