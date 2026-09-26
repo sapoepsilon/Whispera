@@ -34,10 +34,12 @@ struct TextProcessingConfiguration: Equatable {
 	var wordCorrectionThreshold: Double = defaultWordCorrectionThreshold
 	var fillerWordRemovalEnabled = true
 	var customFillerWords: [String] = []
+	var chineseScript: ChineseScriptPreference = .unchanged
 }
 
 /// Post-transcription text pipeline: filler removal, stutter and whitespace cleanup,
-/// and custom-word correction. Pure and synchronous so it can be unit tested without WhisperKit.
+/// custom-word correction, and Chinese script conversion. Pure and synchronous so it
+/// can be unit tested without WhisperKit.
 struct TranscriptTextProcessor {
 	let configuration: TextProcessingConfiguration
 
@@ -57,6 +59,7 @@ struct TranscriptTextProcessor {
 				result, customWords: configuration.customWords,
 				threshold: configuration.wordCorrectionThreshold)
 		}
+		result = Self.convertChineseScript(result, to: configuration.chineseScript, language: language)
 		return result
 	}
 }

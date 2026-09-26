@@ -6,6 +6,8 @@ struct TextProcessingSettingsSection: View {
 		TextProcessingSettings.biasDecodingDefault
 	@AppStorage(TextProcessingSettings.Keys.wordCorrectionThreshold) private var wordCorrectionThreshold =
 		TextProcessingConfiguration.defaultWordCorrectionThreshold
+	@AppStorage(TextProcessingSettings.Keys.chineseScriptConversion) private var chineseScriptRaw =
+		ChineseScriptPreference.unchanged.rawValue
 
 	@State private var customWords: [String] = TextProcessingSettings.customWords()
 	@State private var newCustomWord = ""
@@ -78,6 +80,19 @@ struct TextProcessingSettingsSection: View {
 								TextProcessingSettings.parseList(newValue))
 						}
 				}
+			}
+
+			SettingRow(
+				"Chinese Output",
+				description: "Convert Chinese transcripts to Simplified or Traditional characters"
+			) {
+				Picker("Chinese Output", selection: $chineseScriptRaw) {
+					ForEach(ChineseScriptPreference.allCases) { preference in
+						Text(preference.displayName).tag(preference.rawValue)
+					}
+				}
+				.labelsHidden()
+				.frame(width: 150)
 			}
 		}
 	}

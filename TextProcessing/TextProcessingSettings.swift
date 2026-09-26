@@ -7,6 +7,7 @@ enum TextProcessingSettings {
 		static let wordCorrectionThreshold = "wordCorrectionThreshold"
 		static let fillerWordRemovalEnabled = "fillerWordRemovalEnabled"
 		static let customFillerWords = "customFillerWords"
+		static let chineseScriptConversion = "chineseScriptConversion"
 	}
 
 	static let biasDecodingDefault = true
@@ -23,6 +24,9 @@ enum TextProcessingSettings {
 		configuration.fillerWordRemovalEnabled =
 			defaults.object(forKey: Keys.fillerWordRemovalEnabled) as? Bool ?? true
 		configuration.customFillerWords = customFillerWords(from: defaults)
+		configuration.chineseScript =
+			defaults.string(forKey: Keys.chineseScriptConversion).flatMap(ChineseScriptPreference.init(rawValue:))
+			?? .unchanged
 		return configuration
 	}
 
