@@ -2531,6 +2531,29 @@
         }
       }
     },
+    "Can't Use This Script": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Skript kann nicht verwendet werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede usar este script"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'utiliser ce script"
+          }
+        }
+      }
+    },
     "Cancel": {
       "extractionState": "manual",
       "localizations": {
@@ -3125,6 +3148,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Précision nécessaire"
+          }
+        }
+      }
+    },
+    "Clean up the transcript with Apple Intelligence on this Mac before it is pasted. History keeps the original text.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bereinigt das Transkript vor dem Einfügen mit Apple Intelligence auf diesem Mac. Der Verlauf behält den Originaltext."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limpia la transcripción con Apple Intelligence en este Mac antes de pegarla. El historial conserva el texto original."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nettoie la transcription avec Apple Intelligence sur ce Mac avant de la coller. L'historique conserve le texte d'origine."
           }
         }
       }
@@ -7545,25 +7591,25 @@
         }
       }
     },
-    "Keep the audio so entries can be replayed or re-transcribed. Recordings stay on this Mac and are left out of Time Machine backups.": {
+    "Keep the audio so entries can be replayed or re-transcribed. History and recordings stay on this Mac and are left out of Time Machine backups.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Behält das Audio, damit Einträge erneut abgespielt oder transkribiert werden können. Aufnahmen bleiben auf diesem Mac und sind von Time-Machine-Backups ausgenommen."
+            "value": "Behält die Audiodaten, damit Einträge erneut abgespielt oder transkribiert werden können. Verlauf und Aufnahmen bleiben auf diesem Mac und sind von Time-Machine-Backups ausgeschlossen."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Guarda el audio para poder reproducir o volver a transcribir las entradas. Las grabaciones se quedan en este Mac y no se incluyen en las copias de Time Machine."
+            "value": "Guarda el audio para poder reproducir o volver a transcribir las entradas. El historial y las grabaciones se quedan en este Mac y se excluyen de las copias de Time Machine."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conserve l'audio pour pouvoir réécouter ou retranscrire les entrées. Les enregistrements restent sur ce Mac et sont exclus des sauvegardes Time Machine."
+            "value": "Conserve l'audio pour pouvoir réécouter ou retranscrire les entrées. L'historique et les enregistrements restent sur ce Mac et sont exclus des sauvegardes Time Machine."
           }
         }
       }
@@ -8074,25 +8120,25 @@
         }
       }
     },
-    "Lets Stream Deck, launchers and scripts control dictation. Links that start dictation, switch the model, open or copy from history, or add words must carry this Mac's private token, so web pages cannot open the mic or read your transcripts. Stop and cancel links always work.": {
+    "Lets Stream Deck, launchers and scripts control dictation. Links that start dictation, switch the model or language, open or copy from history, or add words must carry this Mac's private token, so web pages cannot open the mic or read your transcripts. Stop and cancel links always work.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ermöglicht Stream Deck, Launchern und Skripten, das Diktat zu steuern. Links, die das Diktat starten, das Modell wechseln, den Verlauf öffnen oder daraus kopieren oder Wörter hinzufügen, müssen das private Token dieses Macs enthalten, damit Webseiten weder das Mikrofon öffnen noch deine Transkripte lesen können. Links zum Stoppen und Abbrechen funktionieren immer."
+            "value": "Lässt Stream Deck, Launcher und Skripte das Diktat steuern. Links, die das Diktat starten, das Modell oder die Sprache wechseln, den Verlauf öffnen oder daraus kopieren oder Wörter hinzufügen, müssen das private Token dieses Macs enthalten, damit Webseiten weder das Mikrofon öffnen noch deine Transkripte lesen können. Links zum Stoppen und Abbrechen funktionieren immer."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permite que Stream Deck, lanzadores y scripts controlen el dictado. Los enlaces que inician el dictado, cambian el modelo, abren o copian del historial, o añaden palabras deben llevar el token privado de este Mac, para que ninguna página web pueda abrir el micrófono ni leer tus transcripciones. Los enlaces para detener y cancelar siempre funcionan."
+            "value": "Permite que Stream Deck, los lanzadores y los scripts controlen el dictado. Los enlaces que inician el dictado, cambian el modelo o el idioma, abren o copian del historial o añaden palabras deben llevar el token privado de este Mac, para que las páginas web no puedan abrir el micrófono ni leer tus transcripciones. Los enlaces para detener y cancelar siempre funcionan."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permet à Stream Deck, aux lanceurs et aux scripts de contrôler la dictée. Les liens qui démarrent la dictée, changent de modèle, ouvrent l'historique ou y copient, ou ajoutent des mots doivent contenir le jeton privé de ce Mac, afin qu'aucune page web ne puisse ouvrir le micro ni lire vos transcriptions. Les liens pour arrêter et annuler fonctionnent toujours."
+            "value": "Permet à Stream Deck, aux lanceurs et aux scripts de contrôler la dictée. Les liens qui démarrent la dictée, changent de modèle ou de langue, ouvrent ou copient l'historique ou ajoutent des mots doivent contenir le jeton privé de ce Mac, afin que les pages web ne puissent ni ouvrir le micro ni lire vos transcriptions. Les liens d'arrêt et d'annulation fonctionnent toujours."
           }
         }
       }
@@ -8392,6 +8438,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Charger maintenant"
+          }
+        }
+      }
+    },
+    "Load Release Notes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versionshinweise laden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargar notas de la versión"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charger les notes de version"
           }
         }
       }
@@ -10048,6 +10117,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun banc d'essai enregistré"
+          }
+        }
+      }
+    },
+    "No script chosen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Skript ausgewählt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ningún script elegido"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun script choisi"
           }
         }
       }
@@ -12122,25 +12214,25 @@
         }
       }
     },
-    "Receives the transcript as $1 and in WHISPERA_TRANSCRIPT": {
+    "Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Choose the script again after editing it.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Erhält das Transkript als $1 und in WHISPERA_TRANSCRIPT"
+            "value": "Erhält das Transkript über die Standardeingabe und in WHISPERA_TRANSCRIPT. Wähle das Skript nach jeder Änderung erneut aus."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recibe la transcripción como $1 y en WHISPERA_TRANSCRIPT"
+            "value": "Recibe la transcripción por la entrada estándar y en WHISPERA_TRANSCRIPT. Vuelve a elegir el script después de editarlo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reçoit la transcription en $1 et dans WHISPERA_TRANSCRIPT"
+            "value": "Reçoit la transcription sur l'entrée standard et dans WHISPERA_TRANSCRIPT. Choisissez de nouveau le script après l'avoir modifié."
           }
         }
       }
@@ -13295,6 +13387,29 @@
         }
       }
     },
+    "Runs a script you choose and passes it the transcript on standard input": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Führt ein von dir gewähltes Skript aus und übergibt ihm das Transkript über die Standardeingabe"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecuta un script que elijas y le pasa la transcripción por la entrada estándar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exécute un script de votre choix et lui transmet la transcription sur l'entrée standard"
+          }
+        }
+      }
+    },
     "Runs on this Mac. No API key and no network needed.": {
       "extractionState": "manual",
       "localizations": {
@@ -13314,29 +13429,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "S'exécute sur ce Mac. Ni clé d'API ni réseau nécessaires."
-          }
-        }
-      }
-    },
-    "Runs your script with the transcript as its first argument": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Führt dein Skript mit dem Transkript als erstem Argument aus"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ejecuta tu script con la transcripción como primer argumento"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Exécute votre script avec la transcription comme premier argument"
           }
         }
       }
@@ -13824,25 +13916,48 @@
         }
       }
     },
-    "Send the transcript to a language model to clean it up before it is pasted.": {
+    "Send each transcript to %@ to clean it up before it is pasted. %@ receives everything you dictate while this is on. History keeps the original text.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sendet das Transkript vor dem Einsetzen zur Bereinigung an ein Sprachmodell."
+            "value": "Sendet jedes Transkript an %1$@, um es vor dem Einfügen zu bereinigen. %2$@ erhält alles, was du diktierst, solange dies aktiviert ist. Der Verlauf behält den Originaltext."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Envía la transcripción a un modelo de lenguaje para pulirla antes de pegarla."
+            "value": "Envía cada transcripción a %1$@ para limpiarla antes de pegarla. %2$@ recibe todo lo que dictes mientras esto esté activado. El historial conserva el texto original."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Envoie la transcription à un modèle de langage pour la nettoyer avant de la coller."
+            "value": "Envoie chaque transcription à %1$@ pour la nettoyer avant de la coller. %2$@ reçoit tout ce que vous dictez tant que cette option est activée. L'historique conserve le texte d'origine."
+          }
+        }
+      }
+    },
+    "Send each transcript to the server at %@ to clean it up before it is pasted. History keeps the original text.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sendet jedes Transkript an den Server %@, um es vor dem Einfügen zu bereinigen. Der Verlauf behält den Originaltext."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envía cada transcripción al servidor %@ para limpiarla antes de pegarla. El historial conserva el texto original."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoie chaque transcription au serveur %@ pour la nettoyer avant de la coller. L'historique conserve le texte d'origine."
           }
         }
       }
@@ -17776,6 +17891,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Erreur de mise à jour"
+          }
+        }
+      }
+    },
+    "Update checks are off, so the release notes were not downloaded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Update-Prüfung ist aus, daher wurden die Versionshinweise nicht geladen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las comprobaciones de actualizaciones están desactivadas, así que no se descargaron las notas de la versión."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La recherche de mises à jour est désactivée, les notes de version n'ont donc pas été téléchargées."
           }
         }
       }
