@@ -439,6 +439,8 @@ struct SettingsView: View {
 						SettingRow("Auto Download") {
 							Toggle("", isOn: $autoDownloadModel)
 						}
+
+						CustomModelsSettingsView(whisperKit: whisperKit)
 					}
 					Divider()
 

@@ -82,6 +82,8 @@
 		D6DEVMGR12F0000000000002 /* AudioDeviceManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */; };
 		D6MEB956F9B6EBF33C9D4000 /* ComputeUnitPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF0A56AE07724B66CA000 /* ComputeUnitPreference.swift */; };
 		D6MEB9217152426587206000 /* ComputeUnitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEFECE03C19F60F0B7E000 /* ComputeUnitSettingsView.swift */; };
+		D6MEB5DB8C691ED640620000 /* CustomWhisperModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF6B2D5CD48FDD65B8000 /* CustomWhisperModel.swift */; };
+		D6MEB1E5B420CF5E87F21000 /* CustomModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6MEF4AA62C7C80EFE2CE000 /* CustomModelsSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -179,6 +181,8 @@
 		D6DEVMGR22F0000000000002 /* AudioDeviceManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManagerTests.swift; sourceTree = "<group>"; };
 		D6MEF0A56AE07724B66CA000 /* ComputeUnitPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputeUnitPreference.swift; sourceTree = "<group>"; };
 		D6MEFECE03C19F60F0B7E000 /* ComputeUnitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputeUnitSettingsView.swift; sourceTree = "<group>"; };
+		D6MEF6B2D5CD48FDD65B8000 /* CustomWhisperModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomWhisperModel.swift; sourceTree = "<group>"; };
+		D6MEF4AA62C7C80EFE2CE000 /* CustomModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomModelsSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -384,6 +388,8 @@
 		D6MDLENG2F30000000000000 /* ModelEngines */ = {
 			isa = PBXGroup;
 			children = (
+				D6MEF4AA62C7C80EFE2CE000 /* CustomModelsSettingsView.swift */,
+				D6MEF6B2D5CD48FDD65B8000 /* CustomWhisperModel.swift */,
 				D6MEFECE03C19F60F0B7E000 /* ComputeUnitSettingsView.swift */,
 				D6MEF0A56AE07724B66CA000 /* ComputeUnitPreference.swift */,
 			);
@@ -558,6 +564,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D6MEB1E5B420CF5E87F21000 /* CustomModelsSettingsView.swift in Sources */,
+				D6MEB5DB8C691ED640620000 /* CustomWhisperModel.swift in Sources */,
 				D6MEB9217152426587206000 /* ComputeUnitSettingsView.swift in Sources */,
 				D6MEB956F9B6EBF33C9D4000 /* ComputeUnitPreference.swift in Sources */,
 				D620E44D2E3C79C1006AF5E0 /* LogManager.swift in Sources */,

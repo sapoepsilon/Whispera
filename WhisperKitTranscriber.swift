@@ -461,7 +461,16 @@ import WhisperKit
 		// Sync our cache with what's actually on disk
 		await updateProgress(0.6, "Checking for existing models...")
 
-		if !downloadedModels.isEmpty {
+		if let last = lastUsedModel, downloadedModels.contains(last),
+			CustomWhisperModel.isCustomID(last)
+		{
+			await updateProgress(0.9, "Loading last used model...")
+			do {
+				try await autoLoadLastModel()
+			} catch {
+				AppLogger.shared.transcriber.log("Failed to load last used model \(last): \(error)")
+			}
+		} else if !downloadedModels.isEmpty {
 			await updateProgress(0.8, "Loading existing model...")
 			do {
 				whisperKit = try await Task { @MainActor in
@@ -1302,6 +1311,14 @@ import WhisperKit
 			try await refreshAvailableModels()
 		}
 
+		if CustomWhisperModel.isCustomID(model) {
+			guard CustomModelStore.shared.isAvailable(id: model) else {
+				throw WhisperKitError.modelNotFound(model)
+			}
+			try await loadModel(model)
+			return
+		}
+
 		guard availableModels.contains(model) else {
 			throw WhisperKitError.modelNotFound(model)
 		}
@@ -1349,7 +1366,7 @@ import WhisperKit
 		// Check if the models directory exists
 		guard FileManager.default.fileExists(atPath: baseDir.path) else {
 			AppLogger.shared.transcriber.log("WhisperKit models directory doesn't exist yet")
-			return Set<String>()
+			return additionalDownloadedModelIDs()
 		}
 
 		do {
@@ -1365,7 +1382,7 @@ import WhisperKit
 			}
 
 			let modelNames = Set(modelDirectories.map { $0.lastPathComponent })
-			return modelNames
+			return modelNames.union(additionalDownloadedModelIDs())
 
 		} catch {
 			AppLogger.shared.transcriber.log("Error reading WhisperKit models directory: \(error)")
@@ -1382,7 +1399,7 @@ import WhisperKit
 
 			// Remove duplicates using Set
 			let uniqueModels = Array(Set(fetchedModels)).sorted()
-			availableModels = uniqueModels
+			availableModels = uniqueModels + additionalAvailableModelIDs()
 
 			AppLogger.shared.transcriber.log(
 				"Refreshed available models: \(self.availableModels.count) unique models")
@@ -1390,10 +1407,11 @@ import WhisperKit
 			AppLogger.shared.transcriber.log(
 				"Failed to refresh available models, using defaults: \(error)")
 			// Fallback to defaults instead of throwing
-			availableModels = [
-				"openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small",
-				"openai_whisper-small.en",
-			]
+			availableModels =
+				[
+					"openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small",
+					"openai_whisper-small.en",
+				] + additionalAvailableModelIDs()
 		}
 	}
 
@@ -1499,12 +1517,7 @@ import WhisperKit
 
 			await updateLoadProgress(0.6, "Loading \(modelName)...")
 			whisperKit = try await Task { @MainActor in
-				let config = WhisperKitConfig(
-					model: modelName,
-					downloadBase: baseModelCacheDirectory,
-					computeOptions: getOptimizedComputeOptions(),
-					prewarm: true
-				)
+				let config = try whisperKitConfig(forModel: modelName)
 				let whisperKitInstance = try await WhisperKit(config)
 				self.setupModelStateCallback(for: whisperKitInstance)
 				return whisperKitInstance
@@ -1593,6 +1606,11 @@ import WhisperKit
 	// MARK: - Model Helpers
 
 	static func getModelDisplayName(for modelName: String) -> String {
+		if CustomWhisperModel.isCustomID(modelName) {
+			let name = CustomModelStore.shared.model(id: modelName)?.displayName
+				?? String(modelName.dropFirst(CustomWhisperModel.idPrefix.count))
+			return "Custom: \(name)"
+		}
 		let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
 
 		switch cleanName {
@@ -1614,6 +1632,7 @@ import WhisperKit
 	}
 
 	static func getModelPriority(for modelName: String) -> Int {
+		if CustomWhisperModel.isCustomID(modelName) { return 10 }
 		let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
 
 		switch cleanName {
@@ -1627,6 +1646,94 @@ import WhisperKit
 		case "distil-large-v2", "distil-large-v3": return 8
 		default: return 9
 		}
+	}
+
+	// MARK: - Model Sources
+
+	private func additionalDownloadedModelIDs() -> Set<String> {
+		Set(CustomModelStore.shared.availableModels.map(\.id))
+	}
+
+	private func additionalAvailableModelIDs() -> [String] {
+		CustomModelStore.shared.availableModels.map(\.id)
+	}
+
+	private func whisperKitConfig(forModel modelName: String) throws -> WhisperKitConfig {
+		if CustomWhisperModel.isCustomID(modelName) {
+			guard let custom = CustomModelStore.shared.model(id: modelName),
+				CustomModelStore.shared.isAvailable(id: modelName)
+			else {
+				throw WhisperKitError.modelNotFound(modelName)
+			}
+			return custom.whisperKitConfig(
+				downloadBase: baseModelCacheDirectory, computeOptions: getOptimizedComputeOptions())
+		}
+		return WhisperKitConfig(
+			model: modelName,
+			downloadBase: baseModelCacheDirectory,
+			computeOptions: getOptimizedComputeOptions(),
+			prewarm: true
+		)
+	}
+
+	func addCustomModel(fromHuggingFace repoInput: String, variant: String) async throws
+		-> CustomWhisperModel
+	{
+		guard let reference = HuggingFaceModelReference.parse(repoInput: repoInput, variant: variant)
+		else {
+			throw CustomModelError.invalidReference
+		}
+		guard !reference.isBuiltInRepository else { throw CustomModelError.builtInRepository }
+		guard !CustomModelStore.shared.containsHuggingFace(reference) else {
+			throw CustomModelError.alreadyAdded("\(reference.repo)/\(reference.variant)")
+		}
+		if let existingTask = modelOperationTask {
+			try await existingTask.value
+		}
+
+		isDownloadingModel = true
+		downloadingModelName = reference.variant
+		downloadProgress = 0.0
+		defer {
+			isDownloadingModel = false
+			downloadingModelName = nil
+			downloadProgress = 0.0
+		}
+
+		AppLogger.shared.transcriber.log(
+			"Downloading custom model \(reference.variant) from \(reference.repo)")
+		let folder = try await WhisperKit.download(
+			variant: reference.variant,
+			downloadBase: baseModelCacheDirectory,
+			from: reference.repo
+		) { progress in
+			Task { @MainActor in
+				self.downloadProgress = progress.fractionCompleted
+			}
+		}
+
+		let model = try CustomModelStore.shared.registerHuggingFaceModel(reference, folder: folder)
+		downloadedModels.insert(model.id)
+		try? await refreshAvailableModels()
+		return model
+	}
+
+	func importCustomModel(from folder: URL) async throws -> CustomWhisperModel {
+		let model = try await CustomModelStore.shared.importLocalFolder(folder)
+		downloadedModels.insert(model.id)
+		try? await refreshAvailableModels()
+		return model
+	}
+
+	func removeCustomModel(id: String) async throws {
+		if currentModel == id {
+			throw CustomModelError.inUse(Self.getModelDisplayName(for: id))
+		}
+		try CustomModelStore.shared.remove(id: id)
+		downloadedModels.remove(id)
+		availableModels.removeAll { $0 == id }
+		if selectedModel == id { selectedModel = nil }
+		if lastUsedModel == id { lastUsedModel = nil }
 	}
 
 	// MARK: - Model Management
