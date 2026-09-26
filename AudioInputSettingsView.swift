@@ -3,6 +3,7 @@ import SwiftUI
 /// Extra rows for the Microphone section of Settings.
 struct AudioInputSettingsRows: View {
 	var body: some View {
+		InputChannelSettingsRow()
 		VoiceActivitySettingsRows()
 		SettingRow(
 			"Mute Audio While Recording",
@@ -13,6 +14,38 @@ struct AudioInputSettingsRows: View {
 	}
 
 	@AppStorage(SystemOutputMuter.settingKey) private var muteOutputWhileRecording = false
+}
+
+struct InputChannelSettingsRow: View {
+	@AppStorage(InputChannelSelection.key) private var selectedChannel = InputChannelSelection
+		.mixAllChannels
+	@AppStorage("selectedAudioInputDeviceUID") private var deviceUID = AudioDeviceManager
+		.systemDefaultUID
+	@State private var deviceManager = AudioDeviceManager.shared
+
+	private var channelCount: Int {
+		_ = deviceManager.availableDevices
+		return deviceManager.inputChannelCount(forUID: deviceUID)
+	}
+
+	var body: some View {
+		let count = channelCount
+		if count > 1 {
+			SettingRow(
+				"Input Channel",
+				description: "Record a single channel of a multi-channel interface (dictation without live preview)"
+			) {
+				Picker("", selection: $selectedChannel) {
+					Text("All channels").tag(InputChannelSelection.mixAllChannels)
+					ForEach(1...count, id: \.self) { channel in
+						Text("Channel \(channel)").tag(channel)
+					}
+				}
+				.labelsHidden()
+				.frame(width: 140)
+			}
+		}
+	}
 }
 
 struct VoiceActivitySettingsRows: View {

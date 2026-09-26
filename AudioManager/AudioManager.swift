@@ -107,6 +107,8 @@ final class AudioManager: NSObject {
 	private var deviceActivationTask: Task<Void, Never>?
 	@ObservationIgnored
 	private var outputMuteTask: Task<Void, Never>?
+	@ObservationIgnored
+	private var inputChannelSelection = InputChannelSelection.mixAllChannels
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -337,6 +339,7 @@ extension AudioManager {
 	fileprivate func startStreamingRecording() {
 		AppLogger.shared.audioManager.info("Starting streaming recording")
 		audioBuffer.removeAll()
+		inputChannelSelection = InputChannelSelection.stored(in: .standard)
 		isMicrophoneInitializing = true
 
 		deviceActivationTask = Task {
@@ -388,7 +391,10 @@ extension AudioManager {
 
 		scheduleTimerReset()
 	}
-	fileprivate func processAudioBuffer(_ buffer: AVAudioPCMBuffer, originalFormat: AVAudioFormat) {
+	fileprivate func processAudioBuffer(_ inputBuffer: AVAudioPCMBuffer, originalFormat inputFormat: AVAudioFormat) {
+		let buffer = InputChannelSelection.isolate(inputBuffer, selected: inputChannelSelection)
+		let originalFormat = buffer === inputBuffer ? inputFormat : buffer.format
+
 		guard let targetFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1) else {
 			return
 		}

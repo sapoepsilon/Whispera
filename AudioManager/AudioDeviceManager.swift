@@ -201,6 +201,40 @@ final class AudioDeviceManager {
 		return device.id
 	}
 
+	/// Number of input channels the device exposes; `systemDefaultUID` means the
+	/// current default input. Returns 0 when the device is unknown.
+	func inputChannelCount(forUID uid: String) -> Int {
+		let deviceID: AudioDeviceID?
+		if uid == AudioDeviceManager.systemDefaultUID {
+			deviceID = getSystemDefaultInputDeviceID()
+		} else {
+			deviceID = availableDevices.first(where: { $0.uid == uid })?.id
+		}
+		guard let deviceID else { return 0 }
+		return Self.inputChannelCount(for: deviceID)
+	}
+
+	nonisolated static func inputChannelCount(for deviceID: AudioDeviceID) -> Int {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioDevicePropertyStreamConfiguration,
+			mScope: kAudioObjectPropertyScopeInput,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var size: UInt32 = 0
+		guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr, size > 0 else {
+			return 0
+		}
+
+		let raw = UnsafeMutableRawPointer.allocate(
+			byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+		defer { raw.deallocate() }
+		let bufferList = raw.assumingMemoryBound(to: AudioBufferList.self)
+		guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, bufferList) == noErr else {
+			return 0
+		}
+		return UnsafeMutableAudioBufferListPointer(bufferList).reduce(0) { $0 + Int($1.mNumberChannels) }
+	}
+
 	// MARK: - Private
 
 	private func applyPersistedSelection() {
