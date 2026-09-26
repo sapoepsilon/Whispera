@@ -28,7 +28,7 @@ enum HotkeyBackend: String, CaseIterable, Identifiable, Sendable {
 		case .carbon:
 			return String(
 				localized:
-					"Registers a system hotkey. The front app never sees the shortcut. Fn/Globe cannot be used."
+					"Registers the dictation shortcut as a system hotkey, so the front app never sees it. Fn/Globe cannot be used. The file shortcut is still only observed, so it keeps working in other apps."
 			)
 		}
 	}

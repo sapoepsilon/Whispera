@@ -187,6 +187,9 @@ class GlobalShortcutManager: ObservableObject {
 		)
 
 		if requestedBackend == .carbon {
+			// The secure input fallback may already hold this combination on its own Carbon center,
+			// which would make this registration fail with eventHotKeyExistsErr
+			stopSecureInputFallback()
 			do {
 				try CarbonHotKeyCenter.shared.register(
 					keyCode: textKeyCode, modifiers: textModifiers,
@@ -194,14 +197,13 @@ class GlobalShortcutManager: ObservableObject {
 				) { [weak self] in
 					self?.handleTextHotKey(isRepeat: false)
 				}
-				try CarbonHotKeyCenter.shared.register(keyCode: fileKeyCode, modifiers: fileModifiers) {
-					[weak self] in
-					self?.handleFileSelectionHotKey()
-				}
 				publishBackend(active: .carbon, message: nil)
-				// A registered system hotkey keeps working under secure input, so the fallback would only collide with it
+				// A fallback start queued by an earlier setup must not bring the monitor back
 				Task { @MainActor in SecureInputMonitor.shared.stop() }
-				logger.info("Registered system hotkeys for text and file selection shortcuts")
+				// The file shortcut (default Control-F) stays observed rather than registered: a
+				// system hotkey would swallow it in every app, breaking forward-char in text fields
+				installFileSelectionMonitors(modifiers: fileModifiers, keyCode: fileKeyCode)
+				logger.info("Registered the text shortcut as a system hotkey; file selection stays on event monitors")
 				return
 			} catch {
 				CarbonHotKeyCenter.shared.unregisterAll()
@@ -244,16 +246,6 @@ class GlobalShortcutManager: ObservableObject {
 			}
 		}
 
-		fileSelectionGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
-			[weak self] event in
-			if self?.matchesShortcut(
-				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
-			{
-				self?.logger.info("Global file selection shortcut detected (dedicated monitor)!")
-				self?.handleFileSelectionHotKey()
-			}
-		}
-
 		// Also set up local monitors as fallback (works when app is focused)
 		logger.info("Installing local monitors as fallback...")
 		localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) {
@@ -282,6 +274,25 @@ class GlobalShortcutManager: ObservableObject {
 			return event
 		}
 
+		installFileSelectionMonitors(modifiers: fileModifiers, keyCode: fileKeyCode)
+
+		logger.info(
+			"Monitors installed - Text Global: \(globalMonitor != nil), Text Local: \(localMonitor != nil)"
+		)
+		configureSecureInputFallback(modifiers: textModifiers, keyCode: textKeyCode)
+	}
+
+	private func installFileSelectionMonitors(modifiers fileModifiers: NSEvent.ModifierFlags, keyCode fileKeyCode: UInt16) {
+		fileSelectionGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
+			[weak self] event in
+			if self?.matchesShortcut(
+				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
+			{
+				self?.logger.info("Global file selection shortcut detected (dedicated monitor)!")
+				self?.handleFileSelectionHotKey()
+			}
+		}
+
 		fileSelectionLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
 			[weak self] event in
 			if self?.matchesShortcut(
@@ -293,15 +304,17 @@ class GlobalShortcutManager: ObservableObject {
 			}
 			return event
 		}
-
-		logger.info(
-			"Monitors installed - Text Global: \(globalMonitor != nil), Text Local: \(localMonitor != nil)"
-		)
 		logger.info(
 			"File monitors installed - File Global: \(fileSelectionGlobalMonitor != nil), File Local: \(fileSelectionLocalMonitor != nil)"
 		)
+	}
 
-		configureSecureInputFallback(modifiers: textModifiers, keyCode: textKeyCode)
+	private func stopSecureInputFallback() {
+		if Thread.isMainThread {
+			MainActor.assumeIsolated { SecureInputMonitor.shared.stop() }
+		} else {
+			DispatchQueue.main.sync { MainActor.assumeIsolated { SecureInputMonitor.shared.stop() } }
+		}
 	}
 
 	private func configureSecureInputFallback(modifiers: NSEvent.ModifierFlags, keyCode: UInt16) {
