@@ -371,11 +371,7 @@ struct LiveSessionTextTests {
 
 // MARK: - Re-transcription with real WhisperKit
 
-// Opt-in (TEST_RUNNER_WHISPERA_WHISPERKIT_TESTS=1): an ad-hoc signed test host opening the
-// installed app's model files can block in open() on a macOS data-access consent prompt.
-private let runsWhisperKitTests =
-	ProcessInfo.processInfo.environment["WHISPERA_WHISPERKIT_TESTS"] == "1"
-
+// Uses whichever model the app already downloaded; the shared transcriber loads it on demand.
 private let hasDownloadedModel: Bool = {
 	let models = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
 		.appendingPathComponent("Whispera/models/argmaxinc/whisperkit-coreml")
@@ -385,7 +381,7 @@ private let hasDownloadedModel: Bool = {
 
 @MainActor
 struct HistoryRetranscriptionTests {
-	@Test(.enabled(if: runsWhisperKitTests && hasDownloadedModel), .timeLimit(.minutes(10)))
+	@Test(.enabled(if: hasDownloadedModel), .timeLimit(.minutes(10)))
 	func retranscribesSavedRecordingWithWhisperKit() async throws {
 		let directory = makeTempDirectory()
 		let spoken = directory.appendingPathComponent("spoken.wav")
