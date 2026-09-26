@@ -181,12 +181,13 @@ enum WhisperaCLI {
 		write(string)
 	}
 
+	// The legacy write(_:) raises an Objective-C exception when the reader has closed the pipe
 	private static func write(_ text: String) {
-		FileHandle.standardOutput.write(Data((text + "\n").utf8))
+		try? FileHandle.standardOutput.write(contentsOf: Data((text + "\n").utf8))
 	}
 
 	private static func writeError(_ text: String) {
-		FileHandle.standardError.write(Data((text + "\n").utf8))
+		try? FileHandle.standardError.write(contentsOf: Data((text + "\n").utf8))
 	}
 }
 

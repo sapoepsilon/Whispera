@@ -19,7 +19,7 @@ class LogManager {
 	private let fileManager = FileManager.default
 	private let maxLogFileSize: Int64 = 10 * 1024 * 1024  // 10MB
 
-	private var logFileHandle: FileHandle?
+	private let fileWriter = LogFileWriter()
 	private let logQueue = DispatchQueue(label: "com.whispera.logging", qos: .utility)
 
 	var logsDirectory: URL? {
@@ -67,6 +67,8 @@ class LogManager {
 						logFile.deletingPathExtension().lastPathComponent
 						+ "-\(Date().timeIntervalSince1970).log"
 					let archiveURL = logFile.deletingLastPathComponent().appendingPathComponent(archiveName)
+					// The open handle would keep appending to the archived file
+					fileWriter.close()
 					try fileManager.moveItem(at: logFile, to: archiveURL)
 				}
 			}
@@ -97,27 +99,7 @@ class LogManager {
 				let data = logEntry.data(using: .utf8)
 			else { return }
 
-			do {
-				if !self.fileManager.fileExists(atPath: logFile.path) {
-					self.fileManager.createFile(atPath: logFile.path, contents: nil)
-				}
-
-				if self.logFileHandle == nil {
-					self.logFileHandle = try FileHandle(forWritingTo: logFile)
-					try self.logFileHandle?.seekToEnd()
-				}
-
-				// The throwing variant: the legacy write(_:) raises an uncatchable exception when the disk is full
-				try self.logFileHandle?.write(contentsOf: data)
-
-				#if DEBUG
-					// Force flush in debug mode for immediate visibility
-					self.logFileHandle?.synchronizeFile()
-				#endif
-			} catch {
-				print("Failed to write log: \(error)")
-				self.logFileHandle = nil
-			}
+			self.fileWriter.append(data, to: logFile)
 		}
 	}
 
@@ -133,8 +115,7 @@ class LogManager {
 
 	func closeLogFile() {
 		logQueue.sync {
-			logFileHandle?.closeFile()
-			logFileHandle = nil
+			fileWriter.close()
 		}
 	}
 
@@ -241,9 +222,9 @@ class LogManager {
 					FileManager.default.createFile(atPath: logFile.path, contents: nil)
 				}
 				let handle = try FileHandle(forWritingTo: logFile)
+				defer { try? handle.close() }
 				try handle.seekToEnd()
 				try handle.write(contentsOf: data)
-				handle.closeFile()
 			} catch {
 			}
 		}
@@ -251,5 +232,86 @@ class LogManager {
 
 	deinit {
 		closeLogFile()
+	}
+}
+
+/// Appends log lines to a file without ever taking the app down. The legacy FileHandle
+/// methods raise Objective-C exceptions on errors such as a full disk, so only the throwing
+/// APIs are used; after a failure lines are dropped for `backoff` seconds instead of retrying
+/// (and failing) on every log call.
+final class LogFileWriter {
+	typealias HandleOpener = (URL) throws -> FileHandle
+
+	private let openHandle: HandleOpener
+	private let backoff: TimeInterval
+	private let now: () -> Date
+	private let fileManager = FileManager.default
+	private var handle: FileHandle?
+	private var handleURL: URL?
+	private(set) var suspendedUntil: Date?
+	private(set) var droppedLines = 0
+
+	init(
+		backoff: TimeInterval = 60,
+		now: @escaping () -> Date = Date.init,
+		openHandle: @escaping HandleOpener = { try FileHandle(forWritingTo: $0) }
+	) {
+		self.backoff = backoff
+		self.now = now
+		self.openHandle = openHandle
+	}
+
+	/// Returns false when the line was dropped.
+	@discardableResult
+	func append(_ data: Data, to url: URL) -> Bool {
+		if let suspendedUntil, now() < suspendedUntil {
+			droppedLines += 1
+			return false
+		}
+		do {
+			if handle == nil || handleURL != url {
+				close()
+				if !fileManager.fileExists(atPath: url.path),
+					!fileManager.createFile(atPath: url.path, contents: nil)
+				{
+					throw CocoaError(.fileWriteUnknown)
+				}
+				let opened = try openHandle(url)
+				handle = opened
+				handleURL = url
+				try opened.seekToEnd()
+			}
+			try handle?.write(contentsOf: data)
+			#if DEBUG
+				try handle?.synchronize()
+			#endif
+			if suspendedUntil != nil {
+				let dropped = droppedLines
+				suspendedUntil = nil
+				droppedLines = 0
+				appendNotice("[LogManager] Log writing resumed; \(dropped) line(s) were dropped\n")
+			}
+			return true
+		} catch {
+			// Logging through AppLogger here would recurse into this writer
+			if suspendedUntil == nil {
+				fputs("Whispera: log writing paused for \(Int(backoff)) s: \(error.localizedDescription)\n", stderr)
+			}
+			close()
+			droppedLines += 1
+			suspendedUntil = now().addingTimeInterval(backoff)
+			return false
+		}
+	}
+
+	func close() {
+		try? handle?.close()
+		handle = nil
+		handleURL = nil
+	}
+
+	private func appendNotice(_ notice: String) {
+		guard let data = notice.data(using: .utf8) else { return }
+		try? handle?.write(contentsOf: data)
 	}
 }
