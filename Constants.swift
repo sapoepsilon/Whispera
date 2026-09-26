@@ -153,6 +153,8 @@ struct Constants {
 	// Shared by every @AppStorage("enableStreaming") fallback and the first-launch
 	// defaults: divergent inline copies of this literal caused duplicate recording windows.
 	public static let enableStreamingDefault = true
+	// Same reason: Settings showed keyboard detection on while recording treated it as off
+	public static let autoDetectLanguageFromKeyboardDefault = false
 
 	// Helper to get sorted language names for UI
 	public static var sortedLanguageNames: [String] {

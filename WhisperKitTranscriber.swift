@@ -28,6 +28,9 @@ import WhisperKit
 	var currentText: String = ""
 	var dictationWordTracker: DictationWordTracker?
 	@ObservationIgnored private var lastLiveSession: (text: String, samples: [Float]) = (text: "", samples: [])
+	@ObservationIgnored private var liveDetectedLanguage: String?
+	/// Where the text pipeline reads its settings; tests point it at an isolated suite.
+	@ObservationIgnored var textProcessingDefaults: UserDefaults = .standard
 	// Live text management
 	private var isLiveTranscriptionMode = false
 	private var lastConfirmedSegmentCount: Int = 0
@@ -236,17 +239,17 @@ import WhisperKit
 		keyUpEvent?.post(tap: .cghidEventTap)
 	}
 
-	private func confirmPendingText() {
-		guard !pendingText.isEmpty else { return }
+	private func confirmPendingText(_ text: String) {
+		pendingText = ""
+		guard !text.isEmpty else { return }
 
 		// Sync all display properties before confirming to prevent double transcription
-		stableDisplayText = pendingText
-		lastDisplayedPendingText = pendingText
+		stableDisplayText = text
+		lastDisplayedPendingText = text
 
-		// Since WhisperKit provides complete transcription history in pendingText,
-		// we replace confirmedText entirely rather than appending
-		confirmedText = pendingText
-		pendingText = ""
+		// pendingText can hold the whole window decoded so far (including segments already
+		// confirmed), so confirmedText is replaced and DictationWordTracker types only the new suffix
+		confirmedText = text
 	}
 
 	private var selectedLanguage: String {
@@ -419,6 +422,11 @@ import WhisperKit
 	@ObservationIgnored private var lastObservedUnloadTimeout: ModelUnloadTimeout?
 	@ObservationIgnored private var settingsObserver: DefaultsKeyObserver?
 	private(set) var isIdleUnloaded = false
+	/// Model and compute-unit combinations already prewarmed in this process. CoreML keeps the
+	/// specialized model cached, so a reload after idle unload can skip the prewarm pass.
+	@ObservationIgnored private var prewarmedModelKeys: Set<String> = []
+
+	var hasLoadedEngine: Bool { whisperKit != nil || parakeetEngine != nil }
 
 	// Swift 6 compliant singleton pattern
 	static let shared: WhisperKitTranscriber = {
@@ -601,6 +609,7 @@ import WhisperKit
 				isTranscribing = true
 				isLiveTranscriptionMode = true
 				lastConfirmedSegmentCount = 0
+				liveDetectedLanguage = nil
 
 				await AudioDeviceManager.shared.activateSelectedDevice()
 				let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
@@ -649,24 +658,34 @@ import WhisperKit
 	}
 
 	func stopLiveStream() {
+		let wasLive = isLiveTranscriptionMode
+		let finalPendingText = wasLive ? processLiveText(pendingText) : ""
+		let fallbackSessionText = Self.liveSessionText(confirmed: confirmedText, pending: finalPendingText)
+		// A long session is tens of MB of samples, so they are copied only when history keeps them.
+		let keepsAudio = wasLive && HistorySettings(defaults: .standard).keepsAudio
+		let sessionSamples = keepsAudio ? Array(whisperKit?.audioProcessor.audioSamples ?? []) : []
+
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
 		isWaitingForModel = false
 		waitingForModelStatusText = ""
 		isTranscribing = false
 		shouldShowLiveTranscriptionWindow = false
-		if isLiveTranscriptionMode {
-			// A long session is tens of MB of samples, so they are copied only when history keeps them.
-			let keepsAudio = HistorySettings(defaults: .standard).keepsAudio
-			lastLiveSession = (
-				text: Self.liveSessionText(confirmed: confirmedText, pending: pendingText),
-				samples: keepsAudio ? Array(whisperKit?.audioProcessor.audioSamples ?? []) : []
-			)
-		}
 		whisperKit?.audioProcessor.stopRecording()
 		AudioDeviceManager.shared.restoreSystemDefault()
 
-		confirmPendingText()
+		confirmPendingText(finalPendingText)
+		if wasLive {
+			// What the tracker typed is exactly what reached the focused app
+			let typedText = dictationWordTracker?.typedText ?? ""
+			lastLiveSession = (
+				text: typedText.isEmpty ? fallbackSessionText : typedText,
+				samples: sessionSamples
+			)
+			if !typedText.isEmpty {
+				TextInserter.shared.submitAfterLiveSession()
+			}
+		}
 		isLiveTranscriptionMode = false
 		dictationWordTracker?.endSession()
 		transcriptionTask?.cancel()
@@ -689,6 +708,69 @@ import WhisperKit
 	}
 
 	nonisolated static let liveWaitingPlaceholder = "Waiting for speech..."
+
+	/// Segments held back as pending because Whisper may still revise them.
+	nonisolated static let liveSegmentsHeldBack = 2
+	/// How much of the newest live audio the VAD looks at before re-running the model.
+	nonisolated static let liveVADWindowSamples = WhisperKit.sampleRate * 3
+
+	struct LiveSegmentConfirmation: Equatable {
+		/// Processed text of the newly confirmed segments, empty when nothing new is typed.
+		var confirmedAddition: String
+		var confirmedSegmentCount: Int
+		var pendingText: String
+	}
+
+	/// Confirms every segment except the last `holdBack`, running the text pipeline over each
+	/// newly confirmed chunk only. confirmedText therefore only ever grows by appending, which
+	/// DictationWordTracker relies on to type just the new words.
+	nonisolated static func confirmLiveSegments(
+		_ segmentTexts: [String], alreadyConfirmed: Int, holdBack: Int = liveSegmentsHeldBack,
+		process: (String) -> String
+	) -> LiveSegmentConfirmation {
+		let texts = segmentTexts.map { $0.trimmingCharacters(in: .whitespaces) }
+		guard texts.count > holdBack else {
+			return LiveSegmentConfirmation(
+				confirmedAddition: "", confirmedSegmentCount: alreadyConfirmed,
+				pendingText: texts.joined(separator: " "))
+		}
+		let confirmable = texts.count - holdBack
+		let pendingText = texts.suffix(holdBack).joined(separator: " ")
+		guard confirmable > alreadyConfirmed else {
+			return LiveSegmentConfirmation(
+				confirmedAddition: "", confirmedSegmentCount: alreadyConfirmed, pendingText: pendingText)
+		}
+		let rawAddition = texts[alreadyConfirmed..<confirmable].joined(separator: " ")
+		guard !rawAddition.trimmingCharacters(in: .whitespaces).isEmpty else {
+			return LiveSegmentConfirmation(
+				confirmedAddition: "", confirmedSegmentCount: alreadyConfirmed, pendingText: pendingText)
+		}
+		// A chunk made only of filler words is consumed without typing anything
+		return LiveSegmentConfirmation(
+			confirmedAddition: process(rawAddition), confirmedSegmentCount: confirmable,
+			pendingText: pendingText)
+	}
+
+	nonisolated static func appendingConfirmed(_ addition: String, to confirmed: String) -> String {
+		confirmed.isEmpty ? addition : confirmed + " " + addition
+	}
+
+	nonisolated static func liveChunkHasSpeech(_ samples: [Float], settings: VoiceActivitySettings) -> Bool {
+		guard settings.enabled else { return true }
+		if case .speech = VoiceActivityTrimmer(sensitivity: settings.sensitivity).process(samples) {
+			return true
+		}
+		return false
+	}
+
+	/// Runs the text pipeline over live text, dropping the waiting placeholder.
+	private func processLiveText(_ text: String) -> String {
+		let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !trimmed.isEmpty, trimmed != Self.liveWaitingPlaceholder else { return "" }
+		return processTranscriptText(
+			trimmed, detectedLanguage: liveDetectedLanguage,
+			enableTranslation: decodingOptions?.task == .translate)
+	}
 
 
 	/// Stops live dictation without committing the pending (unconfirmed) text.
@@ -754,12 +836,27 @@ import WhisperKit
 			return
 		}
 
+		// Mirrors WhisperKit's own stream VAD: re-transcribing silence only yields hallucinated text
+		let recentSamples = Array(currentBuffer[lastBufferSize...].suffix(Self.liveVADWindowSamples))
+		guard Self.liveChunkHasSpeech(recentSamples, settings: VoiceActivitySettings(defaults: .standard))
+		else {
+			if pendingText.isEmpty && confirmedText.isEmpty {
+				pendingText = Self.liveWaitingPlaceholder
+				shouldShowLiveTranscriptionWindow = true
+			}
+			try await Task.sleep(nanoseconds: 100_000_000)
+			return
+		}
+
 		lastBufferSize = currentBuffer.count
 		let transcription = try await transcribeAudioSamples(Array(currentBuffer))
 
 		await MainActor.run {
 			guard let segments = transcription?.segments, !segments.isEmpty else {
 				return
+			}
+			if let language = transcription?.language, !language.isEmpty {
+				liveDetectedLanguage = language
 			}
 
 			let fullTranscriptionText =
@@ -773,70 +870,26 @@ import WhisperKit
 			AppLogger.shared.transcriber.debug(
 				"Current state: confirmedText.count=\(confirmedText.count), pendingText='\(pendingText)'")
 
-			let requiredSegmentsForConfirmation = 2
+			let confirmation = Self.confirmLiveSegments(
+				segments.map(\.text), alreadyConfirmed: lastConfirmedSegmentCount,
+				process: { self.processLiveText($0) })
+			if confirmation.confirmedSegmentCount != lastConfirmedSegmentCount {
+				AppLogger.shared.transcriber.debug(
+					"Confirmed segments \(lastConfirmedSegmentCount)..<\(confirmation.confirmedSegmentCount), text: '\(confirmation.confirmedAddition)'"
+				)
+			}
+			lastConfirmedSegmentCount = confirmation.confirmedSegmentCount
+			if !confirmation.confirmedAddition.isEmpty {
+				confirmedText = Self.appendingConfirmed(confirmation.confirmedAddition, to: confirmedText)
+			}
 
-			if segments.count > requiredSegmentsForConfirmation {
-				let numberOfSegmentsToConfirm = segments.count - requiredSegmentsForConfirmation
+			// Always update internal pendingText for logic
+			pendingText = confirmation.pendingText
 
-				// Only confirm new segments that haven't been confirmed before
-				if numberOfSegmentsToConfirm > lastConfirmedSegmentCount {
-					let newSegmentsToConfirm = numberOfSegmentsToConfirm - lastConfirmedSegmentCount
-					let startIndex = lastConfirmedSegmentCount
-					let endIndex = lastConfirmedSegmentCount + newSegmentsToConfirm
-
-					let newConfirmedSegments = Array(segments[startIndex..<endIndex])
-
-					let newConfirmedText =
-						newConfirmedSegments
-						.map { $0.text.trimmingCharacters(in: .whitespaces) }
-						.joined(separator: " ")
-
-					AppLogger.shared.transcriber.debug("New segments to confirm: \(newSegmentsToConfirm), text: '\(newConfirmedText)'")
-
-					if !newConfirmedText.isEmpty {
-						let updatedConfirmedText: String
-						if !confirmedText.isEmpty {
-							updatedConfirmedText = confirmedText + " " + newConfirmedText
-						} else {
-							updatedConfirmedText = newConfirmedText
-						}
-						confirmedText = updatedConfirmedText
-						lastConfirmedSegmentCount = numberOfSegmentsToConfirm
-					}
-				} else {
-					AppLogger.shared.transcriber.debug(
-						"No new segments to confirm (already confirmed \(lastConfirmedSegmentCount) segments)"
-					)
-				}
-				let remainingSegments = Array(segments.suffix(requiredSegmentsForConfirmation))
-
-				let newPendingText =
-					remainingSegments
-					.map { $0.text.trimmingCharacters(in: .whitespaces) }
-					.joined(separator: " ")
-
-				// Always update internal pendingText for logic
-				pendingText = newPendingText
-
-				// Only update UI-facing property if text has changed meaningfully
-				if shouldUpdatePendingText(newText: newPendingText) {
-					stableDisplayText = newPendingText
-					lastDisplayedPendingText = newPendingText
-				}
-			} else {
-				let newPendingText =
-					segments
-					.map { $0.text.trimmingCharacters(in: .whitespaces) }
-					.joined(separator: " ")
-
-				// Always update internal pendingText for logic
-				pendingText = newPendingText
-
-				// Only update UI-facing property if text has changed meaningfully
-				if shouldUpdatePendingText(newText: newPendingText) {
-					stableDisplayText = newPendingText
-					lastDisplayedPendingText = newPendingText
-				}
+			// Only update UI-facing property if text has changed meaningfully
+			if shouldUpdatePendingText(newText: confirmation.pendingText) {
+				stableDisplayText = confirmation.pendingText
+				lastDisplayedPendingText = confirmation.pendingText
 			}
 
 			shouldShowLiveTranscriptionWindow = !stableDisplayText.isEmpty || !confirmedText.isEmpty
@@ -981,10 +1034,11 @@ import WhisperKit
 		return tokens.isEmpty ? nil : tokens
 	}
 
-	private func processTranscriptText(
+	func processTranscriptText(
 		_ text: String, detectedLanguage: String?, enableTranslation: Bool
 	) -> String {
-		let configuration = TextProcessingSettings.configuration()
+		guard !text.isEmpty else { return text }
+		let configuration = TextProcessingSettings.configuration(from: textProcessingDefaults)
 		let evidence = TranscriptTextProcessor.languageEvidence(
 			selectedLanguageCode: Constants.decodingLanguageCode(for: selectedLanguage),
 			translating: enableTranslation,
@@ -1177,11 +1231,11 @@ import WhisperKit
 						return transcription
 					} else {
 						AppLogger.shared.transcriber.log("Transcription returned empty text")
-						return "No speech detected"
+						return ""
 					}
 				} else {
 					AppLogger.shared.transcriber.log("No transcription segments returned")
-					return "No speech detected"
+					return ""
 				}
 
 			} catch {
@@ -1239,7 +1293,7 @@ import WhisperKit
 								return transcription
 							}
 						}
-						return "No speech detected"
+						return ""
 					} catch {
 						AppLogger.shared.transcriber.log(
 							"Fallback transcription also failed: \(error)")
@@ -1313,7 +1367,7 @@ import WhisperKit
 	func transcribeAudioArray(_ audioArray: [Float], enableTranslation: Bool) async throws -> String {
 		guard !audioArray.isEmpty else {
 			AppLogger.shared.transcriber.log("Empty audio array provided")
-			return "No audio data provided"
+			return ""
 		}
 
 		AppLogger.shared.transcriber.log(
@@ -1350,7 +1404,13 @@ import WhisperKit
 			let transcript = try await engine.transcribe(fileURL: url)
 			AppLogger.shared.transcriber.log(
 				"Parakeet file transcription completed with \(transcript.segments.count) segments")
-			return transcript.segments
+			return transcript.segments.compactMap { segment in
+				let text = processTranscriptText(
+					segment.text.trimmingCharacters(in: .whitespacesAndNewlines),
+					detectedLanguage: nil, enableTranslation: false)
+				guard !text.isEmpty else { return nil }
+				return TranscriptionSegment(text: text, startTime: segment.startTime, endTime: segment.endTime)
+			}
 		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
@@ -1413,7 +1473,9 @@ import WhisperKit
 		if let engine = parakeetEngine {
 			let samples = try AudioProcessor.loadAudioAsFloatArray(
 				fromPath: url.path, startTime: startTime, endTime: endTime)
-			let text = try await engine.transcribe(samples: samples).text
+			let text = processTranscriptText(
+				try await engine.transcribe(samples: samples).text, detectedLanguage: nil,
+				enableTranslation: false)
 			return text.isEmpty ? "No speech detected in segment" : text
 		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
@@ -1715,6 +1777,7 @@ import WhisperKit
 	private func loadModel(_ modelName: String) async throws {
 		if let parakeet = ParakeetModel(rawValue: modelName) {
 			try await loadParakeetModel(parakeet)
+			scheduleIdleUnload()
 			return
 		}
 		isModelLoading = true
@@ -1730,7 +1793,15 @@ import WhisperKit
 			unloadParakeetEngine()
 			whisperKit = try await Task { @MainActor in
 				let config = try whisperKitConfig(forModel: modelName)
+				let prewarmKey = Self.prewarmKey(model: modelName, computeOptions: config.computeOptions)
+				if prewarmedModelKeys.contains(prewarmKey) {
+					// Without prewarm WhisperKit only loads when told to (modelFolder is nil here),
+					// and an unloaded model never reports ready
+					config.prewarm = false
+					config.load = true
+				}
 				let whisperKitInstance = try await WhisperKit(config)
+				prewarmedModelKeys.insert(prewarmKey)
 				self.setupModelStateCallback(for: whisperKitInstance)
 				return whisperKitInstance
 			}.value
@@ -1760,6 +1831,14 @@ import WhisperKit
 		isModelLoading = false
 		loadProgress = 0.0
 		scheduleIdleUnload()
+	}
+
+	nonisolated static func prewarmKey(model: String, computeOptions: ModelComputeOptions?) -> String {
+		guard let options = computeOptions else { return "\(model)|default" }
+		let units = [
+			options.melCompute, options.audioEncoderCompute, options.textDecoderCompute, options.prefillCompute,
+		]
+		return "\(model)|" + units.map { String($0.rawValue) }.joined(separator: ",")
 	}
 
 	private func loadModelCoalesced(_ modelName: String) async throws {
@@ -1792,7 +1871,7 @@ import WhisperKit
 	/// Starts loading a model that was released by the idle timer, so it is ready by the
 	/// time a recording stops.
 	func preloadModelIfIdleUnloaded() {
-		guard isIdleUnloaded, whisperKit == nil, pendingLoadTask == nil else { return }
+		guard isIdleUnloaded, !hasLoadedEngine, pendingLoadTask == nil else { return }
 		AppLogger.shared.transcriber.info("Reloading model released by the idle timer")
 		Task { @MainActor in
 			do {
@@ -1810,7 +1889,7 @@ import WhisperKit
 	/// Names every condition currently keeping the model from being unloaded.
 	var idleUnloadBlockers: [String] {
 		var blockers: [String] = []
-		if whisperKit == nil { blockers.append("no model loaded") }
+		if !hasLoadedEngine { blockers.append("no model loaded") }
 		if activeModelUses > 0 { blockers.append("\(activeModelUses) active model uses") }
 		if isLiveTranscriptionMode { blockers.append("live transcription") }
 		if modelOperationTask != nil { blockers.append("model operation running") }
@@ -1826,14 +1905,14 @@ import WhisperKit
 			idleUnloadTimer.cancel()
 			return
 		}
-		guard activeModelUses == 0, whisperKit != nil else { return }
+		guard activeModelUses == 0, hasLoadedEngine else { return }
 		idleUnloadTimer.schedule(after: interval) { [weak self] in
 			await self?.unloadModelIfIdle()
 		}
 	}
 
 	private func unloadModelIfIdle() async {
-		guard whisperKit != nil, activeModelUses == 0, !isLiveTranscriptionMode else { return }
+		guard hasLoadedEngine, activeModelUses == 0, !isLiveTranscriptionMode else { return }
 		guard canUnloadModel else {
 			// A model operation or load is still settling; try again once it has.
 			idleUnloadTimer.schedule(after: 2) { [weak self] in
@@ -1847,11 +1926,21 @@ import WhisperKit
 
 	/// Releases the loaded model's memory. The next transcription reloads it on demand.
 	func unloadModel() async {
-		guard canUnloadModel, let instance = whisperKit else {
+		guard canUnloadModel else {
 			AppLogger.shared.transcriber.info("Model unload skipped: model busy or not loaded")
 			return
 		}
 		idleUnloadTimer.cancel()
+		if parakeetEngine != nil {
+			unloadParakeetEngine()
+			isIdleUnloaded = true
+			isModelLoaded = false
+			publishEngineState(from: modelState, to: "unloaded")
+			AppLogger.shared.transcriber.info(
+				"Unloaded model \(currentModel ?? "unknown"); it will reload on next use")
+			return
+		}
+		guard let instance = whisperKit else { return }
 		// Detach first so a transcription that starts during the unload loads a fresh
 		// instance instead of reusing one whose models are being torn down.
 		instance.modelStateCallback = nil
@@ -2013,6 +2102,7 @@ import WhisperKit
 			selectedModel = model.rawValue
 			lastUsedModel = model.rawValue
 			isModelLoaded = true
+			isIdleUnloaded = false
 			publishEngineState(from: "loading", to: "loaded")
 			AppLogger.shared.transcriber.log("Loaded Parakeet model \(model.rawValue) via FluidAudio")
 		} catch {
@@ -2060,13 +2150,15 @@ import WhisperKit
 			case .audioArray(let samples):
 				transcript = try await engine.transcribe(samples: samples)
 			}
-			guard !transcript.text.isEmpty else {
+			// Parakeet reports no language, so the pipeline relies on the selected language or text detection
+			let text = processTranscriptText(transcript.text, detectedLanguage: nil, enableTranslation: false)
+			guard !text.isEmpty else {
 				AppLogger.shared.transcriber.log("\(engine.modelID) returned empty text")
-				return "No speech detected"
+				return ""
 			}
 			AppLogger.shared.transcriber.info(
-				"\(engine.modelID) \(logPrefix) transcription completed (\(ExtendedLogger.redactedSummary(transcript.text)))")
-			return transcript.text
+				"\(engine.modelID) \(logPrefix) transcription completed (\(ExtendedLogger.redactedSummary(text)))")
+			return text
 		} catch {
 			AppLogger.shared.transcriber.error("\(engine.modelID) transcription failed: \(error)")
 			throw WhisperKitError.transcriptionFailed(error.localizedDescription)

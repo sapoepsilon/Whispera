@@ -112,11 +112,14 @@ enum CLIDecodingSettings {
 	static func resolveLanguage(_ input: String?, defaults: UserDefaults) -> LanguageChoice? {
 		guard let input else {
 			let stored = defaults.string(forKey: "selectedLanguage") ?? Constants.defaultLanguageName
-			return .code(Constants.languageCode(for: stored))
+			return choice(forLanguageName: stored)
 		}
-		if input.lowercased() == "auto" { return .detect }
 		guard let name = RemoteCommand.resolveLanguageName(input) else { return nil }
-		return .code(Constants.languageCode(for: name))
+		return choice(forLanguageName: name)
+	}
+
+	private static func choice(forLanguageName name: String) -> LanguageChoice {
+		Constants.decodingLanguageCode(for: name).map(LanguageChoice.code) ?? .detect
 	}
 }
 

@@ -152,6 +152,11 @@ struct TextInsertionSettings: Equatable, Sendable {
 		autoSubmit && context == .finalTranscript && effectiveMethod(for: context) != .copyOnly
 	}
 
+	// Live segments always insert (see effectiveMethod), so only the toggle matters
+	var shouldAutoSubmitAfterLiveSession: Bool {
+		autoSubmit
+	}
+
 	// Live dictation must land in the focused app as it streams, so non-inserting methods fall back to Cmd-V
 	func effectiveMethod(for context: InsertionContext) -> PasteMethod {
 		switch (context, pasteMethod) {

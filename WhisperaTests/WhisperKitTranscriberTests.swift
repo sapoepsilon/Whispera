@@ -71,8 +71,7 @@ final class WhisperKitTranscriberTests: XCTestCase {
 		// When & Then
 		let result = try await transcriber.transcribeAudioArray(
 			emptyAudioArray, enableTranslation: false)
-		XCTAssertEqual(
-			result, "No audio data provided", "Should return appropriate message for empty audio array")
+		XCTAssertEqual(result, "", "Empty audio must yield no text, never a placeholder that gets pasted")
 	}
 
 	func testTranscribeAudioArrayWithValidData() async throws {

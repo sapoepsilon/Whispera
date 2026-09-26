@@ -98,7 +98,8 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	@AppStorage("enableStreaming") var enableStreaming = Constants.enableStreamingDefault
 	@ObservationIgnored
-	@AppStorage("autoDetectLanguageFromKeyboard") var autoDetectLanguageFromKeyboard = false
+	@AppStorage("autoDetectLanguageFromKeyboard") var autoDetectLanguageFromKeyboard = Constants
+		.autoDetectLanguageFromKeyboardDefault
 	@ObservationIgnored
 	@AppStorage("selectedLanguage") var selectedLanguage = Constants.defaultLanguageName
 
@@ -1051,6 +1052,13 @@ extension AudioManager {
 				AppLogger.shared.audioManager.info("Discarding transcription of a cancelled recording")
 				return
 			}
+			guard !Self.isEmptyTranscript(rawTranscription) else {
+				// Nothing to paste, post-process or keep in history
+				AppLogger.shared.audioManager.info("No speech in the recording; skipping paste and history")
+				lastTranscription = nil
+				finishTranscription(id)
+				return
+			}
 			let transcription = await postProcessIfRequested(rawTranscription, requested: session.postProcess)
 			guard !ledger.isCancelled(id) else {
 				AppLogger.shared.audioManager.info("Discarding post-processed text of a cancelled recording")
@@ -1071,6 +1079,10 @@ extension AudioManager {
 			finishTranscription(id)
 			recordHistory(text: "", audio: historyAudio, errorMessage: error.localizedDescription)
 		}
+	}
+
+	nonisolated static func isEmptyTranscript(_ text: String) -> Bool {
+		text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 	}
 
 	fileprivate func recordHistory(

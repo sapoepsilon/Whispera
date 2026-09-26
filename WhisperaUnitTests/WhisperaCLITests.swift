@@ -168,6 +168,15 @@ struct CLIModelAndSettingsTests {
 		#expect(CLIDecodingSettings.resolveLanguage("klingon", defaults: defaults) == nil)
 	}
 
+	@Test func storedAutoLanguageDetectsInsteadOfFallingBackToEnglish() throws {
+		let (defaults, suite) = try isolatedDefaults()
+		defer { defaults.removePersistentDomain(forName: suite) }
+
+		defaults.set(Constants.autoDetectLanguageName, forKey: "selectedLanguage")
+		#expect(CLIDecodingSettings.resolveLanguage(nil, defaults: defaults) == .detect)
+		#expect(CLIDecodingSettings.resolveLanguage(" auto ", defaults: defaults) == .detect)
+	}
+
 	@Test func decodingOptionsFollowPersistedAppSettings() throws {
 		let (defaults, suite) = try isolatedDefaults()
 		defer { defaults.removePersistentDomain(forName: suite) }
