@@ -44,11 +44,18 @@ final class SingleInstanceTests: XCTestCase {
 		// Test that app checks for existing instances on launch
 		let appDelegate = AppDelegate()
 
-		// Mock method to check if another instance exists
 		let otherInstances = appDelegate.checkForExistingInstances()
 
-		// In test environment, should find only self
-		XCTAssertEqual(otherInstances.count, 0, "Should not find other instances in test")
+		// An installed Whispera may be running beside the test host, so only the host itself must be excluded
+		XCTAssertFalse(
+			otherInstances.contains(NSRunningApplication.current), "Should never report the running instance itself")
+		let bundleIdentifier = Bundle.main.bundleIdentifier
+		let expected = NSWorkspace.shared.runningApplications.filter {
+			$0.bundleIdentifier == bundleIdentifier && $0 != NSRunningApplication.current
+		}
+		XCTAssertEqual(
+			Set(otherInstances.map(\.processIdentifier)), Set(expected.map(\.processIdentifier)),
+			"Should report every other instance with the same bundle identifier")
 	}
 
 	func testLaunchAgentDoesNotCreateDuplicates() {
