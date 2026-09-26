@@ -25,6 +25,34 @@ enum ActivationMode: String, CaseIterable, Identifiable {
 	}
 }
 
+enum MicStreamPolicy: String, CaseIterable, Identifiable {
+	case onDemand
+	case lazyClose
+	case alwaysOn
+
+	var id: String { rawValue }
+
+	var displayName: String {
+		switch self {
+		case .onDemand: return "Open per recording"
+		case .lazyClose: return "Keep open briefly"
+		case .alwaysOn: return "Always on"
+		}
+	}
+
+	var summary: String {
+		switch self {
+		case .onDemand: return "The microphone opens when you start and closes when you stop"
+		case .lazyClose:
+			return
+				"The microphone stays open for a few seconds after stopping so a quick follow-up starts instantly"
+		case .alwaysOn:
+			return
+				"The microphone stays open while Whispera runs for the fastest start; the mic indicator stays on"
+		}
+	}
+}
+
 enum ModelUnloadTimeout: String, CaseIterable, Identifiable {
 	case never
 	case immediately
@@ -68,12 +96,16 @@ struct RecordingControlSettings {
 		static let holdThresholdMs = "holdThresholdMs"
 		static let cancelShortcutEnabled = "cancelShortcutEnabled"
 		static let extraRecordingBufferMs = "extraRecordingBufferMs"
+		static let micStreamPolicy = "micStreamPolicy"
+		static let lazyStreamCloseSeconds = "lazyStreamCloseSeconds"
 		static let modelUnloadTimeout = "modelUnloadTimeout"
 	}
 
 	static let defaultHoldThresholdMs = 300
 	static let holdThresholdRange = 100...1000
 	static let extraRecordingBufferRange = 0...500
+	static let defaultLazyStreamCloseSeconds = 10
+	static let lazyStreamCloseOptions = [3, 5, 10, 30, 60]
 
 	let defaults: UserDefaults
 
@@ -97,6 +129,18 @@ struct RecordingControlSettings {
 	var extraRecordingBuffer: TimeInterval {
 		let stored = defaults.object(forKey: Key.extraRecordingBufferMs) as? Int ?? 0
 		return TimeInterval(stored.clamped(to: Self.extraRecordingBufferRange)) / 1000
+	}
+
+	var micStreamPolicy: MicStreamPolicy {
+		defaults.string(forKey: Key.micStreamPolicy).flatMap(MicStreamPolicy.init(rawValue:))
+			?? .onDemand
+	}
+
+	var lazyStreamCloseDelay: TimeInterval {
+		let stored =
+			defaults.object(forKey: Key.lazyStreamCloseSeconds) as? Int
+			?? Self.defaultLazyStreamCloseSeconds
+		return TimeInterval(stored.clamped(to: 1...300))
 	}
 
 	var modelUnloadTimeout: ModelUnloadTimeout {

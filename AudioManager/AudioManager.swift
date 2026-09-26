@@ -1,5 +1,6 @@
 import AVFoundation
 import AppKit
+import CoreAudio
 import Foundation
 import SwiftUI
 
@@ -128,6 +129,18 @@ final class AudioManager: NSObject {
 	private let tailStop = DeferredAction()
 	@ObservationIgnored
 	private var isFinalizingStop = false
+	@ObservationIgnored
+	private let lazyStreamClose = DeferredAction()
+	@ObservationIgnored
+	private var isCapturingStream = false
+	@ObservationIgnored
+	private var openStreamDeviceID: AudioDeviceID?
+	@ObservationIgnored
+	private var warmStreamTask: Task<Void, Never>?
+	@ObservationIgnored
+	private var streamPolicyObservers: [NSObjectProtocol] = []
+	@ObservationIgnored
+	private var lastStreamPolicySnapshot: String?
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -142,6 +155,7 @@ final class AudioManager: NSObject {
 			// math stays cheap even if a large backlog arrives at once
 			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
 		}
+		observeMicStreamPolicy()
 	}
 
 	func setupAudio() {
@@ -236,8 +250,9 @@ final class AudioManager: NSObject {
 				}
 				audioFileURL = nil
 			case .stream:
+				isCapturingStream = false
 				audioBuffer.removeAll()
-				engineController.cleanup()
+				releaseStreamingEngine()
 			case nil:
 				break
 			}
@@ -269,7 +284,13 @@ final class AudioManager: NSObject {
 		deviceActivationTask = nil
 		deviceManager.selectDevice(uid: uid)
 
-		guard isRecording || isMicrophoneInitializing else { return }
+		guard isRecording || isMicrophoneInitializing else {
+			if engineController.isRunning {
+				shutdownStreamingEngine()
+				applyMicStreamPolicy()
+			}
+			return
+		}
 
 		isMicrophoneInitializing = true
 		deviceActivationTask = Task {
@@ -279,16 +300,14 @@ final class AudioManager: NSObject {
 				isMicrophoneInitializing = false
 			} else if useStreamingTranscription {
 				let savedBuffer = audioBuffer
-				engineController.cleanup()
+				shutdownStreamingEngine()
 
 				do {
 					await deviceManager.activateSelectedDevice()
 					guard !Task.isCancelled else { return }
-					let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
-					try engineController.installTap { [weak self] buffer, format in
-						self?.processAudioBuffer(buffer, originalFormat: format)
-					}
+					try await openStreamingEngine()
 					audioBuffer = savedBuffer
+					isCapturingStream = true
 					isMicrophoneInitializing = false
 					AppLogger.shared.audioManager.info("Switched input device while recording")
 				} catch {
@@ -472,21 +491,26 @@ extension AudioManager {
 		AppLogger.shared.audioManager.info("Starting streaming recording")
 		activeCapturePath = .stream
 		audioBuffer.removeAll()
-		isMicrophoneInitializing = true
+		lazyStreamClose.cancel()
+		warmStreamTask?.cancel()
+		warmStreamTask = nil
 
+		if resumeOpenStream() {
+			return
+		}
+
+		isMicrophoneInitializing = true
 		deviceActivationTask = Task {
 			do {
 				await deviceManager.activateSelectedDevice()
 				guard !Task.isCancelled else { return }
-				let _ = try await engineController.setup(deviceID: deviceManager.resolveActiveDeviceID())
-				try engineController.installTap { [weak self] buffer, format in
-					self?.processAudioBuffer(buffer, originalFormat: format)
-				}
+				try await openStreamingEngine()
 				guard !Task.isCancelled else {
-					engineController.cleanup()
+					shutdownStreamingEngine()
 					return
 				}
 
+				isCapturingStream = true
 				isMicrophoneInitializing = false
 				isRecording = true
 				timer.start()
@@ -496,6 +520,7 @@ extension AudioManager {
 			} catch {
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start streaming: \(error)")
+				shutdownStreamingEngine()
 				useStreamingTranscription = false
 				startFileBasedRecording()
 			}
@@ -503,6 +528,7 @@ extension AudioManager {
 	}
 
 	fileprivate func stopStreamingRecording() {
+		isCapturingStream = false
 		isRecording = false
 		timer.stop()
 		playFeedbackSound(start: false)
@@ -511,7 +537,7 @@ extension AudioManager {
 		audioBuffer.removeAll()
 		levelMonitor.reset()
 
-		engineController.cleanup()
+		releaseStreamingEngine()
 		deviceManager.restoreSystemDefault()
 
 		AppLogger.shared.audioManager.info("Streaming recording stopped")
@@ -531,6 +557,8 @@ extension AudioManager {
 		scheduleTimerReset()
 	}
 	fileprivate func processAudioBuffer(_ buffer: AVAudioPCMBuffer, originalFormat: AVAudioFormat) {
+		// The stream can stay open between recordings; drop audio nobody asked for.
+		guard isCapturingStream else { return }
 		guard let targetFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1) else {
 			return
 		}
@@ -577,6 +605,148 @@ extension AudioManager {
 		Task { @MainActor in
 			levelMonitor.update(from: audioData)
 		}
+	}
+}
+
+// MARK: - Open Microphone Stream
+extension AudioManager {
+	fileprivate func openStreamingEngine() async throws {
+		let deviceID = deviceManager.resolveActiveDeviceID()
+		_ = try await engineController.setup(deviceID: deviceID)
+		try engineController.installTap { [weak self] buffer, format in
+			self?.processAudioBuffer(buffer, originalFormat: format)
+		}
+		openStreamDeviceID = deviceID
+		engineController.onRouteChange = { [weak self] in
+			self?.handleStreamRouteChange()
+		}
+	}
+
+	/// Starts capturing on a stream left open by the lazy-close or always-on policy,
+	/// skipping engine and device setup entirely.
+	fileprivate func resumeOpenStream() -> Bool {
+		guard engineController.isRunning else { return false }
+		guard engineController.isEngineRunning,
+			openStreamDeviceID == deviceManager.resolveActiveDeviceID()
+		else {
+			shutdownStreamingEngine()
+			return false
+		}
+		isCapturingStream = true
+		isRecording = true
+		timer.start()
+		playFeedbackSound(start: true)
+		AppLogger.shared.audioManager.info("Recording on already-open microphone stream")
+		return true
+	}
+
+	fileprivate func releaseStreamingEngine() {
+		let settings = RecordingControlSettings()
+		switch settings.micStreamPolicy {
+		case .onDemand:
+			shutdownStreamingEngine()
+		case .lazyClose:
+			guard engineController.isRunning else { return }
+			lazyStreamClose.schedule(after: settings.lazyStreamCloseDelay) { [weak self] in
+				guard let self, !self.isSessionActive else { return }
+				AppLogger.shared.audioManager.info("Closing idle microphone stream")
+				self.shutdownStreamingEngine()
+			}
+		case .alwaysOn:
+			if !canKeepStreamOpen {
+				shutdownStreamingEngine()
+			}
+		}
+	}
+
+	fileprivate func shutdownStreamingEngine() {
+		lazyStreamClose.cancel()
+		warmStreamTask?.cancel()
+		warmStreamTask = nil
+		isCapturingStream = false
+		engineController.onRouteChange = nil
+		engineController.cleanup()
+		openStreamDeviceID = nil
+	}
+
+	/// The open-stream policies only apply to the buffered streaming path; live
+	/// transcription captures through WhisperKit's own audio processor.
+	fileprivate var canKeepStreamOpen: Bool {
+		!enableStreaming && useStreamingTranscription
+			&& AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+	}
+
+	func applyMicStreamPolicy() {
+		guard !isSessionActive else { return }
+		switch RecordingControlSettings().micStreamPolicy {
+		case .alwaysOn:
+			guard canKeepStreamOpen else {
+				if engineController.isRunning { shutdownStreamingEngine() }
+				return
+			}
+			guard !engineController.isEngineRunning, warmStreamTask == nil else { return }
+			warmStreamTask = Task { [weak self] in
+				guard let self else { return }
+				defer { self.warmStreamTask = nil }
+				guard !Task.isCancelled, !self.isSessionActive else { return }
+				do {
+					try await self.openStreamingEngine()
+					guard !Task.isCancelled, !self.isSessionActive else { return }
+					AppLogger.shared.audioManager.info("Microphone stream kept open (always on)")
+				} catch {
+					AppLogger.shared.audioManager.error("Failed to keep microphone open: \(error)")
+					self.shutdownStreamingEngine()
+				}
+			}
+		case .lazyClose:
+			if engineController.isRunning && !lazyStreamClose.isScheduled {
+				shutdownStreamingEngine()
+			}
+		case .onDemand:
+			if engineController.isRunning {
+				shutdownStreamingEngine()
+			}
+		}
+	}
+
+	private func handleStreamRouteChange() {
+		guard !isSessionActive else { return }
+		AppLogger.shared.audioManager.info("Audio route changed while stream idle; reopening per policy")
+		shutdownStreamingEngine()
+		applyMicStreamPolicy()
+	}
+
+	fileprivate func observeMicStreamPolicy() {
+		lastStreamPolicySnapshot = streamPolicySnapshot()
+		let center = NotificationCenter.default
+		streamPolicyObservers.append(
+			center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) {
+				[weak self] _ in
+				Task { @MainActor in
+					guard let self else { return }
+					let snapshot = self.streamPolicySnapshot()
+					guard snapshot != self.lastStreamPolicySnapshot else { return }
+					self.lastStreamPolicySnapshot = snapshot
+					self.applyMicStreamPolicy()
+				}
+			})
+		streamPolicyObservers.append(
+			center.addObserver(forName: .audioInputDeviceChanged, object: nil, queue: .main) {
+				[weak self] _ in
+				Task { @MainActor in
+					guard let self, !self.isSessionActive, self.engineController.isRunning else { return }
+					self.shutdownStreamingEngine()
+					self.applyMicStreamPolicy()
+				}
+			})
+		Task { @MainActor [weak self] in
+			self?.applyMicStreamPolicy()
+		}
+	}
+
+	private func streamPolicySnapshot() -> String {
+		let settings = RecordingControlSettings()
+		return "\(settings.micStreamPolicy.rawValue)|\(enableStreaming)|\(useStreamingTranscription)"
 	}
 }
 
