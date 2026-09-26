@@ -61,7 +61,7 @@ struct TextProcessingSettingsSection: View {
 
 			SettingRow(
 				"Remove Filler Words",
-				description: "Drop um, uh, hmm and repeated stutters from dictation"
+				description: "Drop um, uh, hmm and repeated stutters, and squeeze extra spaces, in dictation and file transcripts. Dictation also joins line breaks into spaces; file transcripts keep them."
 			) {
 				Toggle("", isOn: $fillerWordRemovalEnabled)
 					.accessibilityIdentifier("fillerWordRemovalToggle")

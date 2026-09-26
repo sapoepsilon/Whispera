@@ -1036,10 +1036,11 @@ import WhisperKit
 	}
 
 	func processTranscriptText(
-		_ text: String, detectedLanguage: String?, enableTranslation: Bool
+		_ text: String, detectedLanguage: String?, enableTranslation: Bool, preservingLineBreaks: Bool = false
 	) -> String {
 		guard !text.isEmpty else { return text }
-		let configuration = TextProcessingSettings.configuration(from: textProcessingDefaults)
+		var configuration = TextProcessingSettings.configuration(from: textProcessingDefaults)
+		configuration.preservesLineBreaks = preservingLineBreaks
 		let evidence = TranscriptTextProcessor.languageEvidence(
 			selectedLanguageCode: Constants.decodingLanguageCode(for: selectedLanguage),
 			translating: enableTranslation,
@@ -1408,7 +1409,7 @@ import WhisperKit
 			return transcript.segments.compactMap { segment in
 				let text = processTranscriptText(
 					segment.text.trimmingCharacters(in: .whitespacesAndNewlines),
-					detectedLanguage: nil, enableTranslation: false)
+					detectedLanguage: nil, enableTranslation: false, preservingLineBreaks: true)
 				guard !text.isEmpty else { return nil }
 				return TranscriptionSegment(text: text, startTime: segment.startTime, endTime: segment.endTime)
 			}
@@ -1433,7 +1434,7 @@ import WhisperKit
 					let text = processTranscriptText(
 						whisperSegment.text.trimmingCharacters(in: .whitespacesAndNewlines),
 						detectedLanguage: transcriptionResult.language,
-						enableTranslation: enableTranslation)
+						enableTranslation: enableTranslation, preservingLineBreaks: true)
 					guard !text.isEmpty else {
 						return nil
 					}
@@ -1476,7 +1477,7 @@ import WhisperKit
 				fromPath: url.path, startTime: startTime, endTime: endTime)
 			let text = processTranscriptText(
 				try await engine.transcribe(samples: samples).text, detectedLanguage: nil,
-				enableTranslation: false)
+				enableTranslation: false, preservingLineBreaks: true)
 			return text.isEmpty ? "No speech detected in segment" : text
 		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
@@ -1500,7 +1501,7 @@ import WhisperKit
 				result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(
 					in: .whitespacesAndNewlines),
 				detectedLanguage: result.first?.language,
-				enableTranslation: enableTranslation)
+				enableTranslation: enableTranslation, preservingLineBreaks: true)
 
 			if !transcription.isEmpty {
 				AppLogger.shared.transcriber.userText(

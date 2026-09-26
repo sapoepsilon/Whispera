@@ -287,7 +287,8 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 				transcriptionResult.segments.compactMap { whisperSegment -> TranscriptionSegment? in
 					let text = whisperKit.processTranscriptText(
 						whisperSegment.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
-						detectedLanguage: transcriptionResult.language, enableTranslation: enableTranslation)
+						detectedLanguage: transcriptionResult.language, enableTranslation: enableTranslation,
+						preservingLineBreaks: true)
 					guard !text.isEmpty else {
 						return nil
 					}
@@ -310,7 +311,8 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 			let transcription = whisperKit.processTranscriptText(
 				transcriptionResults.compactMap { $0.text }.joined(separator: " ")
 					.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
-				detectedLanguage: transcriptionResults.first?.language, enableTranslation: enableTranslation)
+				detectedLanguage: transcriptionResults.first?.language, enableTranslation: enableTranslation,
+				preservingLineBreaks: true)
 			return transcription.isEmpty ? Self.noSpeechMessage : transcription
 		}
 	}
