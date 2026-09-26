@@ -41,6 +41,60 @@ struct ChineseScriptConversionTests {
 	}
 }
 
+struct ChineseScriptAutomaticTests {
+	@Test(arguments: [
+		(["zh-Hant-TW", "en-US"], ChineseScriptPreference.traditional),
+		(["en-US", "zh-HK"], .traditional),
+		(["zh-TW"], .traditional),
+		(["zh-Hans-CN"], .simplified),
+		(["zh-CN", "zh-TW"], .simplified),
+		(["zh"], .simplified),
+		(["yue-Hant-HK"], .traditional),
+		(["en-US", "de-DE"], .unchanged),
+		([], .unchanged),
+	])
+	func scriptFollowsTheFirstChineseLanguage(languages: [String], expected: ChineseScriptPreference) {
+		#expect(ChineseScriptPreference.automaticScript(preferredLanguages: languages) == expected)
+	}
+
+	@Test func automaticConvertsChineseTranscriptsForATraditionalReader() {
+		#expect(
+			TranscriptTextProcessor.convertChineseScript(
+				"汉语开发", to: .automatic, language: .modelDetected("zh"), preferredLanguages: ["zh-Hant-TW"])
+				== "漢語開發")
+	}
+
+	@Test func automaticLeavesTranscriptsAloneWithoutAChineseLanguage() {
+		#expect(
+			TranscriptTextProcessor.convertChineseScript(
+				"漢語", to: .automatic, language: .userSelected("zh"), preferredLanguages: ["en-US"]) == "漢語")
+	}
+
+	@Test func automaticNeverTouchesJapanese() {
+		let japanese = "日本語の開発"
+		#expect(
+			TranscriptTextProcessor.convertChineseScript(
+				japanese, to: .automatic, language: .modelDetected("ja"), preferredLanguages: ["zh-Hans-CN"])
+				== japanese)
+	}
+
+	@Test func cantoneseOutputIsTreatedAsChinese() {
+		#expect(
+			TranscriptTextProcessor.convertChineseScript(
+				"开发", to: .traditional, language: .modelDetected("yue")) == "開發")
+	}
+
+	@Test func pipelineUsesTheConfiguredPreferredLanguages() {
+		var configuration = TextProcessingConfiguration()
+		configuration.chineseScript = .automatic
+		configuration.preferredLanguages = ["zh-Hans-CN"]
+		configuration.fillerWordRemovalEnabled = false
+		#expect(
+			TranscriptTextProcessor(configuration: configuration).process("我們開會", language: .modelDetected("zh"))
+				== "我们开会")
+	}
+}
+
 struct ChineseScriptSettingsTests {
 	private func makeDefaults(_ name: String = #function) -> UserDefaults {
 		let suite = "ChineseScriptSettingsTests.\(name).\(UUID().uuidString)"
@@ -49,8 +103,8 @@ struct ChineseScriptSettingsTests {
 		return defaults
 	}
 
-	@Test func defaultsToUnchanged() {
-		#expect(TextProcessingSettings.configuration(from: makeDefaults()).chineseScript == .unchanged)
+	@Test func defaultsToFollowingThePreferredLanguages() {
+		#expect(TextProcessingSettings.configuration(from: makeDefaults()).chineseScript == .automatic)
 	}
 
 	@Test func roundTrips() {
@@ -64,7 +118,7 @@ struct ChineseScriptSettingsTests {
 	@Test func unknownValueFallsBack() {
 		let defaults = makeDefaults()
 		defaults.set("klingon", forKey: TextProcessingSettings.Keys.chineseScriptConversion)
-		#expect(TextProcessingSettings.configuration(from: defaults).chineseScript == .unchanged)
+		#expect(TextProcessingSettings.configuration(from: defaults).chineseScript == .automatic)
 	}
 
 	@Test func conversionRunsInPipeline() {

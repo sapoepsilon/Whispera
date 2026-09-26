@@ -7,7 +7,7 @@ struct TextProcessingSettingsSection: View {
 	@AppStorage(TextProcessingSettings.Keys.wordCorrectionThreshold) private var wordCorrectionThreshold =
 		TextProcessingConfiguration.defaultWordCorrectionThreshold
 	@AppStorage(TextProcessingSettings.Keys.chineseScriptConversion) private var chineseScriptRaw =
-		ChineseScriptPreference.unchanged.rawValue
+		ChineseScriptPreference.defaultValue.rawValue
 
 	@State private var customWords: [String] = TextProcessingSettings.customWords()
 	@State private var newCustomWord = ""
@@ -84,7 +84,8 @@ struct TextProcessingSettingsSection: View {
 
 			SettingRow(
 				"Chinese Output",
-				description: "Convert Chinese transcripts to Simplified or Traditional characters"
+				description:
+					"Convert Chinese transcripts to Simplified or Traditional characters. Match My Languages uses the Chinese variant in your macOS language list"
 			) {
 				Picker("Chinese Output", selection: $chineseScriptRaw) {
 					ForEach(ChineseScriptPreference.allCases) { preference in

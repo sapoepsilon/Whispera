@@ -34,7 +34,8 @@ struct TextProcessingConfiguration: Equatable {
 	var wordCorrectionThreshold: Double = defaultWordCorrectionThreshold
 	var fillerWordRemovalEnabled = true
 	var customFillerWords: [String] = []
-	var chineseScript: ChineseScriptPreference = .unchanged
+	var chineseScript: ChineseScriptPreference = .defaultValue
+	var preferredLanguages: [String] = Locale.preferredLanguages
 }
 
 /// Post-transcription text pipeline: filler removal, stutter and whitespace cleanup,
@@ -59,7 +60,9 @@ struct TranscriptTextProcessor {
 				result, customWords: configuration.customWords,
 				threshold: configuration.wordCorrectionThreshold)
 		}
-		result = Self.convertChineseScript(result, to: configuration.chineseScript, language: language)
+		result = Self.convertChineseScript(
+			result, to: configuration.chineseScript, language: language,
+			preferredLanguages: configuration.preferredLanguages)
 		return result
 	}
 }
