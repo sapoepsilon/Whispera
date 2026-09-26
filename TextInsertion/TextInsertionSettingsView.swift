@@ -9,6 +9,8 @@ struct TextInsertionSettingsView: View {
 	private var autoSubmit = false
 	@AppStorage(TextInsertionSettings.Keys.autoSubmitKey)
 	private var autoSubmitKey: AutoSubmitKey = .returnKey
+	@AppStorage(TextInsertionSettings.Keys.appendTrailingSpace)
+	private var appendTrailingSpace = false
 	@AppStorage(TextInsertionSettings.Keys.clipboardHandling)
 	private var clipboardHandling: ClipboardHandling = .restore
 	@AppStorage(TextInsertionSettings.Keys.pasteDelayBeforeMs)
@@ -43,6 +45,13 @@ struct TextInsertionSettingsView: View {
 									.buttonStyle(.bordered)
 							}
 						}
+					}
+
+					SettingRow(
+						"Append Trailing Space",
+						description: "Add a space after each transcript so the next one does not run into it"
+					) {
+						Toggle("", isOn: $appendTrailingSpace)
 					}
 
 					SettingRow(

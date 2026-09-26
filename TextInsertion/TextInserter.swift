@@ -70,9 +70,10 @@ final class TextInserter {
 		return task
 	}
 
-	private func perform(_ text: String, context: InsertionContext) async {
-		guard !text.isEmpty else { return }
+	private func perform(_ rawText: String, context: InsertionContext) async {
+		guard !rawText.isEmpty else { return }
 		let settings = settingsProvider()
+		let text = settings.preparedText(rawText, for: context)
 		let method = settings.effectiveMethod(for: context)
 
 		switch method {

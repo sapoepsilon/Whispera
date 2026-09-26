@@ -513,3 +513,52 @@ struct AutoSubmitTests {
 		#expect(loaded.autoSubmitKey == .commandReturn)
 	}
 }
+
+struct TrailingSpaceTests {
+	private func settings(_ enabled: Bool) -> TextInsertionSettings {
+		var settings = TextInsertionSettings()
+		settings.appendTrailingSpace = enabled
+		return settings
+	}
+
+	@Test func offByDefaultLeavesTextAlone() {
+		#expect(TextInsertionSettings().preparedText("Hello.", for: .finalTranscript) == "Hello.")
+	}
+
+	@Test func appendsOneSpaceToFinalTranscripts() {
+		#expect(settings(true).preparedText("Hello.", for: .finalTranscript) == "Hello. ")
+	}
+
+	@Test func doesNotDoubleUpExistingWhitespace() {
+		#expect(settings(true).preparedText("Hello. ", for: .finalTranscript) == "Hello. ")
+		#expect(settings(true).preparedText("Line\n", for: .finalTranscript) == "Line\n")
+	}
+
+	@Test func leavesLiveSegmentsAlone() {
+		#expect(settings(true).preparedText(" segment", for: .liveSegment) == " segment")
+	}
+
+	@MainActor
+	@Test func insertedTextCarriesTheSpace() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster,
+			settingsProvider: { fastSettings { $0.appendTrailingSpace = true } })
+
+		await inserter.insert("Hello.", context: .finalTranscript).value
+
+		#expect(poster.events.first?.clipboardText == "Hello. ")
+	}
+
+	@Test func settingRoundTrips() {
+		let suite = "TrailingSpaceTests.roundtrip.\(UUID().uuidString)"
+		let defaults = UserDefaults(suiteName: suite)!
+		defer { defaults.removePersistentDomain(forName: suite) }
+		#expect(!TextInsertionSettings(defaults: defaults).appendTrailingSpace)
+
+		settings(true).save(to: defaults)
+		#expect(TextInsertionSettings(defaults: defaults).appendTrailingSpace)
+	}
+}

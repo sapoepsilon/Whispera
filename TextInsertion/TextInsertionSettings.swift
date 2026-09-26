@@ -80,6 +80,7 @@ struct TextInsertionSettings: Equatable, Sendable {
 		static let externalScriptPath = "externalScriptPath"
 		static let autoSubmit = "autoSubmit"
 		static let autoSubmitKey = "autoSubmitKey"
+		static let appendTrailingSpace = "appendTrailingSpace"
 	}
 
 	static let defaultPasteDelayMs = 60
@@ -92,6 +93,7 @@ struct TextInsertionSettings: Equatable, Sendable {
 	var externalScriptPath = ""
 	var autoSubmit = false
 	var autoSubmitKey: AutoSubmitKey = .returnKey
+	var appendTrailingSpace = false
 
 	init() {}
 
@@ -117,6 +119,7 @@ struct TextInsertionSettings: Equatable, Sendable {
 		{
 			autoSubmitKey = value
 		}
+		appendTrailingSpace = defaults.bool(forKey: Keys.appendTrailingSpace)
 	}
 
 	static var current: TextInsertionSettings {
@@ -131,6 +134,15 @@ struct TextInsertionSettings: Equatable, Sendable {
 		defaults.set(externalScriptPath, forKey: Keys.externalScriptPath)
 		defaults.set(autoSubmit, forKey: Keys.autoSubmit)
 		defaults.set(autoSubmitKey.rawValue, forKey: Keys.autoSubmitKey)
+		defaults.set(appendTrailingSpace, forKey: Keys.appendTrailingSpace)
+	}
+
+	// Live dictation already separates segments with a leading space
+	func preparedText(_ text: String, for context: InsertionContext) -> String {
+		guard appendTrailingSpace, context == .finalTranscript,
+			let last = text.last, !last.isWhitespace
+		else { return text }
+		return text + " "
 	}
 
 	// Live segments arrive mid-sentence, so submitting after each one would send half a message
