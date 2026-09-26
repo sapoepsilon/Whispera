@@ -8,20 +8,19 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 	static let targetSampleRate: Double = 16000
 
 	private struct State {
-		var samples: [Float] = []
+		var samples: SampleRing
 		var isCapturing = false
 		var channelSelection = InputChannelSelection.mixAllChannels
 		var converter: AVAudioConverter?
 	}
 
-	private var state = State()
+	private var state: State
 	private let lock = NSLock()
-	private let maxSamples: Int
 	private let targetFormat = AVAudioFormat(
 		standardFormatWithSampleRate: StreamCaptureBuffer.targetSampleRate, channels: 1)
 
 	init(maxSamples: Int = 16000 * 1800) {
-		self.maxSamples = maxSamples
+		state = State(samples: SampleRing(capacity: maxSamples))
 	}
 
 	private func withState<R>(_ body: (inout State) -> R) -> R {
@@ -60,7 +59,7 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 	func finishCapture() -> [Float] {
 		withState {
 			$0.isCapturing = false
-			let captured = $0.samples
+			let captured = $0.samples.ordered()
 			$0.samples.removeAll()
 			return captured
 		}
@@ -79,9 +78,6 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 		withState { state in
 			guard state.isCapturing else { return false }
 			state.samples.append(contentsOf: newSamples)
-			if state.samples.count > maxSamples {
-				state.samples.removeFirst(state.samples.count - maxSamples)
-			}
 			return true
 		}
 	}
@@ -140,5 +136,61 @@ final class StreamCaptureBuffer: @unchecked Sendable {
 	private static func floats(from buffer: AVAudioPCMBuffer) -> [Float]? {
 		guard let channelData = buffer.floatChannelData?[0] else { return nil }
 		return Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
+	}
+}
+
+/// Keeps the newest `capacity` samples. Once full it overwrites the oldest in place, so the
+/// real-time tap never shifts the whole recording to make room.
+struct SampleRing {
+	let capacity: Int
+	private var storage: [Float] = []
+	/// Index of the oldest sample once the ring is full.
+	private var head = 0
+
+	init(capacity: Int) {
+		self.capacity = max(0, capacity)
+	}
+
+	var count: Int { storage.count }
+
+	mutating func append(contentsOf newSamples: [Float]) {
+		guard capacity > 0, !newSamples.isEmpty else { return }
+		if newSamples.count >= capacity {
+			storage = Array(newSamples.suffix(capacity))
+			head = 0
+			return
+		}
+		var remaining = newSamples[...]
+		if storage.count < capacity {
+			let room = capacity - storage.count
+			storage.append(contentsOf: remaining.prefix(room))
+			remaining = remaining.dropFirst(room)
+		}
+		guard !remaining.isEmpty else { return }
+		let capacity = capacity
+		var head = head
+		storage.withUnsafeMutableBufferPointer { ring in
+			remaining.withUnsafeBufferPointer { source in
+				let firstRun = min(source.count, capacity - head)
+				ring.baseAddress!.advanced(by: head).update(from: source.baseAddress!, count: firstRun)
+				let wrapped = source.count - firstRun
+				if wrapped > 0 {
+					ring.baseAddress!.update(from: source.baseAddress!.advanced(by: firstRun), count: wrapped)
+				}
+				head = (head + source.count) % capacity
+			}
+		}
+		self.head = head
+	}
+
+	/// The samples oldest first.
+	func ordered() -> [Float] {
+		guard head > 0 else { return storage }
+		return Array(storage[head...]) + storage[..<head]
+	}
+
+	mutating func removeAll() {
+		storage.removeAll()
+		head = 0
 	}
 }
