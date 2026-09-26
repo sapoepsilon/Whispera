@@ -1665,15 +1665,15 @@ import WhisperKit
 			return
 		}
 
-		guard availableModels.contains(model) else {
+		// Check if model is already downloaded
+		let currentlyDownloadedModels = try await getDownloadedModels()
+		downloadedModels = currentlyDownloadedModels
+
+		guard availableModels.contains(model) || currentlyDownloadedModels.contains(model) else {
 			throw WhisperKitError.modelNotFound(model)
 		}
 
 		AppLogger.shared.transcriber.log("Switching to model: \(model)")
-
-		// Check if model is already downloaded
-		let currentlyDownloadedModels = try await getDownloadedModels()
-		downloadedModels = currentlyDownloadedModels
 
 		if !currentlyDownloadedModels.contains(model) {
 			AppLogger.shared.transcriber.log("Model \(model) not found locally, downloading first...")
@@ -1755,12 +1755,22 @@ import WhisperKit
 			AppLogger.shared.transcriber.log(
 				"Failed to refresh available models, using defaults: \(error)")
 			// Fallback to defaults instead of throwing
-			availableModels =
-				[
-					"openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small",
-					"openai_whisper-small.en",
-				] + additionalAvailableModelIDs()
+			let downloaded = (try? await getDownloadedModels()) ?? downloadedModels
+			availableModels = Self.offlineModelList(downloaded: downloaded, additional: additionalAvailableModelIDs())
 		}
+	}
+
+	nonisolated static let fallbackModelIDs = [
+		"openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small", "openai_whisper-small.en",
+	]
+
+	/// Used when the model list cannot be fetched (offline, or the request times out). Models
+	/// already on disk stay selectable; without them a downloaded model outside the short
+	/// default list could not be switched to until the list fetch succeeded.
+	nonisolated static func offlineModelList(downloaded: Set<String>, additional: [String]) -> [String] {
+		let local = downloaded.filter { !CustomWhisperModel.isCustomID($0) && !ParakeetModel.isParakeetID($0) }.sorted()
+		var seen = Set<String>()
+		return (fallbackModelIDs + local + additional).filter { seen.insert($0).inserted }
 	}
 
 	/// Races `operation` against a deadline. Unlike a task group, this returns at the
