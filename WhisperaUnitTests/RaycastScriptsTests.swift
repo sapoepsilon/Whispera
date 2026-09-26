@@ -21,20 +21,35 @@ struct RaycastScriptsTests {
 		}
 	}
 
-	@Test func micScriptsReadTheTokenAtRunTimeAndSafeOnesDoNot() {
+	@Test func onlyTheModelScriptReadsTheTokenItself() {
 		let byName = Dictionary(uniqueKeysWithValues: RaycastScripts.commands().map { ($0.fileName, $0.body) })
-		for name in ["whispera-toggle.sh", "whispera-start.sh", "whispera-set-model.sh"] {
-			let body = byName[name] ?? ""
-			#expect(body.contains(RaycastScripts.tokenLine), "\(name)")
-			#expect(body.contains("token=$token"), "\(name)")
-		}
-		for name in ["whispera-stop.sh", "whispera-cancel.sh", "whispera-set-language.sh"] {
-			#expect(!(byName[name] ?? "").contains("token"), "\(name)")
+		let body = byName["whispera-set-model.sh"] ?? ""
+		#expect(body.contains(RaycastScripts.tokenLine))
+		#expect(body.contains("token=$token"))
+		for name in byName.keys where name != "whispera-set-model.sh" {
+			#expect(!(byName[name] ?? "").contains("token="), "\(name)")
 		}
 		let tokenPath = RemoteControlToken.fileURL().path
 		let home = FileManager.default.homeDirectoryForCurrentUser.path
 		#expect(tokenPath.hasPrefix(home))
 		#expect(RaycastScripts.tokenLine.contains(tokenPath.replacingOccurrences(of: home, with: "$HOME")))
+	}
+
+	@Test func linkOnlyScriptsExplainThatLinksAreOff() throws {
+		let domain = "RaycastScriptsTests-\(UUID().uuidString)"
+		let defaults = try #require(UserDefaults(suiteName: domain))
+		defer { defaults.removePersistentDomain(forName: domain) }
+		let check = RaycastScripts.linksEnabledCheck(bundleIdentifier: domain)
+		let script = "\(check)\necho ran"
+
+		#expect(try runBash(script) == RaycastScripts.linksOffHint + "\n")
+		defaults.set(true, forKey: RemoteControlSettings.urlSchemeEnabledKey)
+		defaults.synchronize()
+		#expect(try runBash(script) == "ran\n")
+
+		for command in RaycastScripts.commands() where command.body.contains("open -g \"whispera://") {
+			#expect(command.body.hasPrefix(RaycastScripts.linksEnabledCheck(bundleIdentifier: RaycastScripts.defaultBundleIdentifier)), "\(command.fileName)")
+		}
 	}
 
 	@Test func tokenLineReadsTheTokenFileInBash() throws {
@@ -65,7 +80,7 @@ struct RaycastScriptsTests {
 		return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 	}
 
-	@Test func dictationScriptsOpenURLsTheAppUnderstands() throws {
+	@Test func dictationScriptsGoThroughTheCLISoItCanReportRefusals() throws {
 		let expected: [String: RemoteCommand] = [
 			"whispera-toggle.sh": .toggle,
 			"whispera-start.sh": .start,
@@ -76,10 +91,11 @@ struct RaycastScriptsTests {
 		]
 		for command in RaycastScripts.commands() {
 			guard let remote = expected[command.fileName] else { continue }
-			let urlString = try #require(
-				command.body.split(separator: "\"").first { $0.hasPrefix("whispera://") }.map(String.init))
-			let url = try #require(URL(string: urlString))
-			#expect(RemoteCommand(url: url) == remote)
+			let invocation = try #require(
+				command.body.split(separator: "\n").first { $0.hasPrefix("\"$WHISPERA\"") })
+			let flag = String(invocation.split(separator: " ")[1])
+			#expect(try CLIOptions.parse([flag]).action == .remote(remote), "\(command.fileName)")
+			#expect(invocation.hasSuffix("2>&1"), "Raycast shows stdout, so the CLI's error must reach it")
 		}
 		#expect(Set(RaycastScripts.commands().map(\.fileName)).isSuperset(of: expected.keys))
 	}
@@ -87,7 +103,7 @@ struct RaycastScriptsTests {
 	@Test func cliScriptsUseTheGivenBinaryButAllowOverride() {
 		let scripts = RaycastScripts.commands(cliPath: "/tmp/Test.app/Contents/MacOS/Whispera")
 		let cliScripts = scripts.filter { $0.body.contains("$WHISPERA") }
-		#expect(cliScripts.count == 3)
+		#expect(cliScripts.count == 9)
 		for script in cliScripts {
 			#expect(script.body.contains("${WHISPERA_CLI:-/tmp/Test.app/Contents/MacOS/Whispera}"))
 		}
@@ -96,7 +112,7 @@ struct RaycastScriptsTests {
 	@Test func addWordScriptPassesTheArgumentThroughTheCLI() throws {
 		let script = try #require(RaycastScripts.commands().first { $0.fileName == "whispera-add-word.sh" })
 		#expect(script.argumentPlaceholder != nil)
-		#expect(script.body.contains("\"$WHISPERA\" --add-word \"$1\""))
+		#expect(script.body.contains("\"$WHISPERA\" --add-word \"$1\" 2>&1"))
 		let options = try CLIOptions.parse(["--add-word", "Kubernetes, Grafana"])
 		#expect(options.action == .remote(.addWord("Kubernetes, Grafana")))
 	}

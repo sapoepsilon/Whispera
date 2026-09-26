@@ -1,6 +1,6 @@
 import Foundation
 
-/// Raycast script commands that drive Whispera through the whispera:// scheme and the CLI.
+/// Raycast script commands that drive Whispera through its CLI and the whispera:// scheme.
 /// The same text is committed under integrations/raycast so it can be installed without the app.
 struct RaycastScriptCommand: Equatable {
 	enum Mode: String {
@@ -44,25 +44,55 @@ struct RaycastScriptCommand: Equatable {
 
 enum RaycastScripts {
 	static let defaultCLIPath = "/Applications/Whispera.app/Contents/MacOS/Whispera"
+	static let defaultBundleIdentifier = "com.macwhisper.app"
+	static let linksOffHint = "Turn on \"Allow whispera:// links\" in Whispera Settings > Automation, then try again."
 
 	/// Read at run time so the token never lands in a committed or shared script.
 	static let tokenLine =
 		"token=\"$(cat \"$HOME/Library/Application Support/Whispera/\(RemoteControlToken.fileName)\" 2>/dev/null)\""
 
-	static func commands(cliPath: String = defaultCLIPath) -> [RaycastScriptCommand] {
+	/// Links are off by default and a rejected `open whispera://…` fails silently, so scripts that
+	/// only have a link check the setting first and print what to turn on.
+	static func linksEnabledCheck(bundleIdentifier: String) -> String {
+		let domain = escapeForDoubleQuotes(bundleIdentifier)
+		return """
+			if [ "$(defaults read "\(domain)" \(RemoteControlSettings.urlSchemeEnabledKey) 2>/dev/null)" != "1" ]; then
+			  echo "\(escapeForDoubleQuotes(linksOffHint))"
+			  exit 1
+			fi
+			"""
+	}
+
+	static func commands(
+		cliPath: String = defaultCLIPath, bundleIdentifier: String = defaultBundleIdentifier
+	) -> [RaycastScriptCommand] {
 		let cli = "WHISPERA=\"${WHISPERA_CLI:-\(escapeForDoubleQuotes(cliPath))}\""
+		let linksCheck = linksEnabledCheck(bundleIdentifier: bundleIdentifier)
+		// The CLI reads the token, targets its own app bundle and prints why a command was refused
+		func cliCommand(_ flag: String, _ verb: String, title: String, description: String) -> RaycastScriptCommand {
+			RaycastScriptCommand(
+				fileName: "whispera-\(verb).sh", title: title, description: description, mode: .silent,
+				argumentPlaceholder: nil,
+				body: """
+					\(cli)
+					"$WHISPERA" \(flag) 2>&1
+					""")
+		}
 		return [
-			urlCommand("toggle", title: "Toggle Dictation", description: "Start or stop Whispera dictation."),
-			urlCommand("start", title: "Start Dictation", description: "Start Whispera dictation."),
-			urlCommand(
-				"stop", title: "Stop Dictation", description: "Stop Whispera dictation and paste the transcript."),
-			urlCommand(
-				"cancel", title: "Cancel Dictation", description: "Stop Whispera dictation and discard the recording."
-			),
-			urlCommand(
-				"copy-last", title: "Copy Last Transcript",
+			cliCommand("--toggle", "toggle", title: "Toggle Dictation", description: "Start or stop Whispera dictation."),
+			cliCommand("--start", "start", title: "Start Dictation", description: "Start Whispera dictation."),
+			cliCommand(
+				"--stop", "stop", title: "Stop Dictation",
+				description: "Stop Whispera dictation and paste the transcript."),
+			cliCommand(
+				"--cancel", "cancel", title: "Cancel Dictation",
+				description: "Stop Whispera dictation and discard the recording."),
+			cliCommand(
+				"--copy-last", "copy-last", title: "Copy Last Transcript",
 				description: "Copy the most recent Whispera transcript to the clipboard."),
-			urlCommand("history", title: "Open Transcription History", description: "Open Whispera's history window."),
+			cliCommand(
+				"--open-history", "history", title: "Open Transcription History",
+				description: "Open Whispera's history window."),
 			RaycastScriptCommand(
 				fileName: "whispera-add-word.sh",
 				title: "Add Word to Dictionary",
@@ -71,7 +101,7 @@ enum RaycastScripts {
 				argumentPlaceholder: "Word or phrase",
 				body: """
 					\(cli)
-					"$WHISPERA" --add-word "$1"
+					"$WHISPERA" --add-word "$1" 2>&1
 					"""
 			),
 			RaycastScriptCommand(
@@ -81,6 +111,7 @@ enum RaycastScripts {
 				mode: .silent,
 				argumentPlaceholder: "German or de",
 				body: """
+					\(linksCheck)
 					language="$1"
 					open -g "whispera://language?name=${language// /%20}"
 					"""
@@ -92,6 +123,7 @@ enum RaycastScripts {
 				mode: .silent,
 				argumentPlaceholder: "openai_whisper-small.en",
 				body: """
+					\(linksCheck)
 					\(tokenLine)
 					open -g "whispera://model?name=$1&token=$token"
 					"""
@@ -126,9 +158,11 @@ enum RaycastScripts {
 
 	/// Writes every script into `directory` as executable files, replacing older copies.
 	@discardableResult
-	static func export(to directory: URL, cliPath: String = defaultCLIPath) throws -> [URL] {
+	static func export(
+		to directory: URL, cliPath: String = defaultCLIPath, bundleIdentifier: String = defaultBundleIdentifier
+	) throws -> [URL] {
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-		return try commands(cliPath: cliPath).map { command in
+		return try commands(cliPath: cliPath, bundleIdentifier: bundleIdentifier).map { command in
 			let url = directory.appendingPathComponent(command.fileName)
 			try command.render().write(to: url, atomically: true, encoding: .utf8)
 			try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
@@ -144,19 +178,5 @@ enum RaycastScripts {
 			escaped.append(character)
 		}
 		return escaped
-	}
-
-	private static func urlCommand(_ verb: String, title: String, description: String) -> RaycastScriptCommand {
-		let needsToken = RemoteCommand(url: URL(string: "whispera://\(verb)")!)?.requiresToken ?? true
-		return RaycastScriptCommand(
-			fileName: "whispera-\(verb).sh",
-			title: title,
-			description: description,
-			mode: .silent,
-			argumentPlaceholder: nil,
-			body: needsToken
-				? "\(tokenLine)\nopen -g \"whispera://\(verb)?token=$token\""
-				: "open -g \"whispera://\(verb)\""
-		)
 	}
 }
