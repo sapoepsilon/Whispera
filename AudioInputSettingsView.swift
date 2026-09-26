@@ -22,21 +22,23 @@ struct InputChannelSettingsRow: View {
 		.mixAllChannels
 	@AppStorage("selectedAudioInputDeviceUID") private var deviceUID = AudioDeviceManager
 		.systemDefaultUID
+	@AppStorage(AudioDeviceManager.clamshellDeviceKey) private var clamshellDeviceUID = ""
 	@AppStorage("enableStreaming") private var liveTranscriptionEnabled = Constants.enableStreamingDefault
 	@AppStorage("useStreamingTranscription") private var useStreamingTranscription = true
 	@State private var deviceManager = AudioDeviceManager.shared
+	private var transcriber = WhisperKitTranscriber.shared
 
-	private var channelDescription: String {
-		// Live mode records through WhisperKit and file mode through AVAudioRecorder; both mix every channel
-		if liveTranscriptionEnabled || !useStreamingTranscription {
-			return "Only applies with Live Transcription Mode off; live dictation always mixes all channels"
-		}
-		return "Record a single channel of a multi-channel interface"
+	private var captureRoute: CaptureRoute {
+		CaptureRoute.resolve(
+			liveTranscriptionEnabled: liveTranscriptionEnabled,
+			modelSupportsLive: transcriber.supportsLiveTranscription,
+			useStreamingTranscription: useStreamingTranscription)
 	}
 
 	private var channelCount: Int {
-		_ = deviceManager.availableDevices
-		return deviceManager.inputChannelCount(forUID: deviceUID)
+		// Re-read when the device list or either saved choice changes
+		_ = (deviceManager.availableDevices, deviceUID, clamshellDeviceUID)
+		return deviceManager.effectiveInputChannelCount
 	}
 
 	var body: some View {
@@ -44,7 +46,7 @@ struct InputChannelSettingsRow: View {
 		if count > 1 {
 			SettingRow(
 				"Input Channel",
-				description: channelDescription
+				description: InputChannelSelection.settingsDescription(on: captureRoute)
 			) {
 				Picker("", selection: $selectedChannel) {
 					Text("All channels").tag(InputChannelSelection.mixAllChannels)

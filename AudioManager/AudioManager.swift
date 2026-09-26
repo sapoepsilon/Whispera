@@ -110,6 +110,8 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	private var audioFileURL: URL?
 	@ObservationIgnored
+	private var fileCaptureChannel = InputChannelSelection.mixAllChannels
+	@ObservationIgnored
 	private let captureBuffer = StreamCaptureBuffer()
 	@ObservationIgnored
 	private var meteringTimer: Timer?
@@ -503,10 +505,15 @@ extension AudioManager {
 				withIntermediateDirectories: true
 			)
 
+			let selectedChannel = InputChannelSelection.stored(in: .standard)
+			let recordedChannels = InputChannelSelection.fileRecordingChannelCount(
+				selected: selectedChannel, deviceChannels: deviceManager.effectiveInputChannelCount)
+			fileCaptureChannel = recordedChannels > 1 ? selectedChannel : InputChannelSelection.mixAllChannels
+
 			let settings: [String: Any] = [
 				AVFormatIDKey: Int(kAudioFormatLinearPCM),
 				AVSampleRateKey: 16000.0,
-				AVNumberOfChannelsKey: 1,
+				AVNumberOfChannelsKey: recordedChannels,
 				AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
 			]
 
@@ -551,9 +558,10 @@ extension AudioManager {
 		activeCapturePath = nil
 		if let audioFileURL, let session = ledger.finishCapture() {
 			let translate = enableTranslation
+			let channel = fileCaptureChannel
 			startTranscription(session) { manager in
 				await manager.transcribeAudio(
-					fileURL: audioFileURL, enableTranslation: translate, session: session)
+					fileURL: audioFileURL, channel: channel, enableTranslation: translate, session: session)
 			}
 		} else if let dropped = ledger.dropCapture() {
 			releaseModel(for: dropped.id)
@@ -1017,13 +1025,14 @@ extension AudioManager {
 		}
 	}
 
-	fileprivate func transcribeAudio(fileURL: URL, enableTranslation: Bool, session: DictationSession)
-		async
-	{
-		if VoiceActivitySettings(defaults: .standard).enabled {
+	fileprivate func transcribeAudio(
+		fileURL: URL, channel: Int, enableTranslation: Bool, session: DictationSession
+	) async {
+		// A single-channel pick needs the samples in hand to drop the other channels
+		if VoiceActivitySettings(defaults: .standard).enabled || channel != InputChannelSelection.mixAllChannels {
 			let path = fileURL.path
 			let samples = await Task.detached(priority: .userInitiated) {
-				try? AudioProcessor.loadAudioAsFloatArray(fromPath: path)
+				try? InputChannelSelection.loadSamples(fromPath: path, selected: channel)
 			}.value
 			if let samples {
 				try? FileManager.default.removeItem(at: fileURL)
