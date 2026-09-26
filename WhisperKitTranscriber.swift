@@ -1397,25 +1397,42 @@ import WhisperKit
 		}
 	}
 
+	/// Races `operation` against a deadline. Unlike a task group, this returns at the
+	/// deadline even if the operation ignores cancellation (the model list fetch can),
+	/// which otherwise leaves initialization waiting forever.
 	private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T)
 		async throws -> T
 	{
-		try await withThrowingTaskGroup(of: T.self) { group in
-			group.addTask {
-				try await operation()
+		let gate = ResumeGate()
+		return try await withCheckedThrowingContinuation { continuation in
+			let work = Task {
+				do {
+					let value = try await operation()
+					if gate.claim() { continuation.resume(returning: value) }
+				} catch {
+					if gate.claim() { continuation.resume(throwing: error) }
+				}
 			}
-
-			group.addTask {
-				try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-				throw TimeoutError()
+			Task {
+				try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+				if gate.claim() {
+					work.cancel()
+					continuation.resume(throwing: TimeoutError())
+				}
 			}
+		}
+	}
 
-			guard let result = try await group.next() else {
-				throw TimeoutError()
-			}
+	private final class ResumeGate: @unchecked Sendable {
+		private let lock = NSLock()
+		private var claimed = false
 
-			group.cancelAll()
-			return result
+		func claim() -> Bool {
+			lock.lock()
+			defer { lock.unlock() }
+			if claimed { return false }
+			claimed = true
+			return true
 		}
 	}
 
