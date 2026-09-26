@@ -26,10 +26,12 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
 	}
 
 	static let defaultContentSize = NSSize(width: 640, height: 620)
+	static let minimumContentSize = NSSize(width: 520, height: 400)
 
-	/// The hosting view only reports a minimum size: by default it also pushes the list's ideal
-	/// height onto the window, which grew past the bottom of the screen once history had a few
-	/// dozen entries.
+	/// The hosting view sets no window size constraints at all. With the default options it pushed
+	/// the list's ideal height onto the window, and even with only `.minSize` the history list
+	/// reported its full height as the minimum (640 x 2745 pt with 50 entries), so the window ran
+	/// off the bottom of the screen. The minimum is fixed here instead.
 	static func makeWindow<Content: View>(rootView: Content) -> NSWindow {
 		let window = NSWindow(
 			contentRect: NSRect(origin: .zero, size: defaultContentSize),
@@ -38,8 +40,9 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
 			defer: false
 		)
 		let hostingView = NSHostingView(rootView: rootView)
-		hostingView.sizingOptions = [.minSize]
+		hostingView.sizingOptions = []
 		window.contentView = hostingView
+		window.contentMinSize = minimumContentSize
 		window.setContentSize(defaultContentSize)
 		return window
 	}
