@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct TextInsertionSettingsView: View {
+	@AppStorage(TextInsertionSettings.Keys.pasteMethod)
+	private var pasteMethod: PasteMethod = .commandV
+	@AppStorage(TextInsertionSettings.Keys.externalScriptPath)
+	private var externalScriptPath = ""
 	@AppStorage(TextInsertionSettings.Keys.clipboardHandling)
 	private var clipboardHandling: ClipboardHandling = .restore
 	@AppStorage(TextInsertionSettings.Keys.pasteDelayBeforeMs)
@@ -11,6 +15,42 @@ struct TextInsertionSettingsView: View {
 	var body: some View {
 		ScrollView {
 			VStack(spacing: 24) {
+				SettingsSection("Insertion") {
+					SettingRow("Insert Text By", description: pasteMethod.summary) {
+						Picker("", selection: $pasteMethod) {
+							ForEach(PasteMethod.allCases) { method in
+								Text(method.displayName).tag(method)
+							}
+						}
+						.labelsHidden()
+						.frame(width: 240)
+					}
+
+					if pasteMethod == .externalScript {
+						SettingRow(
+							"Script",
+							description: scriptDescription
+						) {
+							HStack(spacing: 8) {
+								TextField("/path/to/script", text: $externalScriptPath)
+									.textFieldStyle(.roundedBorder)
+									.frame(width: 200)
+								Button("Choose…") { chooseScript() }
+									.buttonStyle(.bordered)
+							}
+						}
+					}
+
+					if pasteMethod == .copyOnly || pasteMethod == .externalScript {
+						Text("Live dictation always pastes as you speak.")
+							.font(.caption)
+							.foregroundColor(.secondary)
+							.frame(maxWidth: .infinity, alignment: .leading)
+					}
+				}
+
+				Divider()
+
 				SettingsSection("Clipboard") {
 					SettingRow(
 						"After Inserting",
@@ -47,6 +87,29 @@ struct TextInsertionSettingsView: View {
 				}
 			}
 			.padding(20)
+		}
+	}
+
+	private var scriptDescription: String {
+		if externalScriptPath.isEmpty {
+			return "Receives the transcript as $1 and in WHISPERA_TRANSCRIPT"
+		}
+		do {
+			_ = try ExternalScriptRunner.validate(path: externalScriptPath)
+			return "Receives the transcript as $1 and in WHISPERA_TRANSCRIPT"
+		} catch {
+			return error.localizedDescription
+		}
+	}
+
+	private func chooseScript() {
+		let panel = NSOpenPanel()
+		panel.canChooseFiles = true
+		panel.canChooseDirectories = false
+		panel.allowsMultipleSelection = false
+		panel.prompt = "Use Script"
+		if panel.runModal() == .OK, let url = panel.url {
+			externalScriptPath = url.path
 		}
 	}
 

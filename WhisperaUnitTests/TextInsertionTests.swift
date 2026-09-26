@@ -20,6 +20,12 @@ final class RecordingKeyPoster: KeyEventPosting {
 		self.pasteboard = pasteboard
 	}
 
+	var typedChunks: [String] = []
+
+	func postUnicode(_ units: [UniChar]) {
+		typedChunks.append(String(utf16CodeUnits: units, count: units.count))
+	}
+
 	func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
 		events.append(
 			Event(keyCode: keyCode, flags: flags, clipboardText: pasteboard.string(forType: .string)))
@@ -256,5 +262,189 @@ struct PasteDelaySettingsTests {
 		#expect(beforePaste >= .milliseconds(120))
 		#expect(finished - pastedAt >= .milliseconds(150))
 		#expect(pasteboard.string(forType: .string) == "user copy")
+	}
+}
+
+struct TypingPlanTests {
+	@Test func splitsLongTextIntoTwentyUnitEvents() {
+		let text = String(repeating: "a", count: 45)
+		let steps = TypingPlan.steps(for: text)
+		let sizes = steps.compactMap { step -> Int? in
+			if case .text(let units) = step { return units.count }
+			return nil
+		}
+		#expect(sizes == [20, 20, 5])
+	}
+
+	@Test func neverSplitsASurrogatePairOrCluster() {
+		let text = String(repeating: "a", count: 19) + "\u{1F600}" + "b"
+		let steps = TypingPlan.steps(for: text)
+		guard case .text(let first) = steps.first, case .text(let second) = steps.last else {
+			Issue.record("expected two text steps, got \(steps)")
+			return
+		}
+		#expect(first.count == 19)
+		#expect(String(utf16CodeUnits: second, count: second.count) == "\u{1F600}b")
+	}
+
+	@Test func newlinesBecomeReturnKeySteps() {
+		let steps = TypingPlan.steps(for: "one\ntwo\r\nthree")
+		#expect(
+			steps == [
+				.text(Array("one".utf16)), .newline, .text(Array("two".utf16)), .newline,
+				.text(Array("three".utf16)),
+			])
+	}
+}
+
+@MainActor
+struct PasteMethodTests {
+	private func makeInserter(
+		_ pasteboard: NSPasteboard, _ poster: RecordingKeyPoster,
+		_ configure: @escaping (inout TextInsertionSettings) -> Void
+	) -> TextInserter {
+		TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, settingsProvider: { fastSettings(configure) })
+	}
+
+	@Test func typeCharactersTypesWithoutTouchingTheClipboard() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("user copy", forType: .string)
+		let changeCount = pasteboard.changeCount
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = makeInserter(pasteboard, poster) { $0.pasteMethod = .typeCharacters }
+
+		await inserter.insert("héllo wörld", context: .finalTranscript).value
+
+		#expect(poster.typedChunks.joined() == "héllo wörld")
+		#expect(poster.events.isEmpty)
+		#expect(pasteboard.changeCount == changeCount)
+	}
+
+	@Test func typeCharactersWithKeepTranscriptAlsoCopies() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = makeInserter(pasteboard, poster) {
+			$0.pasteMethod = .typeCharacters
+			$0.clipboardHandling = .keepTranscript
+		}
+
+		await inserter.insert("typed", context: .finalTranscript).value
+
+		#expect(pasteboard.string(forType: .string) == "typed")
+	}
+
+	@Test func copyOnlyLeavesTranscriptAndSendsNoKeys() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("user copy", forType: .string)
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = makeInserter(pasteboard, poster) { $0.pasteMethod = .copyOnly }
+
+		await inserter.insert("copied", context: .finalTranscript).value
+
+		#expect(poster.events.isEmpty)
+		#expect(poster.typedChunks.isEmpty)
+		#expect(pasteboard.string(forType: .string) == "copied")
+	}
+
+	@Test func liveSegmentsFallBackToPasteForNonInsertingMethods() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = makeInserter(pasteboard, poster) { $0.pasteMethod = .copyOnly }
+
+		await inserter.insert(" live", context: .liveSegment).value
+
+		#expect(poster.events.map(\.keyCode) == [KeyCode.v])
+	}
+
+	@Test func methodRoundTripsThroughDefaults() {
+		let suite = "PasteMethodTests.roundtrip.\(UUID().uuidString)"
+		let defaults = UserDefaults(suiteName: suite)!
+		defer { defaults.removePersistentDomain(forName: suite) }
+		#expect(TextInsertionSettings(defaults: defaults).pasteMethod == .commandV)
+
+		var settings = TextInsertionSettings()
+		settings.pasteMethod = .externalScript
+		settings.externalScriptPath = "/usr/local/bin/insert.sh"
+		settings.save(to: defaults)
+
+		let loaded = TextInsertionSettings(defaults: defaults)
+		#expect(loaded.pasteMethod == .externalScript)
+		#expect(loaded.externalScriptPath == "/usr/local/bin/insert.sh")
+	}
+}
+
+struct ExternalScriptRunnerTests {
+	private func makeScript(_ body: String) throws -> (script: URL, directory: URL) {
+		let directory = FileManager.default.temporaryDirectory
+			.appendingPathComponent("whispera-script-tests-\(UUID().uuidString)")
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		let script = directory.appendingPathComponent("insert.sh")
+		try ("#!/bin/sh\n" + body).write(to: script, atomically: true, encoding: .utf8)
+		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+		return (script, directory)
+	}
+
+	@Test func passesTranscriptAsArgumentAndEnvironment() async throws {
+		let (script, directory) = try makeScript(
+			"printf '%s|%s' \"$1\" \"$WHISPERA_TRANSCRIPT\" > \"$(dirname \"$0\")/out.txt\"\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		try await ExternalScriptRunner.run(path: script.path, text: "it's \"quoted\" text")
+
+		let output = try String(contentsOf: directory.appendingPathComponent("out.txt"), encoding: .utf8)
+		#expect(output == "it's \"quoted\" text|it's \"quoted\" text")
+	}
+
+	@Test func nonZeroExitIsAnError() async throws {
+		let (script, directory) = try makeScript("exit 3\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		await #expect(throws: ExternalScriptError.failed(exitCode: 3)) {
+			try await ExternalScriptRunner.run(path: script.path, text: "x")
+		}
+	}
+
+	@Test func hungScriptTimesOut() async throws {
+		let (script, directory) = try makeScript("sleep 5\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		await #expect(throws: ExternalScriptError.timedOut) {
+			try await ExternalScriptRunner.run(path: script.path, text: "x", timeout: 0.3)
+		}
+	}
+
+	@Test func rejectsMissingOrNonExecutablePaths() throws {
+		#expect(throws: ExternalScriptError.notConfigured) {
+			try ExternalScriptRunner.validate(path: "  ")
+		}
+		#expect(throws: ExternalScriptError.notExecutable("/nonexistent/whispera-script")) {
+			try ExternalScriptRunner.validate(path: "/nonexistent/whispera-script")
+		}
+	}
+
+	@MainActor
+	@Test func failedScriptLeavesTranscriptOnClipboard() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster,
+			settingsProvider: {
+				fastSettings {
+					$0.pasteMethod = .externalScript
+					$0.externalScriptPath = "/nonexistent/whispera-script"
+				}
+			})
+
+		await inserter.insert("rescued", context: .finalTranscript).value
+
+		#expect(pasteboard.string(forType: .string) == "rescued")
 	}
 }
