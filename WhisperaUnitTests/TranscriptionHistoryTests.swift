@@ -411,7 +411,10 @@ struct TranscriptionHistoryStoreTests {
 		#expect(store.entries.map(\.text) == ["new", "old"])
 	}
 
-	@Test func retranscribingAnEntryDeletedMidFlightDoesNotTouchIt() async throws {
+	// These two cover the store's bookkeeping when an entry disappears mid-flight, not
+	// transcription, so the transcriber is a closure that deletes the entry and returns a fixed
+	// result. Real WhisperKit re-transcription is covered by HistoryRetranscriptionTests.
+	@Test func storeDiscardsTheResultForAnEntryDeletedWhileRetranscribing() async throws {
 		let directory = makeTempDirectory()
 		let defaults = makeDefaults()
 		let store = TranscriptionHistoryStore(directory: directory, defaults: defaults)
@@ -424,7 +427,7 @@ struct TranscriptionHistoryStoreTests {
 
 		try await store.retranscribe(entry) { _ in
 			store.delete(entry)
-			return ("resurrected", "tiny")
+			return (text: "resurrected", modelName: "tiny")
 		}
 
 		#expect(store.entries.isEmpty)
@@ -433,7 +436,7 @@ struct TranscriptionHistoryStoreTests {
 		#expect(reopened.entries.isEmpty, "A deleted entry must not come back with the new text")
 	}
 
-	@Test func failedRetranscriptionOfADeletedEntryStillThrowsWithoutWriting() async throws {
+	@Test func storeRethrowsWithoutWritingWhenAnEntryIsDeletedAndRetranscriptionFails() async throws {
 		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
 		let entry = try #require(
 			store.record(
