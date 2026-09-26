@@ -299,7 +299,8 @@ struct ClipboardSafetyTests {
 		#expect(pasteboard.string(forType: .string) == nil, "The secret is still taken back afterwards")
 	}
 
-	@Test func restoresAfterTheTimeoutWhenNothingReads() async {
+	/// Restoring when no app read the paste would leave the transcript nowhere but history
+	@Test func keepsTheTranscriptWhenNothingReadsIt() async {
 		let pasteboard = makePasteboard()
 		defer { pasteboard.releaseGlobally() }
 		pasteboard.clearContents()
@@ -308,6 +309,8 @@ struct ClipboardSafetyTests {
 		let inserter = TextInserter(
 			pasteboard: pasteboard, keyPoster: poster, readTimeoutMs: 100,
 			settingsProvider: { fastSettings() })
+		var problems: [InsertionProblem] = []
+		inserter.onProblem = { problems.append($0) }
 
 		let clock = ContinuousClock()
 		let start = clock.now
@@ -315,7 +318,49 @@ struct ClipboardSafetyTests {
 
 		#expect(clock.now - start >= .milliseconds(100))
 		#expect(clock.now - start < .seconds(2))
+		#expect(pasteboard.string(forType: .string) == "hello")
+		#expect(pasteboard.types?.contains(ClipboardWriter.transientType) == false)
+		#expect(problems == [.notPasted(transcriptOnClipboard: true)])
+	}
+
+	@Test func concealedTextNobodyReadIsStillTakenBack() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("old copy", forType: .string)
+		let poster = LateReadingKeyPoster(pasteboard: pasteboard, delayMs: -1)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, readTimeoutMs: 100,
+			settingsProvider: { fastSettings() })
+		var problems: [InsertionProblem] = []
+		inserter.onProblem = { problems.append($0) }
+
+		await inserter.insert("hunter2", context: .finalTranscript, concealed: true).value
+
 		#expect(pasteboard.string(forType: .string) == "old copy")
+		#expect(problems == [.notPasted(transcriptOnClipboard: false)])
+	}
+
+	@Test func hungClipboardOwnerIsAbandonedAtTheDeadline() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let clock = ContinuousClock()
+		let start = clock.now
+		let capture = await ClipboardSnapshot.inspectInBackground(pasteboard, deadlineMs: 100) { _, _ in
+			Thread.sleep(forTimeInterval: 3)
+			return .captured(ClipboardSnapshot(items: []))
+		}
+		#expect(capture == .timedOut)
+		#expect(clock.now - start < .seconds(1))
+	}
+
+	@Test func fastClipboardOwnerBeatsTheDeadline() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("user copy", forType: .string)
+		let capture = await ClipboardSnapshot.inspectInBackground(pasteboard, deadlineMs: 5_000)
+		#expect(capture == ClipboardSnapshot.inspect(pasteboard))
 	}
 
 	@Test(arguments: [ClipboardSnapshot.concealedType, ClipboardWriter.transientType])
@@ -386,6 +431,139 @@ struct ClipboardSafetyTests {
 		#expect(pasteboard.string(forType: .string) == "hello")
 		#expect(await receipt.waitForRead(timeoutMs: 10))
 	}
+}
+
+/// A Mac where Whispera lost Accessibility access: posted events go nowhere.
+final class DeniedKeyPoster: KeyEventPosting {
+	var canPostEvents: Bool { false }
+	var posted: [CGKeyCode] = []
+	var typed: [String] = []
+	func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) { posted.append(keyCode) }
+	func postUnicode(_ units: [UniChar]) { typed.append(String(utf16CodeUnits: units, count: units.count)) }
+}
+
+@MainActor
+struct InsertionDeliveryTests {
+	private func run(
+		_ text: String = "hello there", context: InsertionContext = .finalTranscript,
+		poster: KeyEventPosting, pasteboard: NSPasteboard,
+		_ configure: @escaping (inout TextInsertionSettings) -> Void = { _ in }
+	) async -> [InsertionProblem] {
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, readTimeoutMs: 100,
+			settingsProvider: { fastSettings(configure) })
+		var problems: [InsertionProblem] = []
+		inserter.onProblem = { problems.append($0) }
+		await inserter.insert(text, context: context).value
+		return problems
+	}
+
+	@Test func withoutAccessibilityTheTranscriptStaysOnTheClipboardAndNoKeysArePressed() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("old copy", forType: .string)
+		let poster = DeniedKeyPoster()
+
+		let problems = await run(poster: poster, pasteboard: pasteboard) { $0.autoSubmit = true }
+
+		#expect(poster.posted.isEmpty, "No Cmd-V and no Return")
+		#expect(pasteboard.string(forType: .string) == "hello there")
+		#expect(pasteboard.types?.contains(ClipboardWriter.transientType) == false)
+		#expect(problems == [.accessibilityDenied(transcriptOnClipboard: true)])
+	}
+
+	@Test func withoutAccessibilityTypingIsNotAttempted() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = DeniedKeyPoster()
+
+		let problems = await run(poster: poster, pasteboard: pasteboard) { $0.pasteMethod = .typeCharacters }
+
+		#expect(poster.typed.isEmpty)
+		#expect(pasteboard.string(forType: .string) == "hello there")
+		#expect(problems == [.accessibilityDenied(transcriptOnClipboard: true)])
+	}
+
+	@Test func withoutAccessibilityLiveSegmentsReportButDoNotOverwriteTheClipboard() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("old copy", forType: .string)
+		let poster = DeniedKeyPoster()
+
+		let problems = await run(" segment", context: .liveSegment, poster: poster, pasteboard: pasteboard)
+
+		#expect(poster.posted.isEmpty)
+		#expect(pasteboard.string(forType: .string) == "old copy")
+		#expect(problems == [.accessibilityDenied(transcriptOnClipboard: false)])
+	}
+
+	@Test func withoutAccessibilityTheLiveSessionDoesNotPressReturn() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = DeniedKeyPoster()
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster,
+			settingsProvider: { fastSettings { $0.autoSubmit = true } })
+
+		await inserter.submitAfterLiveSession().value
+
+		#expect(poster.posted.isEmpty)
+	}
+
+	@Test(arguments: [ClipboardHandling.restore, .keepTranscript])
+	func autoSubmitNeverPressesReturnAfterAnUnreadPaste(handling: ClipboardHandling) async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = LateReadingKeyPoster(pasteboard: pasteboard, delayMs: -1)
+		var returns = 0
+		let counting = CountingPoster(inner: poster) { if $0 == KeyCode.returnKey { returns += 1 } }
+
+		let problems = await run(poster: counting, pasteboard: pasteboard) {
+			$0.autoSubmit = true
+			$0.clipboardHandling = handling
+		}
+
+		#expect(returns == 0)
+		#expect(pasteboard.string(forType: .string) == "hello there")
+		#expect(problems == [.notPasted(transcriptOnClipboard: true)])
+	}
+
+	@Test func autoSubmitStillFiresAfterAPasteThatWasRead() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+
+		let problems = await run(poster: poster, pasteboard: pasteboard) {
+			$0.autoSubmit = true
+			$0.clipboardHandling = .keepTranscript
+		}
+
+		#expect(poster.events.map(\.keyCode) == [KeyCode.v, KeyCode.returnKey])
+		#expect(problems.isEmpty)
+	}
+
+	@Test func problemMessagesNameTheFix() {
+		#expect(InsertionProblem.accessibilityDenied(transcriptOnClipboard: true).message.contains("Accessibility"))
+		#expect(InsertionProblem.notPasted(transcriptOnClipboard: true).message.contains("clipboard"))
+	}
+}
+
+/// Forwards to another poster and reports each key press.
+final class CountingPoster: KeyEventPosting {
+	let inner: KeyEventPosting
+	let onKey: (CGKeyCode) -> Void
+	init(inner: KeyEventPosting, onKey: @escaping (CGKeyCode) -> Void) {
+		self.inner = inner
+		self.onKey = onKey
+	}
+	var canPostEvents: Bool { inner.canPostEvents }
+	func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
+		onKey(keyCode)
+		inner.postKey(keyCode, flags: flags)
+	}
+	func postUnicode(_ units: [UniChar]) { inner.postUnicode(units) }
 }
 
 @MainActor

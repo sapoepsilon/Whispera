@@ -191,6 +191,9 @@ final class AudioManager: NSObject {
 		}
 		observeMicStreamPolicy()
 		observePowerState()
+		TextInserter.shared.onProblem = { [weak self] problem in
+			self?.transcriptionError = problem.message
+		}
 		deviceLostObserver = NotificationCenter.default.addObserver(
 			forName: .activeInputDeviceLost, object: nil, queue: .main
 		) { [weak self] notification in

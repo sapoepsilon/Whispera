@@ -14,6 +14,9 @@ struct ClipboardSnapshot: Equatable {
 		case sensitive
 		/// Too large to hold in memory for a paste; the clipboard is left with the transcript.
 		case tooLarge
+		/// The owning app did not hand over its data in time (a hung app, a remote-desktop
+		/// bridge); treated like `.tooLarge` so the paste never waits on it.
+		case timedOut
 	}
 
 	struct Limits: Equatable, Sendable {
@@ -71,13 +74,32 @@ struct ClipboardSnapshot: Equatable {
 		return .captured(ClipboardSnapshot(items: items))
 	}
 
+	/// Large images legitimately take a few hundred milliseconds to hand over; an owner that
+	/// takes longer is treated as stuck.
+	static let defaultCaptureDeadlineMs = 500
+
 	/// Reading every flavor can block while other apps produce their data, so it runs off the
-	/// main actor. NSPasteboard is documented as safe to use from any thread.
-	static func inspectInBackground(_ pasteboard: NSPasteboard, limits: Limits = Limits()) async -> Capture {
+	/// main actor. NSPasteboard is documented as safe to use from any thread. A stuck owner can
+	/// hold the read until the pasteboard server gives up, and every later paste queues behind
+	/// this one, so the read is abandoned at the deadline.
+	static func inspectInBackground(
+		_ pasteboard: NSPasteboard, limits: Limits = Limits(), deadlineMs: Int = defaultCaptureDeadlineMs,
+		inspector: @escaping @Sendable (NSPasteboard, Limits) -> Capture = {
+			ClipboardSnapshot.inspect($0, limits: $1)
+		}
+	) async -> Capture {
 		let box = UncheckedPasteboard(pasteboard: pasteboard)
-		return await Task.detached(priority: .userInitiated) {
-			inspect(box.pasteboard, limits: limits)
-		}.value
+		let result = FirstResult<Capture>()
+		return await withCheckedContinuation { continuation in
+			result.install(continuation)
+			Task.detached(priority: .userInitiated) {
+				result.resume(with: inspector(box.pasteboard, limits))
+			}
+			Task.detached {
+				try? await Task.sleep(nanoseconds: UInt64(max(deadlineMs, 0)) * 1_000_000)
+				result.resume(with: .timedOut)
+			}
+		}
 	}
 
 	func restore(to pasteboard: NSPasteboard) {
@@ -96,6 +118,36 @@ struct ClipboardSnapshot: Equatable {
 
 private struct UncheckedPasteboard: @unchecked Sendable {
 	let pasteboard: NSPasteboard
+}
+
+/// Resumes a continuation with whichever value arrives first and drops the rest.
+private final class FirstResult<Value: Sendable>: @unchecked Sendable {
+	private let lock = NSLock()
+	private var continuation: CheckedContinuation<Value, Never>?
+	private var early: Value?
+
+	func install(_ continuation: CheckedContinuation<Value, Never>) {
+		lock.lock()
+		if let early {
+			lock.unlock()
+			continuation.resume(returning: early)
+			return
+		}
+		self.continuation = continuation
+		lock.unlock()
+	}
+
+	func resume(with value: Value) {
+		lock.lock()
+		guard let continuation else {
+			if early == nil { early = value }
+			lock.unlock()
+			return
+		}
+		self.continuation = nil
+		lock.unlock()
+		continuation.resume(returning: value)
+	}
 }
 
 /// Serves the transcript lazily so Whispera learns when the target app actually reads it, and

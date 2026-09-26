@@ -1,12 +1,22 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 
 protocol KeyEventPosting {
+	/// Without Accessibility access `CGEvent.post` is a silent no-op, so nothing typed or pasted
+	/// would arrive and nothing would say so.
+	var canPostEvents: Bool { get }
 	func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags)
 	func postUnicode(_ units: [UniChar])
 }
 
+extension KeyEventPosting {
+	var canPostEvents: Bool { true }
+}
+
 struct CGKeyEventPoster: KeyEventPosting {
+	var canPostEvents: Bool { AXIsProcessTrusted() }
+
 	func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
 		let source = CGEventSource(stateID: .combinedSessionState)
 		let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
@@ -36,6 +46,39 @@ enum KeyCode {
 	static let returnKey: CGKeyCode = 0x24
 }
 
+/// Why a transcript did not reach the focused app, so the user hears about it instead of the
+/// words silently disappearing.
+enum InsertionProblem: Equatable, Sendable {
+	case accessibilityDenied(transcriptOnClipboard: Bool)
+	/// Cmd-V was sent but no app read the transcript.
+	case notPasted(transcriptOnClipboard: Bool)
+
+	var message: String {
+		switch self {
+		case .accessibilityDenied(true):
+			return String(
+				localized:
+					"Whispera couldn't paste because Accessibility access is off. The transcript is on the clipboard. Turn Whispera on in System Settings > Privacy & Security > Accessibility."
+			)
+		case .accessibilityDenied(false):
+			return String(
+				localized:
+					"Whispera couldn't type because Accessibility access is off. Turn Whispera on in System Settings > Privacy & Security > Accessibility."
+			)
+		case .notPasted(true):
+			return String(
+				localized:
+					"No app took the paste, so the transcript was left on the clipboard. Click where the text should go and press Cmd-V."
+			)
+		case .notPasted(false):
+			return String(
+				localized:
+					"No app took the paste. Secure Input was on, so the text was not kept on the clipboard."
+			)
+		}
+	}
+}
+
 @MainActor
 final class TextInserter {
 	static let shared = TextInserter()
@@ -49,7 +92,10 @@ final class TextInserter {
 	private let autoSubmitDelayMs = 50
 	/// Upper bound on waiting for the target app to read the transcript before restoring.
 	private let readTimeoutMs: Int
+	private let captureDeadlineMs: Int
 	private var pendingInsertion: Task<Void, Never>?
+	/// Called on the main actor when a transcript could not be delivered.
+	var onProblem: ((InsertionProblem) -> Void)?
 
 	static let defaultReadTimeoutMs = 1500
 
@@ -57,6 +103,7 @@ final class TextInserter {
 		pasteboard: NSPasteboard = .general,
 		keyPoster: KeyEventPosting = CGKeyEventPoster(),
 		readTimeoutMs: Int = TextInserter.defaultReadTimeoutMs,
+		captureDeadlineMs: Int = ClipboardSnapshot.defaultCaptureDeadlineMs,
 		isSecureInputActive: @escaping () -> Bool = { SecureDictation.isSecureInputActive },
 		settingsProvider: @escaping () -> TextInsertionSettings = { .current }
 	) {
@@ -64,6 +111,7 @@ final class TextInserter {
 		self.keyPoster = keyPoster
 		self.isSecureInputActive = isSecureInputActive
 		self.readTimeoutMs = readTimeoutMs
+		self.captureDeadlineMs = captureDeadlineMs
 		self.settingsProvider = settingsProvider
 	}
 
@@ -88,7 +136,7 @@ final class TextInserter {
 			await previous?.value
 			guard let self else { return }
 			let settings = self.settingsProvider()
-			guard settings.shouldAutoSubmitAfterLiveSession else { return }
+			guard settings.shouldAutoSubmitAfterLiveSession, self.keyPoster.canPostEvents else { return }
 			await self.sleep(milliseconds: self.autoSubmitDelayMs)
 			self.keyPoster.postKey(KeyCode.returnKey, flags: settings.autoSubmitKey.flags)
 		}
@@ -106,9 +154,22 @@ final class TextInserter {
 		let concealed = concealed || isSecureInputActive()
 		var inserted = true
 
+		if method == .commandV || method == .typeCharacters, !keyPoster.canPostEvents {
+			// Live segments are all in history; one segment alone on the clipboard would mislead
+			let copied = context == .finalTranscript
+			if copied {
+				ClipboardWriter.write(text, to: pasteboard, transient: false, concealed: concealed)
+			}
+			logger.error("Accessibility access is off; cannot post keystrokes, transcript copied: \(copied)")
+			onProblem?(.accessibilityDenied(transcriptOnClipboard: copied))
+			return
+		}
+
 		switch method {
 		case .commandV:
-			await pasteViaClipboard(text, settings: settings, concealed: concealed)
+			inserted = await pasteViaClipboard(
+				text, settings: settings, concealed: concealed,
+				confirmRead: settings.shouldAutoSubmit(for: context))
 		case .typeCharacters:
 			await typeCharacters(text)
 		case .copyOnly:
@@ -124,7 +185,8 @@ final class TextInserter {
 			ClipboardWriter.write(text, to: pasteboard, transient: false)
 		}
 
-		if inserted, settings.shouldAutoSubmit(for: context) {
+		// Return pressed after a paste nobody took would submit whatever app is now in front
+		if inserted, settings.shouldAutoSubmit(for: context), keyPoster.canPostEvents {
 			await sleep(milliseconds: autoSubmitDelayMs)
 			keyPoster.postKey(KeyCode.returnKey, flags: settings.autoSubmitKey.flags)
 		}
@@ -155,9 +217,15 @@ final class TextInserter {
 		}
 	}
 
-	private func pasteViaClipboard(_ text: String, settings: TextInsertionSettings, concealed: Bool) async {
+	/// Returns whether the target app read the transcript. `confirmRead` makes the "keep
+	/// transcript" mode wait for that too, because auto-submit must not press Return blind.
+	private func pasteViaClipboard(
+		_ text: String, settings: TextInsertionSettings, concealed: Bool, confirmRead: Bool
+	) async -> Bool {
 		let restoreClipboard = settings.clipboardHandling == .restore
-		let capture = restoreClipboard ? await ClipboardSnapshot.inspectInBackground(pasteboard) : nil
+		let capture =
+			restoreClipboard
+			? await ClipboardSnapshot.inspectInBackground(pasteboard, deadlineMs: captureDeadlineMs) : nil
 		let receipt = PasteReadReceipt(text: text)
 		let changeCountAfterWrite = ClipboardWriter.write(
 			receipt, to: pasteboard, transient: restoreClipboard, concealed: concealed)
@@ -168,23 +236,45 @@ final class TextInserter {
 		guard let capture else {
 			if concealed {
 				// "Keep transcript" never applies to a secret: take it back once the app has read it
-				await holdAfterPaste(since: pastedAt, receipt: receipt, settings: settings)
+				let wasRead = await holdAfterPaste(since: pastedAt, receipt: receipt, settings: settings)
 				if pasteboard.changeCount == changeCountAfterWrite {
 					pasteboard.clearContents()
 				}
+				if !wasRead { onProblem?(.notPasted(transcriptOnClipboard: false)) }
+				return wasRead
 			}
-			return
+			guard confirmRead else { return true }
+			let wasRead = await receipt.waitForRead(timeoutMs: max(readTimeoutMs, settings.pasteDelayAfterMs))
+			if !wasRead { onProblem?(.notPasted(transcriptOnClipboard: true)) }
+			return wasRead
 		}
 
-		await holdAfterPaste(since: pastedAt, receipt: receipt, settings: settings)
+		let wasRead = await holdAfterPaste(since: pastedAt, receipt: receipt, settings: settings)
 
 		guard
 			ClipboardWriter.shouldRestore(
 				currentChangeCount: pasteboard.changeCount, changeCountAfterWrite: changeCountAfterWrite)
 		else {
 			logger.info("Clipboard changed during paste; leaving the newer content in place")
-			return
+			return wasRead
 		}
+		if !wasRead {
+			if concealed {
+				restorePrevious(capture)
+				onProblem?(.notPasted(transcriptOnClipboard: false))
+			} else {
+				// Restoring now would leave the transcript nowhere but history
+				ClipboardWriter.write(text, to: pasteboard, transient: false)
+				logger.info("Nothing read the transcript; leaving it on the clipboard instead of restoring")
+				onProblem?(.notPasted(transcriptOnClipboard: true))
+			}
+			return false
+		}
+		restorePrevious(capture)
+		return true
+	}
+
+	private func restorePrevious(_ capture: ClipboardSnapshot.Capture) {
 		switch capture {
 		case .captured(let snapshot):
 			snapshot.restore(to: pasteboard)
@@ -194,6 +284,8 @@ final class TextInserter {
 			logger.info("Previous clipboard was concealed or transient; cleared instead of restoring it")
 		case .tooLarge:
 			logger.info("Previous clipboard was too large to snapshot; leaving the transcript in place")
+		case .timedOut:
+			logger.info("Previous clipboard did not answer in time; leaving the transcript in place")
 		}
 	}
 
@@ -201,9 +293,10 @@ final class TextInserter {
 	/// well past 100 ms. A read receipt alone cannot tell the target app apart from a clipboard
 	/// watcher that read the transcript before Cmd-V was even posted, so restoring waits for both
 	/// a read and a minimum hold measured from Cmd-V.
+	@discardableResult
 	private func holdAfterPaste(
 		since pastedAt: ContinuousClock.Instant, receipt: PasteReadReceipt, settings: TextInsertionSettings
-	) async {
+	) async -> Bool {
 		let wasRead = await receipt.waitForRead(timeoutMs: max(readTimeoutMs, settings.pasteDelayAfterMs))
 		await sleep(milliseconds: settings.pasteDelayAfterMs)
 		if !wasRead {
@@ -214,6 +307,7 @@ final class TextInserter {
 		if remaining > .zero {
 			try? await Task.sleep(for: remaining)
 		}
+		return wasRead
 	}
 
 	private func sleep(milliseconds: Int) async {
