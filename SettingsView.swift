@@ -1109,6 +1109,11 @@ struct SettingsView: View {
 				.tabItem {
 					Label("Benchmark", systemImage: "speedometer")
 				}
+
+			PostProcessingSettingsView()
+				.tabItem {
+					Label("Post-Processing", systemImage: "wand.and.stars")
+				}
 		}
 		.frame(maxWidth: 600)
 		.onAppear {

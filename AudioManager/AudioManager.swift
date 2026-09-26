@@ -104,6 +104,8 @@ final class AudioManager: NSObject {
 	private var meteringTimer: Timer?
 	@ObservationIgnored
 	private var deviceActivationTask: Task<Void, Never>?
+	@ObservationIgnored
+	var postProcessCurrentSession = false
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -126,13 +128,18 @@ final class AudioManager: NSObject {
 
 	// MARK: - Public API
 
-	func toggleRecording() {
+	func toggleRecording(postProcess: Bool = false) {
 		if isRecording {
 			// Keep the mode the session started with: re-reading enableStreaming here
 			// would route stop to the wrong path if the setting changed mid-recording.
 			stopRecording()
 		} else {
-			currentRecordingMode = enableStreaming ? .liveTranscription : .text
+			let postProcessing = PostProcessingSettings()
+			// Post-processing rewrites the whole transcript, so that session must run in text mode.
+			let forceTextMode = postProcess && postProcessing.isEnabled
+			currentRecordingMode = enableStreaming && !forceTextMode ? .liveTranscription : .text
+			postProcessCurrentSession = postProcessing.shouldPostProcess(
+				requestedByShortcut: postProcess, isLiveMode: currentRecordingMode == .liveTranscription)
 			startRecording()
 		}
 	}
@@ -477,8 +484,9 @@ extension AudioManager {
 		transcriptionError = nil
 
 		do {
-			let transcription = try await whisperKitTranscriber.transcribeAudioArray(
+			let rawTranscription = try await whisperKitTranscriber.transcribeAudioArray(
 				audioArray, enableTranslation: enableTranslation)
+			let transcription = await postProcessIfRequested(rawTranscription)
 
 			await MainActor.run {
 				lastTranscription = transcription
@@ -501,8 +509,9 @@ extension AudioManager {
 		transcriptionError = nil
 
 		do {
-			let transcription = try await whisperKitTranscriber.transcribe(
+			let rawTranscription = try await whisperKitTranscriber.transcribe(
 				audioURL: fileURL, enableTranslation: enableTranslation)
+			let transcription = await postProcessIfRequested(rawTranscription)
 
 			await MainActor.run {
 				lastTranscription = transcription

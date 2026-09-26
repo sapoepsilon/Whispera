@@ -1,0 +1,427 @@
+import AppKit
+import Foundation
+import Testing
+
+@testable import Whispera
+
+private func isolatedDefaults(_ name: String = #function) -> UserDefaults {
+	let suite = "PostProcessingTests.\(name).\(UUID().uuidString)"
+	let defaults = UserDefaults(suiteName: suite)!
+	defaults.removePersistentDomain(forName: suite)
+	return defaults
+}
+
+private final class InMemorySecretStore: PostProcessingSecretStore, @unchecked Sendable {
+	private let lock = NSLock()
+	private var keys: [String: String]
+
+	init(_ keys: [String: String] = [:]) {
+		self.keys = keys
+	}
+
+	func apiKey(for providerID: String) throws -> String? {
+		lock.withLock { keys[providerID] }
+	}
+
+	func setAPIKey(_ key: String?, for providerID: String) throws {
+		lock.withLock { keys[providerID] = key }
+	}
+}
+
+private func chatCompletion(_ content: String) -> MockHTTPServer.Response {
+	.json([
+		"id": "chatcmpl-test",
+		"object": "chat.completion",
+		"choices": [["index": 0, "message": ["role": "assistant", "content": content], "finish_reason": "stop"]],
+	])
+}
+
+// MARK: - Text cleanup
+
+struct PostProcessingTextTests {
+	@Test func stripsLeadingThinkBlock() {
+		let raw = "  <think>\nthe user said um, I should drop it\n</think>\n\nMeet at 3:30 tomorrow."
+		#expect(PostProcessingText.stripLeadingThinkBlock(raw) == "Meet at 3:30 tomorrow.")
+	}
+
+	@Test func keepsTextWithoutThinkBlock() {
+		#expect(PostProcessingText.stripLeadingThinkBlock("Hello <think>x</think>") == "Hello <think>x</think>")
+	}
+
+	@Test func keepsUnterminatedThinkBlock() {
+		#expect(PostProcessingText.stripLeadingThinkBlock("<think>never closed") == "<think>never closed")
+	}
+
+	@Test func removesZeroWidthCharacters() {
+		let raw = "Hi\u{200B} there\u{FEFF}\u{200C}\u{200D}"
+		#expect(PostProcessingText.stripInvisibleCharacters(raw) == "Hi there")
+	}
+
+	@Test func cleanModelOutputTrims() {
+		#expect(PostProcessingText.cleanModelOutput("<think>a</think>  Done.\n") == "Done.")
+	}
+}
+
+// MARK: - Prompts
+
+struct PostProcessingPromptTests {
+	@Test func placeholderTemplateBecomesSingleUserMessage() {
+		let prompt = PostProcessingPrompt(id: "p", name: "p", template: "Fix: ${output}!")
+		let messages = prompt.messages(for: "hello world")
+		#expect(messages == PostProcessingMessages(system: nil, user: "Fix: hello world!"))
+	}
+
+	@Test func templateWithoutPlaceholderBecomesInstructions() {
+		let prompt = PostProcessingPrompt(id: "p", name: "p", template: "  Make it formal.  ")
+		let messages = prompt.messages(for: "hey whats up")
+		#expect(messages == PostProcessingMessages(system: "Make it formal.", user: "hey whats up"))
+	}
+
+	@Test func emptyTemplateSendsTranscriptOnly() {
+		let prompt = PostProcessingPrompt(id: "p", name: "p", template: "   ")
+		#expect(prompt.messages(for: "x") == PostProcessingMessages(system: nil, user: "x"))
+	}
+
+	@Test func defaultPromptWrapsTranscriptInTags() {
+		let user = PostProcessingPrompt.defaultCleanup.messages(for: "um hi").user
+		#expect(user.contains("<transcript>\num hi\n</transcript>"))
+		#expect(!user.contains(PostProcessingPrompt.outputPlaceholder))
+	}
+}
+
+// MARK: - Settings
+
+struct PostProcessingSettingsTests {
+	@Test func defaults() {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		#expect(settings.isEnabled == false)
+		#expect(settings.appliesToEveryDictation == false)
+		#expect(settings.shortcut == "⌥⇧Space")
+		#expect(settings.providerID == "openai")
+		#expect(settings.prompts == [.defaultCleanup])
+		#expect(settings.selectedPromptID == PostProcessingPrompt.defaultCleanup.id)
+		#expect(settings.timeoutSeconds == 30)
+		#expect(settings.model(for: "openai") == "")
+	}
+
+	@Test func persistsAcrossInstances() {
+		let defaults = isolatedDefaults()
+		let writer = PostProcessingSettings(defaults: defaults)
+		writer.isEnabled = true
+		writer.appliesToEveryDictation = true
+		writer.shortcut = "⌃⇧P"
+		writer.providerID = "groq"
+		writer.setModel("  llama-3.1-8b-instant ", for: "groq")
+		let custom = PostProcessingPrompt(id: "formal", name: "Formal", template: "Formal: ${output}")
+		writer.prompts = [.defaultCleanup, custom]
+		writer.selectedPromptID = "formal"
+
+		let reader = PostProcessingSettings(defaults: defaults)
+		#expect(reader.isEnabled)
+		#expect(reader.appliesToEveryDictation)
+		#expect(reader.shortcut == "⌃⇧P")
+		#expect(reader.provider.id == "groq")
+		#expect(reader.model(for: "groq") == "llama-3.1-8b-instant")
+		#expect(reader.selectedPrompt == custom)
+	}
+
+	@Test func unknownProviderFallsBackToDefault() {
+		let defaults = isolatedDefaults()
+		defaults.set("no_such_provider", forKey: PostProcessingSettings.Key.providerID)
+		#expect(PostProcessingSettings(defaults: defaults).provider.id == "openai")
+	}
+
+	@Test func missingSelectedPromptFallsBackToFirst() {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		settings.selectedPromptID = "deleted"
+		#expect(settings.selectedPrompt == .defaultCleanup)
+	}
+
+	@Test func emptyPromptListRestoresDefault() {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		settings.prompts = []
+		#expect(settings.prompts == [.defaultCleanup])
+	}
+
+	@Test func baseURLOverrideOnlyForEditableProviders() throws {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		let openAI = try #require(PostProcessingProvider.provider(withID: "openai"))
+		let custom = try #require(PostProcessingProvider.provider(withID: PostProcessingProvider.customID))
+		settings.setBaseURL("http://evil.example/v1", for: "openai")
+		settings.setBaseURL("http://127.0.0.1:1234/v1", for: custom.id)
+		#expect(settings.baseURL(for: openAI) == "https://api.openai.com/v1")
+		#expect(settings.baseURL(for: custom) == "http://127.0.0.1:1234/v1")
+	}
+
+	@Test(arguments: [
+		// enabled, everyDictation, byShortcut, live, expected
+		(false, true, true, false, false),
+		(true, false, true, false, true),
+		(true, false, false, false, false),
+		(true, true, false, false, true),
+		(true, true, false, true, false),
+		(true, true, true, false, true),
+	])
+	func shouldPostProcessMatrix(args: (Bool, Bool, Bool, Bool, Bool)) {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		settings.isEnabled = args.0
+		settings.appliesToEveryDictation = args.1
+		#expect(settings.shouldPostProcess(requestedByShortcut: args.2, isLiveMode: args.3) == args.4)
+	}
+
+	@Test func providerCatalogHasUniqueIDsAndValidURLs() {
+		let ids = PostProcessingProvider.all.map(\.id)
+		#expect(Set(ids).count == ids.count)
+		for provider in PostProcessingProvider.all where provider.kind == .openAICompatible {
+			#expect(OpenAICompatibleClient.endpoint(baseURL: provider.defaultBaseURL, path: "models") != nil)
+		}
+	}
+}
+
+// MARK: - Client
+
+@Suite(.serialized)
+struct OpenAICompatibleClientTests {
+	@Test func endpointJoinsPaths() {
+		#expect(
+			OpenAICompatibleClient.endpoint(baseURL: "https://api.openai.com/v1/", path: "chat/completions")?
+				.absoluteString == "https://api.openai.com/v1/chat/completions")
+		#expect(OpenAICompatibleClient.endpoint(baseURL: "not a url", path: "models") == nil)
+		#expect(OpenAICompatibleClient.endpoint(baseURL: "ftp://host/v1", path: "models") == nil)
+		#expect(OpenAICompatibleClient.endpoint(baseURL: "", path: "models") == nil)
+	}
+
+	@Test func redactsKeyMaterial() {
+		let message = "Incorrect API key provided: sk-proj-****abcd. Also secret-123456 leaked."
+		let redacted = OpenAICompatibleClient.redacting("secret-123456", in: message)
+		#expect(!redacted.contains("secret-123456"))
+		#expect(!redacted.contains("sk-proj"))
+	}
+
+	@Test func sendsChatCompletionAndCleansResponse() async throws {
+		let server = try MockHTTPServer { _ in
+			chatCompletion("<think>reasoning</think>\nMeet at 3:30 tomorrow.")
+		}
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(
+			baseURL: server.baseURL, apiKey: "test-key-abc", model: "gpt-test", timeout: 5)
+		let output = try await client.process(PostProcessingMessages(system: "Be tidy.", user: "um meet at three thirty"))
+		#expect(output == "Meet at 3:30 tomorrow.")
+
+		let request = try #require(server.requests.first)
+		#expect(request.method == "POST")
+		#expect(request.path == "/v1/chat/completions")
+		#expect(request.header("Authorization") == "Bearer test-key-abc")
+		#expect(request.header("Content-Type") == "application/json")
+		let body = try #require(request.jsonBody)
+		#expect(body["model"] as? String == "gpt-test")
+		#expect(body["stream"] as? Bool == false)
+		let messages = try #require(body["messages"] as? [[String: String]])
+		#expect(messages == [["role": "system", "content": "Be tidy."], ["role": "user", "content": "um meet at three thirty"]])
+	}
+
+	@Test func omitsAuthorizationWithoutKeyAndSystemMessageWhenNil() async throws {
+		let server = try MockHTTPServer { _ in chatCompletion("ok") }
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(baseURL: server.baseURL, apiKey: nil, model: "llama3", timeout: 5)
+		_ = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+
+		let request = try #require(server.requests.first)
+		#expect(request.header("Authorization") == nil)
+		let messages = try #require(request.jsonBody?["messages"] as? [[String: String]])
+		#expect(messages == [["role": "user", "content": "hi"]])
+	}
+
+	@Test func listsModelsSorted() async throws {
+		let server = try MockHTTPServer { request in
+			#expect(request.path == "/v1/models")
+			return .json(["object": "list", "data": [["id": "zeta"], ["id": "alpha"], ["id": "mid"]]])
+		}
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(baseURL: server.baseURL, apiKey: "k", model: "", timeout: 5)
+		#expect(try await client.listModels() == ["alpha", "mid", "zeta"])
+		#expect(server.requests.first?.method == "GET")
+	}
+
+	@Test func httpErrorSurfacesMessageWithoutKey() async throws {
+		let key = "sk-live-supersecretvalue"
+		let server = try MockHTTPServer { _ in
+			.json(["error": ["message": "Incorrect API key provided: \(key)", "type": "invalid_request_error"]], status: 401)
+		}
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(baseURL: server.baseURL, apiKey: key, model: "m", timeout: 5)
+		do {
+			_ = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+			Issue.record("Expected an HTTP error")
+		} catch let error as PostProcessingError {
+			guard case .httpStatus(let code, let message) = error else {
+				Issue.record("Unexpected error \(error)")
+				return
+			}
+			#expect(code == 401)
+			#expect(message.contains("Incorrect API key provided"))
+			#expect(!message.contains(key))
+			#expect(!(error.errorDescription ?? "").contains(key))
+		}
+	}
+
+	@Test func malformedJSONThrows() async throws {
+		let server = try MockHTTPServer { _ in
+			MockHTTPServer.Response(status: 200, body: Data("<html>gateway</html>".utf8), contentType: "text/html")
+		}
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(baseURL: server.baseURL, apiKey: nil, model: "m", timeout: 5)
+		await #expect(throws: PostProcessingError.malformedResponse) {
+			_ = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+		}
+	}
+
+	@Test func emptyContentThrows() async throws {
+		let server = try MockHTTPServer { _ in chatCompletion("<think>only thinking</think>   ") }
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(baseURL: server.baseURL, apiKey: nil, model: "m", timeout: 5)
+		await #expect(throws: PostProcessingError.emptyResponse) {
+			_ = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+		}
+	}
+}
+
+// MARK: - Service
+
+@Suite(.serialized)
+struct PostProcessingServiceTests {
+	private func customSettings(baseURL: String, model: String = "local-model") -> PostProcessingSettings {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		settings.isEnabled = true
+		settings.providerID = PostProcessingProvider.customID
+		settings.setBaseURL(baseURL, for: PostProcessingProvider.customID)
+		settings.setModel(model, for: PostProcessingProvider.customID)
+		settings.timeoutSeconds = 5
+		return settings
+	}
+
+	@Test func processesThroughConfiguredProviderWithSelectedPrompt() async throws {
+		let server = try MockHTTPServer { _ in chatCompletion("Cleaned text.") }
+		try await server.start()
+		defer { server.stop() }
+
+		let settings = customSettings(baseURL: server.baseURL)
+		settings.prompts = [PostProcessingPrompt(id: "shout", name: "Shout", template: "SHOUT: ${output}")]
+		settings.selectedPromptID = "shout"
+		let service = PostProcessingService(
+			settings: settings, secrets: InMemorySecretStore([PostProcessingProvider.customID: "local-key"]))
+
+		#expect(await service.process("um cleaned text") == .processed("Cleaned text."))
+		let request = try #require(server.requests.first)
+		#expect(request.header("Authorization") == "Bearer local-key")
+		let messages = try #require(request.jsonBody?["messages"] as? [[String: String]])
+		#expect(messages == [["role": "user", "content": "SHOUT: um cleaned text"]])
+	}
+
+	@Test func serverFailureFallsBackToOriginal() async throws {
+		let server = try MockHTTPServer { _ in .json(["error": ["message": "overloaded"]], status: 503) }
+		try await server.start()
+		defer { server.stop() }
+
+		let service = PostProcessingService(
+			settings: customSettings(baseURL: server.baseURL), secrets: InMemorySecretStore())
+		let outcome = await service.process("raw words")
+		#expect(outcome.text == "raw words")
+		guard case .failed(_, let error) = outcome else {
+			Issue.record("Expected failure, got \(outcome)")
+			return
+		}
+		#expect(error.contains("503"))
+	}
+
+	@Test func blankTranscriptSkipsNetwork() async throws {
+		let server = try MockHTTPServer { _ in chatCompletion("should not be called") }
+		try await server.start()
+		defer { server.stop() }
+
+		let service = PostProcessingService(
+			settings: customSettings(baseURL: server.baseURL), secrets: InMemorySecretStore())
+		#expect(await service.process("  \n") == .skipped(original: "  \n"))
+		#expect(server.requests.isEmpty)
+	}
+
+	@Test func hostedProviderWithoutKeyFailsWithoutNetwork() async throws {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		settings.providerID = "openai"
+		settings.setModel("gpt-4o-mini", for: "openai")
+		let service = PostProcessingService(settings: settings, secrets: InMemorySecretStore())
+		#expect(await service.process("hello") == .failed(original: "hello", error: "No API key saved for OpenAI"))
+	}
+
+	@Test func missingModelFails() async {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		settings.providerID = "groq"
+		let service = PostProcessingService(settings: settings, secrets: InMemorySecretStore(["groq": "k"]))
+		#expect(await service.process("hello") == .failed(original: "hello", error: "No model selected for Groq"))
+	}
+}
+
+// MARK: - Keychain
+
+private let keychainAvailable: Bool = {
+	let store = KeychainSecretStore(service: "com.macwhisper.app.tests.probe.\(UUID().uuidString)")
+	do {
+		try store.setAPIKey("probe", for: "probe")
+		try store.setAPIKey(nil, for: "probe")
+		return true
+	} catch {
+		return false
+	}
+}()
+
+struct KeychainSecretStoreTests {
+	@Test(.enabled(if: keychainAvailable, "Login keychain is locked in this session"))
+	func roundTripUpdateAndDelete() throws {
+		let store = KeychainSecretStore(service: "com.macwhisper.app.tests.\(UUID().uuidString)")
+		defer { try? store.setAPIKey(nil, for: "openai") }
+
+		#expect(try store.apiKey(for: "openai") == nil)
+		try store.setAPIKey("  first-key \n", for: "openai")
+		#expect(try store.apiKey(for: "openai") == "first-key")
+		try store.setAPIKey("second-key", for: "openai")
+		#expect(try store.apiKey(for: "openai") == "second-key")
+		#expect(try store.apiKey(for: "groq") == nil)
+		try store.setAPIKey("", for: "openai")
+		#expect(try store.apiKey(for: "openai") == nil)
+	}
+
+	@Test func settingsNeverPersistKeys() {
+		let defaults = isolatedDefaults()
+		let settings = PostProcessingSettings(defaults: defaults)
+		settings.setModel("m", for: "openai")
+		let stored = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("postProcessing") }
+		#expect(!stored.contains { $0.localizedCaseInsensitiveContains("key") })
+	}
+}
+
+// MARK: - Shortcut
+
+struct PostProcessShortcutTests {
+	@Test func formatsModifiersInParserOrder() {
+		#expect(PostProcessingShortcutFormatter.format(modifiers: [.option, .shift], key: "Space") == "⌥⇧Space")
+		#expect(PostProcessingShortcutFormatter.format(modifiers: [.command, .control], key: "P") == "⌘⌃P")
+	}
+
+	@Test func rejectsModifierOnlyOrEmptyShortcut() {
+		#expect(!PostProcessShortcutMonitor.isUsableShortcut(""))
+		#expect(!PostProcessShortcutMonitor.isUsableShortcut("⌥⇧"))
+		#expect(PostProcessShortcutMonitor.isUsableShortcut("⌥⇧Space"))
+	}
+}
