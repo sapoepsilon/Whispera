@@ -12,18 +12,23 @@ struct PostProcessingProvider: Identifiable, Hashable, Sendable {
 	let defaultBaseURL: String
 	let allowsBaseURLEdit: Bool
 	let requiresAPIKey: Bool
+	/// Whether the endpoint honours `response_format: json_schema`. Matches Handy's per-provider
+	/// flags; custom servers vary, so they get the plain request.
+	var supportsStructuredOutput = false
 
 	static let appleIntelligenceID = "apple_intelligence"
 	static let customID = "custom"
 
 	static let all: [PostProcessingProvider] = [
-		openAI("openai", "OpenAI", "https://api.openai.com/v1"),
+		openAI("openai", "OpenAI", "https://api.openai.com/v1", structuredOutput: true),
 		openAI("anthropic", "Anthropic", "https://api.anthropic.com/v1"),
-		openAI("openrouter", "OpenRouter", "https://openrouter.ai/api/v1"),
+		openAI("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", structuredOutput: true),
 		openAI("groq", "Groq", "https://api.groq.com/openai/v1"),
-		openAI("cerebras", "Cerebras", "https://api.cerebras.ai/v1"),
-		openAI("zai", "Z.AI", "https://api.z.ai/api/paas/v4"),
-		openAI("bedrock_mantle", "AWS Bedrock (Mantle)", "https://bedrock-mantle.us-east-1.api.aws/v1"),
+		openAI("cerebras", "Cerebras", "https://api.cerebras.ai/v1", structuredOutput: true),
+		openAI("zai", "Z.AI", "https://api.z.ai/api/paas/v4", structuredOutput: true),
+		openAI(
+			"bedrock_mantle", "AWS Bedrock (Mantle)", "https://bedrock-mantle.us-east-1.api.aws/v1",
+			structuredOutput: true),
 		PostProcessingProvider(
 			id: appleIntelligenceID, label: "Apple Intelligence (on-device)", kind: .appleIntelligence,
 			defaultBaseURL: "", allowsBaseURLEdit: false, requiresAPIKey: false),
@@ -36,10 +41,12 @@ struct PostProcessingProvider: Identifiable, Hashable, Sendable {
 		all.first { $0.id == id }
 	}
 
-	private static func openAI(_ id: String, _ label: String, _ baseURL: String) -> PostProcessingProvider {
+	private static func openAI(
+		_ id: String, _ label: String, _ baseURL: String, structuredOutput: Bool = false
+	) -> PostProcessingProvider {
 		PostProcessingProvider(
 			id: id, label: label, kind: .openAICompatible, defaultBaseURL: baseURL,
-			allowsBaseURLEdit: false, requiresAPIKey: true)
+			allowsBaseURLEdit: false, requiresAPIKey: true, supportsStructuredOutput: structuredOutput)
 	}
 }
 

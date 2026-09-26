@@ -459,3 +459,90 @@ struct PostProcessShortcutTests {
 		#expect(PostProcessShortcutMonitor.isUsableShortcut("⌥⇧Space"))
 	}
 }
+
+// MARK: - Structured output
+
+@Suite(.serialized)
+struct StructuredOutputTests {
+	@Test func providerFlagsMatchHandy() {
+		let flags = Dictionary(
+			uniqueKeysWithValues: PostProcessingProvider.all.map { ($0.id, $0.supportsStructuredOutput) })
+		#expect(flags["openai"] == true)
+		#expect(flags["openrouter"] == true)
+		#expect(flags["cerebras"] == true)
+		#expect(flags["zai"] == true)
+		#expect(flags["bedrock_mantle"] == true)
+		#expect(flags["anthropic"] == false)
+		#expect(flags["groq"] == false)
+		#expect(flags[PostProcessingProvider.customID] == false)
+	}
+
+	@Test func extractsTheTranscriptionField() {
+		#expect(StructuredTranscription.extract(from: #"{"transcription":"Hello, world."}"#) == "Hello, world.")
+		#expect(
+			StructuredTranscription.extract(from: "<think>hmm</think>\n{\"transcription\": \"Hi.\"}") == "Hi.")
+		#expect(StructuredTranscription.extract(from: "Plain text reply") == "Plain text reply")
+		#expect(StructuredTranscription.extract(from: #"{"text":"wrong key"}"#) == #"{"text":"wrong key"}"#)
+	}
+
+	@Test func sendsJSONSchemaAndUnwrapsTheReply() async throws {
+		let server = try MockHTTPServer { _ in chatCompletion(#"{"transcription":"Meet at 3:30."}"#) }
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(
+			baseURL: server.baseURL, apiKey: "k", model: "gpt-test", timeout: 5, structuredOutput: true)
+		let output = try await client.process(PostProcessingMessages(system: "Tidy.", user: "meet at three thirty"))
+		#expect(output == "Meet at 3:30.")
+
+		let body = try #require(server.requests.first?.jsonBody)
+		let format = try #require(body["response_format"] as? [String: Any])
+		#expect(format["type"] as? String == "json_schema")
+		let jsonSchema = try #require(format["json_schema"] as? [String: Any])
+		#expect(jsonSchema["strict"] as? Bool == true)
+		let schema = try #require(jsonSchema["schema"] as? [String: Any])
+		#expect(schema["required"] as? [String] == ["transcription"])
+		#expect(schema["additionalProperties"] as? Bool == false)
+		let properties = try #require(schema["properties"] as? [String: [String: String]])
+		#expect(properties["transcription"]?["type"] == "string")
+	}
+
+	@Test func plainClientSendsNoResponseFormat() async throws {
+		let server = try MockHTTPServer { _ in chatCompletion("ok") }
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(baseURL: server.baseURL, apiKey: nil, model: "llama3", timeout: 5)
+		_ = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+		#expect(server.requests.first?.jsonBody?["response_format"] == nil)
+	}
+
+	@Test func retriesWithoutSchemaWhenRejected() async throws {
+		let server = try MockHTTPServer { request in
+			if request.jsonBody?["response_format"] != nil {
+				return .json(["error": ["message": "response_format is not supported by this model"]], status: 400)
+			}
+			return chatCompletion("Plain reply.")
+		}
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(
+			baseURL: server.baseURL, apiKey: "k", model: "m", timeout: 5, structuredOutput: true)
+		#expect(try await client.process(PostProcessingMessages(system: nil, user: "x")) == "Plain reply.")
+		#expect(server.requests.count == 2)
+	}
+
+	@Test func otherErrorsAreNotRetried() async throws {
+		let server = try MockHTTPServer { _ in .json(["error": ["message": "bad key"]], status: 401) }
+		try await server.start()
+		defer { server.stop() }
+
+		let client = OpenAICompatibleClient(
+			baseURL: server.baseURL, apiKey: "k", model: "m", timeout: 5, structuredOutput: true)
+		await #expect(throws: PostProcessingError.self) {
+			try await client.process(PostProcessingMessages(system: nil, user: "x"))
+		}
+		#expect(server.requests.count == 1)
+	}
+}

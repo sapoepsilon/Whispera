@@ -49,7 +49,8 @@ struct PostProcessingService {
 			}
 			return OpenAICompatibleClient(
 				baseURL: settings.baseURL(for: provider), apiKey: key, model: model,
-				timeout: settings.timeoutSeconds, session: session)
+				timeout: settings.timeoutSeconds, session: session,
+				structuredOutput: provider.supportsStructuredOutput)
 		}
 	}
 
