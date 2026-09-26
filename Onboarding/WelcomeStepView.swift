@@ -4,9 +4,9 @@ struct WelcomeStepView: View {
 	@State private var animateRings = false
 
 	private let pills: [(icon: String, label: String)] = [
-		("waveform", "On-device"),
-		("lock.fill", "Private"),
-		("checkmark.seal", "Accurate"),
+		("waveform", String(localized: "On-device")),
+		("lock.fill", String(localized: "Private")),
+		("checkmark.seal", String(localized: "Accurate")),
 	]
 
 	var body: some View {

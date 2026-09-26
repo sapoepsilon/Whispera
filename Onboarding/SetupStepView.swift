@@ -112,7 +112,7 @@ struct SetupStepView: View {
 						ProgressView()
 							.scaleEffect(0.7)
 						Text(
-							"Downloading \(audioManager.whisperKitTranscriber.downloadingModelName ?? "model")..."
+							"Downloading \(audioManager.whisperKitTranscriber.downloadingModelName ?? String(localized: "model"))..."
 						)
 						.font(.caption)
 						.foregroundColor(.blue)
@@ -195,7 +195,7 @@ struct SetupStepView: View {
 			Image(systemName: icon)
 				.font(.system(size: 12, weight: .semibold))
 				.foregroundColor(.blue)
-			Text(title)
+			Text(LocalizedStringKey(title))
 				.font(.system(.subheadline, design: .rounded, weight: .semibold))
 		}
 	}
@@ -207,7 +207,7 @@ struct SetupStepView: View {
 		tint: Color
 	) -> some View {
 		HStack {
-			Text(label)
+			Text(LocalizedStringKey(label))
 				.font(.system(.subheadline, design: .rounded))
 				.foregroundColor(.secondary)
 

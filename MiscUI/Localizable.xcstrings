@@ -208,6 +208,29 @@
         }
       }
     },
+    "%@ to stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ zum Stoppen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ para detener"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pour arrêter"
+          }
+        }
+      }
+    },
     "%@ types text, so it needs a modifier such as ⌘, ⌥ or ⌃. Esc, Delete and the F-keys work on their own.": {
       "extractionState": "manual",
       "localizations": {
@@ -273,6 +296,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld fichier(s) sélectionné(s)"
+          }
+        }
+      }
+    },
+    "%lld files": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Dateien"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld archivos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld fichiers"
+          }
+        }
+      }
+    },
+    "%lld files · %lld processing": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Dateien · %lld in Bearbeitung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld archivos · %lld en proceso"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld fichiers · %lld en cours"
           }
         }
       }
@@ -503,6 +572,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld/%lld terminés"
+          }
+        }
+      }
+    },
+    "1 file": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Datei"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 archivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 fichier"
+          }
+        }
+      }
+    },
+    "1 file · %lld processing": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Datei · %lld in Bearbeitung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 archivo · %lld en proceso"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 fichier · %lld en cours"
           }
         }
       }
@@ -806,6 +921,29 @@
         }
       }
     },
+    "Accessibility access is off": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Zugriff auf Bedienungshilfen ist aus"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El acceso de accesibilidad está desactivado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'accès à l'accessibilité est désactivé"
+          }
+        }
+      }
+    },
     "Accessibility access required": {
       "extractionState": "manual",
       "localizations": {
@@ -825,6 +963,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Accès à l'accessibilité requis"
+          }
+        }
+      }
+    },
+    "Accurate": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genau"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preciso"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Précis"
           }
         }
       }
@@ -1450,6 +1611,29 @@
         }
       }
     },
+    "All permissions granted!": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Berechtigungen erteilt!"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¡Todos los permisos concedidos!"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toutes les autorisations sont accordées !"
+          }
+        }
+      }
+    },
     "All permissions granted! You're ready to continue.": {
       "extractionState": "manual",
       "localizations": {
@@ -1469,6 +1653,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Toutes les autorisations sont accordées ! Vous pouvez continuer."
+          }
+        }
+      }
+    },
+    "All processing stays on your Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Verarbeitung bleibt auf deinem Mac"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo el procesamiento se queda en tu Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout le traitement reste sur votre Mac"
           }
         }
       }
@@ -2485,6 +2692,29 @@
         }
       }
     },
+    "Base is fast and accurate for most use cases, small provides better accuracy for complex speech.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Base ist schnell und genau für die meisten Zwecke, Small ist bei komplexer Sprache genauer."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Base es rápido y preciso para la mayoría de los usos; small ofrece más precisión con habla compleja."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Base est rapide et précis dans la plupart des cas ; small est plus précis pour une parole complexe."
+          }
+        }
+      }
+    },
     "Behavior": {
       "extractionState": "manual",
       "localizations": {
@@ -2619,6 +2849,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "En bas"
+          }
+        }
+      }
+    },
+    "Browse for a file to transcribe": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datei zum Transkribieren auswählen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar un archivo para transcribir"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parcourir pour choisir un fichier à transcrire"
           }
         }
       }
@@ -3520,6 +3773,29 @@
         }
       }
     },
+    "Clear all transcriptions?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Transkriptionen löschen?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Borrar todas las transcripciones?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effacer toutes les transcriptions ?"
+          }
+        }
+      }
+    },
     "Clear history?": {
       "extractionState": "manual",
       "localizations": {
@@ -3750,6 +4026,29 @@
         }
       }
     },
+    "Complete": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fertig"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminé"
+          }
+        }
+      }
+    },
     "Completed": {
       "extractionState": "manual",
       "localizations": {
@@ -3792,6 +4091,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Terminé en %@"
+          }
+        }
+      }
+    },
+    "Configure Whispera": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera einrichten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configura Whispera"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configurer Whispera"
           }
         }
       }
@@ -3976,6 +4298,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conversion de la parole en texte"
+          }
+        }
+      }
+    },
+    "Copied": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopiert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copié"
           }
         }
       }
@@ -4252,6 +4597,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copier dans le presse-papiers uniquement"
+          }
+        }
+      }
+    },
+    "Copy transcription": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkription kopieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar transcripción"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier la transcription"
           }
         }
       }
@@ -5245,6 +5613,29 @@
         }
       }
     },
+    "Dismiss": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descartar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignorer"
+          }
+        }
+      }
+    },
     "Display '...' when text is truncated": {
       "extractionState": "manual",
       "localizations": {
@@ -5590,6 +5981,29 @@
         }
       }
     },
+    "Downloading model": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modell wird geladen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargando modelo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargement du modèle"
+          }
+        }
+      }
+    },
     "Downloading...": {
       "extractionState": "manual",
       "localizations": {
@@ -5705,6 +6119,29 @@
         }
       }
     },
+    "Drop files or URLs here to transcribe": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dateien oder URLs zum Transkribieren hier ablegen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suelta aquí archivos o URL para transcribir"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déposez ici des fichiers ou des URL à transcrire"
+          }
+        }
+      }
+    },
     "Drop to transcribe": {
       "extractionState": "manual",
       "localizations": {
@@ -5747,6 +6184,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Supprime les mots de remplissage comme « euh » ou « hmm », les répétitions et les espaces en trop dans la dictée et les transcriptions de fichiers. La dictée remplace aussi les retours à la ligne par des espaces ; les transcriptions de fichiers les conservent."
+          }
+        }
+      }
+    },
+    "Drop · Browse": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ablegen · Auswählen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soltar · Buscar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déposer · Parcourir"
           }
         }
       }
@@ -5954,6 +6414,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Erreur de chargement des modèles : %@"
+          }
+        }
+      }
+    },
+    "Error: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fehler: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erreur : %@"
           }
         }
       }
@@ -6763,6 +7246,29 @@
         }
       }
     },
+    "Find Whispera in your menu bar": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du findest Whispera in der Menüleiste"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encuentra Whispera en la barra de menús"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retrouvez Whispera dans la barre des menus"
+          }
+        }
+      }
+    },
     "Finder Error": {
       "extractionState": "manual",
       "localizations": {
@@ -7150,6 +7656,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Allez dans Réglages Système > Confidentialité et sécurité > Accessibilité et activez Whispera."
+          }
+        }
+      }
+    },
+    "Grant": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erlauben"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conceder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser"
           }
         }
       }
@@ -8557,6 +9086,29 @@
         }
       }
     },
+    "Last Message": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte Meldung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Último mensaje"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dernier message"
+          }
+        }
+      }
+    },
     "Last Transcription": {
       "extractionState": "manual",
       "localizations": {
@@ -8576,6 +9128,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dernière transcription"
+          }
+        }
+      }
+    },
+    "Last dictation": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letztes Diktat"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Último dictado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dernière dictée"
           }
         }
       }
@@ -9316,6 +9891,29 @@
         }
       }
     },
+    "Loading model…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modell wird geladen…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargando modelo…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chargement du modèle…"
+          }
+        }
+      }
+    },
     "Loading video information...": {
       "extractionState": "manual",
       "localizations": {
@@ -9822,6 +10420,29 @@
         }
       }
     },
+    "Menu bar access": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zugriff über die Menüleiste"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceso desde la barra de menús"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accès depuis la barre des menus"
+          }
+        }
+      }
+    },
     "Microphone": {
       "extractionState": "manual",
       "localizations": {
@@ -9960,6 +10581,29 @@
         }
       }
     },
+    "Microphone access is off": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Mikrofonzugriff ist aus"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El acceso al micrófono está desactivado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'accès au microphone est désactivé"
+          }
+        }
+      }
+    },
     "Microphone access required": {
       "extractionState": "manual",
       "localizations": {
@@ -10094,6 +10738,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Maintien minimal après le collage"
+          }
+        }
+      }
+    },
+    "Mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modus"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode"
           }
         }
       }
@@ -10301,6 +10968,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Changements de modificateurs"
+          }
+        }
+      }
+    },
+    "More": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mehr"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus"
           }
         }
       }
@@ -10807,6 +11497,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun dossier sélectionné"
+          }
+        }
+      }
+    },
+    "No input devices found": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Eingabegeräte gefunden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontraron dispositivos de entrada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun périphérique d'entrée trouvé"
           }
         }
       }
@@ -11340,6 +12053,52 @@
         }
       }
     },
+    "On-device": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf dem Gerät"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En el dispositivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur l'appareil"
+          }
+        }
+      }
+    },
+    "Open Accessibility Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bedienungshilfen-Einstellungen öffnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir ajustes de accesibilidad"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir les réglages d'accessibilité"
+          }
+        }
+      }
+    },
     "Open Downloads": {
       "extractionState": "manual",
       "localizations": {
@@ -11386,6 +12145,29 @@
         }
       }
     },
+    "Open Microphone Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mikrofon-Einstellungen öffnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir ajustes del micrófono"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir les réglages du microphone"
+          }
+        }
+      }
+    },
     "Open Settings": {
       "extractionState": "manual",
       "localizations": {
@@ -11428,6 +12210,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvrir Réglages Système"
+          }
+        }
+      }
+    },
+    "Open Transcription Activity": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkriptionsaktivität öffnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir actividad de transcripción"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir l'activité de transcription"
           }
         }
       }
@@ -12306,6 +13111,52 @@
         }
       }
     },
+    "Press %@ anywhere": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drücke überall %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa %@ en cualquier lugar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur %@ n'importe où"
+          }
+        }
+      }
+    },
+    "Press %@ to dictate": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drücke %@ zum Diktieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa %@ para dictar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur %@ pour dicter"
+          }
+        }
+      }
+    },
     "Press Command, Option, Control or Shift + another key": {
       "extractionState": "manual",
       "localizations": {
@@ -12601,6 +13452,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Confidentialité avant tout"
+          }
+        }
+      }
+    },
+    "Private": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privat"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privé"
+          }
+        }
+      }
+    },
+    "Private by design": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privat by Design"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privado por diseño"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privé par conception"
           }
         }
       }
@@ -13291,6 +14188,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enregistrer"
+          }
+        }
+      }
+    },
+    "Record a short clip to test your setup.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nimm einen kurzen Clip auf, um deine Einrichtung zu testen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Graba un clip corto para probar la configuración."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrez un court extrait pour tester votre configuration."
           }
         }
       }
@@ -14376,6 +15296,29 @@
         }
       }
     },
+    "Reveal in Finder": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Finder zeigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar en el Finder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher dans le Finder"
+          }
+        }
+      }
+    },
     "Roundness of the window corners": {
       "extractionState": "manual",
       "localizations": {
@@ -15158,6 +16101,29 @@
         }
       }
     },
+    "Set up your model, shortcuts, and preferences.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Richte Modell, Kurzbefehle und Einstellungen ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configura tu modelo, tus atajos y tus preferencias."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configurez votre modèle, vos raccourcis et vos préférences."
+          }
+        }
+      }
+    },
     "Sets the language Whispera transcribes in, by name (German) or code (de).": {
       "extractionState": "manual",
       "localizations": {
@@ -15223,6 +16189,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Réglages"
+          }
+        }
+      }
+    },
+    "Settings…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajustes…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réglages…"
           }
         }
       }
@@ -16331,6 +17320,29 @@
         }
       }
     },
+    "Start recording from any app": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starte die Aufnahme in jeder App"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empieza a grabar desde cualquier app"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancez l'enregistrement depuis n'importe quelle app"
+          }
+        }
+      }
+    },
     "Start time": {
       "extractionState": "manual",
       "localizations": {
@@ -16534,6 +17546,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Arrêter la dictée"
+          }
+        }
+      }
+    },
+    "Stop Recording": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufnahme stoppen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detener grabación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter l'enregistrement"
           }
         }
       }
@@ -17021,6 +18056,52 @@
         }
       }
     },
+    "Tap to record": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tippen zum Aufnehmen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toca para grabar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchez pour enregistrer"
+          }
+        }
+      }
+    },
+    "Tap to stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tippen zum Stoppen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toca para detener"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchez pour arrêter"
+          }
+        }
+      }
+    },
     "Test Your Setup": {
       "extractionState": "manual",
       "localizations": {
@@ -17040,6 +18121,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Testez votre configuration"
+          }
+        }
+      }
+    },
+    "Text": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texte"
           }
         }
       }
@@ -17780,6 +18884,29 @@
         }
       }
     },
+    "This removes every item, including completed and failed transcriptions.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Damit werden alle Einträge entfernt, auch abgeschlossene und fehlgeschlagene Transkriptionen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esto elimina todos los elementos, incluidas las transcripciones completadas y fallidas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cela supprime tous les éléments, y compris les transcriptions terminées et en échec."
+          }
+        }
+      }
+    },
     "This will permanently delete all application logs. This action cannot be undone.": {
       "extractionState": "manual",
       "localizations": {
@@ -18194,6 +19321,29 @@
         }
       }
     },
+    "Transcribe a file": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datei transkribieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribir un archivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcrire un fichier"
+          }
+        }
+      }
+    },
     "Transcribe in original language": {
       "extractionState": "manual",
       "localizations": {
@@ -18213,6 +19363,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transcrire dans la langue d'origine"
+          }
+        }
+      }
+    },
+    "Transcribe speech as text": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache als Text transkribieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribir la voz como texto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcrire la parole en texte"
           }
         }
       }
@@ -18424,6 +19597,29 @@
         }
       }
     },
+    "Transcribing…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird transkribiert…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribiendo…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription…"
+          }
+        }
+      }
+    },
     "Transcription": {
       "extractionState": "manual",
       "localizations": {
@@ -18443,6 +19639,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transcription"
+          }
+        }
+      }
+    },
+    "Transcription Activity": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkriptionsaktivität"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actividad de transcripción"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activité de transcription"
+          }
+        }
+      }
+    },
+    "Transcription Activity…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkriptionsaktivität…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actividad de transcripción…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activité de transcription…"
           }
         }
       }
@@ -18792,6 +20034,52 @@
         }
       }
     },
+    "Translate": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Übersetzen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traducir"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traduire"
+          }
+        }
+      }
+    },
+    "Translate speech to English": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache ins Englische übersetzen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traducir la voz al inglés"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traduire la parole en anglais"
+          }
+        }
+      }
+    },
     "Translate speech to English instead of transcribing": {
       "extractionState": "manual",
       "localizations": {
@@ -18995,6 +20283,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Essayer"
+          }
+        }
+      }
+    },
+    "Try It Out": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probier es aus"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pruébalo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essayez"
           }
         }
       }
@@ -19409,6 +20720,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mettre à jour"
+          }
+        }
+      }
+    },
+    "Update %@ available": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update %@ verfügbar"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualización %@ disponible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mise à jour %@ disponible"
           }
         }
       }
@@ -19965,6 +21299,29 @@
         }
       }
     },
+    "Welcome": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Willkommen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bienvenida"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bienvenue"
+          }
+        }
+      }
+    },
     "Welcome to Whispera": {
       "extractionState": "manual",
       "localizations": {
@@ -20402,6 +21759,29 @@
         }
       }
     },
+    "Whispera Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera-Einstellungen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajustes de Whispera"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réglages de Whispera"
+          }
+        }
+      }
+    },
     "Whispera couldn't paste because Accessibility access is off. The transcript is on the clipboard. Turn Whispera on in System Settings > Privacy & Security > Accessibility.": {
       "extractionState": "manual",
       "localizations": {
@@ -20444,6 +21824,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Whispera n'a pas pu saisir le texte car l'accès Accessibilité est désactivé. Activez Whispera dans Réglages Système > Confidentialité et sécurité > Accessibilité."
+          }
+        }
+      }
+    },
+    "Whispera is configured and ready to use.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera ist eingerichtet und einsatzbereit."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera está configurado y listo para usar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera est configuré et prêt à l'emploi."
           }
         }
       }
@@ -20513,6 +21916,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Whispera a besoin des autorisations d'accessibilité pour les raccourcis clavier globaux."
+          }
+        }
+      }
+    },
+    "Whispera needs these permissions to work with global shortcuts and record audio.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera braucht diese Berechtigungen für globale Kurzbefehle und Audioaufnahmen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera necesita estos permisos para usar atajos globales y grabar audio."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera a besoin de ces autorisations pour utiliser les raccourcis globaux et enregistrer l'audio."
           }
         }
       }
@@ -20697,6 +22123,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tout est prêt !"
+          }
+        }
+      }
+    },
+    "You're Ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alles bereit"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo listo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous êtes prêt"
           }
         }
       }
@@ -20950,6 +22399,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Votre historique de transcriptions n'a pas pu être ouvert, Whispera en a donc commencé un nouveau. L'ancien historique a été conservé sous le nom %@ dans le dossier History."
+          }
+        }
+      }
+    },
+    "Your voice, transcribed locally": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Stimme, lokal transkribiert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu voz, transcrita en local"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre voix, transcrite localement"
           }
         }
       }

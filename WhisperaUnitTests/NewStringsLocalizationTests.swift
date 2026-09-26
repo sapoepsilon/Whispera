@@ -28,6 +28,21 @@ struct NewStringsAreLocalizedTests {
 		"That key can't be used. Press Command, Option, Control or Shift + another key",
 		"%@ is still loading, so this dictation could not be transcribed. Try again once it is ready, or pick another model in Settings.",
 		"The model is still loading, so this dictation could not be transcribed. Try again once it is ready, or pick another model in Settings.",
+		// The redesigned menu bar popover, status menu and onboarding
+		"Press %@ to dictate",
+		"Microphone access is off",
+		"Accessibility access is off",
+		"Transcription Activity",
+		"Transcription Activity…",
+		"Settings…",
+		"1 file · %lld processing",
+		"%lld files · %lld processing",
+		"Whispera Settings",
+		"Configure Whispera",
+		"Press %@ anywhere",
+		"Your voice, transcribed locally",
+		"No transcript yet",
+		"Copied the last transcript",
 	]
 
 	@Test func everyNewStringIsInTheCatalog() throws {

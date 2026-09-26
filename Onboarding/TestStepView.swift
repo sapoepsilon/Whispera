@@ -80,7 +80,7 @@ struct TestStepView: View {
 					}
 				}
 
-				Text(audioManager.isRecording ? "Tap to stop" : "Tap to record")
+				Text(audioManager.isRecording ? String(localized: "Tap to stop") : String(localized: "Tap to record"))
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}

@@ -24,7 +24,10 @@ struct OnboardingView: View {
 		MaterialStyle(rawValue: materialStyleRaw)
 	}
 
-	private let steps = ["Welcome", "Permissions", "Setup", "Try It", "Complete"]
+	private let steps = [
+		String(localized: "Welcome"), String(localized: "Permissions"), String(localized: "Setup"),
+		String(localized: "Try It"), String(localized: "Complete"),
+	]
 
 	var body: some View {
 		VStack(spacing: 0) {
