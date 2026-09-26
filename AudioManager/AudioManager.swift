@@ -946,6 +946,13 @@ extension AudioManager {
 				AppLogger.shared.audioManager.info("Discarding transcription of a cancelled recording")
 				return
 			}
+			guard !Self.isEmptyTranscript(rawTranscription) else {
+				// Nothing to paste, post-process or keep in history
+				AppLogger.shared.audioManager.info("No speech in the recording; skipping paste and history")
+				lastTranscription = nil
+				isTranscribing = false
+				return
+			}
 			let transcription = await postProcessIfRequested(rawTranscription)
 			guard !cancelledSessions.contains(session) else {
 				AppLogger.shared.audioManager.info("Discarding post-processed text of a cancelled recording")
@@ -966,6 +973,10 @@ extension AudioManager {
 			isTranscribing = false
 			recordHistory(text: "", audio: historyAudio, errorMessage: error.localizedDescription)
 		}
+	}
+
+	nonisolated static func isEmptyTranscript(_ text: String) -> Bool {
+		text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 	}
 
 	fileprivate func recordHistory(

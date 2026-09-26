@@ -70,6 +70,23 @@ final class TextInserter {
 		return task
 	}
 
+	/// Live dictation types segment by segment, so auto-submit fires once when the session
+	/// ends, queued behind the session's last segment.
+	@discardableResult
+	func submitAfterLiveSession() -> Task<Void, Never> {
+		let previous = pendingInsertion
+		let task = Task { @MainActor [weak self] in
+			await previous?.value
+			guard let self else { return }
+			let settings = self.settingsProvider()
+			guard settings.shouldAutoSubmitAfterLiveSession else { return }
+			await self.sleep(milliseconds: self.autoSubmitDelayMs)
+			self.keyPoster.postKey(KeyCode.returnKey, flags: settings.autoSubmitKey.flags)
+		}
+		pendingInsertion = task
+		return task
+	}
+
 	private func perform(_ rawText: String, context: InsertionContext) async {
 		guard !rawText.isEmpty else { return }
 		let settings = settingsProvider()

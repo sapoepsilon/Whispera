@@ -489,7 +489,7 @@ struct AutoSubmitTests {
 		#expect(poster.events.map(\.keyCode) == [KeyCode.returnKey])
 	}
 
-	@Test func neverSubmitsLiveSegmentsOrCopyOnly() async {
+	@Test func neverSubmitsIndividualLiveSegmentsOrCopyOnly() async {
 		let live = await run(.liveSegment) { $0.autoSubmit = true }
 		#expect(live.events.map(\.keyCode) == [KeyCode.v])
 
@@ -498,6 +498,41 @@ struct AutoSubmitTests {
 			$0.pasteMethod = .copyOnly
 		}
 		#expect(copyOnly.events.isEmpty)
+	}
+
+	@Test func liveSessionSubmitsOnceAfterItsLastSegment() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster,
+			settingsProvider: {
+				fastSettings {
+					$0.autoSubmit = true
+					$0.autoSubmitKey = .commandReturn
+					$0.pasteMethod = .copyOnly
+				}
+			})
+
+		inserter.insert(" first part", context: .liveSegment)
+		inserter.insert(" second part", context: .liveSegment)
+		await inserter.submitAfterLiveSession().value
+
+		#expect(poster.events.map(\.keyCode) == [KeyCode.v, KeyCode.v, KeyCode.returnKey])
+		#expect(poster.events.last?.flags == AutoSubmitKey.commandReturn.flags)
+	}
+
+	@Test func liveSessionDoesNotSubmitWhenAutoSubmitIsOff() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, settingsProvider: { fastSettings() })
+
+		inserter.insert(" words", context: .liveSegment)
+		await inserter.submitAfterLiveSession().value
+
+		#expect(poster.events.map(\.keyCode) == [KeyCode.v])
 	}
 
 	@Test func skipsSubmitWhenTheScriptFails() async {

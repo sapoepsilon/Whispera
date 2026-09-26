@@ -227,6 +227,11 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 		defer { whisperKit.endModelUse() }
 		try await whisperKit.waitForReadyForTranscription()
 
+		if whisperKit.parakeetEngine != nil {
+			return try await transcribeWithLoadedEngine(
+				url: url, enableTranslation: enableTranslation, withTimestamps: withTimestamps)
+		}
+
 		// Access WhisperKit's internal transcribe method with progress callback
 		guard let whisperKitInstance = whisperKit.whisperKit else {
 			throw FileTranscriptionError.transcriptionFailed("WhisperKit not initialized")
@@ -280,7 +285,9 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 			// Convert WhisperKit results to TranscriptionSegment array
 			let allSegments = transcriptionResults.flatMap { transcriptionResult in
 				transcriptionResult.segments.compactMap { whisperSegment -> TranscriptionSegment? in
-					let text = whisperSegment.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+					let text = whisperKit.processTranscriptText(
+						whisperSegment.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+						detectedLanguage: transcriptionResult.language, enableTranslation: enableTranslation)
 					guard !text.isEmpty else {
 						return nil
 					}
@@ -300,10 +307,31 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 			return allSegments
 		} else {
 			// Return plain text
-			let transcription = transcriptionResults.compactMap { $0.text }.joined(separator: " ")
-				.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-			return transcription.isEmpty ? "No speech detected" : transcription
+			let transcription = whisperKit.processTranscriptText(
+				transcriptionResults.compactMap { $0.text }.joined(separator: " ")
+					.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+				detectedLanguage: transcriptionResults.first?.language, enableTranslation: enableTranslation)
+			return transcription.isEmpty ? Self.noSpeechMessage : transcription
 		}
+	}
+
+	static let noSpeechMessage = "No speech detected"
+
+	/// Engines other than WhisperKit (Parakeet) report no incremental progress, so this goes
+	/// through the transcriber's engine-aware paths, which also run the text pipeline.
+	private func transcribeWithLoadedEngine(url: URL, enableTranslation: Bool, withTimestamps: Bool)
+		async throws -> Any
+	{
+		progress = 0.1
+		defer { progress = 1.0 }
+		if withTimestamps {
+			let segments = try await whisperKit.transcribeFileWithTimestamps(
+				at: url, enableTranslation: enableTranslation)
+			logger.info("Generated \(segments.count) timestamped segments with \(self.whisperKit.currentModel ?? "engine")")
+			return segments
+		}
+		let text = try await whisperKit.transcribeFile(at: url, enableTranslation: enableTranslation)
+		return text.isEmpty ? Self.noSpeechMessage : text
 	}
 
 	private func transcribeWithTimestamps(url: URL, enableTranslation: Bool) async throws
