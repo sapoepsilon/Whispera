@@ -1105,6 +1105,11 @@ struct SettingsView: View {
 				Label("File Transcription", systemImage: "doc.on.doc")
 			}
 
+			AutomationSettingsView()
+				.tabItem {
+					Label("Automation", systemImage: "bolt.horizontal")
+				}
+
 			BenchmarkView()
 				.tabItem {
 					Label("Benchmark", systemImage: "speedometer")

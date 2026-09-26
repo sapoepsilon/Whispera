@@ -239,6 +239,42 @@ extension AudioManager {
 			stopFileBasedRecording()
 		}
 	}
+
+	/// Ends the session and discards the captured audio: nothing is transcribed or pasted.
+	/// Live mode inserts text as it is confirmed, so only the unconfirmed tail is dropped there.
+	func cancelRecording() {
+		guard isRecording || isMicrophoneInitializing else { return }
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+
+		if currentRecordingMode == .liveTranscription {
+			stopLiveTranscription()
+			AppLogger.shared.audioManager.info("Live transcription cancelled")
+			return
+		}
+
+		if useStreamingTranscription {
+			engineController.cleanup()
+			audioBuffer.removeAll()
+		} else {
+			stopMeteringTimer()
+			audioRecorder?.stop()
+			audioRecorder = nil
+			if let audioFileURL {
+				try? FileManager.default.removeItem(at: audioFileURL)
+			}
+			audioFileURL = nil
+		}
+
+		levelMonitor.reset()
+		isMicrophoneInitializing = false
+		isRecording = false
+		timer.stop()
+		playFeedbackSound(start: false)
+		deviceManager.restoreSystemDefault()
+		scheduleTimerReset()
+		AppLogger.shared.audioManager.info("Recording cancelled, audio discarded")
+	}
 }
 
 // MARK: - File-Based Recording
