@@ -11,6 +11,8 @@ enum TextProcessingSettings {
 	}
 
 	static let biasDecodingDefault = true
+	/// The settings the Whisper decoder prompt is built from.
+	static let decoderPromptKeys = [Keys.customWords, Keys.biasDecodingWithCustomWords]
 	static let wordCorrectionThresholdRange: ClosedRange<Double> = 0.05...0.5
 
 	static func configuration(from defaults: UserDefaults = .standard) -> TextProcessingConfiguration {

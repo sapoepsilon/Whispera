@@ -470,6 +470,7 @@ import WhisperKit
 	@ObservationIgnored private var pendingLoadTask: Task<Void, Error>?
 	@ObservationIgnored private var lastObservedUnloadTimeout: ModelUnloadTimeout?
 	@ObservationIgnored private var settingsObserver: DefaultsKeyObserver?
+	@ObservationIgnored private var customWordsObserver: CustomWordPromptObserver?
 	private(set) var isIdleUnloaded = false
 	/// Model and compute-unit combinations already prewarmed in this process. CoreML keeps the
 	/// specialized model cached, so a reload after idle unload can skip the prewarm pass.
@@ -652,6 +653,10 @@ import WhisperKit
 				guard let whisperKit = whisperKit, isWhisperKitReady() else {
 					throw WhisperKitError.notReady
 				}
+				// The live loop reuses these options for every pass
+				await loadTokenizerForCustomWords()
+				try checkLiveStartupIsCurrent(generation)
+				refreshDecodingOptions()
 
 				dictationWordTracker = DictationWordTracker()
 				dictationWordTracker?.startNewSession()
@@ -1120,13 +1125,34 @@ import WhisperKit
 		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation ?? false)
 	}
 
+	/// A prewarmed model only loads its weights and tokenizer inside the first transcribe call,
+	/// after the options were built, so without this the first dictation after every model load
+	/// (and every live session) went out without the custom-word prompt. transcribe() would do
+	/// the same load a moment later, so nothing extra is loaded.
+	func loadTokenizerForCustomWords() async {
+		guard let whisperKit, whisperKit.tokenizer == nil,
+			CustomWordPromptObserver.effectivePrompt(in: .standard) != nil
+		else { return }
+		do {
+			if whisperKit.modelState == .loaded {
+				try await whisperKit.loadTokenizerIfNeeded()
+			} else {
+				try await whisperKit.loadModels()
+			}
+		} catch {
+			AppLogger.shared.transcriber.error("Could not load the tokenizer for custom words: \(error)")
+		}
+	}
+
 	private func customWordPromptTokens() -> [Int]? {
-		let defaults = UserDefaults.standard
-		guard TextProcessingSettings.biasDecodingWithCustomWords(from: defaults),
-			let prompt = TextProcessingSettings.decoderPrompt(
-				for: TextProcessingSettings.customWords(from: defaults)),
-			let tokenizer = whisperKit?.tokenizer
-		else { return nil }
+		Self.promptTokens(
+			for: CustomWordPromptObserver.effectivePrompt(in: .standard), tokenizer: whisperKit?.tokenizer)
+	}
+
+	/// Nil without a tokenizer: options built before a model loads carry no prompt, so every
+	/// load refreshes them.
+	nonisolated static func promptTokens(for prompt: String?, tokenizer: (any WhisperTokenizer)?) -> [Int]? {
+		guard let prompt, let tokenizer else { return nil }
 		let tokens = tokenizer.encode(text: prompt).filter {
 			$0 < tokenizer.specialTokens.specialTokenBegin
 		}
@@ -1309,6 +1335,7 @@ import WhisperKit
 		}
 		let maxRetries = 3
 		var lastError: Error?
+		await loadTokenizerForCustomWords()
 		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
 
 		for attempt in 1...maxRetries {
@@ -1529,6 +1556,7 @@ import WhisperKit
 		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
+		await loadTokenizerForCustomWords()
 		let decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
 
 		let result = try await Task {
@@ -1595,6 +1623,7 @@ import WhisperKit
 		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
+		await loadTokenizerForCustomWords()
 		var decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
 
 		// Set time range for segment transcription
@@ -1961,6 +1990,8 @@ import WhisperKit
 			// Only now, so a failed load keeps the Parakeet engine that was working
 			unloadParakeetEngine()
 			whisperKit = loaded
+			// Options built while no tokenizer was loaded (launch, idle unload) have no prompt
+			refreshDecodingOptions()
 
 			await updateLoadProgress(0.9, "Finalizing model setup...")
 			currentModel = modelName
@@ -2481,6 +2512,10 @@ import WhisperKit
 			]
 		) { [weak self] in
 			self?.checkForSettingsChanges()
+		}
+		customWordsObserver = CustomWordPromptObserver { [weak self] in
+			AppLogger.shared.transcriber.log("Custom words changed; rebuilding the decoder prompt")
+			self?.refreshDecodingOptions()
 		}
 	}
 

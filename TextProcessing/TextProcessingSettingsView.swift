@@ -40,7 +40,6 @@ struct TextProcessingSettingsSection: View {
 				description: "Pass custom words to Whisper as a prompt so it prefers those spellings"
 			) {
 				Toggle("", isOn: $biasDecoding)
-					.onChange(of: biasDecoding) { _, _ in refreshDecodingOptions() }
 			}
 
 			SettingRow(
@@ -102,16 +101,10 @@ struct TextProcessingSettingsSection: View {
 		guard !TextProcessingSettings.parseList(newCustomWord).isEmpty else { return }
 		customWords.add(newCustomWord)
 		newCustomWord = ""
-		refreshDecodingOptions()
 	}
 
 	private func removeCustomWord(_ word: String) {
 		customWords.remove(word)
-		refreshDecodingOptions()
-	}
-
-	private func refreshDecodingOptions() {
-		WhisperKitTranscriber.shared.refreshDecodingOptions()
 	}
 }
 
