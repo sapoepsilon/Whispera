@@ -852,6 +852,104 @@ struct TranscriptionHistoryPrivacyTests {
 		#expect(bytesOnDisk(store).range(of: Data(marker.utf8)) == nil, "Deleted text is still recoverable")
 	}
 
+	@Test func pruningAfterEachDictationScrubsInBatches() async {
+		let defaults = makeDefaults()
+		defaults.set(1, forKey: HistorySettings.limitKey)
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: defaults)
+		let batch = TranscriptionHistoryStore.retentionScrubBatch
+
+		for index in 0..<batch {
+			_ = store.record(text: "entry \(index)", audio: nil, source: .dictation, modelName: nil, language: nil)
+		}
+		#expect(store.entries.count == 1, "The limit still holds after every dictation")
+		#expect(store.scrubsScheduled == 0, "No full rewrite for each pruned entry")
+		#expect(store.retentionDeletesAwaitingScrub == batch - 1)
+
+		_ = store.record(text: "one more", audio: nil, source: .dictation, modelName: nil, language: nil)
+		#expect(store.scrubsScheduled == 1)
+		await store.flushScrub()
+		#expect(store.retentionDeletesAwaitingScrub == 0)
+	}
+
+	@Test func explicitDeletesAndRetentionChangesScrubRightAway() async throws {
+		let defaults = makeDefaults()
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: defaults)
+		let first = try #require(
+			store.record(text: "one", audio: nil, source: .dictation, modelName: nil, language: nil))
+		_ = store.record(text: "two", audio: nil, source: .dictation, modelName: nil, language: nil)
+		_ = store.record(text: "three", audio: nil, source: .dictation, modelName: nil, language: nil)
+
+		store.delete(first)
+		#expect(store.scrubsScheduled == 1)
+
+		defaults.set(1, forKey: HistorySettings.limitKey)
+		store.applyRetention()
+		#expect(store.scrubsScheduled == 2)
+		await store.flushScrub()
+	}
+
+	@Test func unscrubbedRetentionDeletesAreScrubbedAtNextLaunch() async {
+		let directory = makeTempDirectory()
+		let defaults = makeDefaults()
+		defaults.set(1, forKey: HistorySettings.limitKey)
+		let store = TranscriptionHistoryStore(directory: directory, defaults: defaults)
+		_ = store.record(text: "old", audio: nil, source: .dictation, modelName: nil, language: nil)
+		_ = store.record(text: "new", audio: nil, source: .dictation, modelName: nil, language: nil)
+		#expect(store.scrubsScheduled == 0)
+
+		let relaunched = TranscriptionHistoryStore(directory: directory, defaults: defaults)
+		#expect(relaunched.scrubsScheduled == 1)
+		await relaunched.flushScrub()
+		#expect(relaunched.retentionDeletesAwaitingScrub == 0)
+	}
+
+	@Test func deleteAllAlsoRemovesSetAsideDatabases() throws {
+		let directory = makeTempDirectory()
+		try Data(repeating: 0x5A, count: 8192).write(to: directory.appendingPathComponent("history.store"))
+		let store = TranscriptionHistoryStore(directory: directory, defaults: makeDefaults())
+		func setAside() throws -> [String] {
+			try FileManager.default.contentsOfDirectory(atPath: directory.path)
+				.filter { $0.hasPrefix(TranscriptionHistoryStore.quarantinePrefix) }
+		}
+		#expect(try setAside().count == 1)
+
+		store.deleteAllEntries()
+
+		#expect(try setAside().isEmpty)
+	}
+
+	@Test func timedRetentionAgesOutSetAsideDatabases() throws {
+		let directory = makeTempDirectory()
+		let clock = Clock()
+		let defaults = makeDefaults()
+		defaults.set(HistoryRetentionPeriod.days3.rawValue, forKey: HistorySettings.retentionKey)
+		let formatter = ISO8601DateFormatter()
+		func name(daysAgo: Double, suffix: String = "") -> String {
+			let stamp = formatter.string(from: clock.now.addingTimeInterval(-daysAgo * 86_400))
+				.replacingOccurrences(of: ":", with: "-")
+			return "\(TranscriptionHistoryStore.quarantinePrefix)\(stamp).store\(suffix)"
+		}
+		let old = [name(daysAgo: 10), name(daysAgo: 10, suffix: "-wal")]
+		let recent = name(daysAgo: 1)
+		for file in old + [recent] {
+			try Data("old dictation".utf8).write(to: directory.appendingPathComponent(file))
+		}
+
+		_ = TranscriptionHistoryStore(directory: directory, defaults: defaults, now: { clock.now })
+
+		let remaining = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+			.filter { $0.hasPrefix(TranscriptionHistoryStore.quarantinePrefix) }
+		#expect(remaining == [recent])
+	}
+
+	@Test func setAsideDateComesFromTheFileName() throws {
+		let date = try #require(
+			TranscriptionHistoryStore.quarantineDate(fileName: "history-unreadable-2026-09-26T09-14-05Z.store-wal"))
+		#expect(date == ISO8601DateFormatter().date(from: "2026-09-26T09:14:05Z"))
+		#expect(TranscriptionHistoryStore.quarantineDate(fileName: "history.store") == nil)
+		#expect(TranscriptionHistoryStore.quarantineDate(fileName: "history-unreadable-garbage.store") == nil)
+	}
+
 	@Test func storeKeepsWorkingAfterAScrub() async throws {
 		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
 		let doomed = try #require(
