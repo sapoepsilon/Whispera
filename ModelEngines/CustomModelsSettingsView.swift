@@ -204,6 +204,8 @@ private struct HuggingFaceModelSheet: View {
 			do {
 				_ = try await whisperKit.addCustomModel(fromHuggingFace: repo, variant: variant)
 				dismiss()
+			} catch is CancellationError {
+				dismiss()
 			} catch {
 				dismiss()
 				onError(error.localizedDescription)

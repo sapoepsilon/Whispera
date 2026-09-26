@@ -1371,6 +1371,13 @@ struct SettingsView: View {
 		do {
 			try await whisperKit.switchModel(to: modelName)
 			AppLogger.shared.general.info("Successfully switched to model: \(modelName)")
+		} catch is CancellationError {
+			// The download was cancelled from the menu bar; the picker goes back to the model in use
+			AppLogger.shared.general.info("Switch to model \(modelName) was cancelled")
+			if let current = whisperKit.currentModel, current != selectedModel {
+				whisperKit.selectedModel = current
+				selectedModel = current
+			}
 		} catch {
 			AppLogger.shared.general.error("Failed to switch to model \(modelName): \(error)")
 			await MainActor.run {

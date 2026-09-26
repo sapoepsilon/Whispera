@@ -436,6 +436,14 @@ import WhisperKit
 	}
 	var downloadProgress: Double = 0.0
 	var downloadingModelName: String?
+	/// True only while bytes are still coming over the network; the load that follows cannot be
+	/// interrupted, so Cancel is offered only in this phase.
+	private(set) var isModelDownloadCancellable = false
+	/// A download only blocks dictation when there is no model to fall back on: the loaded model
+	/// (or an idle-unloaded one that reloads on demand) keeps serving until the new one is ready.
+	var downloadBlocksDictation: Bool {
+		isDownloadingModel && !hasLoadedEngine && !isIdleUnloaded
+	}
 	var loadProgress: Double = 0.0
 	/// The model a load is currently bringing up; the engine already loaded keeps serving until it finishes.
 	private(set) var loadingModelName: String?
@@ -448,7 +456,8 @@ import WhisperKit
 	private var lastBufferSize: Int = 0
 	private var realtimeDelayInterval: Float = 0.3
 	@MainActor private var initializationTask: Task<Void, Never>?
-	@MainActor private var modelOperationTask: Task<Void, Error>?
+	/// Serializes every model download, load and switch; a running operation also blocks idle unload.
+	@ObservationIgnored private let modelOperations = ModelOperationQueue()
 
 	private var currentChunks: [Int: (chunkText: [String], fallbacks: Int)] = [:]
 
@@ -1622,27 +1631,24 @@ import WhisperKit
 	}
 
 	func switchModel(to model: String) async throws {
-		if let existingTask = modelOperationTask {
-			AppLogger.shared.transcriber.log("Waiting for existing model operation to complete...")
-			try await existingTask.value
+		try await runModelOperation { transcriber in
+			try await transcriber.performSwitchModel(to: model)
 		}
+	}
 
-		// Create new operation task
-		modelOperationTask = Task { @MainActor in
-			try await performSwitchModel(to: model)
+	private func runModelOperation(
+		_ body: @escaping @MainActor (WhisperKitTranscriber) async throws -> Void
+	) async throws {
+		try await modelOperations.run { [self] in
+			try await body(self)
 		}
-
-		do {
-			try await modelOperationTask!.value
-		} catch {
-			modelOperationTask = nil
-			throw error
-		}
-
-		modelOperationTask = nil
 	}
 
 	private func performSwitchModel(to model: String) async throws {
+		if model == currentModel, hasLoadedEngine {
+			AppLogger.shared.transcriber.log("Model \(model) is already loaded")
+			return
+		}
 		// Refresh available models first to ensure we have the latest list
 		if availableModels.isEmpty {
 			try await refreshAvailableModels()
@@ -1816,41 +1822,23 @@ import WhisperKit
 	}
 
 	func downloadModel(_ modelName: String) async throws {
-		// Check if there's already a model operation in progress
-		if let existingTask = modelOperationTask {
-			AppLogger.shared.transcriber.log("Waiting for existing model operation to complete...")
-			try await existingTask.value
+		try await runModelOperation { transcriber in
+			try await transcriber.performDownloadModel(modelName)
 		}
-
-		// Create new operation task
-		modelOperationTask = Task { @MainActor in
-			try await performDownloadModel(modelName)
-		}
-
-		do {
-			try await modelOperationTask!.value
-		} catch {
-			modelOperationTask = nil
-			throw error
-		}
-
-		modelOperationTask = nil
 	}
 
-	// Aborts an in-flight model download (network, cancellable). Loading/prewarming
-	// is deliberately not cancellable, so the FixItStack only surfaces Cancel here.
+	/// Aborts the network phase of the running model download. The operation keeps holding the
+	/// model-operation lock until its task has unwound, so a model picked right after this waits
+	/// for it instead of loading alongside it.
 	@MainActor
 	func cancelModelDownload() {
-		guard isDownloadingModel else { return }
-		modelOperationTask?.cancel()
-		modelOperationTask = nil
-		isDownloadingModel = false
-		downloadingModelName = nil
-		downloadProgress = 0.0
+		guard isDownloadingModel, isModelDownloadCancellable, modelOperations.cancelCurrent() else { return }
+		endDownloadState()
 		AppLogger.shared.transcriber.log("Model download cancelled by user")
 	}
 
 	private func performDownloadModel(_ modelName: String) async throws {
+		let wasOnDisk = downloadedModels.contains(modelName)
 		beginDownloadState(modelName)
 		// A failed download or load must not leave the app looking busy: that blocked idle unload,
 		// custom model import and the onboarding button until relaunch.
@@ -1862,6 +1850,7 @@ import WhisperKit
 			if let parakeet = ParakeetModel(rawValue: modelName) {
 				guard let base = baseModelCacheDirectory else { throw WhisperKitError.notInitialized }
 				try await ParakeetEngine.download(parakeet, modelsBase: base)
+				try finishCancellableDownload()
 				AppLogger.shared.transcriber.log("Parakeet model downloaded: \(modelName)")
 				downloadedModels.insert(modelName)
 				endDownloadState()
@@ -1878,6 +1867,7 @@ import WhisperKit
 						progress.fractionCompleted, "Downloading \(modelName)...")
 				}
 			}
+			try finishCancellableDownload()
 			AppLogger.shared.transcriber.log("Model downloaded to: \(downloadedFolder)")
 
 			downloadedModels.insert(modelName)
@@ -1885,19 +1875,47 @@ import WhisperKit
 			AppLogger.shared.transcriber.log("Successfully downloaded and loaded model: \(modelName)")
 
 		} catch {
+			if Task.isCancelled, !wasOnDisk, !downloadedModels.contains(modelName) {
+				discardCancelledDownload(of: modelName)
+			}
 			AppLogger.shared.transcriber.log("Failed to download model \(modelName): \(error)")
 			throw error
 		}
 	}
 
+	/// Ends the cancellable network phase; a Cancel that landed while the last bytes arrived still
+	/// wins over the load that would follow.
+	private func finishCancellableDownload() throws {
+		isModelDownloadCancellable = false
+		try Task.checkCancellation()
+	}
+
+	/// A cancelled WhisperKit download leaves a partial folder that would otherwise be listed as
+	/// downloaded. Parakeet checks its files before listing a model, so its folder is left alone.
+	private func discardCancelledDownload(of modelName: String) {
+		guard !modelName.isEmpty, ParakeetModel(rawValue: modelName) == nil,
+			!CustomWhisperModel.isCustomID(modelName),
+			let folder = whisperKitModelDirectory(for: modelName),
+			FileManager.default.fileExists(atPath: folder.path)
+		else { return }
+		do {
+			try FileManager.default.removeItem(at: folder)
+			AppLogger.shared.transcriber.log("Removed the partial download of \(modelName)")
+		} catch {
+			AppLogger.shared.transcriber.error("Could not remove the partial download of \(modelName): \(error)")
+		}
+	}
+
 	func beginDownloadState(_ modelName: String) {
 		isDownloadingModel = true
+		isModelDownloadCancellable = true
 		downloadingModelName = modelName
 		downloadProgress = 0.0
 	}
 
 	func endDownloadState() {
 		isDownloadingModel = false
+		isModelDownloadCancellable = false
 		downloadingModelName = nil
 		downloadProgress = 0.0
 	}
@@ -2031,7 +2049,7 @@ import WhisperKit
 		if !hasLoadedEngine { blockers.append("no model loaded") }
 		if activeModelUses > 0 { blockers.append("\(activeModelUses) active model uses") }
 		if isLiveTranscriptionMode { blockers.append("live transcription") }
-		if modelOperationTask != nil { blockers.append("model operation running") }
+		if modelOperations.isBusy { blockers.append("model operation running") }
 		if pendingLoadTask != nil { blockers.append("model load pending") }
 		if initializationTask != nil { blockers.append("initialization running") }
 		if isModelLoading { blockers.append("model loading") }
@@ -2349,18 +2367,19 @@ import WhisperKit
 		guard !CustomModelStore.shared.containsHuggingFace(reference) else {
 			throw CustomModelError.alreadyAdded("\(reference.repo)/\(reference.variant)")
 		}
-		if let existingTask = modelOperationTask {
-			try await existingTask.value
+		var added: CustomWhisperModel?
+		try await runModelOperation { transcriber in
+			added = try await transcriber.performAddCustomModel(reference)
 		}
+		guard let added else { throw CancellationError() }
+		return added
+	}
 
-		isDownloadingModel = true
-		downloadingModelName = reference.variant
-		downloadProgress = 0.0
-		defer {
-			isDownloadingModel = false
-			downloadingModelName = nil
-			downloadProgress = 0.0
-		}
+	private func performAddCustomModel(_ reference: HuggingFaceModelReference) async throws
+		-> CustomWhisperModel
+	{
+		beginDownloadState(reference.variant)
+		defer { endDownloadState() }
 
 		AppLogger.shared.transcriber.log(
 			"Downloading custom model \(reference.variant) from \(reference.repo)")
@@ -2369,13 +2388,15 @@ import WhisperKit
 			downloadBase: baseModelCacheDirectory,
 			from: reference.repo
 		) { progress in
-			Task { @MainActor in
-				self.downloadProgress = progress.fractionCompleted
+			Task {
+				await self.updateDownloadProgress(
+					progress.fractionCompleted, "Downloading \(reference.variant)...")
 			}
 		}
 
 		let model: CustomWhisperModel
 		do {
+			try finishCancellableDownload()
 			model = try CustomModelStore.shared.registerHuggingFaceModel(reference, folder: folder)
 		} catch {
 			CustomModelStore.shared.discardFailedDownload(folder)
@@ -2549,14 +2570,9 @@ import WhisperKit
 		AppLogger.shared.transcriber.log("Compute units changed to \(preference.rawValue)")
 
 		guard let model = currentModel else { return }
-		if let existingTask = modelOperationTask {
-			try await existingTask.value
+		try await runModelOperation { transcriber in
+			try await transcriber.loadModel(model)
 		}
-		modelOperationTask = Task { @MainActor in
-			try await loadModel(model)
-		}
-		defer { modelOperationTask = nil }
-		try await modelOperationTask?.value
 	}
 
 	func getComputeOptionsStatus() -> [String: String] {
@@ -2625,5 +2641,45 @@ enum WhisperKitError: LocalizedError {
 
 		AppLogger.shared.transcriber.error("WhisperKitError: \(description)")
 		return description
+	}
+}
+
+/// Runs model operations one at a time. Only the operation that took the slot releases it, and only
+/// once its task has finished, so a cancelled download keeps later loads waiting until it unwinds
+/// instead of letting two loads race and one's cleanup clear the other's state.
+@MainActor
+final class ModelOperationQueue {
+	private var current: Task<Void, Error>?
+	private var currentID: UUID?
+
+	var isBusy: Bool { current != nil }
+
+	func run(_ body: @escaping @MainActor () async throws -> Void) async throws {
+		while let existing = current {
+			AppLogger.shared.transcriber.log("Waiting for existing model operation to complete...")
+			_ = await existing.result
+		}
+		try Task.checkCancellation()
+		let id = UUID()
+		let task = Task { @MainActor [weak self] in
+			defer {
+				if let self, self.currentID == id {
+					self.current = nil
+					self.currentID = nil
+				}
+			}
+			try await body()
+		}
+		current = task
+		currentID = id
+		try await task.value
+	}
+
+	/// Returns false when nothing is running.
+	@discardableResult
+	func cancelCurrent() -> Bool {
+		guard let current else { return false }
+		current.cancel()
+		return true
 	}
 }

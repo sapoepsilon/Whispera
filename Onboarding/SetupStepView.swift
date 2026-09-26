@@ -316,6 +316,8 @@ struct SetupStepView: View {
 		Task {
 			do {
 				try await audioManager.whisperKitTranscriber.downloadModel(modelId)
+			} catch is CancellationError {
+				AppLogger.shared.general.info("Onboarding model download was cancelled")
 			} catch {
 				loadingError = "Failed to download model: \(error.localizedDescription)"
 				errorMessage = "Failed to download model: \(error.localizedDescription)"

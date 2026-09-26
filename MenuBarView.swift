@@ -64,7 +64,7 @@ struct MenuBarView: View {
 		return PopoverLayout(
 			updateVisible: softwareUpdater.availableUpdateVersion != nil && !updateRowDismissed,
 			permissionRows: permissionRows,
-			modelPreparing: !whisperKit.isInitialized || whisperKit.isDownloadingModel,
+			modelPreparing: !whisperKit.isInitialized || whisperKit.downloadBlocksDictation,
 			modelDownloading: whisperKit.isDownloadingModel,
 			hasResult: audioManager.transcriptionError == nil && audioManager.lastTranscription != nil,
 			typeScale: PopoverLayout.scale(for: dynamicTypeSize)
@@ -159,7 +159,7 @@ struct MenuBarView: View {
 
 				// Blocking conditions stack as 0..n actionable rows in priority order:
 				// missing permissions (deep-linked per pane) then model preparation.
-				if layout.needsPermissions || layout.modelPreparing {
+				if layout.needsPermissions || layout.modelPreparing || layout.modelDownloading {
 					FixItStack(
 						permissionManager: permissionManager,
 						whisperKit: whisperKit
@@ -221,7 +221,7 @@ struct MenuBarView: View {
 			)
 			.animation(
 				reduceMotion ? nil : .easeOut(duration: 0.25),
-				value: layout.needsPermissions || layout.modelPreparing)
+				value: layout.needsPermissions || layout.modelPreparing || layout.modelDownloading)
 
 			// Result glance: only when there is a real transcription (errors route to
 			// the toast, never the glance). The card takes its final layout
@@ -497,11 +497,14 @@ struct ModelDownloadingRow: View {
 				ProgressView(value: whisperKit.downloadProgress)
 					.frame(height: 4)
 
-				Button("Cancel") {
-					whisperKit.cancelModelDownload()
+				// The load after the transfer cannot be interrupted, so Cancel goes away with it
+				if whisperKit.isModelDownloadCancellable {
+					Button("Cancel") {
+						whisperKit.cancelModelDownload()
+					}
+					.buttonStyle(.bordered)
+					.controlSize(.small)
 				}
-				.buttonStyle(.bordered)
-				.controlSize(.small)
 			}
 		}
 		.padding(12)
