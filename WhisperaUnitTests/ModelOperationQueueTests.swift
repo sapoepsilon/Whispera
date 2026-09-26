@@ -251,4 +251,17 @@ struct ModelOperationQueueTests {
 		try await download.value
 		#expect(loads == 1)
 	}
+
+	@Test func aCancelledDownloadKeepsAnInstalledModelFolder() throws {
+		let folder = FileManager.default.temporaryDirectory.appendingPathComponent("model-\(UUID().uuidString)")
+		try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(at: folder) }
+
+		#expect(WhisperKitTranscriber.modelWasOnDisk(cached: false, folder: folder),
+			"An installed model not yet in the in-memory list would be deleted on cancel")
+		#expect(WhisperKitTranscriber.modelWasOnDisk(cached: true, folder: nil))
+		#expect(!WhisperKitTranscriber.modelWasOnDisk(
+			cached: false, folder: folder.appendingPathComponent("missing")))
+		#expect(!WhisperKitTranscriber.modelWasOnDisk(cached: false, folder: nil))
+	}
 }

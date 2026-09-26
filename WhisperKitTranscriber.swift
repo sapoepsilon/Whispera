@@ -1883,7 +1883,10 @@ import WhisperKit
 	}
 
 	private func performDownloadModel(_ modelName: String) async throws {
-		let wasOnDisk = downloadedModels.contains(modelName)
+		// The cache can still be empty here (onboarding calls this before it is filled), and deleting
+		// on a cancel must never remove a model that was already installed
+		let wasOnDisk = Self.modelWasOnDisk(
+			cached: downloadedModels.contains(modelName), folder: whisperKitModelDirectory(for: modelName))
 		beginDownloadState(modelName)
 		// A failed download or load must not leave the app looking busy: that blocked idle unload,
 		// custom model import and the onboarding button until relaunch.
@@ -1926,6 +1929,13 @@ import WhisperKit
 			AppLogger.shared.transcriber.log("Failed to download model \(modelName): \(error)")
 			throw error
 		}
+	}
+
+	nonisolated static func modelWasOnDisk(cached: Bool, folder: URL?) -> Bool {
+		if cached { return true }
+		guard let folder else { return false }
+		var isDirectory: ObjCBool = false
+		return FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory) && isDirectory.boolValue
 	}
 
 	/// Ends the cancellable network phase; a Cancel that landed while the last bytes arrived still
