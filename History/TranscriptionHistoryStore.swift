@@ -46,6 +46,8 @@ final class TranscriptionHistoryStore {
 	@ObservationIgnored private let defaults: UserDefaults
 	@ObservationIgnored private let now: () -> Date
 	@ObservationIgnored private let container: ModelContainer?
+	/// Why history is not using its normal database, for the history window to tell the user once.
+	private(set) var storeNotice: String?
 	@ObservationIgnored private var context: ModelContext? { container?.mainContext }
 	@ObservationIgnored private var pendingAudioWrites: [UUID: Task<Void, Never>] = [:]
 	@ObservationIgnored let storeURL: URL
@@ -73,19 +75,104 @@ final class TranscriptionHistoryStore {
 			// The whole folder, so the transcript database and its -wal/-shm stay out of backups too
 			Self.excludeFromBackup(directory)
 			Self.excludeFromBackup(audioDirectory)
-			let configuration = ModelConfiguration(url: storeURL)
-			container = try ModelContainer(
-				for: TranscriptionHistoryEntry.self, configurations: configuration)
 		} catch {
-			container = nil
-			AppLogger.shared.database.error("Failed to open transcription history: \(error)")
+			AppLogger.shared.database.error("Failed to create the history folder: \(error)")
 		}
-
+		let opened = Self.openContainer(at: storeURL)
+		container = opened.0
+		storeNotice = opened.1
 		reload()
 		applyRetention()
 		enabledObserver = DefaultsKeyObserver(defaults: defaults, keys: [HistorySettings.enabledKey]) {
 			[weak self] in self?.historyEnabledChanged()
 		}
+	}
+
+	/// A store that will not open (corrupt file, schema it cannot read) is moved aside and history
+	/// starts fresh, instead of every dictation silently going unrecorded until the user notices.
+	/// When even a fresh store fails, history lives in memory for this session.
+	static func openContainer(at storeURL: URL) -> (ModelContainer?, String?) {
+		func open() throws -> ModelContainer {
+			try ModelContainer(
+				for: TranscriptionHistoryEntry.self, configurations: ModelConfiguration(url: storeURL))
+		}
+		let firstError: Error
+		do {
+			return (try open(), nil)
+		} catch {
+			firstError = error
+			AppLogger.shared.database.error("Failed to open transcription history: \(error)")
+		}
+
+		// A full disk is not damage; moving the database aside would only hide the user's history
+		if !isOutOfSpace(firstError), let kept = quarantineStore(at: storeURL) {
+			do {
+				let container = try open()
+				AppLogger.shared.database.info("Started a new history database; the old one is at \(kept.path)")
+				return (
+					container,
+					String(
+						localized:
+							"Your transcription history could not be opened, so Whispera started a new one. The old history was kept as \(kept.lastPathComponent) in the History folder."
+					)
+				)
+			} catch {
+				AppLogger.shared.database.error("A new history database also failed to open: \(error)")
+			}
+		}
+
+		do {
+			let memory = try ModelContainer(
+				for: TranscriptionHistoryEntry.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+			return (
+				memory,
+				String(
+					localized:
+						"Transcription history could not be saved to disk (\(firstError.localizedDescription)). This session's dictations are kept until Whispera quits."
+				)
+			)
+		} catch {
+			AppLogger.shared.database.error("In-memory history also failed: \(error)")
+			return (nil, TranscriptionHistoryError.storeUnavailable.localizedDescription)
+		}
+	}
+
+	/// Moves the database and its -wal/-shm companions to a timestamped name next to it.
+	static func quarantineStore(at storeURL: URL) -> URL? {
+		let fileManager = FileManager.default
+		let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+		let kept = storeURL.deletingLastPathComponent().appendingPathComponent("history-unreadable-\(stamp).store")
+		var movedAny = false
+		for suffix in ["", "-wal", "-shm"] {
+			let source = URL(fileURLWithPath: storeURL.path + suffix)
+			guard fileManager.fileExists(atPath: source.path) else { continue }
+			do {
+				try fileManager.moveItem(at: source, to: URL(fileURLWithPath: kept.path + suffix))
+				movedAny = true
+			} catch {
+				AppLogger.shared.database.error("Could not move \(source.lastPathComponent) aside: \(error)")
+				return nil
+			}
+		}
+		return movedAny ? kept : nil
+	}
+
+	static func isOutOfSpace(_ error: Error) -> Bool {
+		var current: NSError? = error as NSError
+		while let nsError = current {
+			if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteOutOfSpaceError { return true }
+			if nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(ENOSPC) { return true }
+			// SQLITE_FULL
+			if nsError.userInfo["NSSQLiteErrorDomain"] as? Int == 13 { return true }
+			current = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
+		}
+		return false
+	}
+
+	/// The history window shows this once.
+	func acknowledgeStoreNotice() -> String? {
+		defer { storeNotice = nil }
+		return storeNotice
 	}
 
 	static func defaultDirectory() -> URL {
