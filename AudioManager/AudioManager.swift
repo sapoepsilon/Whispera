@@ -138,6 +138,8 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	private var streamPolicyObservers: [NSObjectProtocol] = []
 	@ObservationIgnored
+	private var streamPolicyDefaultsObserver: DefaultsKeyObserver?
+	@ObservationIgnored
 	private var lastStreamPolicySnapshot: String?
 	@ObservationIgnored
 	private var micStreamSuspension = MicStreamSuspension()
@@ -793,17 +795,15 @@ extension AudioManager {
 	fileprivate func observeMicStreamPolicy() {
 		lastStreamPolicySnapshot = streamPolicySnapshot()
 		let center = NotificationCenter.default
-		streamPolicyObservers.append(
-			center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) {
-				[weak self] _ in
-				Task { @MainActor in
-					guard let self else { return }
-					let snapshot = self.streamPolicySnapshot()
-					guard snapshot != self.lastStreamPolicySnapshot else { return }
-					self.lastStreamPolicySnapshot = snapshot
-					self.applyMicStreamPolicy()
-				}
-			})
+		streamPolicyDefaultsObserver = DefaultsKeyObserver(
+			keys: [RecordingControlSettings.Key.micStreamPolicy, "enableStreaming", "useStreamingTranscription"]
+		) { [weak self] in
+			guard let self else { return }
+			let snapshot = self.streamPolicySnapshot()
+			guard snapshot != self.lastStreamPolicySnapshot else { return }
+			self.lastStreamPolicySnapshot = snapshot
+			self.applyMicStreamPolicy()
+		}
 		streamPolicyObservers.append(
 			center.addObserver(forName: .audioInputDeviceChanged, object: nil, queue: .main) {
 				[weak self] _ in
