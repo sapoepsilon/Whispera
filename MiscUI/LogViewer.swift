@@ -224,12 +224,21 @@ final class LogTailer {
 	}
 }
 
+/// Shown in both the Storage and Debug tabs, so it reads the stored level rather than keeping
+/// its own copy that the other tab's picker would leave stale.
 struct LogLevelSettingRow: View {
-	@State private var level = LogLevel.stored()
+	@AppStorage(LogLevel.defaultsKey) private var storedLevel: String?
+
+	private var level: Binding<LogLevel> {
+		Binding(
+			get: { storedLevel.flatMap(LogLevel.init(rawValue:)) ?? LogLevel.stored() },
+			set: { LogLevel.store($0) }
+		)
+	}
 
 	var body: some View {
 		SettingRow("Log Level", description: "How much detail is written to the log file") {
-			Picker("", selection: $level) {
+			Picker("", selection: level) {
 				ForEach(LogLevel.allCases) { level in
 					Text(level.displayName).tag(level)
 				}
@@ -237,9 +246,6 @@ struct LogLevelSettingRow: View {
 			.labelsHidden()
 			.pickerStyle(.menu)
 			.frame(width: 160)
-			.onChange(of: level) { _, newValue in
-				LogLevel.store(newValue)
-			}
 		}
 	}
 }
