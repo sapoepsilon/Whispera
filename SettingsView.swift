@@ -284,7 +284,7 @@ struct SettingsView: View {
 								.labelsHidden()
 								.frame(width: 180)
 								.onChange(of: startSound) {
-									previewSound(startSound)
+									previewSound(start: true)
 								}
 							}
 
@@ -297,9 +297,11 @@ struct SettingsView: View {
 								.labelsHidden()
 								.frame(width: 180)
 								.onChange(of: stopSound) {
-									previewSound(stopSound)
+									previewSound(start: false)
 								}
 							}
+
+							FeedbackSoundSettingsRows()
 						}
 
 						SettingRow(
@@ -375,6 +377,8 @@ struct SettingsView: View {
 							}
 							.padding(.top, 4)
 						}
+
+						AudioInputSettingsRows()
 					}
 					Divider()
 
@@ -1465,6 +1469,7 @@ struct SettingsView: View {
 			"Sosumi",
 			"Submarine",
 			"Tink",
+			FeedbackSoundSettings.customSoundName,
 		]
 	}
 
@@ -1523,9 +1528,8 @@ struct SettingsView: View {
 		}
 	}
 
-	private func previewSound(_ soundName: String) {
-		guard soundName != "None" else { return }
-		NSSound(named: soundName)?.play()
+	private func previewSound(start: Bool) {
+		FeedbackSoundPlayer.shared.play(start: start)
 	}
 
 	private func checkLaunchAtStartupStatus() {

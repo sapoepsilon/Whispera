@@ -1,6 +1,7 @@
 import AudioToolbox
 import CoreAudio
 import Foundation
+import IOKit
 import SwiftUI
 
 enum AudioDeviceIcon: String, Sendable {
@@ -66,19 +67,28 @@ extension Notification.Name {
 	static let audioInputDeviceChanged = Notification.Name("AudioInputDeviceChanged")
 	static let devicePickerToggled = Notification.Name("DevicePickerToggled")
 	static let devicePickerDismissed = Notification.Name("DevicePickerDismissed")
+	static let activeInputDeviceLost = Notification.Name("ActiveInputDeviceLost")
 }
 
 @MainActor
 @Observable
 final class AudioDeviceManager {
 	static let shared = AudioDeviceManager()
-	static let systemDefaultUID = "system-default"
+	nonisolated static let systemDefaultUID = "system-default"
 
 	private(set) var availableDevices: [AudioInputDevice] = []
 	private(set) var selectedDevice: AudioInputDevice?
+	/// True while a recording runs on the system default because its device vanished.
+	private(set) var isUsingFallbackInput = false
+	@ObservationIgnored
+	private(set) var activeSessionDevice: AudioInputDevice?
 
 	@ObservationIgnored
 	@AppStorage("selectedAudioInputDeviceUID") var persistedDeviceUID = AudioDeviceManager.systemDefaultUID
+	@ObservationIgnored
+	@AppStorage(AudioDeviceManager.clamshellDeviceKey) var clamshellDeviceUID = ""
+
+	nonisolated static let clamshellDeviceKey = "clamshellAudioInputDeviceUID"
 
 	@ObservationIgnored
 	private var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
@@ -115,15 +125,42 @@ final class AudioDeviceManager {
 		AppLogger.shared.deviceManager.info("Selected device: \(uid)")
 	}
 
+	/// The device a recording should use right now: the saved choice, or the
+	/// clamshell microphone when the lid is closed and one is configured.
+	var effectiveDeviceUID: String {
+		InputDeviceResolver.effectiveUID(
+			persistedUID: persistedDeviceUID,
+			clamshellUID: clamshellDeviceUID,
+			isLidClosed: !clamshellDeviceUID.isEmpty && ClamshellDetector.isLidClosed(),
+			fallbackToSystemDefault: isUsingFallbackInput,
+			availableUIDs: Set(availableDevices.map(\.uid))
+		)
+	}
+
+	/// Moves the current recording to the system default input without touching
+	/// the saved device choice, which comes back for the next recording.
+	func beginFallbackToSystemDefault() {
+		isUsingFallbackInput = true
+		activeSessionDevice = nil
+		restoreSystemDefault()
+	}
+
+	func endRecordingSession() {
+		isUsingFallbackInput = false
+		activeSessionDevice = nil
+	}
+
 	func activateSelectedDevice() async {
-		guard persistedDeviceUID != AudioDeviceManager.systemDefaultUID else {
+		let effectiveUID = effectiveDeviceUID
+		guard effectiveUID != AudioDeviceManager.systemDefaultUID else {
 			AppLogger.shared.deviceManager.debug("activateSelectedDevice: system default selected, skipping")
+			activeSessionDevice = nil
 			restoreSystemDefault()
 			return
 		}
 
-		guard let device = availableDevices.first(where: { $0.uid == persistedDeviceUID }) else {
-			AppLogger.shared.deviceManager.error("activateSelectedDevice: device \(persistedDeviceUID) not found in \(availableDevices.map { "\($0.name):\($0.uid)" })")
+		guard let device = availableDevices.first(where: { $0.uid == effectiveUID }) else {
+			AppLogger.shared.deviceManager.error("activateSelectedDevice: device \(effectiveUID) not found in \(availableDevices.map { "\($0.name):\($0.uid)" })")
 			restoreSystemDefault()
 			return
 		}
@@ -135,6 +172,7 @@ final class AudioDeviceManager {
 		if savedSystemDefaultDeviceID == nil {
 			savedSystemDefaultDeviceID = currentDefault
 		}
+		activeSessionDevice = device
 
 		let targetDeviceID = device.id
 		let targetDeviceName = device.name
@@ -186,19 +224,55 @@ final class AudioDeviceManager {
 	}
 
 	func resolveActiveDeviceID() -> AudioDeviceID? {
-		if persistedDeviceUID == AudioDeviceManager.systemDefaultUID {
+		let effectiveUID = effectiveDeviceUID
+		if effectiveUID == AudioDeviceManager.systemDefaultUID {
 			AppLogger.shared.deviceManager.debug("resolveActiveDeviceID → nil (system default)")
 			return nil
 		}
 
-		guard let device = availableDevices.first(where: { $0.uid == persistedDeviceUID }) else {
+		guard let device = availableDevices.first(where: { $0.uid == effectiveUID }) else {
 			AppLogger.shared.deviceManager.info(
-				"Persisted device \(persistedDeviceUID) not available, falling back to system default")
+				"Device \(effectiveUID) not available, falling back to system default")
 			return nil
 		}
 
 		AppLogger.shared.deviceManager.info("resolveActiveDeviceID → \(device.name) (ID: \(device.id), UID: \(device.uid))")
+		activeSessionDevice = device
 		return device.id
+	}
+
+	/// Number of input channels the device exposes; `systemDefaultUID` means the
+	/// current default input. Returns 0 when the device is unknown.
+	func inputChannelCount(forUID uid: String) -> Int {
+		let deviceID: AudioDeviceID?
+		if uid == AudioDeviceManager.systemDefaultUID {
+			deviceID = getSystemDefaultInputDeviceID()
+		} else {
+			deviceID = availableDevices.first(where: { $0.uid == uid })?.id
+		}
+		guard let deviceID else { return 0 }
+		return Self.inputChannelCount(for: deviceID)
+	}
+
+	nonisolated static func inputChannelCount(for deviceID: AudioDeviceID) -> Int {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioDevicePropertyStreamConfiguration,
+			mScope: kAudioObjectPropertyScopeInput,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var size: UInt32 = 0
+		guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr, size > 0 else {
+			return 0
+		}
+
+		let raw = UnsafeMutableRawPointer.allocate(
+			byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+		defer { raw.deallocate() }
+		let bufferList = raw.assumingMemoryBound(to: AudioBufferList.self)
+		guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, bufferList) == noErr else {
+			return 0
+		}
+		return UnsafeMutableAudioBufferListPointer(bufferList).reduce(0) { $0 + Int($1.mNumberChannels) }
 	}
 
 	// MARK: - Private
@@ -378,8 +452,10 @@ final class AudioDeviceManager {
 
 		let devicesBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
 			Task { @MainActor in
-				self?.refreshDevices()
+				guard let self else { return }
+				self.refreshDevices()
 				NotificationCenter.default.post(name: .audioDevicesChanged, object: nil)
+				self.reportLostSessionDevice()
 			}
 		}
 		deviceListListenerBlock = devicesBlock
@@ -410,6 +486,15 @@ final class AudioDeviceManager {
 			DispatchQueue.main,
 			defaultBlock
 		)
+	}
+
+	private func reportLostSessionDevice() {
+		guard let device = activeSessionDevice,
+			!availableDevices.contains(where: { $0.uid == device.uid })
+		else { return }
+		AppLogger.shared.deviceManager.error("Input device disconnected mid-recording: \(device.name)")
+		NotificationCenter.default.post(
+			name: .activeInputDeviceLost, object: nil, userInfo: ["name": device.name])
 	}
 
 	private func removeDeviceChangeListeners() {
@@ -444,5 +529,51 @@ final class AudioDeviceManager {
 
 	deinit {
 		// Singleton - listeners cleaned up when process exits
+	}
+}
+
+enum InputDeviceResolver {
+	static func effectiveUID(
+		persistedUID: String,
+		clamshellUID: String,
+		isLidClosed: Bool,
+		fallbackToSystemDefault: Bool = false,
+		availableUIDs: Set<String>
+	) -> String {
+		if fallbackToSystemDefault { return AudioDeviceManager.systemDefaultUID }
+		if isLidClosed, !clamshellUID.isEmpty, availableUIDs.contains(clamshellUID) {
+			return clamshellUID
+		}
+		return persistedUID
+	}
+}
+
+enum ClamshellDetector {
+	/// Reads `AppleClamshellState` from the power-management root domain, which is
+	/// true while a laptop lid is shut (clamshell mode with an external display).
+	static func isLidClosed() -> Bool {
+		let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+		guard service != IO_OBJECT_NULL else { return false }
+		defer { IOObjectRelease(service) }
+
+		guard
+			let value = IORegistryEntryCreateCFProperty(
+				service, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+				.takeRetainedValue()
+		else { return false }
+		return (value as? Bool) ?? false
+	}
+
+	/// Desktops have no clamshell state at all, so the setting is only offered on laptops.
+	static var hasLid: Bool {
+		let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+		guard service != IO_OBJECT_NULL else { return false }
+		defer { IOObjectRelease(service) }
+		guard
+			let value = IORegistryEntryCreateCFProperty(
+				service, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)
+		else { return false }
+		value.release()
+		return true
 	}
 }

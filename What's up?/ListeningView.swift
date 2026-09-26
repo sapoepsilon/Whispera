@@ -13,7 +13,7 @@ struct ListeningView: View {
 	}
 
 	private var activeDeviceIcon: String {
-		if selectedUID == AudioDeviceManager.systemDefaultUID {
+		if selectedUID == AudioDeviceManager.systemDefaultUID || deviceManager.isUsingFallbackInput {
 			return deviceManager.availableDevices.first(where: \.isDefault)?.iconName ?? "mic.fill"
 		}
 		return deviceManager.availableDevices.first(where: { $0.uid == selectedUID })?.iconName ?? "mic.fill"
@@ -76,8 +76,9 @@ struct ListeningView: View {
 					)
 				} label: {
 					HStack(spacing: 3) {
-						Image(systemName: activeDeviceIcon)
+						Image(systemName: audioManager.inputNotice == nil ? activeDeviceIcon : "exclamationmark.triangle.fill")
 							.font(.system(size: 11))
+							.foregroundColor(audioManager.inputNotice == nil ? nil : .orange)
 						Image(systemName: showDevicePicker ? "chevron.up" : "chevron.down")
 							.font(.system(size: 8, weight: .semibold))
 					}
@@ -90,6 +91,7 @@ struct ListeningView: View {
 					.foregroundColor(.secondary)
 				}
 				.buttonStyle(.plain)
+				.help(audioManager.inputNotice ?? "Choose microphone")
 
 				AudioMeterView(levels: audioManager.audioLevels)
 

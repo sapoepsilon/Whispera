@@ -3,6 +3,7 @@ import AppKit
 import CoreAudio
 import Foundation
 import SwiftUI
+import WhisperKit
 
 enum RecordingMode {
 	case text
@@ -55,6 +56,8 @@ final class AudioManager: NSObject {
 	}
 	var lastTranscription: String?
 	var transcriptionError: String?
+	/// Shown on the listening pill when the recording had to change microphones.
+	var inputNotice: String?
 	var currentRecordingMode: RecordingMode = .text
 	var isMicrophoneInitializing = false {
 		didSet {
@@ -143,6 +146,12 @@ final class AudioManager: NSObject {
 	private var lastStreamPolicySnapshot: String?
 	@ObservationIgnored
 	var postProcessCurrentSession = false
+	@ObservationIgnored
+	private var outputMuteTask: Task<Void, Never>?
+	@ObservationIgnored
+	private var deviceLostObserver: NSObjectProtocol?
+	@ObservationIgnored
+	private var inputChannelSelection = InputChannelSelection.mixAllChannels
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -151,6 +160,7 @@ final class AudioManager: NSObject {
 
 	override init() {
 		super.init()
+		SystemOutputMuter.shared.recoverFromUncleanExit()
 		whisperKitTranscriber.startInitialization()
 		whisperKitTranscriber.onLiveAudioSamples = { [weak self] samples in
 			// WhisperKit delivers per-buffer chunks; cap the window so level
@@ -158,6 +168,14 @@ final class AudioManager: NSObject {
 			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
 		}
 		observeMicStreamPolicy()
+		deviceLostObserver = NotificationCenter.default.addObserver(
+			forName: .activeInputDeviceLost, object: nil, queue: .main
+		) { [weak self] notification in
+			let name = notification.userInfo?["name"] as? String ?? "Microphone"
+			MainActor.assumeIsolated {
+				self?.handleInputDeviceLost(name: name)
+			}
+		}
 	}
 
 	func setupAudio() {
@@ -267,7 +285,9 @@ final class AudioManager: NSObject {
 				break
 			}
 			activeCapturePath = nil
+			restoreSystemOutput()
 			deviceManager.restoreSystemDefault()
+			deviceManager.endRecordingSession()
 			releaseModel(for: sessionID)
 			playFeedbackSound(start: false)
 		}
@@ -293,7 +313,6 @@ final class AudioManager: NSObject {
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
 		deviceManager.selectDevice(uid: uid)
-
 		guard isRecording || isMicrophoneInitializing else {
 			if engineController.isRunning {
 				shutdownStreamingEngine()
@@ -301,6 +320,23 @@ final class AudioManager: NSObject {
 			}
 			return
 		}
+		reactivateInputDuringRecording()
+	}
+
+	/// Keeps the recording alive on the system default input when its microphone
+	/// is unplugged; audio captured so far is kept.
+	func handleInputDeviceLost(name: String) {
+		guard isRecording || isMicrophoneInitializing else { return }
+		AppLogger.shared.audioManager.info("Falling back to system default input after losing \(name)")
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+		deviceManager.beginFallbackToSystemDefault()
+		inputNotice = "\(name) disconnected. Using the system default microphone."
+		reactivateInputDuringRecording()
+	}
+
+	private func reactivateInputDuringRecording() {
+		guard isRecording || isMicrophoneInitializing else { return }
 
 		isMicrophoneInitializing = true
 		deviceActivationTask = Task {
@@ -327,6 +363,7 @@ final class AudioManager: NSObject {
 					isRecording = false
 					timer.stop()
 					releaseModel(for: sessionID)
+					restoreSystemOutput()
 				}
 			} else {
 				deviceManager.restoreSystemDefault()
@@ -358,6 +395,7 @@ final class AudioManager: NSObject {
 extension AudioManager {
 	fileprivate func startRecording() {
 		detectAndSetKeyboardLanguage()
+		inputNotice = nil
 
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
 		case .authorized:
@@ -440,6 +478,7 @@ extension AudioManager {
 				isRecording = true
 				timer.start()
 				playFeedbackSound(start: true)
+				muteOutputAfterStartSound()
 				startMeteringTimer()
 				AppLogger.shared.audioManager.debug("File-based recording started")
 				applyPendingStopIfNeeded()
@@ -458,8 +497,10 @@ extension AudioManager {
 		audioRecorder = nil
 		isRecording = false
 		timer.stop()
+		restoreSystemOutput()
 		playFeedbackSound(start: false)
 		deviceManager.restoreSystemDefault()
+		deviceManager.endRecordingSession()
 
 		activeCapturePath = nil
 		let session = sessionID
@@ -504,6 +545,7 @@ extension AudioManager {
 		lazyStreamClose.cancel()
 		warmStreamTask?.cancel()
 		warmStreamTask = nil
+		inputChannelSelection = InputChannelSelection.stored(in: .standard)
 
 		if resumeOpenStream() {
 			return
@@ -525,6 +567,7 @@ extension AudioManager {
 				isRecording = true
 				timer.start()
 				playFeedbackSound(start: true)
+				muteOutputAfterStartSound()
 				applyPendingStopIfNeeded()
 
 			} catch {
@@ -541,6 +584,7 @@ extension AudioManager {
 		isCapturingStream = false
 		isRecording = false
 		timer.stop()
+		restoreSystemOutput()
 		playFeedbackSound(start: false)
 
 		let capturedAudio = audioBuffer
@@ -549,6 +593,7 @@ extension AudioManager {
 
 		releaseStreamingEngine()
 		deviceManager.restoreSystemDefault()
+		deviceManager.endRecordingSession()
 
 		AppLogger.shared.audioManager.info("Streaming recording stopped")
 
@@ -566,9 +611,12 @@ extension AudioManager {
 
 		scheduleTimerReset()
 	}
-	fileprivate func processAudioBuffer(_ buffer: AVAudioPCMBuffer, originalFormat: AVAudioFormat) {
+	fileprivate func processAudioBuffer(_ inputBuffer: AVAudioPCMBuffer, originalFormat inputFormat: AVAudioFormat) {
 		// The stream can stay open between recordings; drop audio nobody asked for.
 		guard isCapturingStream else { return }
+		let buffer = InputChannelSelection.isolate(inputBuffer, selected: inputChannelSelection)
+		let originalFormat = buffer === inputBuffer ? inputFormat : buffer.format
+
 		guard let targetFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1) else {
 			return
 		}
@@ -646,6 +694,7 @@ extension AudioManager {
 		isRecording = true
 		timer.start()
 		playFeedbackSound(start: true)
+		muteOutputAfterStartSound()
 		AppLogger.shared.audioManager.info("Recording on already-open microphone stream")
 		return true
 	}
@@ -768,6 +817,7 @@ extension AudioManager {
 		isRecording = true
 		timer.start()
 		playFeedbackSound(start: true)
+		muteOutputAfterStartSound()
 		whisperKitTranscriber.clearLiveTranscriptionState()
 		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
 
@@ -782,6 +832,7 @@ extension AudioManager {
 				isMicrophoneInitializing = false
 				isRecording = false
 				timer.stop()
+				restoreSystemOutput()
 				AppLogger.shared.audioManager.error("Failed to start live transcription: \(error)")
 			}
 		}
@@ -792,10 +843,12 @@ extension AudioManager {
 		isMicrophoneInitializing = false
 		isRecording = false
 		timer.stop()
+		restoreSystemOutput()
 		playFeedbackSound(start: false)
 
 		activeCapturePath = nil
 		whisperKitTranscriber.stopLiveStream()
+		deviceManager.endRecordingSession()
 		levelMonitor.reset()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 
@@ -813,9 +866,36 @@ extension AudioManager {
 
 // MARK: - Transcription
 extension AudioManager {
+	/// Returns the clip trimmed to its speech, or nil when it holds no speech and
+	/// must not be transcribed.
+	fileprivate func applyVoiceActivityDetection(_ samples: [Float]) async -> [Float]? {
+		let settings = VoiceActivitySettings(defaults: .standard)
+		guard settings.enabled else { return samples }
+
+		let trimmer = VoiceActivityTrimmer(sensitivity: settings.sensitivity)
+		let result = await Task.detached(priority: .userInitiated) {
+			trimmer.process(samples)
+		}.value
+
+		switch result {
+		case .noSpeech:
+			AppLogger.shared.audioManager.info(
+				"VAD found no speech in \(samples.count) samples, skipping transcription")
+			return nil
+		case .speech(let trimmed):
+			AppLogger.shared.audioManager.debug(
+				"VAD trimmed clip from \(samples.count) to \(trimmed.count) samples")
+			return trimmed
+		}
+	}
+
 	fileprivate func transcribeAudioBuffer(audioArray: [Float], enableTranslation: Bool, session: Int)
 		async
 	{
+		guard let audioArray = await applyVoiceActivityDetection(audioArray) else {
+			releaseModel(for: session)
+			return
+		}
 		await runTranscription(session: session, historyAudio: .samples(audioArray, sampleRate: 16000)) {
 			try await self.whisperKitTranscriber.transcribeAudioArray(
 				audioArray, enableTranslation: enableTranslation)
@@ -823,6 +903,20 @@ extension AudioManager {
 	}
 
 	fileprivate func transcribeAudio(fileURL: URL, enableTranslation: Bool, session: Int) async {
+		if VoiceActivitySettings(defaults: .standard).enabled {
+			let path = fileURL.path
+			let samples = await Task.detached(priority: .userInitiated) {
+				try? AudioProcessor.loadAudioAsFloatArray(fromPath: path)
+			}.value
+			if let samples {
+				try? FileManager.default.removeItem(at: fileURL)
+				await transcribeAudioBuffer(
+					audioArray: samples, enableTranslation: enableTranslation, session: session)
+				return
+			}
+			AppLogger.shared.audioManager.error("VAD could not load recording, transcribing untrimmed file")
+		}
+
 		await runTranscription(session: session, historyAudio: .file(fileURL)) {
 			try await self.whisperKitTranscriber.transcribe(
 				audioURL: fileURL, enableTranslation: enableTranslation)
@@ -924,17 +1018,32 @@ extension AudioManager {
 			self.timer.reset()
 		}
 	}
+	/// Mutes system output once the start sound has had time to play, so the
+	/// user still hears the cue before their speakers go quiet.
+	fileprivate func muteOutputAfterStartSound() {
+		guard SystemOutputMuter.shared.isEnabled else { return }
+		outputMuteTask?.cancel()
+		let delay = startSoundDuration()
+		outputMuteTask = Task { [weak self] in
+			if delay > 0 {
+				try? await Task.sleep(for: .seconds(delay))
+			}
+			guard let self, !Task.isCancelled, self.isRecording || self.isMicrophoneInitializing else {
+				return
+			}
+			SystemOutputMuter.shared.mute()
+		}
+	}
+	fileprivate func restoreSystemOutput() {
+		outputMuteTask?.cancel()
+		outputMuteTask = nil
+		SystemOutputMuter.shared.restore()
+	}
+	fileprivate func startSoundDuration() -> TimeInterval {
+		FeedbackSoundPlayer.shared.duration(start: true)
+	}
 	fileprivate func playFeedbackSound(start: Bool) {
-		guard UserDefaults.standard.bool(forKey: "soundFeedback") else { return }
-
-		let soundName =
-			start
-			? UserDefaults.standard.string(forKey: "startSound") ?? "Tink"
-			: UserDefaults.standard.string(forKey: "stopSound") ?? "Pop"
-
-		guard soundName != "None" else { return }
-
-		NSSound(named: soundName)?.play()
+		FeedbackSoundPlayer.shared.play(start: start)
 	}
 	fileprivate func pasteToFocusedApp(_ text: String) {
 		TextInserter.shared.insert(text, context: .finalTranscript)
