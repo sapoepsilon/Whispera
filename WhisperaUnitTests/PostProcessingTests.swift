@@ -459,3 +459,50 @@ struct PostProcessShortcutTests {
 		#expect(PostProcessShortcutMonitor.isUsableShortcut("⌥⇧Space"))
 	}
 }
+
+struct PostProcessingKeyTransportTests {
+	@Test(arguments: [
+		("https://api.example.com/v1", true),
+		("http://127.0.0.1:11434/v1", true),
+		("http://localhost:1234/v1", true),
+		("http://[::1]:8080/v1", true),
+		("http://llm.lan:8080/v1", false),
+		("http://192.168.1.20:11434/v1", false),
+		("http://api.example.com/v1", false),
+	])
+	func keyIsSentOverHttpOnlyToLoopback(baseURL: String, allowed: Bool) throws {
+		let url = try #require(OpenAICompatibleClient.endpoint(baseURL: baseURL, path: "models"))
+		#expect(OpenAICompatibleClient.canSendKey(to: url) == allowed)
+		#expect((OpenAICompatibleClient.insecureKeyWarning(baseURL: baseURL, hasKey: true) == nil) == allowed)
+		#expect(OpenAICompatibleClient.insecureKeyWarning(baseURL: baseURL, hasKey: false) == nil)
+	}
+
+	@Test func refusesToSendAKeyOverPlainHttpToARemoteHost() async {
+		let client = OpenAICompatibleClient(
+			baseURL: "http://203.0.113.9:8080/v1", apiKey: "sk-secret", model: "m", timeout: 1)
+		await #expect(throws: PostProcessingError.insecureKeyTransport(host: "203.0.113.9")) {
+			_ = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+		}
+	}
+
+	@Test func keylessRequestsToLanServersStillWork() throws {
+		let url = try #require(OpenAICompatibleClient.endpoint(baseURL: "http://192.168.1.20:11434/v1", path: "models"))
+		#expect(!OpenAICompatibleClient.canSendKey(to: url))
+		#expect(OpenAICompatibleClient.insecureKeyWarning(baseURL: "http://192.168.1.20:11434/v1", hasKey: false) == nil)
+	}
+}
+
+struct KeychainPresenceTests {
+	@Test(.enabled(if: keychainAvailable, "Login keychain is locked in this session"))
+	func hasAPIKeyReflectsStoredItemsWithoutReadingThem() throws {
+		let store = KeychainSecretStore(service: "com.macwhisper.app.tests.presence.\(UUID().uuidString)")
+		defer { try? store.setAPIKey(nil, for: "openai") }
+
+		#expect(try !store.hasAPIKey(for: "openai"))
+		try store.setAPIKey("k", for: "openai")
+		#expect(try store.hasAPIKey(for: "openai"))
+		#expect(try !store.hasAPIKey(for: "groq"))
+		try store.setAPIKey(nil, for: "openai")
+		#expect(try !store.hasAPIKey(for: "openai"))
+	}
+}
