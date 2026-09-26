@@ -13,6 +13,8 @@ class TranscriptionQueueItem: Identifiable {
 	var result: String?
 	var error: String?
 	var filePath: String?
+	// Cached on completion so row bodies never touch the disk during layout.
+	var fileExists: Bool = false
 
 	init(url: URL, displayName: String? = nil) {
 		self.url = url
@@ -198,6 +200,20 @@ class TranscriptionQueueManager {
 		isExpanded = false
 	}
 
+	func retryItem(_ item: TranscriptionQueueItem) {
+		guard item.status == QueueItemStatus.failed else { return }
+		logger.info("Retrying transcription for: \(item.displayName)")
+
+		item.status = QueueItemStatus.pending
+		item.progress = 0.0
+		item.error = nil
+		item.result = nil
+
+		if !isProcessing {
+			startProcessing()
+		}
+	}
+
 	func retryFailed() {
 		logger.info("Retrying failed transcriptions")
 
@@ -289,7 +305,12 @@ class TranscriptionQueueManager {
 			while item.status == QueueItemStatus.processing {
 				// Update item progress from file transcription manager
 				await MainActor.run {
-					item.progress = fileTranscriptionManager.progress
+					let newProgress = fileTranscriptionManager.progress
+					// Publish only >=1% deltas (or on completion) so observers are not
+					// invalidated on every poll tick when progress is effectively unchanged.
+					if newProgress >= 1.0 || abs(newProgress - item.progress) >= 0.01 {
+						item.progress = newProgress
+					}
 				}
 				try? await Task.sleep(nanoseconds: 100_000_000)  // Update every 0.1 seconds
 			}
@@ -430,6 +451,7 @@ class TranscriptionQueueManager {
 			try transcription.write(to: fileURL, atomically: true, encoding: .utf8)
 			logger.info("Transcription saved to: \(fileURL.path)")
 			item.filePath = fileURL.path
+			item.fileExists = true
 			UserDefaults.standard.set(fileURL.path, forKey: "lastTranscriptionFilePath")
 		} catch {
 			logger.error("Failed to save transcription to file: \(error.localizedDescription)")

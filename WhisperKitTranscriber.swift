@@ -1837,6 +1837,19 @@ import WhisperKit
 		modelOperationTask = nil
 	}
 
+	// Aborts an in-flight model download (network, cancellable). Loading/prewarming
+	// is deliberately not cancellable, so the FixItStack only surfaces Cancel here.
+	@MainActor
+	func cancelModelDownload() {
+		guard isDownloadingModel else { return }
+		modelOperationTask?.cancel()
+		modelOperationTask = nil
+		isDownloadingModel = false
+		downloadingModelName = nil
+		downloadProgress = 0.0
+		AppLogger.shared.transcriber.log("Model download cancelled by user")
+	}
+
 	private func performDownloadModel(_ modelName: String) async throws {
 		beginDownloadState(modelName)
 		// A failed download or load must not leave the app looking busy: that blocked idle unload,

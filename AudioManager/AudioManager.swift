@@ -478,6 +478,10 @@ extension AudioManager {
 	}
 	fileprivate func beginRecording(mode: RecordingMode, postProcess: Bool) {
 		guard !isSessionActive else { return }
+		// Auto-clear the previous glance so a new recording never displays a stale
+		// result or error underneath it.
+		lastTranscription = nil
+		transcriptionError = nil
 		currentRecordingMode = mode
 		let (session, abandoned) = ledger.beginCapture(mode: mode, postProcess: postProcess)
 		if let abandoned {

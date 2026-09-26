@@ -4,13 +4,15 @@ import AppKit
 /// tab and is translated once the app runs in Spanish, German or French.
 enum SettingsWindowLocator {
 	static let swiftUIIdentifier = "com_apple_SwiftUI_Settings_window"
+	/// The fallback window AppDelegate hosts when the SwiftUI openSettings action no-ops.
+	static let retainedIdentifier = "whispera.settings.retained"
 
 	private static let englishTitles = [
 		"Settings", "Preferences", "General", "Storage & Downloads", "File Transcription",
 	]
 
 	static func isSettingsWindow(identifier: String?, title: String, className: String) -> Bool {
-		if identifier == swiftUIIdentifier || className.contains("Settings") {
+		if identifier == swiftUIIdentifier || identifier == retainedIdentifier || className.contains("Settings") {
 			return true
 		}
 		let localizedTitles = englishTitles.map { String(localized: String.LocalizationValue($0)) }

@@ -37,7 +37,5 @@ struct SettingRowView: View {
 			Toggle("", isOn: $isOn)
 				.labelsHidden()
 		}
-		.padding()
-		.background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
 	}
 }

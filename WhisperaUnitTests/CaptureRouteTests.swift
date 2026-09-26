@@ -38,14 +38,14 @@ struct CaptureRouteTests {
 		#expect(!CaptureRoute.file.canKeepMicrophoneOpen)
 	}
 
-	/// The default install is Live Transcription Mode with a Whisper model, so the kept-open
-	/// policies must say in the row that they do nothing there.
+	/// Live Transcription Mode with a Whisper model ignores the kept-open policies, so the
+	/// row must say they do nothing there.
 	@Test(arguments: [MicStreamPolicy.lazyClose, .alwaysOn])
 	func keptOpenPoliciesExplainThatTheyDoNothingInLiveMode(policy: MicStreamPolicy) {
-		let defaultRoute = CaptureRoute.resolve(
-			liveTranscriptionEnabled: Constants.enableStreamingDefault, modelSupportsLive: true,
+		let liveRoute = CaptureRoute.resolve(
+			liveTranscriptionEnabled: true, modelSupportsLive: true,
 			useStreamingTranscription: true)
-		#expect(defaultRoute == .live)
+		#expect(liveRoute == .live)
 		let reason = policy.inactiveReason(on: .live)
 		#expect(reason?.contains("No effect") == true)
 		#expect(policy.settingsDescription(on: .live) == reason)

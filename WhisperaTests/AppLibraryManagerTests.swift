@@ -15,10 +15,7 @@ final class AppLibraryManagerTests: XCTestCase {
 		tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
 		try! FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
 
-		// ~/Downloads is TCC-protected: an ad-hoc signed test host blocks in open() on its consent prompt
-		let downloads = tempDirectory.appendingPathComponent("Downloads")
-		try! FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
-		appLibraryManager = AppLibraryManager(downloadsDirectory: downloads)
+		appLibraryManager = AppLibraryManager()
 	}
 
 	override func tearDown() {
@@ -54,12 +51,6 @@ final class AppLibraryManagerTests: XCTestCase {
 		let directory = appLibraryManager.modelsDirectory
 		XCTAssertNotNil(directory)
 		XCTAssertTrue(directory!.path.contains("models/argmaxinc/whisperkit-coreml"))
-	}
-
-	func testDownloadsDirectory() {
-		let directory = appLibraryManager.downloadsDirectory
-		XCTAssertNotNil(directory)
-		XCTAssertTrue(directory!.path.contains("Downloads"))
 	}
 
 	// MARK: - Storage Calculation Tests
@@ -116,11 +107,6 @@ final class AppLibraryManagerTests: XCTestCase {
 		XCTAssertNoThrow(appLibraryManager.openAppLibraryInFinder())
 	}
 
-	func testOpenDownloadsInFinder() {
-		// Test that the method doesn't crash
-		XCTAssertNoThrow(appLibraryManager.openDownloadsInFinder())
-	}
-
 	// MARK: - Enhanced Finder Integration Tests
 
 	func testFinderIntegrationWithDirectoryCreation() {
@@ -131,20 +117,12 @@ final class AppLibraryManagerTests: XCTestCase {
 		if let appSupportDir = appLibraryManager.appSupportDirectory {
 			XCTAssertTrue(FileManager.default.fileExists(atPath: appSupportDir.path))
 		}
-
-		XCTAssertNoThrow(appLibraryManager.openDownloadsInFinder())
-
-		// Verify downloads directory exists after call
-		if let downloadsDir = appLibraryManager.downloadsDirectory {
-			XCTAssertTrue(FileManager.default.fileExists(atPath: downloadsDir.path))
-		}
 	}
 
 	func testFinderErrorHandling() {
 		// Test error handling for invalid directories
 		// This would require mocking NSWorkspace, so we just test the method exists
 		XCTAssertNotNil(appLibraryManager.appSupportDirectory)
-		XCTAssertNotNil(appLibraryManager.downloadsDirectory)
 	}
 
 	func testRevealModelInFinder() {
@@ -161,44 +139,6 @@ final class AppLibraryManagerTests: XCTestCase {
 
 		// Should not crash even with invalid path
 		XCTAssertNoThrow(appLibraryManager.revealModelInFinder(modelInfo))
-	}
-
-	// MARK: - Update File Management Tests
-
-	func testGetDownloadedUpdates() {
-		let updates = appLibraryManager.getDownloadedUpdates()
-		// Should return an array (may have existing downloads on a real system)
-		XCTAssertNotNil(updates)
-		// All returned files should be DMGs with Whispera prefix
-		for update in updates {
-			XCTAssertTrue(update.pathExtension == "dmg")
-			XCTAssertTrue(update.lastPathComponent.hasPrefix("Whispera-"))
-		}
-	}
-
-	func testCreateMockUpdateFile() {
-		guard let downloadsDir = appLibraryManager.downloadsDirectory else {
-			XCTFail("Downloads directory not available")
-			return
-		}
-
-		let updateFile = downloadsDir.appendingPathComponent("Whispera-1.2.3.dmg")
-		let mockData = Data(repeating: 0, count: 1024 * 1024)  // 1MB
-
-		do {
-			try mockData.write(to: updateFile)
-
-			let updates = appLibraryManager.getDownloadedUpdates()
-			XCTAssertTrue(updates.map { $0.resolvingSymlinksInPath() }.contains(updateFile.resolvingSymlinksInPath()))
-
-			let fileSize = appLibraryManager.getUpdateFileSize(at: updateFile)
-			XCTAssertEqual(fileSize, 1024 * 1024)
-
-			// Clean up
-			try FileManager.default.removeItem(at: updateFile)
-		} catch {
-			XCTFail("Failed to create/test mock update file: \(error)")
-		}
 	}
 
 	// MARK: - Storage Summary Tests
@@ -335,7 +275,6 @@ final class AppLibraryManagerTests: XCTestCase {
 
 		// Should be able to open directories without crashing
 		XCTAssertNoThrow(appLibraryManager.openAppLibraryInFinder())
-		XCTAssertNoThrow(appLibraryManager.openDownloadsInFinder())
 	}
 
 	// MARK: - Thread Safety Tests

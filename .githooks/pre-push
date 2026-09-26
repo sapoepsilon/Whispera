@@ -1,0 +1,23 @@
+#!/bin/bash
+
+echo "Running pre-push tests..."
+
+OUTPUT=$(xcodebuild test \
+    -scheme Whispera \
+    -project Whispera.xcodeproj \
+    -destination 'platform=macOS' \
+    -only-testing:WhisperaUnitTests/LargeModelTranscriptionTests \
+    2>&1)
+
+PASSED=$(echo "$OUTPUT" | grep -c "passed")
+FAILED=$(echo "$OUTPUT" | grep -c "' failed")
+
+echo "$OUTPUT" | grep "Test case"
+
+if [ "$FAILED" -eq 0 ] && [ "$PASSED" -gt 0 ]; then
+    echo "Tests passed ($PASSED). Pushing..."
+    exit 0
+else
+    echo "Tests failed ($FAILED failures). Push aborted."
+    exit 1
+fi

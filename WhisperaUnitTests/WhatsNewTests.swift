@@ -91,13 +91,12 @@ struct WhatsNewNetworkPolicyTests {
 	@Test func releaseNotesAreFetchedAtLaunchOnlyWhileUpdateChecksAreOn() {
 		let store = defaults()
 		let tracker = WhatsNewTracker(defaults: store)
+		#expect(!tracker.updateChecksEnabled, "Sparkle treats an unanswered permission prompt as off")
+
+		store.set(true, forKey: "SUEnableAutomaticChecks")
 		#expect(tracker.updateChecksEnabled)
 
 		store.set(false, forKey: "SUEnableAutomaticChecks")
 		#expect(!tracker.updateChecksEnabled, "Turning off update checks in Settings must stop the fetch")
-
-		store.set(true, forKey: "SUEnableAutomaticChecks")
-		store.set(false, forKey: "autoCheckForUpdates")
-		#expect(!tracker.updateChecksEnabled)
 	}
 }

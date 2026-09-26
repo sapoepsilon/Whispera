@@ -2,8 +2,8 @@ import CoreGraphics
 
 /// Sizes the menu-bar popover to its content. Content taller than the screen allows scrolls
 /// instead of being cut off, which matters with banners, long translations and large text.
-struct PopoverLayout: Equatable {
-	static let minHeight: CGFloat = 400
+struct PopoverHeightLimit: Equatable {
+	static let minHeight: CGFloat = PopoverMetrics.minHeight
 	/// Room for the menu bar gap, the popover arrow and a margin above the Dock.
 	static let screenMargin: CGFloat = 48
 	static let fallbackScreenHeight: CGFloat = 800

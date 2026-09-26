@@ -18,7 +18,7 @@ class FileTranscriptionViewModel {
 	// MARK: - Settings
 	@ObservationIgnored @AppStorage("showTimestamps") private var showTimestamps: Bool = true
 	@ObservationIgnored @AppStorage("timestampFormat") private var timestampFormat: String = "MM:SS"
-	@ObservationIgnored @AppStorage("defaultTranscriptionMode") private var defaultTranscriptionMode: String = "plain"
+	@ObservationIgnored @AppStorage("defaultTranscriptionMode") private var defaultTranscriptionMode: String = "timestamps"
 	@ObservationIgnored @AppStorage("maxFileSizeMB") private var maxFileSizeMB: Int = 100
 
 	// MARK: - Dependencies
@@ -222,7 +222,10 @@ class FileTranscriptionViewModel {
 					let transcriptionSegments =
 						try await fileTranscriptionManager.transcribeFileWithTimestamps(at: fileURL)
 					segments = transcriptionSegments
-					transcriptionText = transcriptionSegments.map { $0.text }.joined(separator: " ")
+					// The text representation keeps the timestamps; joining bare
+					// segment text silently dropped them from copy/save output.
+					transcriptionText = fileTranscriptionManager.formatSegmentsAsString(
+						transcriptionSegments)
 				} else {
 					transcriptionText = try await fileTranscriptionManager.transcribeFile(at: fileURL)
 					segments = nil

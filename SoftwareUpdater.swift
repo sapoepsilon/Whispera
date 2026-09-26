@@ -28,11 +28,14 @@ struct CheckForUpdatesView: View {
 
 @MainActor
 final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
+    static let shared = SoftwareUpdater()
+
     private var updaterController: SPUStandardUpdaterController!
 
     @Published var canCheckForUpdates = false
     @Published var lastUpdateCheckDate: Date?
     @Published var lastUpdaterError: String?
+    @Published var availableUpdateVersion: String?
     @Published var automaticallyChecksForUpdates: Bool = true {
         didSet {
             updater.automaticallyChecksForUpdates = automaticallyChecksForUpdates
@@ -48,7 +51,7 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         updaterController.updater
     }
 
-    override init() {
+    private override init() {
         super.init()
         updaterController = SPUStandardUpdaterController(
             startingUpdater: false,
@@ -92,10 +95,28 @@ final class SoftwareUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         return Set()
     }
 
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        availableUpdateVersion = item.displayVersionString
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        availableUpdateVersion = nil
+    }
+
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         let nsError = error as NSError
-        // SPUNoUpdateFoundError (domain: SPUNoUpdateFoundError, code: 0) is not a real error
-        if nsError.domain == "SPUNoUpdateFoundError" { return }
+        guard nsError.domain == SUSparkleErrorDomain else {
+            lastUpdaterError = error.localizedDescription
+            AppLogger.shared.general.error("Sparkle update aborted: \(error.localizedDescription)")
+            return
+        }
+        // "No update found" and user cancellation are normal outcomes, not errors
+        let benignCodes: Set<Int> = [
+            Int(SUError.noUpdateError.rawValue),
+            Int(SUError.installationCanceledError.rawValue),
+            Int(SUError.installationAuthorizeLaterError.rawValue),
+        ]
+        if benignCodes.contains(nsError.code) { return }
         lastUpdaterError = error.localizedDescription
         AppLogger.shared.general.error("Sparkle update aborted: \(error.localizedDescription)")
     }

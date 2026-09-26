@@ -1,17 +1,17 @@
 import AppKit
+import Observation
 import Sparkle
 import SwiftUI
 
 // Launched from WhisperaMain, which diverts CLI invocations before NSApplication starts.
 struct WhisperaApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-	private let softwareUpdater = SoftwareUpdater()
+	private let softwareUpdater = SoftwareUpdater.shared
 
 	var body: some Scene {
 		Settings {
 			SettingsWithMaterial(
 				permissionManager: appDelegate.permissionManager ?? PermissionManager(),
-				updateManager: appDelegate.updateManager ?? UpdateManager(),
 				appLibraryManager: appDelegate.appLibraryManager ?? AppLibraryManager(),
 				softwareUpdater: softwareUpdater
 			)
@@ -42,7 +42,6 @@ struct WhisperaApp: App {
 
 struct SettingsWithMaterial: View {
 	var permissionManager: PermissionManager
-	var updateManager: UpdateManager
 	var appLibraryManager: AppLibraryManager
 	var softwareUpdater: SoftwareUpdater
 	@AppStorage("materialStyle") private var materialStyleRaw = MaterialStyle.default.rawValue
@@ -55,7 +54,6 @@ struct SettingsWithMaterial: View {
 		if #available(macOS 15.0, *) {
 			SettingsView(
 				permissionManager: permissionManager,
-				updateManager: updateManager,
 				appLibraryManager: appLibraryManager,
 				softwareUpdater: softwareUpdater
 			)
@@ -66,7 +64,6 @@ struct SettingsWithMaterial: View {
 		} else {
 			SettingsView(
 				permissionManager: permissionManager,
-				updateManager: updateManager,
 				appLibraryManager: appLibraryManager,
 				softwareUpdater: softwareUpdater
 			)
@@ -75,32 +72,53 @@ struct SettingsWithMaterial: View {
 	}
 }
 
+enum StatusMenuAction: String {
+	case settings
+	case activity
+	case checkForUpdates
+	case about
+	case lastMessage
+	case quit
+}
+
+struct StatusMenuEntry {
+	let action: StatusMenuAction?
+	let title: String
+	let isEnabled: Bool
+
+	static let separator = StatusMenuEntry(action: nil, title: "", isEnabled: false)
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate {
 	var statusItem: NSStatusItem?
 	var popover = NSPopover()
+	let toastCenter = ToastCenter()
 	var audioManager: AudioManager!
 	var shortcutManager: GlobalShortcutManager!
 	var fileTranscriptionManager: FileTranscriptionManager!
 	var networkDownloader: NetworkFileDownloader!
 	var queueManager: TranscriptionQueueManager!
-	var updateManager: UpdateManager?
+	var fileDropHandler: FileDropHandler!
 	var permissionManager: PermissionManager?
 	var appLibraryManager: AppLibraryManager?
-	var softwareUpdater: SoftwareUpdater?
 	@AppStorage(ShortcutDefaults.dictationKey) var globalShortcut = ShortcutDefaults.dictation
 	@AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
 	private var recordingObserver: NSObjectProtocol?
 	private var downloadObserver: NSObjectProtocol?
 	private var modelStateObserver: NSObjectProtocol?
-	private var updateObserver: NSObjectProtocol?
 	private var sleepObserver: NSObjectProtocol?
 	private var wakeObserver: NSObjectProtocol?
 	private var onboardingWindow: NSWindow?
+	private var activityWindow: ActivityWindow?
+	private var settingsWindow: NSWindow?
+	private var swiftUIOpenSettings: (@MainActor () -> Void)?
+	let popoverPresenter = PopoverPresenter()
 	private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
 	private var minimalIndicatorController: MinimalRecordingIndicatorController?
+	private static let alphaPulseKey = "whispera.statusItem.alphaPulse"
+	private let statusIconConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium, scale: .medium)
 	private var recordingGlowController: RecordingGlowController?
-	private var popoverFrame: NSRect?
 	private var themeObserver: NSObjectProtocol?
 	private var menuBarIcon = MenuBarIconVisibility(defaults: .standard)
 	private var menuBarIconObserver: DefaultsKeyObserver?
@@ -133,7 +151,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 				fileTranscriptionManager: fileTranscriptionManager,
 				networkDownloader: networkDownloader
 			)
-			updateManager = UpdateManager()
+			fileDropHandler = FileDropHandler(
+				fileTranscriptionManager: fileTranscriptionManager,
+				networkDownloader: networkDownloader,
+				queueManager: queueManager
+			)
 			permissionManager = PermissionManager()
 			appLibraryManager = AppLibraryManager()
 			setupMenuBar()
@@ -148,7 +170,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 				controller: audioManager, modelSwitcher: audioManager.whisperKitTranscriber)
 			observeRecordingState()
 			observeWindowState()
-			observeUpdateState()
 			observeSleepWakeNotifications()
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
@@ -159,22 +180,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 				showOnboarding()
 			}
 			WhatsNewController.shared.checkOnLaunch(suppress: !hasCompletedOnboarding)
-
-			if updateManager?.autoCheckForUpdates == true {
-				Task {
-					do {
-						let hasUpdate = try await updateManager?.checkForUpdates() ?? false
-						if hasUpdate {
-							AppLogger.shared.general.info(
-								"Update available: \(self.updateManager?.latestVersion ?? "unknown")")
-						} else {
-							AppLogger.shared.general.info("App is up to date")
-						}
-					} catch {
-						AppLogger.shared.general.error("Failed to check for updates: \(error)")
-					}
-				}
-			}
 
 			// Listen for show onboarding requests from settings
 			NotificationCenter.default.addObserver(
@@ -207,31 +212,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			"enableRecordingGlow": true,
 			"enableStreaming": Constants.enableStreamingDefault,
 			"autoDetectLanguageFromKeyboard": Constants.autoDetectLanguageFromKeyboardDefault,
+			"defaultTranscriptionMode": "timestamps",
+			"showTimestamps": true,
+			"timestampFormat": "MM:SS",
 			"materialStyle": MaterialStyle.default.rawValue,
 		])
 	}
 
+	@MainActor
 	func setupMenuBar() {
-		statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+		statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
 		if let button = statusItem?.button {
-			button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
-			button.action = #selector(togglePopover)
+			let image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
+			image?.isTemplate = true
+			button.image = image?.withSymbolConfiguration(statusIconConfig)
+			button.action = #selector(handleStatusItemClick)
 			button.target = self
+			button.sendAction(on: [.leftMouseUp, .rightMouseUp])
 		}
 
-		let menuController = NSHostingController(
+		let hostingController = NSHostingController(
 			rootView: MenuBarView(
 				audioManager: audioManager,
 				permissionManager: permissionManager ?? PermissionManager(),
-				updateManager: updateManager ?? UpdateManager(),
+				softwareUpdater: SoftwareUpdater.shared,
 				fileTranscriptionManager: fileTranscriptionManager,
 				networkDownloader: networkDownloader,
-				queueManager: queueManager
+				queueManager: queueManager,
+				fileDropHandler: fileDropHandler,
+				menuEntries: menuItems(),
+				performMenuAction: { [weak self] action in self?.perform(action) },
+				registerOpenSettings: { [weak self] action in self?.swiftUIOpenSettings = action },
+				presenter: popoverPresenter,
+				toastCenter: toastCenter
 			))
-		// The popover follows preferredContentSize, so banners appearing while it is open resize it
-		menuController.sizingOptions = .preferredContentSize
-		popover.contentViewController = menuController
+		// Sizing is driven by explicit contentSize assignments (which NSPopover
+		// animates while shown); hosting sizing options would snap-resize and
+		// fight that animation.
+		hostingController.sizingOptions = []
+		popover.contentViewController = hostingController
+		popover.contentSize = NSSize(width: PopoverMetrics.width, height: 380)
+		toastCenter.isPopoverVisible = { [weak self] in self?.popover.isShown ?? false }
 		// A menu bar popover takes the menu bar's appearance, not NSApp.appearance
 		popover.appearance = NSApp.appearance
 		themeObserver = NotificationCenter.default.addObserver(
@@ -250,14 +272,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			self.applyMenuBarIconVisibility()
 		}
 
+		// Arm the height observation BEFORE the pre-warm layout: the pre-warm
+		// runs the first measurement, and a change landing before observation
+		// starts would never reach the popover.
+		observePopoverSize()
+
 		if let hostingView = popover.contentViewController?.view {
 			hostingView.wantsLayer = true
 			hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+			// Pre-warm: force one layout at launch so the first click hits an
+			// already-evaluated tree instead of building it on the click.
+			hostingView.frame = NSRect(
+				x: 0, y: 0, width: PopoverMetrics.width, height: 400)
+			hostingView.layoutSubtreeIfNeeded()
 		}
 
-		if #available(macOS 14.0, *) {
-			popover.hasFullSizeContent = true
-		}
 	}
 
 	private func applyMenuBarIconVisibility() {
@@ -276,8 +305,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		}
 		// The revealed button gets its window on the next pass of the run loop
 		DispatchQueue.main.async { [weak self] in
-			guard let self, let button = self.statusItem?.button, !self.popover.isShown else { return }
-			self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+			guard let self, self.statusItem?.button != nil, !self.popover.isShown else { return }
+			self.togglePopover()
 		}
 	}
 
@@ -291,68 +320,204 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 		if popover.isShown {
 			popover.performClose(nil)
-			popoverFrame = nil
 			return
 		}
 
-		guard let screen = button.window?.screen,
-			let buttonWindow = button.window,
-			let hostingView = popover.contentViewController?.view
-		else {
-			popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-			return
+		// State often changes while the popover is closed with no layout running;
+		// re-measure and size before showing so it never opens stale and clipped.
+		if let hostingView = popover.contentViewController?.view {
+			hostingView.layoutSubtreeIfNeeded()
 		}
+		MainActor.assumeIsolated { applyPopoverSize() }
 
-		let screenFrame = screen.visibleFrame
-		let buttonFrame = buttonWindow.frame
-		let popoverSize = hostingView.fittingSize
-		let margin: CGFloat = 8
+		popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+	}
 
-		let spaceRight = screenFrame.maxX - buttonFrame.maxX
-		let spaceLeft = buttonFrame.minX - screenFrame.minX
-
-		let wouldOverflowRight = spaceRight < popoverSize.width
-		let wouldOverflowLeft = spaceLeft < popoverSize.width
-
-		if wouldOverflowRight || wouldOverflowLeft {
-			popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-
-			DispatchQueue.main.async {
-				guard let popoverWindow = self.popover.contentViewController?.view.window else { return }
-				var popoverFrame = popoverWindow.frame
-
-				if wouldOverflowRight {
-					popoverFrame.origin.x = screenFrame.maxX - popoverSize.width - margin
-				} else if wouldOverflowLeft {
-					popoverFrame.origin.x = screenFrame.minX + margin
-				}
-
-				popoverWindow.setFrame(popoverFrame, display: true, animate: false)
-				self.popoverFrame = popoverFrame
-			}
-		} else {
-			popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-			DispatchQueue.main.async {
-				if let popoverWindow = self.popover.contentViewController?.view.window {
-					self.popoverFrame = popoverWindow.frame
-				}
+	// Re-arms observation of the measured height. Applying while shown animates
+	// the frame (NSPopover animates explicit contentSize changes); applying
+	// while closed is instant, which is what the pre-show path wants.
+	private func observePopoverSize() {
+		withObservationTracking {
+			_ = popoverPresenter.height
+		} onChange: {
+			Task { @MainActor [weak self] in
+				guard let self else { return }
+				self.applyPopoverSize()
+				self.observePopoverSize()
 			}
 		}
 	}
 
-	private func restorePopoverPositionIfNeeded() {
-		guard popover.isShown,
-			let savedFrame = popoverFrame,
-			let popoverWindow = popover.contentViewController?.view.window
-		else {
+	@MainActor
+	private func applyPopoverSize() {
+		let size = NSSize(width: PopoverMetrics.width, height: popoverPresenter.height)
+		guard popover.contentSize != size else { return }
+		popover.contentSize = size
+	}
+
+	@objc private func handleStatusItemClick() {
+		let event = NSApp.currentEvent
+		let isSecondaryClick =
+			event?.type == .rightMouseUp
+			|| (event?.type == .leftMouseUp && event?.modifierFlags.contains(.control) == true)
+
+		if isSecondaryClick {
+			showStatusMenu()
+		} else {
+			togglePopover()
+		}
+	}
+
+	private func showStatusMenu() {
+		guard let statusItem, let button = statusItem.button else { return }
+		let menu = buildStatusMenu()
+		// Attaching the menu makes the next click present it, matching the
+		// standard NSStatusItem left-click-action / right-click-menu pattern.
+		statusItem.menu = menu
+		button.performClick(nil)
+		statusItem.menu = nil
+	}
+
+	// Shared ordered list of status-item menu commands. The item list, not the
+	// widget, is the single source of truth so a future in-popover "…" SwiftUI
+	// Menu can be built from the same descriptors and stay in sync.
+	private func menuItems() -> [StatusMenuEntry] {
+		[
+			StatusMenuEntry(action: .settings, title: String(localized: "Settings…"), isEnabled: true),
+			StatusMenuEntry(action: .activity, title: String(localized: "Transcription Activity…"), isEnabled: true),
+			StatusMenuEntry(action: .checkForUpdates, title: String(localized: "Check for Updates…"), isEnabled: true),
+			StatusMenuEntry(action: .about, title: String(localized: "About Whispera"), isEnabled: true),
+			.separator,
+			StatusMenuEntry(action: .lastMessage, title: String(localized: "Last Message"), isEnabled: true),
+			.separator,
+			StatusMenuEntry(action: .quit, title: String(localized: "Quit Whispera"), isEnabled: true),
+		]
+	}
+
+	private func buildStatusMenu() -> NSMenu {
+		let menu = NSMenu()
+		menu.autoenablesItems = false
+		for entry in menuItems() {
+			guard let action = entry.action else {
+				menu.addItem(.separator())
+				continue
+			}
+			let item = NSMenuItem(
+				title: entry.title,
+				action: #selector(handleMenuAction(_:)),
+				keyEquivalent: ""
+			)
+			item.target = self
+			item.isEnabled = entry.isEnabled
+			item.representedObject = action.rawValue
+			menu.addItem(item)
+		}
+		return menu
+	}
+
+	@MainActor
+	@objc private func handleMenuAction(_ sender: NSMenuItem) {
+		guard
+			let rawValue = sender.representedObject as? String,
+			let action = StatusMenuAction(rawValue: rawValue)
+		else { return }
+		perform(action)
+	}
+
+	// Single command handler shared by the status-item NSMenu and the header "…"
+	// SwiftUI menu so both surfaces execute identical behavior.
+	@MainActor
+	func perform(_ action: StatusMenuAction) {
+		switch action {
+		case .settings:
+			showSettingsWindow()
+		case .activity:
+			showActivityWindow()
+		case .checkForUpdates:
+			SoftwareUpdater.shared.checkForUpdates()
+		case .about:
+			showAboutPanel()
+		case .lastMessage:
+			toastCenter.showLastMessage()
+		case .quit:
+			NSApplication.shared.terminate(nil)
+		}
+	}
+
+	// Settings open, two tiers. First try the native SwiftUI Settings scene via
+	// the openSettings environment action registered by MenuBarView (the legacy
+	// showSettingsWindow: selector was removed by Apple on macOS 14+). The action
+	// silently no-ops when the environment lacks a scene bridge - a known gap for
+	// accessory apps - so if no scene window materializes, fall back to a
+	// retained window hosting the same settings view.
+	@MainActor
+	private func showSettingsWindow() {
+		NSApp.setActivationPolicy(.regular)
+		NSApp.activate(ignoringOtherApps: true)
+		if let action = swiftUIOpenSettings {
+			action()
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+				guard let self else { return }
+				if let scene = self.settingsSceneWindow() {
+					AppLogger.shared.general.info("Settings opened via native scene")
+					scene.makeKeyAndOrderFront(nil)
+				} else {
+					AppLogger.shared.general.info("openSettings no-oped, using retained settings window")
+					self.showRetainedSettingsWindow()
+				}
+			}
+		} else {
+			showRetainedSettingsWindow()
+		}
+	}
+
+	@MainActor
+	private func settingsSceneWindow() -> NSWindow? {
+		NSApp.windows.first {
+			$0.isVisible && $0.identifier?.rawValue.hasPrefix("com_apple_SwiftUI_Settings") == true
+		}
+	}
+
+	@MainActor
+	private func showRetainedSettingsWindow() {
+		if let window = settingsWindow {
+			window.makeKeyAndOrderFront(nil)
 			return
 		}
+		let hosting = NSHostingController(
+			rootView: SettingsWithMaterial(
+				permissionManager: permissionManager ?? PermissionManager(),
+				appLibraryManager: appLibraryManager ?? AppLibraryManager(),
+				softwareUpdater: SoftwareUpdater.shared
+			))
+		let window = NSWindow(contentViewController: hosting)
+		window.title = String(localized: "Whispera Settings")
+		window.identifier = NSUserInterfaceItemIdentifier(SettingsWindowLocator.retainedIdentifier)
+		window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+		window.isReleasedWhenClosed = false
+		window.setContentSize(NSSize(width: 640, height: 560))
+		window.center()
+		settingsWindow = window
+		window.makeKeyAndOrderFront(nil)
+	}
 
-		// Only the horizontal position is restored; the height follows the content
-		var frame = popoverWindow.frame
-		guard frame.origin.x != savedFrame.origin.x else { return }
-		frame.origin.x = savedFrame.origin.x
-		popoverWindow.setFrame(frame, display: false, animate: false)
+	@MainActor
+	private func showActivityWindow() {
+		if activityWindow == nil {
+			activityWindow = ActivityWindow(queueManager: queueManager)
+		}
+		NSApp.setActivationPolicy(.regular)
+		NSApp.activate(ignoringOtherApps: true)
+		activityWindow?.makeKeyAndOrderFront(nil)
+	}
+
+	private func showAboutPanel() {
+		NSApp.setActivationPolicy(.regular)
+		NSApp.activate(ignoringOtherApps: true)
+		NSApplication.shared.orderFrontStandardAboutPanel(options: [
+			.applicationName: "Whispera",
+			.applicationVersion: AppVersion.Constants.currentVersionString,
+		])
 	}
 	private func showOnboarding() {
 		let onboardingView = OnboardingView(
@@ -467,8 +632,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			queue: .main
 		) { notification in
 			if let window = notification.object as? NSWindow {
-				if SettingsWindowLocator.isSettingsWindow(window) {
-					// Settings window is closing, revert to accessory mode
+				if SettingsWindowLocator.isSettingsWindow(window) || window is ActivityWindow {
+					// Settings or Activity window is closing, revert to accessory mode
 					DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
 						NSApp.setActivationPolicy(.accessory)
 					}
@@ -479,181 +644,60 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 	@MainActor
 	private func updateStatusIcon() {
-		if let button = statusItem?.button {
-			let whisperKit = audioManager.whisperKitTranscriber
+		guard let button = statusItem?.button else { return }
+		let whisperKit = audioManager.whisperKitTranscriber
 
-			// Clean up any previous subviews and stop any animations
-			button.subviews.removeAll()
-			button.layer?.removeAllAnimations()
+		stopAlphaPulse(on: button)
 
-			let wasPopoverShown = popover.isShown
+		if permissionManager?.needsPermissions == true {
+			setStatusImage(
+				"exclamationmark.triangle.fill", description: String(localized: "Whispera - Permissions Required"),
+				on: button)
+			startAlphaPulse(on: button, fadeTo: 0.5, duration: 0.6)
 
-			if permissionManager?.needsPermissions == true {
-				// Permission warning state - orange exclamation mark with pulse
-				button.image = NSImage(
-					systemSymbolName: "exclamationmark.triangle.fill",
-					accessibilityDescription: String(localized: "Whispera - Permissions Required"))
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
+		} else if whisperKit.isDownloadingModel || networkDownloader?.isDownloading == true {
+			setStatusImage("arrow.down.circle", description: String(localized: "Whispera - Downloading"), on: button)
+			startAlphaPulse(on: button, fadeTo: 0.3, duration: 0.8)
 
-				// Add warning pulse animation
-				addPermissionWarningAnimation(to: button)
+		} else if audioManager.isTranscribing || fileTranscriptionManager?.isTranscribing == true
+			|| queueManager?.isProcessing == true
+		{
+			setStatusImage("waveform", description: String(localized: "Whispera - Transcribing"), on: button)
+			startAlphaPulse(on: button, fadeTo: 0.7, duration: 1.5)
 
-			} else if whisperKit.isDownloadingModel {
-				// Downloading state - rotating download icon to indicate progress
-				button.image = NSImage(
-					systemSymbolName: "arrow.down.circle",
-					accessibilityDescription: String(localized: "Whispera - Downloading"))
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
+		} else if audioManager.isRecording {
+			setStatusImage("mic.circle.fill", description: String(localized: "Whispera - Recording"), on: button)
+			startAlphaPulse(on: button, fadeTo: 0.4, duration: 0.8)
 
-				// Add continuous rotation animation to indicate download
-				addDownloadAnimation(to: button)
-
-			} else if networkDownloader?.isDownloading == true {
-				// Network downloading state - arrow down with rotation
-				button.image = NSImage(
-					systemSymbolName: "arrow.down.circle",
-					accessibilityDescription: String(localized: "Whispera - Downloading"))
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
-
-				// Add download animation
-				addDownloadAnimation(to: button)
-
-			} else if audioManager.isTranscribing || fileTranscriptionManager?.isTranscribing == true
-				|| queueManager?.isProcessing == true
-			{
-				// Transcribing state - waveform icon with subtle pulse
-				button.image = NSImage(
-					systemSymbolName: "waveform",
-					accessibilityDescription: String(localized: "Whispera - Transcribing"))
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
-
-				// Add gentle pulsing for transcription
-				addTranscriptionAnimation(to: button)
-
-			} else if audioManager.isRecording {
-				// Recording state - filled microphone icon with stronger pulse
-				button.image = NSImage(
-					systemSymbolName: "mic.circle.fill",
-					accessibilityDescription: String(localized: "Whispera - Recording"))
-				button.image?.isTemplate = true
-
-				// Add a stronger pulsing animation to show active recording
-				addRecordingAnimation(to: button)
-			} else {
-				// Ready state - default microphone icon, no animation
-				button.image = NSImage(systemSymbolName: "microphone", accessibilityDescription: "Whispera")
-				button.image?.isTemplate = true
-				button.alphaValue = 1.0
-			}
-
-			if wasPopoverShown {
-				DispatchQueue.main.async {
-					self.restorePopoverPositionIfNeeded()
-				}
-			}
+		} else {
+			setStatusImage("microphone", description: "Whispera", on: button)
 		}
 	}
 
-	private func addDownloadAnimation(to button: NSStatusBarButton) {
-		// Use NSAnimationContext instead of Core Animation for status bar buttons
-		button.alphaValue = 1.0
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 0.8
-			context.allowsImplicitAnimation = true
-			context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-			button.animator().alphaValue = 0.3
-		} completionHandler: {
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0.8
-				context.allowsImplicitAnimation = true
-				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-				button.animator().alphaValue = 1.0
-			} completionHandler: {
-				// Continue animation if still downloading
-				Task { @MainActor in
-					if self.audioManager.whisperKitTranscriber.isDownloadingModel
-						|| self.networkDownloader?.isDownloading == true
-					{
-						self.addDownloadAnimation(to: button)
-					}
-				}
-			}
-		}
+	private func setStatusImage(_ symbolName: String, description: String, on button: NSStatusBarButton) {
+		let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: description)
+		image?.isTemplate = true
+		button.image = image?.withSymbolConfiguration(statusIconConfig)
 	}
 
-	private func addPermissionWarningAnimation(to button: NSStatusBarButton) {
-		// Warning pulse for permissions - faster and more urgent than other animations
-		button.alphaValue = 1.0
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 0.6
-			context.allowsImplicitAnimation = true
-			context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-			button.animator().alphaValue = 0.5
-		} completionHandler: {
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0.6
-				context.allowsImplicitAnimation = true
-				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-				button.animator().alphaValue = 1.0
-			} completionHandler: {
-				// Continue animation if still needs permissions
-				if self.permissionManager?.needsPermissions == true {
-					self.addPermissionWarningAnimation(to: button)
-				}
-			}
-		}
+	private func startAlphaPulse(on button: NSStatusBarButton, fadeTo: CGFloat, duration: CGFloat) {
+		// Render-server layer animation instead of a per-frame main-actor loop; gate on Reduce Motion.
+		guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+		button.wantsLayer = true
+		guard let layer = button.layer else { return }
+		let animation = CABasicAnimation(keyPath: "opacity")
+		animation.fromValue = 1.0
+		animation.toValue = fadeTo
+		animation.duration = CFTimeInterval(duration)
+		animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+		animation.autoreverses = true
+		animation.repeatCount = .infinity
+		layer.add(animation, forKey: Self.alphaPulseKey)
 	}
 
-	private func addTranscriptionAnimation(to button: NSStatusBarButton) {
-		// Gentle pulsing for transcription
+	private func stopAlphaPulse(on button: NSStatusBarButton) {
+		button.layer?.removeAnimation(forKey: Self.alphaPulseKey)
 		button.alphaValue = 1.0
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 1.5
-			context.allowsImplicitAnimation = true
-			context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-			button.animator().alphaValue = 0.7
-		} completionHandler: {
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 1.5
-				context.allowsImplicitAnimation = true
-				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-				button.animator().alphaValue = 1.0
-			} completionHandler: {
-				Task { @MainActor in
-					if self.audioManager.isTranscribing {
-						self.addTranscriptionAnimation(to: button)
-					}
-				}
-			}
-		}
-	}
-
-	private func addRecordingAnimation(to button: NSStatusBarButton) {
-		// Stronger pulsing for recording
-		button.alphaValue = 1.0
-		NSAnimationContext.runAnimationGroup { context in
-			context.duration = 0.8
-			context.allowsImplicitAnimation = true
-			context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-			button.animator().alphaValue = 0.4
-		} completionHandler: {
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0.8
-				context.allowsImplicitAnimation = true
-				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-				button.animator().alphaValue = 1.0
-			} completionHandler: {
-				Task { @MainActor in
-					if self.audioManager.isRecording {
-						self.addRecordingAnimation(to: button)
-					}
-				}
-			}
-		}
 	}
 
 	@MainActor private func applyStoredModel() {
@@ -681,21 +725,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		}
 	}
 
-	private func observeUpdateState() {
-		// The update alert is modal, so a test that posts an update notification would block the host forever
-		guard !Self.isRunningAsTestHost else { return }
-		// Observe update availability notifications
-		updateObserver = NotificationCenter.default.addObserver(
-			forName: UpdateManager.updateAvailableNotification,
-			object: nil,
-			queue: .main
-		) { [weak self] notification in
-			if let version = notification.userInfo?["version"] as? String {
-				self?.showUpdateAvailableNotification(version: version)
-			}
-		}
-	}
-
 	private func observeSleepWakeNotifications() {
 		sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
 			forName: NSWorkspace.willSleepNotification,
@@ -711,36 +740,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			queue: .main
 		) { _ in
 			AppLogger.shared.general.info("System did wake")
-		}
-	}
-
-	private func showUpdateAvailableNotification(version: String) {
-		let alert = NSAlert()
-		alert.messageText = String(localized: "Update Available")
-		alert.informativeText = String(
-			localized: "Whispera \(version) is available. Would you like to download it now?")
-		alert.addButton(withTitle: String(localized: "Download"))
-		alert.addButton(withTitle: String(localized: "Later"))
-		alert.addButton(withTitle: String(localized: "View Release Notes"))
-
-		let response = alert.runModal()
-		switch response {
-		case .alertFirstButtonReturn:
-			// Download update
-			Task {
-				do {
-					try await updateManager?.downloadUpdate()
-				} catch {
-					AppLogger.shared.general.error("Failed to download update: \(error)")
-				}
-			}
-		case .alertThirdButtonReturn:
-			// Open GitHub releases page
-			if let url = URL(string: "https://github.com/\(AppVersion.Constants.githubRepo)/releases") {
-				NSWorkspace.shared.open(url)
-			}
-		default:
-			break
 		}
 	}
 
@@ -806,9 +805,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			NotificationCenter.default.removeObserver(observer)
 		}
 		if let observer = modelStateObserver {
-			NotificationCenter.default.removeObserver(observer)
-		}
-		if let observer = updateObserver {
 			NotificationCenter.default.removeObserver(observer)
 		}
 		if let observer = sleepObserver {

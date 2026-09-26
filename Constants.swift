@@ -162,7 +162,7 @@ struct Constants {
 	public static let defaultLanguageName = "english"
 	// Shared by every @AppStorage("enableStreaming") fallback and the first-launch
 	// defaults: divergent inline copies of this literal caused duplicate recording windows.
-	public static let enableStreamingDefault = true
+	public static let enableStreamingDefault = false
 	// Same reason: Settings showed keyboard detection on while recording treated it as off
 	public static let autoDetectLanguageFromKeyboardDefault = false
 

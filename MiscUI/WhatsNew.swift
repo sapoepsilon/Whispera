@@ -29,13 +29,11 @@ struct WhatsNewTracker {
 		return AppVersion(currentVersion) > AppVersion(lastSeenVersion)
 	}
 
-	/// Sparkle's automatic-check setting (the Settings toggle) and the legacy update checker's
-	/// setting. When either is off the user opted out of update traffic, so the release notes
-	/// shown at launch are not fetched until asked for.
+	/// Sparkle's automatic-check setting, the Settings toggle. Sparkle treats an unanswered
+	/// permission prompt as off, so the release notes shown at launch are fetched only after the
+	/// user opted in to update traffic; otherwise they load on request.
 	var updateChecksEnabled: Bool {
-		let sparkle = defaults.object(forKey: "SUEnableAutomaticChecks") as? Bool ?? true
-		let legacy = defaults.object(forKey: "autoCheckForUpdates") as? Bool ?? true
-		return sparkle && legacy
+		defaults.object(forKey: "SUEnableAutomaticChecks") as? Bool ?? false
 	}
 
 	func evaluateLaunch(currentVersion: String) -> Bool {
@@ -51,6 +49,15 @@ struct WhatsNewTracker {
 }
 
 enum WhatsNewReleaseNotes {
+	enum FetchError: Error {
+		case invalidURL
+		case badResponse
+	}
+
+	private struct Release: Decodable {
+		let body: String
+	}
+
 	static func releaseURL(for version: String) -> URL? {
 		URL(string: "https://api.github.com/repos/\(AppVersion.Constants.githubRepo)/releases/tags/v\(version)")
 	}
@@ -60,15 +67,15 @@ enum WhatsNewReleaseNotes {
 	}
 
 	static func decodeBody(from data: Data) throws -> String {
-		try JSONDecoder().decode(GitHubRelease.self, from: data).body
+		try JSONDecoder().decode(Release.self, from: data).body
 	}
 
 	static func fetch(version: String, session: URLSession = .shared) async throws -> String {
-		guard let url = releaseURL(for: version) else { throw UpdateError.invalidResponse }
+		guard let url = releaseURL(for: version) else { throw FetchError.invalidURL }
 		var request = URLRequest(url: url)
 		request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
 		let (data, response) = try await session.data(for: request)
-		guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw UpdateError.networkError }
+		guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw FetchError.badResponse }
 		return try decodeBody(from: data)
 	}
 }
