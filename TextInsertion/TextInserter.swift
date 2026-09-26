@@ -46,15 +46,21 @@ final class TextInserter {
 	private let logger = AppLogger.shared.general
 	private let typingStepDelayMs = 4
 	private let autoSubmitDelayMs = 50
+	/// Upper bound on waiting for the target app to read the transcript before restoring.
+	private let readTimeoutMs: Int
 	private var pendingInsertion: Task<Void, Never>?
+
+	static let defaultReadTimeoutMs = 1500
 
 	init(
 		pasteboard: NSPasteboard = .general,
 		keyPoster: KeyEventPosting = CGKeyEventPoster(),
+		readTimeoutMs: Int = TextInserter.defaultReadTimeoutMs,
 		settingsProvider: @escaping () -> TextInsertionSettings = { .current }
 	) {
 		self.pasteboard = pasteboard
 		self.keyPoster = keyPoster
+		self.readTimeoutMs = readTimeoutMs
 		self.settingsProvider = settingsProvider
 	}
 
@@ -105,8 +111,6 @@ final class TextInserter {
 			switch step {
 			case .text(let units):
 				keyPoster.postUnicode(units)
-			case .newline:
-				keyPoster.postKey(KeyCode.returnKey, flags: [])
 			}
 			await sleep(milliseconds: typingStepDelayMs)
 		}
@@ -128,22 +132,39 @@ final class TextInserter {
 
 	private func pasteViaClipboard(_ text: String, settings: TextInsertionSettings) async {
 		let restoreClipboard = settings.clipboardHandling == .restore
-		let snapshot = restoreClipboard ? ClipboardSnapshot.capture(from: pasteboard) : nil
+		let capture = restoreClipboard ? await ClipboardSnapshot.inspectInBackground(pasteboard) : nil
+		let receipt = PasteReadReceipt(text: text)
 		let changeCountAfterWrite = ClipboardWriter.write(
-			text, to: pasteboard, transient: restoreClipboard)
+			receipt, to: pasteboard, transient: restoreClipboard)
 
 		await sleep(milliseconds: settings.pasteDelayBeforeMs)
 		keyPoster.postKey(KeyCode.v, flags: .maskCommand)
-		await sleep(milliseconds: settings.pasteDelayAfterMs)
+		guard let capture else { return }
 
-		guard let snapshot else { return }
-		if ClipboardWriter.shouldRestore(
-			currentChangeCount: pasteboard.changeCount, changeCountAfterWrite: changeCountAfterWrite)
-		{
+		// Apps read the pasteboard asynchronously after Cmd-V, Electron and remote desktops often
+		// well past 100 ms, so restoring on a timer can paste the old clipboard instead.
+		let wasRead = await receipt.waitForRead(timeoutMs: max(readTimeoutMs, settings.pasteDelayAfterMs))
+		await sleep(milliseconds: settings.pasteDelayAfterMs)
+		if !wasRead {
+			logger.info("No app read the transcript within \(readTimeoutMs) ms of Cmd-V")
+		}
+
+		guard
+			ClipboardWriter.shouldRestore(
+				currentChangeCount: pasteboard.changeCount, changeCountAfterWrite: changeCountAfterWrite)
+		else {
+			logger.info("Clipboard changed during paste; leaving the newer content in place")
+			return
+		}
+		switch capture {
+		case .captured(let snapshot):
 			snapshot.restore(to: pasteboard)
 			logger.debug("Restored clipboard (\(snapshot.items.count) item(s)) after paste")
-		} else {
-			logger.info("Clipboard changed during paste; leaving the newer content in place")
+		case .sensitive:
+			pasteboard.clearContents()
+			logger.info("Previous clipboard was concealed or transient; cleared instead of restoring it")
+		case .tooLarge:
+			logger.info("Previous clipboard was too large to snapshot; leaving the transcript in place")
 		}
 	}
 

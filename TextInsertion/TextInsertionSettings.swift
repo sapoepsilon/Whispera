@@ -84,11 +84,13 @@ struct TextInsertionSettings: Equatable, Sendable {
 	}
 
 	static let defaultPasteDelayMs = 60
+	/// Grace period after the target app reads the transcript, before the old clipboard returns.
+	static let defaultPasteDelayAfterMs = 150
 	static let delayRange: ClosedRange<Int> = 0...1000
 
 	var clipboardHandling: ClipboardHandling = .restore
 	var pasteDelayBeforeMs: Int = defaultPasteDelayMs
-	var pasteDelayAfterMs: Int = defaultPasteDelayMs
+	var pasteDelayAfterMs: Int = defaultPasteDelayAfterMs
 	var pasteMethod: PasteMethod = .commandV
 	var externalScriptPath = ""
 	var autoSubmit = false

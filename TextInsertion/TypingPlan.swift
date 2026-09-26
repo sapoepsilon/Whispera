@@ -2,7 +2,6 @@ import Foundation
 
 enum TypingStep: Equatable {
 	case text([UniChar])
-	case newline
 }
 
 enum TypingPlan {
@@ -19,12 +18,7 @@ enum TypingPlan {
 			buffer.removeAll(keepingCapacity: true)
 		}
 
-		for character in text {
-			if character.isNewline {
-				flush()
-				steps.append(.newline)
-				continue
-			}
+		for character in flattenedLineBreaks(text) {
 			let units = Array(String(character).utf16)
 			if buffer.count + units.count > maxUnitsPerEvent {
 				flush()
@@ -33,5 +27,22 @@ enum TypingPlan {
 		}
 		flush()
 		return steps
+	}
+
+	/// A typed newline is a Return press, which submits in chat apps and runs commands in a
+	/// terminal, so each run of line breaks (including ones an LLM added) becomes one space.
+	static func flattenedLineBreaks(_ text: String) -> String {
+		var result = ""
+		var previousWasNewline = false
+		for character in text {
+			if character.isNewline {
+				if !previousWasNewline { result.append(" ") }
+				previousWasNewline = true
+			} else {
+				result.append(character)
+				previousWasNewline = false
+			}
+		}
+		return result
 	}
 }

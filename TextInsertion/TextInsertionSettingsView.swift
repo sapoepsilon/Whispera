@@ -16,7 +16,7 @@ struct TextInsertionSettingsView: View {
 	@AppStorage(TextInsertionSettings.Keys.pasteDelayBeforeMs)
 	private var pasteDelayBeforeMs = TextInsertionSettings.defaultPasteDelayMs
 	@AppStorage(TextInsertionSettings.Keys.pasteDelayAfterMs)
-	private var pasteDelayAfterMs = TextInsertionSettings.defaultPasteDelayMs
+	private var pasteDelayAfterMs = TextInsertionSettings.defaultPasteDelayAfterMs
 
 	var body: some View {
 		ScrollView {
@@ -113,7 +113,7 @@ struct TextInsertionSettingsView: View {
 					SettingRow(
 						"Delay After Paste",
 						description:
-							"Wait before restoring the clipboard; raise it if an app pastes your old clipboard"
+							"Extra wait after the app reads the transcript before the clipboard is restored; raise it if an app pastes your old clipboard"
 					) {
 						delayStepper(value: $pasteDelayAfterMs)
 					}

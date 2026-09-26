@@ -100,6 +100,137 @@ struct ClipboardSnapshotTests {
 	}
 }
 
+/// Reads the pasteboard some time after Cmd-V, like an Electron app or a remote desktop.
+final class LateReadingKeyPoster: KeyEventPosting {
+	let pasteboard: NSPasteboard
+	let delayMs: Int
+	var readText: String?
+	var readTask: Task<Void, Never>?
+
+	init(pasteboard: NSPasteboard, delayMs: Int) {
+		self.pasteboard = pasteboard
+		self.delayMs = delayMs
+	}
+
+	func postUnicode(_ units: [UniChar]) {}
+
+	func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
+		guard keyCode == KeyCode.v, delayMs >= 0 else { return }
+		readTask = Task { @MainActor [self] in
+			try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
+			readText = pasteboard.string(forType: .string)
+		}
+	}
+}
+
+@MainActor
+struct ClipboardSafetyTests {
+	@Test func slowAppStillPastesTheTranscriptNotTheOldClipboard() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("old private copy", forType: .string)
+		let poster = LateReadingKeyPoster(pasteboard: pasteboard, delayMs: 400)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, readTimeoutMs: 3000,
+			settingsProvider: { fastSettings { $0.pasteDelayAfterMs = 60 } })
+
+		await inserter.insert("hello", context: .finalTranscript).value
+		await poster.readTask?.value
+
+		#expect(poster.readText == "hello", "A 60 ms timer would have restored the old clipboard first")
+		#expect(pasteboard.string(forType: .string) == "old private copy")
+	}
+
+	@Test func restoresAfterTheTimeoutWhenNothingReads() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("old copy", forType: .string)
+		let poster = LateReadingKeyPoster(pasteboard: pasteboard, delayMs: -1)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, readTimeoutMs: 100,
+			settingsProvider: { fastSettings() })
+
+		let clock = ContinuousClock()
+		let start = clock.now
+		await inserter.insert("hello", context: .finalTranscript).value
+
+		#expect(clock.now - start >= .milliseconds(100))
+		#expect(clock.now - start < .seconds(2))
+		#expect(pasteboard.string(forType: .string) == "old copy")
+	}
+
+	@Test(arguments: [ClipboardSnapshot.concealedType, ClipboardWriter.transientType])
+	func concealedPasswordIsNeverWrittenBack(marker: NSPasteboard.PasteboardType) async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let item = NSPasteboardItem()
+		item.setString("hunter2", forType: .string)
+		item.setData(Data(), forType: marker)
+		pasteboard.clearContents()
+		pasteboard.writeObjects([item])
+		#expect(ClipboardSnapshot.inspect(pasteboard) == .sensitive)
+
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster, settingsProvider: { fastSettings() })
+		await inserter.insert("hello", context: .finalTranscript).value
+
+		#expect(poster.events.first?.clipboardText == "hello")
+		#expect(pasteboard.string(forType: .string) == nil, "The password must not be republished")
+		#expect(pasteboard.pasteboardItems?.isEmpty ?? true)
+	}
+
+	@Test func oversizedClipboardIsNotSnapshotted() {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setData(Data(count: 4096), forType: .tiff)
+		var limits = ClipboardSnapshot.Limits()
+		limits.maxRepresentationBytes = 1024
+		#expect(ClipboardSnapshot.inspect(pasteboard, limits: limits) == .tooLarge)
+
+		limits = ClipboardSnapshot.Limits()
+		limits.maxTotalBytes = 1024
+		#expect(ClipboardSnapshot.inspect(pasteboard, limits: limits) == .tooLarge)
+
+		guard case .captured(let snapshot) = ClipboardSnapshot.inspect(pasteboard) else {
+			Issue.record("A 4 KB image fits the default limits")
+			return
+		}
+		#expect(snapshot.byteCount == 4096)
+	}
+
+	@Test func promisedAndDynamicFlavorsAreNeverRead() {
+		#expect(ClipboardSnapshot.isSkippedType(NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url")))
+		#expect(ClipboardSnapshot.isSkippedType(NSPasteboard.PasteboardType("dyn.ah62d4rv4gu8y")))
+		#expect(ClipboardSnapshot.isSkippedType(NSPasteboard.PasteboardType("com.apple.NSFilePromiseItemMetaData")))
+		#expect(!ClipboardSnapshot.isSkippedType(.string))
+		#expect(!ClipboardSnapshot.isSkippedType(.png))
+	}
+
+	@Test func backgroundInspectionMatchesForegroundInspection() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		pasteboard.clearContents()
+		pasteboard.setString("user copy", forType: .string)
+		let background = await ClipboardSnapshot.inspectInBackground(pasteboard)
+		#expect(background == ClipboardSnapshot.inspect(pasteboard))
+	}
+
+	@Test func receiptReportsTheFirstRead() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let receipt = PasteReadReceipt(text: "hello")
+		ClipboardWriter.write(receipt, to: pasteboard, transient: true)
+		#expect(!receipt.wasRead)
+		#expect(pasteboard.types?.contains(ClipboardWriter.transientType) == true)
+		#expect(pasteboard.string(forType: .string) == "hello")
+		#expect(await receipt.waitForRead(timeoutMs: 10))
+	}
+}
+
 @MainActor
 struct TextInserterClipboardTests {
 	@Test func pastesTranscriptThenRestoresPreviousClipboard() async {
@@ -208,14 +339,14 @@ struct TextInsertionSettingsPersistenceTests {
 }
 
 struct PasteDelaySettingsTests {
-	@Test func defaultsToSixtyMillisecondsEachSide() {
+	@Test func defaultsGiveTheTargetAppTimeAfterItReads() {
 		let suite = "PasteDelaySettingsTests.defaults.\(UUID().uuidString)"
 		let defaults = UserDefaults(suiteName: suite)!
 		defer { defaults.removePersistentDomain(forName: suite) }
 
 		let settings = TextInsertionSettings(defaults: defaults)
 		#expect(settings.pasteDelayBeforeMs == 60)
-		#expect(settings.pasteDelayAfterMs == 60)
+		#expect(settings.pasteDelayAfterMs == 150)
 	}
 
 	@Test func delaysRoundTripAndClamp() {
@@ -287,13 +418,30 @@ struct TypingPlanTests {
 		#expect(String(utf16CodeUnits: second, count: second.count) == "\u{1F600}b")
 	}
 
-	@Test func newlinesBecomeReturnKeySteps() {
-		let steps = TypingPlan.steps(for: "one\ntwo\r\nthree")
-		#expect(
-			steps == [
-				.text(Array("one".utf16)), .newline, .text(Array("two".utf16)), .newline,
-				.text(Array("three".utf16)),
-			])
+	@Test func newlinesAreTypedAsSpacesSoTheyNeverPressReturn() {
+		let text = "one\ntwo\r\nthree\n\n\nrm -rf ~\n"
+		#expect(TypingPlan.flattenedLineBreaks(text) == "one two three rm -rf ~ ")
+		let typed = TypingPlan.steps(for: text).map { step -> String in
+			guard case .text(let units) = step else { return "" }
+			#expect(units.count <= TypingPlan.maxUnitsPerEvent)
+			return String(utf16CodeUnits: units, count: units.count)
+		}
+		#expect(typed.joined() == "one two three rm -rf ~ ")
+	}
+
+	@MainActor
+	@Test func typedMultiLineTextPostsNoReturnKey() async {
+		let pasteboard = makePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let poster = RecordingKeyPoster(pasteboard: pasteboard)
+		let inserter = TextInserter(
+			pasteboard: pasteboard, keyPoster: poster,
+			settingsProvider: { fastSettings { $0.pasteMethod = .typeCharacters } })
+
+		await inserter.insert("ls\nrm -rf ~\n", context: .finalTranscript).value
+
+		#expect(poster.events.isEmpty, "No Return key may be posted for typed line breaks")
+		#expect(poster.typedChunks.joined() == "ls rm -rf ~ ")
 	}
 }
 
