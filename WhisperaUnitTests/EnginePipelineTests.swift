@@ -254,7 +254,9 @@ struct ParakeetPipelineTests {
 		}
 
 		if let previousModel, !ParakeetModel.isParakeetID(previousModel) {
-			try? await transcriber.switchModel(to: previousModel)
+			// The model was prewarmed at launch, so this reload skips prewarm and must still load
+			try await transcriber.switchModel(to: previousModel)
+			#expect(transcriber.isCurrentModelLoaded(), "state: \(transcriber.getCurrentModelState())")
 		}
 		standard.set(savedSelected, forKey: "selectedModel")
 		standard.set(savedLastUsed, forKey: "lastUsedModel")

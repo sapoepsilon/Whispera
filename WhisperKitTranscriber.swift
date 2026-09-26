@@ -1791,7 +1791,10 @@ import WhisperKit
 				let config = try whisperKitConfig(forModel: modelName)
 				let prewarmKey = Self.prewarmKey(model: modelName, computeOptions: config.computeOptions)
 				if prewarmedModelKeys.contains(prewarmKey) {
+					// Without prewarm WhisperKit only loads when told to (modelFolder is nil here),
+					// and an unloaded model never reports ready
 					config.prewarm = false
+					config.load = true
 				}
 				let whisperKitInstance = try await WhisperKit(config)
 				prewarmedModelKeys.insert(prewarmKey)
