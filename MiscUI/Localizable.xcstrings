@@ -116,6 +116,52 @@
         }
       }
     },
+    "%@ is already used by another Whispera shortcut (%@).": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird bereits von einem anderen Whispera-Kurzbefehl verwendet (%@)."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ya lo usa otro atajo de Whispera (%@)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est déjà utilisé par un autre raccourci Whispera (%@)."
+          }
+        }
+      }
+    },
+    "%@ types text, so it needs a modifier such as ⌘, ⌥ or ⌃. Esc, Delete and the F-keys work on their own.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ tippt Text und braucht deshalb eine Sondertaste wie ⌘, ⌥ oder ⌃. Esc, Löschen und die F-Tasten funktionieren allein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ escribe texto, así que necesita un modificador como ⌘, ⌥ o ⌃. Esc, Borrar y las teclas F funcionan solas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ saisit du texte : ajoutez une touche de modification comme ⌘, ⌥ ou ⌃. Échap, Supprimer et les touches F fonctionnent seules."
+          }
+        }
+      }
+    },
     "%lld completed, %lld failed": {
       "extractionState": "manual",
       "localizations": {
@@ -806,6 +852,29 @@
         }
       }
     },
+    "Add Word to Dictionary": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wort zum Wörterbuch hinzufügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir palabra al diccionario"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un mot au dictionnaire"
+          }
+        }
+      }
+    },
     "Add a WhisperKit CoreML model from a Hugging Face repo, or import a local folder containing MelSpectrogram, AudioEncoder and TextDecoder.": {
       "extractionState": "manual",
       "localizations": {
@@ -944,6 +1013,29 @@
         }
       }
     },
+    "Adds a name or term to Whispera's custom words so transcripts spell it your way. Separate several with commas.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fügt einen Namen oder Begriff zu den eigenen Wörtern von Whispera hinzu, damit Transkripte ihn so schreiben wie du. Mehrere durch Kommas trennen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añade un nombre o término a las palabras personalizadas de Whispera para que las transcripciones lo escriban a tu manera. Separa varios con comas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajoute un nom ou un terme aux mots personnalisés de Whispera pour que les transcriptions l'écrivent à votre façon. Séparez-en plusieurs par des virgules."
+          }
+        }
+      }
+    },
     "Adjust transparency level for all windows": {
       "extractionState": "manual",
       "localizations": {
@@ -1036,6 +1128,29 @@
         }
       }
     },
+    "After 10 minutes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach 10 Minuten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tras 10 minutos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Après 10 minutes"
+          }
+        }
+      }
+    },
     "After 15 minutes": {
       "extractionState": "manual",
       "localizations": {
@@ -1078,6 +1193,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Après 15 secondes"
+          }
+        }
+      }
+    },
+    "After 2 minutes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach 2 Minuten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tras 2 minutos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Après 2 minutes"
           }
         }
       }
@@ -2439,6 +2577,29 @@
         }
       }
     },
+    "Cancel Shortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kurzbefehl zum Abbrechen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atajo para cancelar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Raccourci d'annulation"
+          }
+        }
+      }
+    },
     "Cancel and discard (Esc)": {
       "extractionState": "manual",
       "localizations": {
@@ -3543,6 +3704,29 @@
         }
       }
     },
+    "Copies the most recent Whispera transcript to the clipboard and returns it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopiert das neueste Whispera-Transkript in die Zwischenablage und gibt es zurück."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copia la transcripción más reciente de Whispera al portapapeles y la devuelve."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copie la transcription Whispera la plus récente dans le presse-papiers et la renvoie."
+          }
+        }
+      }
+    },
     "Copy": {
       "extractionState": "manual",
       "localizations": {
@@ -3562,6 +3746,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copier"
+          }
+        }
+      }
+    },
+    "Copy Last Transcript": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letztes Transkript kopieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar última transcripción"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier la dernière transcription"
+          }
+        }
+      }
+    },
+    "Copy Original Transcript": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Originaltranskript kopieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar transcripción original"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier la transcription d'origine"
           }
         }
       }
@@ -5172,6 +5402,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Erreurs uniquement"
+          }
+        }
+      }
+    },
+    "Esc": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esc"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esc"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échap"
           }
         }
       }
@@ -9822,6 +10075,29 @@
         }
       }
     },
+    "Open History": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verlauf öffnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir historial"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir l'historique"
+          }
+        }
+      }
+    },
     "Open Settings": {
       "extractionState": "manual",
       "localizations": {
@@ -9868,6 +10144,29 @@
         }
       }
     },
+    "Open Transcription History": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkriptionsverlauf öffnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir historial de transcripciones"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir l'historique des transcriptions"
+          }
+        }
+      }
+    },
     "Open per recording": {
       "extractionState": "manual",
       "localizations": {
@@ -9887,6 +10186,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvrir à chaque enregistrement"
+          }
+        }
+      }
+    },
+    "Opens the Whispera transcription history window.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Öffnet das Fenster mit dem Whispera-Transkriptionsverlauf."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre la ventana del historial de transcripciones de Whispera."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre la fenêtre de l'historique des transcriptions de Whispera."
           }
         }
       }
@@ -10002,6 +10324,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Demande initiale :"
+          }
+        }
+      }
+    },
+    "Original transcript, post-processed with %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Originaltranskript, nachbearbeitet mit %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcripción original, posprocesada con %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription d'origine, post-traitée avec %@"
           }
         }
       }
@@ -10512,6 +10857,29 @@
         }
       }
     },
+    "Post-process Again": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut nachbearbeiten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a posprocesar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Post-traiter à nouveau"
+          }
+        }
+      }
+    },
     "Post-process every dictation": {
       "extractionState": "manual",
       "localizations": {
@@ -10554,6 +10922,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Échec du post-traitement"
+          }
+        }
+      }
+    },
+    "Post-processing failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nachbearbeitung fehlgeschlagen: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error en el posprocesado: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec du post-traitement : %@"
           }
         }
       }
@@ -10646,6 +11037,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Appuie sur une touche après l'insertion pour que les chats envoient le message"
+          }
+        }
+      }
+    },
+    "Press it while recording or transcribing to discard the dictation without pasting": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drücke ihn während der Aufnahme oder Transkription, um das Diktat zu verwerfen, ohne es einzufügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Púlsalo mientras grabas o transcribes para descartar el dictado sin pegarlo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez dessus pendant l'enregistrement ou la transcription pour abandonner la dictée sans la coller"
           }
         }
       }
@@ -12191,6 +12605,29 @@
         }
       }
     },
+    "Reset to Esc": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf Esc zurücksetzen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restablecer a Esc"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rétablir Échap"
+          }
+        }
+      }
+    },
     "Restore previous clipboard": {
       "extractionState": "manual",
       "localizations": {
@@ -13314,6 +13751,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Backend des raccourcis"
+          }
+        }
+      }
+    },
+    "Shortcut not available": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kurzbefehl nicht verfügbar"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atajo no disponible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Raccourci indisponible"
           }
         }
       }
@@ -16009,6 +16469,29 @@
         }
       }
     },
+    "Transcription History": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkriptionsverlauf"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historial de transcripciones"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historique des transcriptions"
+          }
+        }
+      }
+    },
     "Transcription Mode: %@": {
       "extractionState": "manual",
       "localizations": {
@@ -17845,6 +18328,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Avec horodatage"
+          }
+        }
+      }
+    },
+    "Word": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wort"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palabra"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot"
           }
         }
       }
