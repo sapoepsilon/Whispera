@@ -118,7 +118,9 @@ struct PostProcessingSettingsView: View {
 					if provider.allowsBaseURLEdit { settings.setBaseURL(url, for: provider.id) }
 				}
 		}
-		if let warning = OpenAICompatibleClient.insecureKeyWarning(baseURL: baseURL, hasKey: hasSavedKey) {
+		if let warning = OpenAICompatibleClient.insecureKeyWarning(baseURL: baseURL, hasKey: hasSavedKey)
+			?? OpenAICompatibleClient.insecureTranscriptWarning(baseURL: baseURL)
+		{
 			Label(warning, systemImage: "exclamationmark.triangle.fill")
 				.font(.caption)
 				.foregroundColor(.orange)

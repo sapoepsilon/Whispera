@@ -13,6 +13,7 @@ enum PostProcessingError: LocalizedError, Equatable {
 	case malformedResponse
 	case appleIntelligenceUnavailable(reason: String)
 	case insecureKeyTransport(host: String)
+	case insecureTranscriptTransport(host: String)
 	case timedOut(seconds: Int)
 	case responseTooLong(characters: Int, limit: Int)
 
@@ -36,6 +37,11 @@ enum PostProcessingError: LocalizedError, Equatable {
 			return String(
 				localized:
 					"Refusing to send your API key to \(host) over plain http. Use an https:// base URL, or remove the key for a local server."
+			)
+		case .insecureTranscriptTransport(let host):
+			return String(
+				localized:
+					"Refusing to send your transcript to \(host) over plain http. Use an https:// base URL, or a server on this Mac or your local network."
 			)
 		case .timedOut(let seconds):
 			return String(localized: "Post-processing took longer than \(seconds) seconds")
@@ -140,6 +146,38 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		return isLoopback(host: url.host ?? "")
 	}
 
+	/// Transcripts may travel over plain http only to this Mac or the local network (a LAN Ollama box);
+	/// anywhere else they would cross the internet unencrypted.
+	static func canSendTranscript(to url: URL) -> Bool {
+		guard url.scheme?.lowercased() == "http" else { return true }
+		let host = url.host ?? ""
+		return isLoopback(host: host) || isLocalNetwork(host: host)
+	}
+
+	/// Private, link-local and Tailscale addresses, plus names that only resolve locally: single-label
+	/// hosts and the mDNS / home-network suffixes.
+	static func isLocalNetwork(host: String) -> Bool {
+		let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+		var v4 = in_addr()
+		if inet_pton(AF_INET, host, &v4) == 1 {
+			let address = UInt32(bigEndian: v4.s_addr)
+			let a = address >> 24
+			let b = (address >> 16) & 0xff
+			return a == 10 || (a == 172 && (16...31).contains(b)) || (a == 192 && b == 168)
+				|| (a == 169 && b == 254) || (a == 100 && (64...127).contains(b))
+		}
+		var v6 = in6_addr()
+		if inet_pton(AF_INET6, host, &v6) == 1 {
+			let bytes = withUnsafeBytes(of: v6) { Array($0) }
+			return bytes[0] & 0xfe == 0xfc || (bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80)
+		}
+		guard !host.isEmpty, host.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "." }) else {
+			return false
+		}
+		if !host.contains(".") { return true }
+		return [".local", ".lan", ".home.arpa", ".internal"].contains { host.hasSuffix($0) }
+	}
+
 	/// Numeric loopback addresses only, parsed rather than prefix-matched: "127.evil.example" is a
 	/// DNS name that can point anywhere.
 	static func isLoopback(host: String) -> Bool {
@@ -160,11 +198,19 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		return false
 	}
 
-	/// URLSession copies custom headers, Authorization included, onto a redirected request. The
-	/// key may only follow a redirect that stays on the same scheme, host and port.
-	static func redirectedRequest(_ proposed: URLRequest, from original: URLRequest?) -> URLRequest {
+	/// URLSession copies custom headers, Authorization included, onto a redirected request, and a
+	/// 307/308 also re-sends the body. A redirect that carries the transcript is only followed on the
+	/// same origin; otherwise the key may only follow one that stays on the same scheme, host and port.
+	/// Returns nil to refuse the redirect.
+	static func redirectedRequest(_ proposed: URLRequest, from original: URLRequest?) -> URLRequest? {
+		let sameOrigin = original?.url.flatMap { from in proposed.url.map { isSameOrigin(from, $0) } } ?? false
+		let carriesBody = proposed.httpBody != nil || (proposed.httpMethod ?? "GET").uppercased() != "GET"
+		if let to = proposed.url, !canSendTranscript(to: to) || (carriesBody && !sameOrigin) {
+			AppLogger.shared.general.info("Refused a redirect to \(proposed.url?.host ?? "another host")")
+			return nil
+		}
 		guard proposed.value(forHTTPHeaderField: "Authorization") != nil else { return proposed }
-		if let from = original?.url, let to = proposed.url, isSameOrigin(from, to), canSendKey(to: to) {
+		if let to = proposed.url, sameOrigin, canSendKey(to: to) {
 			return proposed
 		}
 		var stripped = proposed
@@ -177,6 +223,14 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		func port(_ url: URL) -> Int? { url.port ?? (url.scheme?.lowercased() == "https" ? 443 : 80) }
 		return lhs.scheme?.lowercased() == rhs.scheme?.lowercased()
 			&& lhs.host?.lowercased() == rhs.host?.lowercased() && port(lhs) == port(rhs)
+	}
+
+	/// For the settings screen: a keyless plain-http endpoint on the internet is refused as well.
+	static func insecureTranscriptWarning(baseURL: String) -> String? {
+		guard let url = endpoint(baseURL: baseURL, path: "models"), !canSendTranscript(to: url) else {
+			return nil
+		}
+		return PostProcessingError.insecureTranscriptTransport(host: url.host ?? baseURL).errorDescription
 	}
 
 	/// For the settings screen, so the problem shows up before the first dictation fails.
@@ -194,6 +248,9 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		}
 		if let apiKey, !apiKey.isEmpty, !Self.canSendKey(to: url) {
 			throw PostProcessingError.insecureKeyTransport(host: url.host ?? baseURL)
+		}
+		guard Self.canSendTranscript(to: url) else {
+			throw PostProcessingError.insecureTranscriptTransport(host: url.host ?? baseURL)
 		}
 		var request = URLRequest(url: url, timeoutInterval: timeout)
 		request.httpMethod = method

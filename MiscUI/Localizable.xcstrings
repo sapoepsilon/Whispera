@@ -14583,6 +14583,29 @@
         }
       }
     },
+    "Refusing to send your transcript to %@ over plain http. Use an https:// base URL, or a server on this Mac or your local network.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera sendet dein Transkript nicht über unverschlüsseltes http an %@. Verwende eine https://-Basis-URL oder einen Server auf diesem Mac oder in deinem lokalen Netzwerk."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera no enviará tu transcripción a %@ por http sin cifrar. Usa una URL base https:// o un servidor en este Mac o en tu red local."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera n'enverra pas votre transcription à %@ en http non chiffré. Utilisez une URL de base https:// ou un serveur sur ce Mac ou sur votre réseau local."
+          }
+        }
+      }
+    },
     "RegisterEventHotKey failed (%lld)": {
       "extractionState": "manual",
       "localizations": {

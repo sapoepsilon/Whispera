@@ -630,7 +630,8 @@ struct PostProcessingKeyTransportTests {
 		}
 	}
 
-	@Test func redirectToAnotherOriginDropsTheKey() async throws {
+	/// A 307 re-sends the body, so following it to another origin would hand that host the transcript.
+	@Test func redirectToAnotherOriginIsRefused() async throws {
 		let target = try MockHTTPServer { _ in chatCompletion("done") }
 		try await target.start()
 		defer { target.stop() }
@@ -643,12 +644,58 @@ struct PostProcessingKeyTransportTests {
 		defer { origin.stop() }
 
 		let client = OpenAICompatibleClient(baseURL: origin.baseURL, apiKey: "sk-secret-key", model: "m", timeout: 5)
-		let output = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+		await #expect(throws: PostProcessingError.self) {
+			_ = try await client.process(PostProcessingMessages(system: nil, user: "secret words"))
+		}
 
-		#expect(output == "done")
 		#expect(origin.requests.first?.header("Authorization") == "Bearer sk-secret-key")
-		#expect(target.requests.count == 1)
-		#expect(target.requests.first?.header("Authorization") == nil, "The key followed the redirect")
+		#expect(target.requests.isEmpty, "The transcript followed the redirect")
+	}
+
+	@Test func crossOriginRedirectOfARequestWithABodyIsRefused() throws {
+		var original = URLRequest(url: URL(string: "https://api.example.com/v1/chat/completions")!)
+		original.httpMethod = "POST"
+		var proposed = URLRequest(url: URL(string: "https://other.example.com/v1/chat/completions")!)
+		proposed.httpMethod = "POST"
+		proposed.httpBody = Data("transcript".utf8)
+		#expect(OpenAICompatibleClient.redirectedRequest(proposed, from: original) == nil)
+
+		var sameOrigin = URLRequest(url: URL(string: "https://api.example.com/v2/chat/completions")!)
+		sameOrigin.httpMethod = "POST"
+		sameOrigin.httpBody = Data("transcript".utf8)
+		#expect(OpenAICompatibleClient.redirectedRequest(sameOrigin, from: original)?.httpBody != nil)
+	}
+
+	@Test(arguments: [
+		("https://api.example.com/v1", true),
+		("http://127.0.0.1:11434/v1", true),
+		("http://localhost:1234/v1", true),
+		("http://192.168.1.20:11434/v1", true),
+		("http://10.0.0.5:8080/v1", true),
+		("http://172.20.1.1:8080/v1", true),
+		("http://100.101.102.103:11434/v1", true),
+		("http://[fd00::5]:8080/v1", true),
+		("http://llm.lan:8080/v1", true),
+		("http://ollama.local:11434/v1", true),
+		("http://homeserver:11434/v1", true),
+		("http://api.example.com/v1", false),
+		("http://203.0.113.9:8080/v1", false),
+		("http://172.32.0.1:8080/v1", false),
+		("http://[2001:db8::1]:8080/v1", false),
+		("http://127.0.0.1.nip.io/v1", false),
+	])
+	func transcriptTravelsOverHttpOnlyToThisMacOrTheLocalNetwork(baseURL: String, allowed: Bool) throws {
+		let url = try #require(OpenAICompatibleClient.endpoint(baseURL: baseURL, path: "models"))
+		#expect(OpenAICompatibleClient.canSendTranscript(to: url) == allowed)
+		#expect((OpenAICompatibleClient.insecureTranscriptWarning(baseURL: baseURL) == nil) == allowed)
+	}
+
+	@Test func refusesToSendATranscriptOverPlainHttpToAnInternetHost() async {
+		let client = OpenAICompatibleClient(
+			baseURL: "http://203.0.113.9:8080/v1", apiKey: nil, model: "m", timeout: 1)
+		await #expect(throws: PostProcessingError.insecureTranscriptTransport(host: "203.0.113.9")) {
+			_ = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+		}
 	}
 
 	@Test func sameOriginRedirectKeepsTheKey() throws {
@@ -657,7 +704,7 @@ struct PostProcessingKeyTransportTests {
 		var proposed = URLRequest(url: URL(string: "https://api.example.com/v2/chat/completions")!)
 		proposed.setValue("Bearer k", forHTTPHeaderField: "Authorization")
 		#expect(
-			OpenAICompatibleClient.redirectedRequest(proposed, from: original)
+			OpenAICompatibleClient.redirectedRequest(proposed, from: original)?
 				.value(forHTTPHeaderField: "Authorization") == "Bearer k")
 
 		for target in [
@@ -667,7 +714,7 @@ struct PostProcessingKeyTransportTests {
 			var redirect = URLRequest(url: URL(string: target)!)
 			redirect.setValue("Bearer k", forHTTPHeaderField: "Authorization")
 			#expect(
-				OpenAICompatibleClient.redirectedRequest(redirect, from: original)
+				OpenAICompatibleClient.redirectedRequest(redirect, from: original)?
 					.value(forHTTPHeaderField: "Authorization") == nil, "\(target)")
 		}
 	}
