@@ -13,6 +13,7 @@ class GlobalShortcutManager: ObservableObject {
 	private var networkDownloader: NetworkFileDownloader?
 	private var queueManager: TranscriptionQueueManager?
 	private var isProcessingFileOperation = false
+	private var lastTextHotKeyTrigger: Date?
 	private let logger = AppLogger.shared.general
 	@MainActor private var cancelMonitor: CancelShortcutMonitor?
 	@MainActor private var activation = ActivationStateMachine(
@@ -234,6 +235,22 @@ class GlobalShortcutManager: ObservableObject {
 		logger.info(
 			"File monitors installed - File Global: \(fileSelectionGlobalMonitor != nil), File Local: \(fileSelectionLocalMonitor != nil)"
 		)
+
+		configureSecureInputFallback(modifiers: textModifiers, keyCode: textKeyCode)
+	}
+
+	private func configureSecureInputFallback(modifiers: NSEvent.ModifierFlags, keyCode: UInt16) {
+		let spec = CarbonHotKeyMapping.spec(keyCode: keyCode, modifiers: modifiers)
+		Task { @MainActor [weak self] in
+			let monitor = SecureInputMonitor.shared
+			monitor.configure(
+				hotKeySpec: { spec },
+				action: { [weak self] in
+					self?.logger.info("Text shortcut detected through the secure input fallback")
+					self?.handleTextHotKey(isRepeat: false)
+				})
+			monitor.start()
+		}
 	}
 
 	private func parseShortcut(_ shortcut: String) -> (NSEvent.ModifierFlags, UInt16) {
@@ -420,6 +437,11 @@ class GlobalShortcutManager: ObservableObject {
 
 	private func handleTextHotKey(isRepeat: Bool) {
 		let pressedAt = Date()
+		// The Carbon fallback and the event monitors can both see one press around a secure input transition
+		if !isRepeat {
+			if let last = lastTextHotKeyTrigger, pressedAt.timeIntervalSince(last) < 0.3 { return }
+			lastTextHotKeyTrigger = pressedAt
+		}
 		Task { @MainActor in
 			guard let audioManager else { return }
 			let settings = RecordingControlSettings()

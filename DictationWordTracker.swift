@@ -327,16 +327,7 @@ enum CorrectionCommand {
 	}
 
 	private func pasteText(_ text: String) async {
-		let addSpaceToText = " " + text
-		let pasteboard = NSPasteboard.general
-		pasteboard.clearContents()
-		pasteboard.setString(addSpaceToText, forType: .string)
-
-		await simulateKeyPressWithModifier(
-			keyCode: 0x09,
-			modifier: .maskCommand
-		)
-
+		await TextInserter.shared.insert(" " + text, context: .liveSegment).value
 	}
 
 	func printTrackingState() {

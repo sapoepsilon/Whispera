@@ -86,6 +86,8 @@ struct MenuBarView: View {
 					)
 				}
 
+				SecureInputWarningBanner()
+
 				// Status card
 				StatusCardView(
 					audioManager: audioManager,

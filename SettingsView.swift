@@ -266,6 +266,8 @@ struct SettingsView: View {
 							.foregroundColor(isRecordingShortcut ? .red : .primary)
 						}
 
+						SecureInputSettingsRows()
+
 						SettingRow("Sound Feedback") {
 							Toggle("", isOn: $soundFeedback)
 						}
@@ -615,6 +617,11 @@ struct SettingsView: View {
 			.tabItem {
 				Label("General", systemImage: "gear")
 			}
+
+			TextInsertionSettingsView()
+				.tabItem {
+					Label("Text Insertion", systemImage: "text.cursor")
+				}
 
 			// MARK: - Storage & Downloads Tab
 			ScrollView {
