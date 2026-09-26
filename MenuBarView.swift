@@ -1092,13 +1092,20 @@ struct NotificationBanner: View {
 			}
 		}
 		.padding(12)
-		.background(type.backgroundColor, in: RoundedRectangle(cornerRadius: 10))
+		.background {
+			// The toast floats over the popover's buttons, so the 10% tint needs an opaque base
+			// or the controls underneath read through the message
+			RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: Self.baseColor))
+			RoundedRectangle(cornerRadius: 10).fill(type.backgroundColor)
+		}
 		.overlay(
 			RoundedRectangle(cornerRadius: 10)
 				.stroke(type.color.opacity(0.3), lineWidth: 1)
 		)
 		.shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
 	}
+
+	static let baseColor = NSColor.windowBackgroundColor
 }
 
 // MARK: - Toast center

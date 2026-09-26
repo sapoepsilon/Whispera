@@ -29,3 +29,10 @@ struct PopoverPositionTests {
 		#expect(delegate.popover.behavior == .applicationDefined)
 	}
 }
+
+struct NotificationBannerTests {
+	/// The banner is overlaid on the popover's buttons; a see-through base let their labels show through.
+	@Test func bannerHasAnOpaqueBase() {
+		#expect(NotificationBanner.baseColor.usingColorSpace(.sRGB)?.alphaComponent == 1)
+	}
+}
