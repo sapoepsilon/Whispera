@@ -55,6 +55,21 @@ enum RaycastScripts {
 			urlCommand(
 				"cancel", title: "Cancel Dictation", description: "Stop Whispera dictation and discard the recording."
 			),
+			urlCommand(
+				"copy-last", title: "Copy Last Transcript",
+				description: "Copy the most recent Whispera transcript to the clipboard."),
+			urlCommand("history", title: "Open Transcription History", description: "Open Whispera's history window."),
+			RaycastScriptCommand(
+				fileName: "whispera-add-word.sh",
+				title: "Add Word to Dictionary",
+				description: "Add a name or term to Whispera's custom words; separate several with commas.",
+				mode: .silent,
+				argumentPlaceholder: "Word or phrase",
+				body: """
+					\(cli)
+					"$WHISPERA" --add-word "$1"
+					"""
+			),
 			RaycastScriptCommand(
 				fileName: "whispera-set-language.sh",
 				title: "Set Dictation Language",

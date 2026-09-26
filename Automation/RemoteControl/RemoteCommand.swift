@@ -11,6 +11,10 @@ enum RemoteCommand: Equatable, Sendable {
 	case cancel
 	case setLanguage(String)
 	case setModel(String)
+	case copyLastTranscript
+	case openHistory
+	/// Adds one or more comma-separated entries to the custom-word dictionary.
+	case addWord(String)
 
 	static let scheme = "whispera"
 
@@ -46,6 +50,11 @@ enum RemoteCommand: Equatable, Sendable {
 		case "model":
 			guard let model = value("name") else { return nil }
 			self = .setModel(model)
+		case "copy-last": self = .copyLastTranscript
+		case "history": self = .openHistory
+		case "add-word":
+			guard let word = value("word", "name") else { return nil }
+			self = .addWord(word)
 		default:
 			return nil
 		}
@@ -66,6 +75,11 @@ enum RemoteCommand: Equatable, Sendable {
 		case .setModel(let model):
 			components.host = "model"
 			components.queryItems = [URLQueryItem(name: "name", value: model)]
+		case .copyLastTranscript: components.host = "copy-last"
+		case .openHistory: components.host = "history"
+		case .addWord(let word):
+			components.host = "add-word"
+			components.queryItems = [URLQueryItem(name: "word", value: word)]
 		}
 		return components.url!
 	}
@@ -79,6 +93,10 @@ enum RemoteCommand: Equatable, Sendable {
 		case .cancel: return "cancel"
 		case .setLanguage(let language): return "language(\(language))"
 		case .setModel(let model): return "model(\(model))"
+		case .copyLastTranscript: return "copy-last"
+		case .openHistory: return "history"
+		// The word itself stays out of the log like other dictation content.
+		case .addWord: return "add-word"
 		}
 	}
 
@@ -91,6 +109,19 @@ enum RemoteCommand: Equatable, Sendable {
 			return normalized
 		}
 		return Constants.languages.first { $0.value == normalized }?.key
+	}
+
+	static let maxWordLength = 100
+	static let maxWordsPerCommand = 20
+
+	/// Splits an add-word argument the same way the dictionary editor does and rejects input
+	/// that is clearly not a word list, so a stray link cannot flood the decoder prompt.
+	static func parseWords(_ input: String) -> [String]? {
+		let words = TextProcessingSettings.parseList(input)
+		guard !words.isEmpty, words.count <= maxWordsPerCommand,
+			words.allSatisfy({ $0.count <= maxWordLength })
+		else { return nil }
+		return words
 	}
 }
 

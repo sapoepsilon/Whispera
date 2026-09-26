@@ -32,6 +32,34 @@ enum RemoteCommandOutcome: Equatable, Sendable {
 	}
 }
 
+/// History side effects, injectable so tests never touch the real pasteboard or windows.
+@MainActor
+struct RemoteHistoryActions {
+	var lastTranscript: (DictationControlling?) -> String?
+	var copyToClipboard: (String) -> Void
+	var openHistory: () -> Void
+
+	static let live = RemoteHistoryActions(
+		lastTranscript: { controller in
+			if let entry = TranscriptionHistoryStore.shared.entries.first(where: {
+				!$0.didFail && !$0.text.isEmpty
+			}) {
+				return entry.text
+			}
+			// History can be turned off; fall back to the last dictation of this launch.
+			guard let audioManager = controller as? AudioManager, audioManager.transcriptionError == nil,
+				let text = audioManager.lastTranscription, !text.isEmpty
+			else { return nil }
+			return text
+		},
+		copyToClipboard: { text in
+			NSPasteboard.general.clearContents()
+			NSPasteboard.general.setString(text, forType: .string)
+		},
+		openHistory: { HistoryWindowController.shared.show() }
+	)
+}
+
 /// Single entry point for every external control surface, so the URL scheme, App Intents
 /// and the CLI all behave identically.
 @MainActor
@@ -42,10 +70,12 @@ final class RemoteControlCenter: NSObject {
 	private weak var modelSwitcher: ModelSwitching?
 	private var pendingCommand: (command: RemoteCommand, source: RemoteCommandSource)?
 	private let defaults: UserDefaults
+	private let historyActions: RemoteHistoryActions
 	private let logger = AppLogger.shared.general
 
-	init(defaults: UserDefaults = .standard) {
+	init(defaults: UserDefaults = .standard, historyActions: RemoteHistoryActions = .live) {
 		self.defaults = defaults
+		self.historyActions = historyActions
 		super.init()
 	}
 
@@ -74,6 +104,13 @@ final class RemoteControlCenter: NSObject {
 			outcome = applyLanguage(input)
 		case .setModel(let model):
 			outcome = await applyModel(model)
+		case .copyLastTranscript:
+			outcome = copyLastTranscript()
+		case .openHistory:
+			historyActions.openHistory()
+			outcome = .performed
+		case .addWord(let input):
+			outcome = addWords(input)
 		}
 		if outcome != .performed {
 			logger.info("Remote command \(command.logDescription) result: \(outcome.message)")
@@ -147,9 +184,32 @@ final class RemoteControlCenter: NSObject {
 			guard isActive else { return .ignored("Not recording") }
 			controller.cancelRecording()
 			return .performed
-		case .setLanguage, .setModel:
+		case .setLanguage, .setModel, .copyLastTranscript, .openHistory, .addWord:
 			return .rejected("Not a dictation command")
 		}
+	}
+
+	private func copyLastTranscript() -> RemoteCommandOutcome {
+		guard let text = historyActions.lastTranscript(controller) else {
+			return .ignored("No transcript yet")
+		}
+		historyActions.copyToClipboard(text)
+		return .performed
+	}
+
+	private func addWords(_ input: String) -> RemoteCommandOutcome {
+		guard let words = RemoteCommand.parseWords(input) else {
+			return .rejected(
+				"Give up to \(RemoteCommand.maxWordsPerCommand) comma-separated words of at most \(RemoteCommand.maxWordLength) characters"
+			)
+		}
+		let existing = TextProcessingSettings.customWords(from: defaults)
+		let known = Set(existing.map { $0.lowercased() })
+		let added = words.filter { !known.contains($0.lowercased()) }
+		guard !added.isEmpty else { return .ignored("Already in the dictionary") }
+		TextProcessingSettings.setCustomWords(existing + added, in: defaults)
+		logger.info("Added \(added.count) word(s) to the custom dictionary")
+		return .performed
 	}
 
 	private func applyLanguage(_ input: String) -> RemoteCommandOutcome {

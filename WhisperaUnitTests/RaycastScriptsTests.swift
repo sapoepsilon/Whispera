@@ -27,6 +27,8 @@ struct RaycastScriptsTests {
 			"whispera-start.sh": .start,
 			"whispera-stop.sh": .stop,
 			"whispera-cancel.sh": .cancel,
+			"whispera-copy-last.sh": .copyLastTranscript,
+			"whispera-history.sh": .openHistory,
 		]
 		for command in RaycastScripts.commands() {
 			guard let remote = expected[command.fileName] else { continue }
@@ -41,10 +43,18 @@ struct RaycastScriptsTests {
 	@Test func cliScriptsUseTheGivenBinaryButAllowOverride() {
 		let scripts = RaycastScripts.commands(cliPath: "/tmp/Test.app/Contents/MacOS/Whispera")
 		let cliScripts = scripts.filter { $0.body.contains("$WHISPERA") }
-		#expect(cliScripts.count == 2)
+		#expect(cliScripts.count == 3)
 		for script in cliScripts {
 			#expect(script.body.contains("${WHISPERA_CLI:-/tmp/Test.app/Contents/MacOS/Whispera}"))
 		}
+	}
+
+	@Test func addWordScriptPassesTheArgumentThroughTheCLI() throws {
+		let script = try #require(RaycastScripts.commands().first { $0.fileName == "whispera-add-word.sh" })
+		#expect(script.argumentPlaceholder != nil)
+		#expect(script.body.contains("\"$WHISPERA\" --add-word \"$1\""))
+		let options = try CLIOptions.parse(["--add-word", "Kubernetes, Grafana"])
+		#expect(options.action == .remote(.addWord("Kubernetes, Grafana")))
 	}
 
 	@Test func exportWritesExecutableScripts() throws {

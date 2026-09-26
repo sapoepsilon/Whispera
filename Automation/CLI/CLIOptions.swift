@@ -42,7 +42,7 @@ struct CLIOptions: Equatable {
 	static let triggerFlags: Set<String> = [
 		"-f", "--transcribe-file", "--list-models", "--list-devices", "--toggle-transcription", "--toggle",
 		"--toggle-post-process",
-		"--start", "--stop", "--cancel", "--help", "-h",
+		"--start", "--stop", "--cancel", "--copy-last", "--open-history", "--add-word", "--help", "-h",
 	]
 
 	static func isCLIInvocation(_ arguments: [String]) -> Bool {
@@ -102,6 +102,12 @@ struct CLIOptions: Equatable {
 				actions.append(.remote(.stop))
 			case "--cancel":
 				actions.append(.remote(.cancel))
+			case "--copy-last":
+				actions.append(.remote(.copyLastTranscript))
+			case "--open-history":
+				actions.append(.remote(.openHistory))
+			case "--add-word":
+				actions.append(.remote(.addWord(try nextValue(for: flag, inline: inline))))
 			case "--model":
 				options.model = try nextValue(for: flag, inline: inline)
 			case "--device-index":
@@ -167,6 +173,9 @@ struct CLIOptions: Equatable {
 		  --toggle, --toggle-transcription   Start or stop dictation
 		  --toggle-post-process              Start or stop dictation with LLM post-processing
 		  --start | --stop | --cancel        Start, stop, or discard the recording
+		  --copy-last                        Copy the most recent transcript to the clipboard
+		  --open-history                     Open the transcription history window
+		  --add-word <word[,word...]>        Add custom words to the dictionary
 
 		  -h, --help                    Show this help
 		"""
