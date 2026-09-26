@@ -72,6 +72,16 @@ enum ModifierOnlyShortcut: String, CaseIterable, Sendable {
 		flags.intersection(ShortcutCombo.relevantModifiers).subtracting(modifierFlag)
 	}
 
+	/// How long a push-to-talk press must last before the microphone opens. Shift and Option are
+	/// held for capital letters and accented characters, so they wait long enough to cover a
+	/// typed character; Command, Control and Fn chords are shortcuts pressed in quick succession.
+	var holdStartDelay: TimeInterval {
+		switch self {
+		case .rightShift, .rightOption: return 0.2
+		case .rightCommand, .rightControl, .fn: return 0.12
+		}
+	}
+
 	var displayName: String {
 		switch self {
 		case .rightCommand: return String(localized: "Right ⌘")
@@ -87,6 +97,32 @@ enum ModifierOnlyShortcut: String, CaseIterable, Sendable {
 enum ShortcutDisplay {
 	static func text(for stored: String) -> String {
 		ModifierOnlyShortcut(stored: stored)?.displayName ?? stored
+	}
+}
+
+/// One event seen by the single-key shortcut monitors.
+struct ModifierOnlyInput: Equatable {
+	enum Kind: Equatable {
+		case flagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags)
+		case keyDown
+	}
+
+	let kind: Kind
+	/// Posted by Whispera itself (a paste, typed text, a correction), not typed by the user.
+	var isSelfPosted = false
+
+	init(kind: Kind, isSelfPosted: Bool = false) {
+		self.kind = kind
+		self.isSelfPosted = isSelfPosted
+	}
+
+	init?(event: NSEvent) {
+		switch event.type {
+		case .flagsChanged: kind = .flagsChanged(keyCode: event.keyCode, flags: event.modifierFlags)
+		case .keyDown: kind = .keyDown
+		default: return nil
+		}
+		isSelfPosted = SyntheticKeyEvent.isSelfPosted(event)
 	}
 }
 
@@ -107,6 +143,16 @@ struct ModifierOnlyKeyTracker {
 
 	init(key: ModifierOnlyShortcut) {
 		self.key = key
+	}
+
+	/// Whispera's own keystrokes are ignored: pasting a live segment or an earlier dictation
+	/// while the key is held is not the user pressing another key.
+	mutating func handle(_ input: ModifierOnlyInput) -> Event {
+		guard !input.isSelfPosted else { return .none }
+		switch input.kind {
+		case .flagsChanged(let keyCode, let flags): return flagsChanged(keyCode: keyCode, flags: flags)
+		case .keyDown: return keyDown()
+		}
 	}
 
 	mutating func flagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Event {
@@ -148,24 +194,47 @@ struct ModifierOnlyKeyTracker {
 /// Turns modifier-key presses into activation steps. A modifier is also typed as part of other
 /// shortcuts, so anything that could end a recording or start one in toggle mode waits for a
 /// clean release, and a recording started on press is cancelled when the press turns out to be
-/// part of a combination.
+/// part of a combination. In the hold modes the start also waits a moment, so a key held for a
+/// capital letter or a shortcut never opens the microphone at all.
 struct ModifierOnlyPressRouter {
 	enum Step: Equatable {
 		case keyDown
 		case keyUp
 		case cancelSession
+		/// Call `startDelayElapsed(press:isSessionActive:)` after `delay` to learn whether to start.
+		case scheduleStart(press: Int, delay: TimeInterval)
 	}
 
 	private var deferredToRelease = false
 	private var startedOnPress = false
+	private var pendingStart: Int?
+	private var pressMode: ActivationMode = .toggle
+	private var pressCount = 0
 
-	mutating func pressed(mode: ActivationMode, isSessionActive: Bool) -> [Step] {
-		deferredToRelease = false
-		startedOnPress = false
+	var isStartPending: Bool { pendingStart != nil }
+
+	mutating func pressed(mode: ActivationMode, isSessionActive: Bool, startDelay: TimeInterval = 0) -> [Step] {
+		reset()
+		pressCount += 1
+		pressMode = mode
 		if isSessionActive || mode == .toggle {
 			deferredToRelease = true
 			return []
 		}
+		if startDelay > 0 {
+			pendingStart = pressCount
+			return [.scheduleStart(press: pressCount, delay: startDelay)]
+		}
+		startedOnPress = true
+		return [.keyDown]
+	}
+
+	/// The key is still held with nothing else pressed, so this is a dictation press after all.
+	/// A recording started some other way in the meantime is left alone rather than stopped.
+	mutating func startDelayElapsed(press: Int, isSessionActive: Bool) -> [Step] {
+		guard pendingStart == press else { return [] }
+		pendingStart = nil
+		guard !isSessionActive else { return [] }
 		startedOnPress = true
 		return [.keyDown]
 	}
@@ -174,6 +243,9 @@ struct ModifierOnlyPressRouter {
 		defer { reset() }
 		if startedOnPress { return [.keyUp] }
 		if deferredToRelease { return [.keyDown, .keyUp] }
+		// A tap shorter than the start delay: Hold or Toggle treats a tap as "start and keep
+		// recording", while Push to Talk would only record a blip, so it does nothing.
+		if pendingStart != nil, pressMode == .holdOrToggle { return [.keyDown, .keyUp] }
 		return []
 	}
 
@@ -186,6 +258,51 @@ struct ModifierOnlyPressRouter {
 	mutating func reset() {
 		deferredToRelease = false
 		startedOnPress = false
+		pendingStart = nil
+	}
+}
+
+/// Everything the single-key monitors decide, from raw event to activation steps.
+struct ModifierOnlyShortcutMachine {
+	private(set) var tracker: ModifierOnlyKeyTracker
+	private(set) var router = ModifierOnlyPressRouter()
+
+	init(key: ModifierOnlyShortcut) {
+		tracker = ModifierOnlyKeyTracker(key: key)
+	}
+
+	var key: ModifierOnlyShortcut { tracker.key }
+
+	/// `recorderListening`: a shortcut recorder owns the key presses, so they are not acted on,
+	/// and a press it swallowed leaves nothing behind for its release to act on later. The mode
+	/// and session state are read only for a press, since every keystroke in every app lands here.
+	mutating func handle(
+		_ input: ModifierOnlyInput, recorderListening: Bool, mode: @autoclosure () -> ActivationMode,
+		isSessionActive: @autoclosure () -> Bool
+	) -> [ModifierOnlyPressRouter.Step] {
+		if recorderListening {
+			reset()
+			return []
+		}
+		switch tracker.handle(input) {
+		case .pressed:
+			return router.pressed(mode: mode(), isSessionActive: isSessionActive(), startDelay: key.holdStartDelay)
+		case .released:
+			return router.released()
+		case .interrupted:
+			return router.interrupted()
+		case .none:
+			return []
+		}
+	}
+
+	mutating func startDelayElapsed(press: Int, isSessionActive: Bool) -> [ModifierOnlyPressRouter.Step] {
+		router.startDelayElapsed(press: press, isSessionActive: isSessionActive)
+	}
+
+	mutating func reset() {
+		tracker.reset()
+		router.reset()
 	}
 }
 

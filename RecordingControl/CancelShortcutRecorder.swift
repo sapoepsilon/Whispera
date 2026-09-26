@@ -7,6 +7,7 @@ struct CancelShortcutRecorder: View {
 	@AppStorage(RecordingControlSettings.CancelKey.display) private var storedDisplay: String?
 	@State private var isRecording = false
 	@State private var monitor: Any?
+	@State private var recorderToken: UUID?
 	@State private var rejection: String?
 
 	private var settings: RecordingControlSettings { RecordingControlSettings() }
@@ -47,6 +48,8 @@ struct CancelShortcutRecorder: View {
 
 	private func startRecording() {
 		isRecording = true
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = ShortcutRecorderGate.shared.begin()
 		monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
 			guard isRecording else { return event }
 			guard
@@ -83,6 +86,8 @@ struct CancelShortcutRecorder: View {
 
 	private func stopRecording() {
 		isRecording = false
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = nil
 		if let monitor { NSEvent.removeMonitor(monitor) }
 		monitor = nil
 	}

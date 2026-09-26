@@ -11984,6 +11984,29 @@
         }
       }
     },
+    "Not available with a single-key shortcut: the fallback needs a key combination.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit einem Kurzbefehl aus einer einzelnen Taste nicht verfügbar: Der Ersatz braucht eine Tastenkombination."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No disponible con un atajo de una sola tecla: la alternativa necesita una combinación de teclas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indisponible avec un raccourci à une seule touche : la solution de secours nécessite une combinaison de touches."
+          }
+        }
+      }
+    },
     "Not granted": {
       "extractionState": "manual",
       "localizations": {
@@ -13272,25 +13295,25 @@
         }
       }
     },
-    "Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥ or Fn on its own": {
+    "Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn on its own": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drücke Befehl, Wahl, Control oder Umschalt + eine weitere Taste, oder tippe die rechte ⌘, ⌥ oder Fn allein an"
+            "value": "Drücke Befehl, Wahl, Control oder Umschalt + eine weitere Taste, oder tippe die rechte ⌘, ⌥, ⌃, ⇧ oder Fn allein an"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pulsa Comando, Opción, Control o Mayúsculas + otra tecla, o toca ⌘ derecha, ⌥ derecha o Fn sola"
+            "value": "Pulsa Comando, Opción, Control o Mayúsculas + otra tecla, o toca ⌘ derecha, ⌥ derecha, ⌃ derecha, ⇧ derecha o Fn sola"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Appuyez sur Commande, Option, Contrôle ou Maj + une autre touche, ou touchez ⌘ droite, ⌥ droite ou Fn seule"
+            "value": "Appuyez sur Commande, Option, Contrôle ou Maj + une autre touche, ou touchez ⌘ droite, ⌥ droite, ⌃ droite, ⇧ droite ou Fn seule"
           }
         }
       }
@@ -17044,6 +17067,29 @@
         }
       }
     },
+    "Single-key shortcuts can't be detected while it lasts, so dictation won't start. It works again when Secure Input ends, or pick a key combination in Settings, which has a fallback.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kurzbefehle mit einer einzelnen Taste werden währenddessen nicht erkannt, daher startet das Diktat nicht. Es funktioniert wieder, sobald die sichere Eingabe endet, oder wähle in den Einstellungen eine Tastenkombination, für die es einen Ersatz gibt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los atajos de una sola tecla no se detectan mientras dure, así que el dictado no empezará. Vuelve a funcionar cuando termine la entrada segura, o elige una combinación de teclas en Ajustes, que tiene alternativa."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les raccourcis à une seule touche ne sont pas détectés tant qu’elle dure, la dictée ne démarrera donc pas. Elle fonctionne à nouveau quand la saisie sécurisée se termine, ou choisissez une combinaison de touches dans les Réglages, qui dispose d’une solution de secours."
+          }
+        }
+      }
+    },
     "Size": {
       "extractionState": "manual",
       "localizations": {
@@ -18539,25 +18585,25 @@
         }
       }
     },
-    "That key can't be used. Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥ or Fn on its own": {
+    "That key can't be used. Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn on its own": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Diese Taste kann nicht verwendet werden. Drücke Befehl, Wahl, Control oder Umschalt + eine weitere Taste, oder tippe die rechte ⌘, ⌥ oder Fn allein an"
+            "value": "Diese Taste kann nicht verwendet werden. Drücke Befehl, Wahl, Control oder Umschalt + eine weitere Taste, oder tippe die rechte ⌘, ⌥, ⌃, ⇧ oder Fn allein an"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Esa tecla no se puede usar. Pulsa Comando, Opción, Control o Mayúsculas + otra tecla, o toca ⌘ derecha, ⌥ derecha o Fn sola"
+            "value": "Esa tecla no se puede usar. Pulsa Comando, Opción, Control o Mayúsculas + otra tecla, o toca ⌘ derecha, ⌥ derecha, ⌃ derecha, ⇧ derecha o Fn sola"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cette touche ne peut pas être utilisée. Appuyez sur Commande, Option, Contrôle ou Maj + une autre touche, ou touchez ⌘ droite, ⌥ droite ou Fn seule"
+            "value": "Cette touche ne peut pas être utilisée. Appuyez sur Commande, Option, Contrôle ou Maj + une autre touche, ou touchez ⌘ droite, ⌥ droite, ⌃ droite, ⇧ droite ou Fn seule"
           }
         }
       }

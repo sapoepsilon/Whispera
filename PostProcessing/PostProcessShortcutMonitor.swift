@@ -104,6 +104,7 @@ final class PostProcessShortcutMonitor {
 		// A system-wide key-up monitor wakes the app on every keystroke, so toggle mode skips it
 		let globalMask: NSEvent.EventTypeMask = needsKeyRelease ? [.keyDown, .keyUp] : .keyDown
 		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: globalMask) { [weak self] event in
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return }
 			if event.type == .keyUp {
 				if event.keyCode == keyCode { self?.handleRelease() }
 				return
@@ -111,6 +112,7 @@ final class PostProcessShortcutMonitor {
 			if matches(event) { self?.handlePress(isRepeat: event.isARepeat) }
 		}
 		localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return event }
 			if event.type == .keyUp {
 				if event.keyCode == keyCode { self?.handleRelease() }
 				return event
@@ -130,7 +132,9 @@ final class PostProcessShortcutMonitor {
 			logger.info("Post-processing shortcut detected")
 		}
 		Task { @MainActor [weak self] in
-			guard let self, let audioManager = self.audioManager else { return }
+			guard let self, let audioManager = self.audioManager, !ShortcutRecorderGate.shared.isRecording else {
+				return
+			}
 			let recording = RecordingControlSettings()
 			self.activation.mode = recording.activationMode
 			self.activation.holdThreshold = recording.holdThreshold

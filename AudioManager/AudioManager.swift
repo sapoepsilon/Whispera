@@ -319,41 +319,61 @@ final class AudioManager: NSObject {
 		abandon(cancelled)
 
 		if capturing {
-			pendingStopAfterStart = false
-			tailStop.cancel()
-			deviceActivationTask?.cancel()
-			deviceActivationTask = nil
-			switch activeCapturePath {
-			case .live:
-				whisperKitTranscriber.cancelLiveStream()
-			case .file:
-				stopMeteringTimer()
-				audioRecorder?.stop()
-				audioRecorder = nil
-				if let audioFileURL {
-					try? FileManager.default.removeItem(at: audioFileURL)
-				}
-				audioFileURL = nil
-			case .stream:
-				captureBuffer.discard()
-				releaseStreamingEngine()
-			case nil:
-				break
-			}
-			activeCapturePath = nil
-			restoreSystemOutput()
-			deviceManager.restoreSystemDefault()
-			deviceManager.endRecordingSession()
-			playFeedbackSound(start: false)
-			isMicrophoneInitializing = false
-			isRecording = false
-			timer.stop()
-			levelMonitor.reset()
-			scheduleTimerReset()
+			discardCapture()
 		}
 
 		syncTranscribingState()
 		AppLogger.shared.audioManager.info("Recording cancelled; audio discarded")
+	}
+
+	/// The capture being recorded now, if any.
+	var captureSessionID: Int? {
+		ledger.capturing?.id
+	}
+
+	/// Discards one capture and nothing else. Unlike `cancelRecording`, it never falls back to
+	/// abandoning the transcriptions in flight when that capture has already ended or never got
+	/// going, so a key press that turned out to be a shortcut cannot throw away earlier dictations.
+	func cancelCapture(sessionID: Int) {
+		guard isSessionActive, let session = ledger.cancelCapture(id: sessionID) else { return }
+		abandon([session])
+		discardCapture()
+		syncTranscribingState()
+		AppLogger.shared.audioManager.info("Recording \(sessionID) cancelled; audio discarded")
+	}
+
+	private func discardCapture() {
+		pendingStopAfterStart = false
+		tailStop.cancel()
+		deviceActivationTask?.cancel()
+		deviceActivationTask = nil
+		switch activeCapturePath {
+		case .live:
+			whisperKitTranscriber.cancelLiveStream()
+		case .file:
+			stopMeteringTimer()
+			audioRecorder?.stop()
+			audioRecorder = nil
+			if let audioFileURL {
+				try? FileManager.default.removeItem(at: audioFileURL)
+			}
+			audioFileURL = nil
+		case .stream:
+			captureBuffer.discard()
+			releaseStreamingEngine()
+		case nil:
+			break
+		}
+		activeCapturePath = nil
+		restoreSystemOutput()
+		deviceManager.restoreSystemDefault()
+		deviceManager.endRecordingSession()
+		playFeedbackSound(start: false)
+		isMicrophoneInitializing = false
+		isRecording = false
+		timer.stop()
+		levelMonitor.reset()
+		scheduleTimerReset()
 	}
 
 	/// Abandons the dictations still transcribing. Unlike `cancelRecording`, a recording that is

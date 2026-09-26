@@ -14,6 +14,7 @@ struct ShortcutOptionsView: View {
 	@State private var isRecordingShortcut = false
 	@State private var modifierRecording = ModifierOnlyRecording()
 	@State private var eventMonitor: Any?
+	@State private var recorderToken: UUID?
 	@State private var rejectedKey = false
 
 	private let shortcutOptions = [
@@ -119,9 +120,10 @@ struct ShortcutOptionsView: View {
 			return "Press Command, Option, Control or Shift + another key"
 		case (true, true):
 			return
-				"That key can't be used. Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥ or Fn on its own"
+				"That key can't be used. Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn on its own"
 		case (false, true):
-			return "Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥ or Fn on its own"
+			return
+				"Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn on its own"
 		}
 	}
 
@@ -129,10 +131,12 @@ struct ShortcutOptionsView: View {
 		isRecordingShortcut = true
 		rejectedKey = false
 		modifierRecording = ModifierOnlyRecording()
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = ShortcutRecorderGate.shared.begin()
 
 		let mask: NSEvent.EventTypeMask = allowsModifierOnly ? [.keyDown, .flagsChanged] : [.keyDown]
 		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { event in
-			if self.isRecordingShortcut {
+			if self.isRecordingShortcut, !SyntheticKeyEvent.isSelfPosted(event) {
 				if event.type == .flagsChanged {
 					if let key = self.modifierRecording.flagsChanged(keyCode: event.keyCode, flags: event.modifierFlags) {
 						self.customShortcut = key.rawValue
@@ -161,6 +165,8 @@ struct ShortcutOptionsView: View {
 
 	private func stopRecording() {
 		isRecordingShortcut = false
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = nil
 		if let monitor = eventMonitor {
 			NSEvent.removeMonitor(monitor)
 			eventMonitor = nil
