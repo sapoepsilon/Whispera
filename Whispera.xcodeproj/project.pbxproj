@@ -180,6 +180,7 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D63850CC2E179188000FD465 /* WhisperaUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUITests; sourceTree = "<group>"; };
 		D63850DF2E1791AF000FD465 /* WhisperaUnitTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUnitTests; sourceTree = "<group>"; };
+		D6MISCUI12F0000000000001 /* MiscUI */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = MiscUI; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -217,6 +218,7 @@
 			isa = PBXGroup;
 			children = (
 				D6BENCH032F0000000000000 /* Benchmark */,
+				D6MISCUI12F0000000000001 /* MiscUI */,
 				D6F9D7872ED6C4B500959822 /* AudioManager */,
 				D6F9D7832ED6C31C00959822 /* RecordingTimer.swift */,
 				D60F53F42EA468710063C008 /* What's up? */,
@@ -392,6 +394,9 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				D6MISCUI12F0000000000001 /* MiscUI */,
+			);
 			name = Whispera;
 			productName = MacWhisper;
 			productReference = 3A3A3A3A3A3A3A3A3A3A3A3A /* Whispera.app */;
@@ -473,6 +478,9 @@
 			knownRegions = (
 				en,
 				Base,
+				de,
+				es,
+				fr,
 			);
 			mainGroup = 6A6A6A6A6A6A6A6A6A6A6A6A;
 			packageReferences = (

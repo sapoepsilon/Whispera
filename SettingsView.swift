@@ -527,6 +527,8 @@ struct SettingsView: View {
 							Toggle("", isOn: $launchAtStartup)
 						}
 
+						ThemeSettingRow()
+
 						SettingRow(
 							"Window Transparency",
 							description: "Adjust transparency level for all windows"

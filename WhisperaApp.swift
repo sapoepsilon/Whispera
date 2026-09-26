@@ -110,6 +110,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		}
 
 		AppDelegate.registerInitialDefaults(in: .standard)
+		ThemeController.shared.start()
 
 		Task { @MainActor in
 			audioManager = AudioManager()
