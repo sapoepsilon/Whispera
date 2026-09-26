@@ -37,14 +37,19 @@ struct NeuralVoiceActivityTrimmerTests {
 	@Test func quietProbabilitiesMeanNoSpeech() {
 		let samples = syllables(count: chunk * 3)
 		#expect(
-			NeuralVoiceActivityTrimmer(sensitivity: .medium).trim(samples, probabilities: [0.1, 0.4, 0.2]) == .noSpeech)
+			NeuralVoiceActivityTrimmer(sensitivity: .medium).trim(samples, probabilities: [0.1, 0.4, 0.2])
+				== .noSpeech)
 	}
 
 	@Test func sensitivityMovesTheThreshold() {
 		let samples = syllables(count: chunk * 2)
 		let probabilities: [Float] = [0.1, 0.4]
-		#expect(NeuralVoiceActivityTrimmer(sensitivity: .low).trim(samples, probabilities: probabilities) == .noSpeech)
-		#expect(NeuralVoiceActivityTrimmer(sensitivity: .high).trim(samples, probabilities: probabilities) != .noSpeech)
+		#expect(
+			NeuralVoiceActivityTrimmer(sensitivity: .low).trim(samples, probabilities: probabilities) == .noSpeech
+		)
+		#expect(
+			NeuralVoiceActivityTrimmer(sensitivity: .high).trim(samples, probabilities: probabilities)
+				!= .noSpeech)
 		#expect(VADSensitivity.high.neuralThreshold < VADSensitivity.medium.neuralThreshold)
 		#expect(VADSensitivity.medium.neuralThreshold < VADSensitivity.low.neuralThreshold)
 	}
@@ -57,8 +62,12 @@ struct NeuralVoiceActivityTrimmerTests {
 	@Test func steadyAudioIsNotSpeechEvenWhenAChunkScoresHigh() {
 		let samples = steady(count: chunk * 6)
 		let probabilities: [Float] = [0.2, 0.3, 0.98, 0.95, 0.4, 0.2]
-		#expect(NeuralVoiceActivityTrimmer(sensitivity: .medium).trim(samples, probabilities: probabilities) == .noSpeech)
-		#expect(NeuralVoiceActivityTrimmer(sensitivity: .high).trim(samples, probabilities: probabilities) == .noSpeech)
+		#expect(
+			NeuralVoiceActivityTrimmer(sensitivity: .medium).trim(samples, probabilities: probabilities)
+				== .noSpeech)
+		#expect(
+			NeuralVoiceActivityTrimmer(sensitivity: .high).trim(samples, probabilities: probabilities)
+				== .noSpeech)
 	}
 
 	@Test func steadyNoiseSegmentsAroundSpeechAreLeftOut() {
@@ -156,7 +165,8 @@ struct NeuralVoiceActivityModelTests {
 			for _ in 0..<10 {
 				let noise = (0..<48000).map { _ in Float.random(in: -amplitude...amplitude, using: &generator) }
 				for sensitivity in VADSensitivity.allCases {
-					let result = try await NeuralVoiceActivityDetector.shared.process(noise, sensitivity: sensitivity)
+					let result = try await NeuralVoiceActivityDetector.shared.process(
+						noise, sensitivity: sensitivity)
 					#expect(result == .noSpeech, "hiss at \(amplitude) passed as speech at \(sensitivity)")
 				}
 			}
@@ -182,14 +192,17 @@ struct NeuralVoiceActivityModelTests {
 		for name in ["yes", "no", "stop", "okay"] {
 			let spoken = try word(name)
 			for offset in stride(from: 0, to: 4096, by: 1024) {
-				let clip = [Float](repeating: 0, count: 16000 + offset) + spoken + [Float](repeating: 0, count: 16000)
+				let clip =
+					[Float](repeating: 0, count: 16000 + offset) + spoken
+					+ [Float](repeating: 0, count: 16000)
 				let variants: [(String, [Float])] = [
 					("full", clip),
 					("quiet", clip.map { $0 * 0.02 }),
 					("in hiss", clip.map { $0 * 0.3 + Float.random(in: -0.03...0.03, using: &generator) }),
 				]
 				for (label, samples) in variants {
-					let result = try await NeuralVoiceActivityDetector.shared.process(samples, sensitivity: .medium)
+					let result = try await NeuralVoiceActivityDetector.shared.process(
+						samples, sensitivity: .medium)
 					#expect(result != .noSpeech, "'\(name)' \(label) at offset \(offset) was dropped")
 				}
 			}

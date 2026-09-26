@@ -55,7 +55,8 @@ extension TranscriptTextProcessor {
 				let suffix = extractPunctuation(last).suffix
 				let core = String(first.dropFirst(prefix.count))
 				output.append(
-					prefix + preserveCasePattern(original: core, replacement: best.replacement) + best.possessive
+					prefix + preserveCasePattern(original: core, replacement: best.replacement)
+						+ best.possessive
 						+ suffix)
 				i += best.length
 			} else {
