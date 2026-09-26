@@ -22,8 +22,21 @@ struct ActivationStateMachine {
 		self.holdThreshold = holdThreshold
 	}
 
+	/// Two hotkey sources (the Carbon fallback and the event monitors) can report the
+	/// same press around a secure input transition.
+	static let duplicatePressWindow: TimeInterval = 0.3
+
 	mutating func keyDown(at time: Date, isRepeat: Bool, isSessionActive: Bool) -> ActivationAction {
-		guard !isRepeat, !isPressed else { return .none }
+		guard !isRepeat else { return .none }
+		if isPressed {
+			if let startedAt = pressStartedAt, time.timeIntervalSince(startedAt) < Self.duplicatePressWindow {
+				return .none
+			}
+			// A fresh press while still "pressed" means the previous release was never
+			// delivered (secure input, a re-registered hotkey); treat it as a new press
+			// rather than ignoring the shortcut until relaunch.
+			reset()
+		}
 		isPressed = true
 		pressStartedAt = time
 
