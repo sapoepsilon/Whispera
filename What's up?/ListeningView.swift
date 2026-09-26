@@ -137,13 +137,13 @@ struct ListeningView: View {
 			if #available(macOS 26.0, *) {
 				pillContent
 					.frame(height: 30)
-					.glassEffect()
+					.modifier(AdaptiveGlassModifier())
 			} else {
 				pillContent
 					.frame(height: 50)
 					.background(
-						RoundedRectangle(cornerRadius: cornerRadius)
-							.fill(.ultraThinMaterial)
+						AdaptiveMaterialBackground(
+							style: .ultraThin, shape: RoundedRectangle(cornerRadius: cornerRadius))
 					)
 					.overlay(
 						RoundedRectangle(cornerRadius: cornerRadius)

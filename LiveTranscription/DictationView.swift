@@ -71,21 +71,22 @@ struct DictationView: View {
 		}
 		.fixedSize()
 		.background(
-			RoundedRectangle(cornerRadius: cornerRadius)
-				.fill(.ultraThinMaterial)
-				.overlay(
-					RoundedRectangle(cornerRadius: cornerRadius)
-						.fill(
-							LinearGradient(
-								colors: [
-									Color.blue.opacity(0.05),
-									Color.blue.opacity(0.02),
-								],
-								startPoint: .topLeading,
-								endPoint: .bottomTrailing
-							)
+			AdaptiveMaterialBackground(
+				style: .ultraThin, shape: RoundedRectangle(cornerRadius: cornerRadius)
+			)
+			.overlay(
+				RoundedRectangle(cornerRadius: cornerRadius)
+					.fill(
+						LinearGradient(
+							colors: [
+								Color.blue.opacity(0.05),
+								Color.blue.opacity(0.02),
+							],
+							startPoint: .topLeading,
+							endPoint: .bottomTrailing
 						)
-				)
+					)
+			)
 		)
 		.overlay(
 			RoundedRectangle(cornerRadius: cornerRadius)
