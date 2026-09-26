@@ -1261,3 +1261,21 @@ final class InMemoryScriptApprovalKeyStore: ScriptApprovalKeyStore, @unchecked S
 		return stored
 	}
 }
+
+
+struct ModifierReleaseTests {
+	@Test func commandPasteReleasesCommandAfterwards() {
+		#expect(CGKeyEventPoster.modifierKeyCodes(in: .maskCommand) == [KeyCode.command])
+	}
+
+	@Test func everyHeldModifierIsReleased() {
+		let flags: CGEventFlags = [.maskCommand, .maskShift, .maskAlternate, .maskControl]
+		#expect(
+			Set(CGKeyEventPoster.modifierKeyCodes(in: flags))
+				== [KeyCode.command, KeyCode.shift, KeyCode.option, KeyCode.control])
+	}
+
+	@Test func plainKeysReleaseNothing() {
+		#expect(CGKeyEventPoster.modifierKeyCodes(in: []).isEmpty)
+	}
+}

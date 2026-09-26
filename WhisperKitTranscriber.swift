@@ -263,15 +263,7 @@ import WhisperKit
 	}
 
 	private func simulateKeyPressWithModifier(keyCode: CGKeyCode, modifier: CGEventFlags) {
-		let source = CGEventSource(stateID: .combinedSessionState)
-		let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
-		let keyUpEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-
-		keyDownEvent?.flags = modifier
-		keyUpEvent?.flags = modifier
-
-		keyDownEvent?.post(tap: .cghidEventTap)
-		keyUpEvent?.post(tap: .cghidEventTap)
+		CGKeyEventPoster().postKey(keyCode, flags: modifier)
 	}
 
 	private func confirmPendingText(_ text: String) {
