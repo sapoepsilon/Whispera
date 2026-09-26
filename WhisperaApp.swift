@@ -412,8 +412,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			queue: .main
 		) { notification in
 			if let window = notification.object as? NSWindow {
-				let title = window.title.lowercased()
-				if title.contains("settings") || title.contains("preferences") {
+				if SettingsWindowLocator.isSettingsWindow(window) {
 					// Settings window is closing, revert to accessory mode
 					DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
 						NSApp.setActivationPolicy(.accessory)

@@ -73,9 +73,9 @@ final class RemoteControlCenter: NSObject {
 	private let historyActions: RemoteHistoryActions
 	private let logger = AppLogger.shared.general
 
-	init(defaults: UserDefaults = .standard, historyActions: RemoteHistoryActions = .live) {
+	init(defaults: UserDefaults = .standard, historyActions: RemoteHistoryActions? = nil) {
 		self.defaults = defaults
-		self.historyActions = historyActions
+		self.historyActions = historyActions ?? .live
 		super.init()
 	}
 

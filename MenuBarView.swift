@@ -147,13 +147,7 @@ struct MenuBarView: View {
 
 							DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
 								// TODO: Might become a problem if we add more windows
-								if let settingsWindow = NSApp.windows.first(where: {
-									$0.title.contains("Settings") || $0.title.contains("Preferences")
-										|| $0.title.contains("General")
-										|| $0.title.contains("Storage & Downloads")
-										|| $0.title.contains("File Transcription")
-										|| String(describing: type(of: $0)).contains("Settings")
-								}) {
+								if let settingsWindow = SettingsWindowLocator.find() {
 									settingsWindow.collectionBehavior.insert(.moveToActiveSpace)
 									settingsWindow.makeKeyAndOrderFront(nil)
 									settingsWindow.orderFrontRegardless()
@@ -177,9 +171,7 @@ struct MenuBarView: View {
 
 							// Bring the settings window to front after a brief delay
 							DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-								if let settingsWindow = NSApp.windows.first(where: {
-									$0.title.contains("Settings") || $0.title.contains("Preferences")
-								}) {
+								if let settingsWindow = SettingsWindowLocator.find() {
 									settingsWindow.makeKeyAndOrderFront(nil)
 									settingsWindow.orderFrontRegardless()
 									NSApp.activate(ignoringOtherApps: true)
