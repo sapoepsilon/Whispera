@@ -206,6 +206,17 @@ struct SettingsView: View {
 	@AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
 	@AppStorage(DebugMode.defaultsKey) private var debugModeEnabled = false
 
+	private var tabTitles: [String] {
+		var titles = [
+			String(localized: "General"), String(localized: "Text Insertion"),
+			String(localized: "Storage & Downloads"), String(localized: "File Transcription"),
+			String(localized: "History"), String(localized: "Automation"), String(localized: "Benchmark"),
+			String(localized: "Post-Processing"),
+		]
+		if debugModeEnabled { titles.append(String(localized: "Debug")) }
+		return titles
+	}
+
 	var body: some View {
 		TabView {
 			// MARK: - General Tab
@@ -1137,8 +1148,9 @@ struct SettingsView: View {
 			}
 		}
 		.background(DebugModeShortcut())
-		// Wide enough for every tab: SwiftUI disables the toolbar overflow menu, so hidden tabs could not be opened
-		.frame(width: 880)
+		// Wide enough for every tab in the current language: SwiftUI disables the toolbar
+		// overflow menu, so a tab pushed into it could not be opened
+		.frame(width: SettingsWindowWidth.required(forTabTitles: tabTitles))
 		.onAppear {
 			loadAvailableModels()
 			checkLaunchAtStartupStatus()
