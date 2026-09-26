@@ -154,7 +154,7 @@ struct MenuBarView: View {
 					permissionManager: permissionManager,
 					fileTranscriptionManager: fileTranscriptionManager,
 					networkDownloader: networkDownloader,
-					shortcutKey: shortcutKey,
+					shortcutKey: ShortcutDisplay.text(for: shortcutKey),
 					menuEntries: menuEntries,
 					performMenuAction: performMenuAction
 				)
@@ -178,7 +178,7 @@ struct MenuBarView: View {
 
 				DictateLane(
 					audioManager: audioManager,
-					shortcutKey: shortcutKey,
+					shortcutKey: ShortcutDisplay.text(for: shortcutKey),
 					selectedLanguage: selectedLanguage,
 					isBlocked: layout.needsPermissions || layout.modelPreparing
 				)

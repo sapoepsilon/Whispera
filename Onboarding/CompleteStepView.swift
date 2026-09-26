@@ -7,7 +7,7 @@ struct CompleteStepView: View {
 	private var tips: [(icon: String, title: String, description: String)] {
 		[
 			(
-				"keyboard", String(localized: "Press \(globalShortcut) anywhere"),
+				"keyboard", String(localized: "Press \(ShortcutDisplay.text(for: globalShortcut)) anywhere"),
 				String(localized: "Start recording from any app")
 			),
 			(

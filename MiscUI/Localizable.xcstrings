@@ -1795,25 +1795,25 @@
         }
       }
     },
-    "Alternative: Double-tap Shortcuts": {
+    "Alternative: Single-Key Shortcuts": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternative: Kurzbefehle per Doppeltippen"
+            "value": "Alternative: Kurzbefehle mit einer Taste"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternativa: atajos de doble pulsación"
+            "value": "Alternativa: atajos de una tecla"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alternative : raccourcis par double appui"
+            "value": "Alternative : raccourcis à une touche"
           }
         }
       }
@@ -7315,6 +7315,29 @@
         }
       }
     },
+    "Fn (Globe)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fn (Globus)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fn (globo)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fn (globe)"
+          }
+        }
+      }
+    },
     "Fn/Globe shortcuts cannot be registered as a system hotkey": {
       "extractionState": "manual",
       "localizations": {
@@ -8231,29 +8254,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "En cours"
-          }
-        }
-      }
-    },
-    "In a future update, you'll be able to use double-tap shortcuts (like double ⌘ or double Globe 🌐) to avoid conflicts with other apps.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In einem künftigen Update kannst du Kurzbefehle per Doppeltippen nutzen (z. B. zweimal ⌘ oder zweimal Globus 🌐), um Konflikte mit anderen Apps zu vermeiden."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En una próxima actualización podrás usar atajos de doble pulsación (como ⌘ dos veces o Globo 🌐 dos veces) para evitar conflictos con otras apps."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dans une prochaine mise à jour, vous pourrez utiliser des raccourcis par double appui (comme ⌘ ou Globe 🌐 deux fois) pour éviter les conflits avec d'autres apps."
           }
         }
       }
@@ -12145,6 +12145,29 @@
         }
       }
     },
+    "Open Keyboard Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tastatureinstellungen öffnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir ajustes de Teclado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir les réglages Clavier"
+          }
+        }
+      }
+    },
     "Open Microphone Settings": {
       "extractionState": "manual",
       "localizations": {
@@ -13180,6 +13203,29 @@
         }
       }
     },
+    "Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥ or Fn on its own": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drücke Befehl, Wahl, Control oder Umschalt + eine weitere Taste, oder tippe die rechte ⌘, ⌥ oder Fn allein an"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa Comando, Opción, Control o Mayúsculas + otra tecla, o toca ⌘ derecha, ⌥ derecha o Fn sola"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur Commande, Option, Contrôle ou Maj + une autre touche, ou touchez ⌘ droite, ⌥ droite ou Fn seule"
+          }
+        }
+      }
+    },
     "Press Esc while recording or transcribing to discard it without pasting": {
       "extractionState": "manual",
       "localizations": {
@@ -13245,6 +13291,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Appuie sur une touche après l'insertion pour que les champs de discussion envoient le message. La dictée en direct l'appuie une fois, à l'arrêt."
+          }
+        }
+      }
+    },
+    "Press a key combination, or press and release Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn on its own to dictate with one key.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drücke eine Tastenkombination, oder drücke und lass die rechte ⌘, ⌥, ⌃, ⇧ oder Fn allein los, um mit einer Taste zu diktieren."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa una combinación de teclas, o pulsa y suelta ⌘ derecha, ⌥ derecha, ⌃ derecha, ⇧ derecha o Fn solas para dictar con una sola tecla."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur une combinaison de touches, ou appuyez puis relâchez ⌘ droite, ⌥ droite, ⌃ droite, ⇧ droite ou Fn seule pour dicter avec une seule touche."
           }
         }
       }
@@ -13406,6 +13475,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Au-delà, l'enregistrement dure jusqu'au relâchement"
+          }
+        }
+      }
+    },
+    "Pressing another key while holding %@ cancels it, so shortcuts and characters typed with it do not start dictation.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn du beim Halten von %@ eine weitere Taste drückst, wird es abgebrochen, sodass Kurzbefehle und damit getippte Zeichen kein Diktat starten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsar otra tecla mientras mantienes %@ lo cancela, así que los atajos y caracteres escritos con ella no inician el dictado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyer sur une autre touche en maintenant %@ l’annule : les raccourcis et les caractères saisis avec elle ne lancent pas la dictée."
           }
         }
       }
@@ -15338,6 +15430,98 @@
           "stringUnit": {
             "state": "translated",
             "value": "Afficher dans le Finder"
+          }
+        }
+      }
+    },
+    "Right ⇧": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechte ⇧"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⇧ derecha"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⇧ droite"
+          }
+        }
+      }
+    },
+    "Right ⌃": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechte ⌃"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌃ derecha"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌃ droite"
+          }
+        }
+      }
+    },
+    "Right ⌘": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechte ⌘"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘ derecha"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘ droite"
+          }
+        }
+      }
+    },
+    "Right ⌥": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechte ⌥"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌥ derecha"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌥ droite"
           }
         }
       }
@@ -18079,6 +18263,29 @@
         }
       }
     },
+    "System hotkeys cannot bind %@ on its own, so the event monitor is used.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Systemkurzbefehle können %@ nicht allein belegen, daher wird der Ereignismonitor verwendet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los atajos del sistema no pueden asignar %@ por sí sola, así que se usa el monitor de eventos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les raccourcis système ne peuvent pas utiliser %@ seule, le moniteur d’événements est donc utilisé."
+          }
+        }
+      }
+    },
     "Tap to record": {
       "extractionState": "manual",
       "localizations": {
@@ -18259,6 +18466,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cette touche ne peut pas être utilisée. Appuyez sur Commande, Option, Contrôle ou Maj + une autre touche"
+          }
+        }
+      }
+    },
+    "That key can't be used. Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥ or Fn on its own": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Taste kann nicht verwendet werden. Drücke Befehl, Wahl, Control oder Umschalt + eine weitere Taste, oder tippe die rechte ⌘, ⌥ oder Fn allein an"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esa tecla no se puede usar. Pulsa Comando, Opción, Control o Mayúsculas + otra tecla, o toca ⌘ derecha, ⌥ derecha o Fn sola"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette touche ne peut pas être utilisée. Appuyez sur Commande, Option, Contrôle ou Maj + une autre touche, ou touchez ⌘ droite, ⌥ droite ou Fn seule"
           }
         }
       }
@@ -19064,6 +19294,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Astuce : choisissez des combinaisons moins courantes comme ⌃⌥W ou ⌘⇧R"
+          }
+        }
+      }
+    },
+    "To avoid conflicts with other apps, record Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn (Globe) on its own as the Global Shortcut in General. Hold it to talk with Push to Talk, or tap it to start and stop.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um Konflikte mit anderen Apps zu vermeiden, nimm die rechte ⌘, ⌥, ⌃, ⇧ oder Fn (Globus) allein als globalen Kurzbefehl unter Allgemein auf. Halte sie mit Push-to-Talk zum Sprechen gedrückt oder tippe sie zum Starten und Stoppen an."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para evitar conflictos con otras apps, graba ⌘ derecha, ⌥ derecha, ⌃ derecha, ⇧ derecha o Fn (globo) sola como atajo global en General. Mantenla para hablar con Push to Talk, o tócala para empezar y parar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour éviter les conflits avec d’autres apps, enregistrez ⌘ droite, ⌥ droite, ⌃ droite, ⇧ droite ou Fn (globe) seule comme raccourci global dans Général. Maintenez-la pour parler en mode Push to Talk, ou touchez-la pour démarrer et arrêter."
           }
         }
       }
@@ -21207,29 +21460,6 @@
         }
       }
     },
-    "Vote for this feature with 👍 if you'd like it implemented:": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stimme mit 👍 für diese Funktion ab, wenn du sie haben möchtest:"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Vota por esta función con 👍 si quieres que se implemente:"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Votez pour cette fonctionnalité avec 👍 si vous la souhaitez :"
-          }
-        }
-      }
-    },
     "Wait after writing the clipboard before sending Cmd-V": {
       "extractionState": "manual",
       "localizations": {
@@ -22491,6 +22721,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "genre, tu vois"
+          }
+        }
+      }
+    },
+    "macOS also acts on the Globe key. In System Settings > Keyboard, set \"Press 🌐 key to\" to \"Do Nothing\" so it only starts dictation.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS reagiert ebenfalls auf die Globustaste. Stelle in den Systemeinstellungen > Tastatur „Taste 🌐 drücken, um“ auf „Keine Aktion“, damit sie nur das Diktat startet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS también responde a la tecla globo. En Ajustes del Sistema > Teclado, ajusta «Pulsar la tecla 🌐 para» en «No hacer nada» para que solo inicie el dictado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS agit aussi sur la touche globe. Dans Réglages Système > Clavier, réglez « Appuyer sur la touche 🌐 pour » sur « Ne rien faire » pour qu’elle lance seulement la dictée."
           }
         }
       }

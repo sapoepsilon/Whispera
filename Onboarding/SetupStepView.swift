@@ -148,9 +148,11 @@ struct SetupStepView: View {
 				if showingShortcutCapture {
 					ShortcutOptionsView(
 						customShortcut: $customShortcut,
-						showingOptions: $showingShortcutCapture
+						showingOptions: $showingShortcutCapture,
+						allowsModifierOnly: true
 					)
 				}
+				ModifierOnlyShortcutNotes(shortcut: customShortcut)
 
 				Divider()
 
@@ -213,7 +215,7 @@ struct SetupStepView: View {
 
 			Spacer()
 
-			Text(shortcut.wrappedValue)
+			Text(ShortcutDisplay.text(for: shortcut.wrappedValue))
 				.font(.system(.body, design: .monospaced, weight: .semibold))
 				.padding(.horizontal, 12)
 				.padding(.vertical, 6)

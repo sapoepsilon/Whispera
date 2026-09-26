@@ -187,6 +187,7 @@ struct SettingsView: View {
 	@State private var isRecordingShortcut = false
 	@State private var isRecordingFileShortcut = false
 	@State private var eventMonitor: Any?
+	@State private var modifierRecording = ModifierOnlyRecording()
 	@State private var fileShortcutEventMonitor: Any?
 	@State private var errorMessage: String?
 	@State private var showingError = false
@@ -266,14 +267,20 @@ struct SettingsView: View {
 							}) {
 								Text(
 									isRecordingShortcut
-										? String(localized: "Press keys...") : globalShortcut
+										? String(localized: "Press keys...") : ShortcutDisplay.text(for: globalShortcut)
 								)
 								.font(.system(.body, design: .monospaced))
 								.frame(minWidth: 80)
 							}
 							.buttonStyle(.bordered)
 							.foregroundColor(isRecordingShortcut ? .red : .primary)
+							.help(
+								String(
+									localized:
+										"Press a key combination, or press and release Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn on its own to dictate with one key."
+								))
 						}
+						ModifierOnlyShortcutNotes(shortcut: globalShortcut)
 
 						SecureInputSettingsRows()
 
@@ -1317,9 +1324,18 @@ struct SettingsView: View {
 
 	private func startRecording() {
 		isRecordingShortcut = true
+		modifierRecording = ModifierOnlyRecording()
 
-		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
 			if self.isRecordingShortcut {
+				if event.type == .flagsChanged {
+					if let key = self.modifierRecording.flagsChanged(keyCode: event.keyCode, flags: event.modifierFlags) {
+						self.globalShortcut = key.rawValue
+						self.stopRecording()
+					}
+					return event
+				}
+				self.modifierRecording.keyDown()
 				let shortcut = self.formatKeyEvent(event)
 				if !shortcut.isEmpty {
 					self.globalShortcut = shortcut
@@ -1834,41 +1850,22 @@ struct LiveTranscriptionInfoView: View {
 						.cornerRadius(8)
 					}
 
-					// Double-tap shortcuts note
+					// Single-key shortcuts note
 					VStack(alignment: .leading, spacing: 12) {
 						HStack(spacing: 8) {
 							Image(systemName: "hand.tap.fill")
 								.foregroundColor(.blue)
-							Text("Alternative: Double-tap Shortcuts")
+							Text("Alternative: Single-Key Shortcuts")
 								.font(.headline)
 						}
 
 						VStack(alignment: .leading, spacing: 8) {
 							Text(
-								"In a future update, you'll be able to use double-tap shortcuts (like double ⌘ or double Globe 🌐) to avoid conflicts with other apps."
+								"To avoid conflicts with other apps, record Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn (Globe) on its own as the Global Shortcut in General. Hold it to talk with Push to Talk, or tap it to start and stop."
 							)
 							.font(.subheadline)
 							.foregroundColor(.secondary)
-
-							HStack(spacing: 4) {
-								Text("Vote for this feature with 👍 if you'd like it implemented:")
-									.font(.caption)
-									.foregroundColor(.secondary)
-
-								Button {
-									if let url = URL(
-										string: "https://github.com/sapoepsilon/Whispera/issues/16")
-									{
-										NSWorkspace.shared.open(url)
-									}
-								} label: {
-									Text("Issue #16")
-										.font(.caption)
-										.foregroundColor(.blue)
-										.underline()
-								}
-								.buttonStyle(.plain)
-							}
+							.fixedSize(horizontal: false, vertical: true)
 						}
 						.padding(12)
 						.background(Color.blue.opacity(0.1))

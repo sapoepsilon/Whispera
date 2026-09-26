@@ -9,7 +9,10 @@ import SwiftUI
 struct ShortcutOptionsView: View {
 	@Binding var customShortcut: String
 	@Binding var showingOptions: Bool
+	/// Only the dictation shortcut can be a modifier on its own; the file shortcut is a keyDown hotkey.
+	var allowsModifierOnly = false
 	@State private var isRecordingShortcut = false
+	@State private var modifierRecording = ModifierOnlyRecording()
 	@State private var eventMonitor: Any?
 	@State private var rejectedKey = false
 
@@ -60,13 +63,7 @@ struct ShortcutOptionsView: View {
 				}
 
 				if isRecordingShortcut {
-					Text(
-						rejectedKey
-							? LocalizedStringKey(
-								"That key can't be used. Press Command, Option, Control or Shift + another key"
-							)
-							: LocalizedStringKey("Press Command, Option, Control or Shift + another key")
-					)
+					Text(recordingHint)
 					.font(.caption)
 					.foregroundColor(rejectedKey ? .orange : .blue)
 					.multilineTextAlignment(.center)
@@ -114,12 +111,37 @@ struct ShortcutOptionsView: View {
 		}
 	}
 
+	private var recordingHint: LocalizedStringKey {
+		switch (rejectedKey, allowsModifierOnly) {
+		case (true, false):
+			return "That key can't be used. Press Command, Option, Control or Shift + another key"
+		case (false, false):
+			return "Press Command, Option, Control or Shift + another key"
+		case (true, true):
+			return
+				"That key can't be used. Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥ or Fn on its own"
+		case (false, true):
+			return "Press Command, Option, Control or Shift + another key, or tap Right ⌘, Right ⌥ or Fn on its own"
+		}
+	}
+
 	private func startRecording() {
 		isRecordingShortcut = true
 		rejectedKey = false
+		modifierRecording = ModifierOnlyRecording()
 
-		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+		let mask: NSEvent.EventTypeMask = allowsModifierOnly ? [.keyDown, .flagsChanged] : [.keyDown]
+		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { event in
 			if self.isRecordingShortcut {
+				if event.type == .flagsChanged {
+					if let key = self.modifierRecording.flagsChanged(keyCode: event.keyCode, flags: event.modifierFlags) {
+						self.customShortcut = key.rawValue
+						self.stopRecording()
+						self.showingOptions = false
+					}
+					return event
+				}
+				self.modifierRecording.keyDown()
 				// Same formatter as Settings, so ⌥Space and F-keys are saved as names the
 				// shortcut parser reads back instead of raw characters
 				if let shortcut = DictationShortcutFormatter.format(
