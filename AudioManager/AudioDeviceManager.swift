@@ -1,6 +1,7 @@
 import AudioToolbox
 import CoreAudio
 import Foundation
+import IOKit
 import SwiftUI
 
 enum AudioDeviceIcon: String, Sendable {
@@ -72,13 +73,17 @@ extension Notification.Name {
 @Observable
 final class AudioDeviceManager {
 	static let shared = AudioDeviceManager()
-	static let systemDefaultUID = "system-default"
+	nonisolated static let systemDefaultUID = "system-default"
 
 	private(set) var availableDevices: [AudioInputDevice] = []
 	private(set) var selectedDevice: AudioInputDevice?
 
 	@ObservationIgnored
 	@AppStorage("selectedAudioInputDeviceUID") var persistedDeviceUID = AudioDeviceManager.systemDefaultUID
+	@ObservationIgnored
+	@AppStorage(AudioDeviceManager.clamshellDeviceKey) var clamshellDeviceUID = ""
+
+	nonisolated static let clamshellDeviceKey = "clamshellAudioInputDeviceUID"
 
 	@ObservationIgnored
 	private var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
@@ -115,15 +120,27 @@ final class AudioDeviceManager {
 		AppLogger.shared.deviceManager.info("Selected device: \(uid)")
 	}
 
+	/// The device a recording should use right now: the saved choice, or the
+	/// clamshell microphone when the lid is closed and one is configured.
+	var effectiveDeviceUID: String {
+		InputDeviceResolver.effectiveUID(
+			persistedUID: persistedDeviceUID,
+			clamshellUID: clamshellDeviceUID,
+			isLidClosed: !clamshellDeviceUID.isEmpty && ClamshellDetector.isLidClosed(),
+			availableUIDs: Set(availableDevices.map(\.uid))
+		)
+	}
+
 	func activateSelectedDevice() async {
-		guard persistedDeviceUID != AudioDeviceManager.systemDefaultUID else {
+		let effectiveUID = effectiveDeviceUID
+		guard effectiveUID != AudioDeviceManager.systemDefaultUID else {
 			AppLogger.shared.deviceManager.debug("activateSelectedDevice: system default selected, skipping")
 			restoreSystemDefault()
 			return
 		}
 
-		guard let device = availableDevices.first(where: { $0.uid == persistedDeviceUID }) else {
-			AppLogger.shared.deviceManager.error("activateSelectedDevice: device \(persistedDeviceUID) not found in \(availableDevices.map { "\($0.name):\($0.uid)" })")
+		guard let device = availableDevices.first(where: { $0.uid == effectiveUID }) else {
+			AppLogger.shared.deviceManager.error("activateSelectedDevice: device \(effectiveUID) not found in \(availableDevices.map { "\($0.name):\($0.uid)" })")
 			restoreSystemDefault()
 			return
 		}
@@ -186,14 +203,15 @@ final class AudioDeviceManager {
 	}
 
 	func resolveActiveDeviceID() -> AudioDeviceID? {
-		if persistedDeviceUID == AudioDeviceManager.systemDefaultUID {
+		let effectiveUID = effectiveDeviceUID
+		if effectiveUID == AudioDeviceManager.systemDefaultUID {
 			AppLogger.shared.deviceManager.debug("resolveActiveDeviceID → nil (system default)")
 			return nil
 		}
 
-		guard let device = availableDevices.first(where: { $0.uid == persistedDeviceUID }) else {
+		guard let device = availableDevices.first(where: { $0.uid == effectiveUID }) else {
 			AppLogger.shared.deviceManager.info(
-				"Persisted device \(persistedDeviceUID) not available, falling back to system default")
+				"Device \(effectiveUID) not available, falling back to system default")
 			return nil
 		}
 
@@ -478,5 +496,49 @@ final class AudioDeviceManager {
 
 	deinit {
 		// Singleton - listeners cleaned up when process exits
+	}
+}
+
+enum InputDeviceResolver {
+	static func effectiveUID(
+		persistedUID: String,
+		clamshellUID: String,
+		isLidClosed: Bool,
+		availableUIDs: Set<String>
+	) -> String {
+		if isLidClosed, !clamshellUID.isEmpty, availableUIDs.contains(clamshellUID) {
+			return clamshellUID
+		}
+		return persistedUID
+	}
+}
+
+enum ClamshellDetector {
+	/// Reads `AppleClamshellState` from the power-management root domain, which is
+	/// true while a laptop lid is shut (clamshell mode with an external display).
+	static func isLidClosed() -> Bool {
+		let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+		guard service != IO_OBJECT_NULL else { return false }
+		defer { IOObjectRelease(service) }
+
+		guard
+			let value = IORegistryEntryCreateCFProperty(
+				service, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+				.takeRetainedValue()
+		else { return false }
+		return (value as? Bool) ?? false
+	}
+
+	/// Desktops have no clamshell state at all, so the setting is only offered on laptops.
+	static var hasLid: Bool {
+		let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+		guard service != IO_OBJECT_NULL else { return false }
+		defer { IOObjectRelease(service) }
+		guard
+			let value = IORegistryEntryCreateCFProperty(
+				service, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)
+		else { return false }
+		value.release()
+		return true
 	}
 }

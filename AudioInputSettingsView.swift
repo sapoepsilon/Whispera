@@ -4,6 +4,7 @@ import SwiftUI
 struct AudioInputSettingsRows: View {
 	var body: some View {
 		InputChannelSettingsRow()
+		ClamshellMicrophoneSettingsRow()
 		VoiceActivitySettingsRows()
 		SettingRow(
 			"Mute Audio While Recording",
@@ -43,6 +44,30 @@ struct InputChannelSettingsRow: View {
 				}
 				.labelsHidden()
 				.frame(width: 140)
+			}
+		}
+	}
+}
+
+struct ClamshellMicrophoneSettingsRow: View {
+	@AppStorage(AudioDeviceManager.clamshellDeviceKey) private var clamshellDeviceUID = ""
+	@State private var deviceManager = AudioDeviceManager.shared
+	private let hasLid = ClamshellDetector.hasLid
+
+	var body: some View {
+		if hasLid {
+			SettingRow(
+				"Microphone When Lid Is Closed",
+				description: "Use a different microphone while your Mac runs in clamshell mode"
+			) {
+				Picker("", selection: $clamshellDeviceUID) {
+					Text("Same as above").tag("")
+					ForEach(deviceManager.availableDevices) { device in
+						Label(device.name, systemImage: device.iconName).tag(device.uid)
+					}
+				}
+				.labelsHidden()
+				.frame(maxWidth: 200)
 			}
 		}
 	}
