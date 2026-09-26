@@ -497,6 +497,15 @@ struct AutoSubmitTests {
 		#expect(copyOnly.events.isEmpty)
 	}
 
+	@Test func skipsSubmitWhenTheScriptFails() async {
+		let poster = await run {
+			$0.autoSubmit = true
+			$0.pasteMethod = .externalScript
+			$0.externalScriptPath = "/nonexistent/whispera-script"
+		}
+		#expect(poster.events.isEmpty)
+	}
+
 	@Test func settingsRoundTrip() {
 		let suite = "AutoSubmitTests.roundtrip.\(UUID().uuidString)"
 		let defaults = UserDefaults(suiteName: suite)!

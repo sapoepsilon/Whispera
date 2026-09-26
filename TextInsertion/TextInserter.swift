@@ -75,6 +75,7 @@ final class TextInserter {
 		let settings = settingsProvider()
 		let text = settings.preparedText(rawText, for: context)
 		let method = settings.effectiveMethod(for: context)
+		var inserted = true
 
 		switch method {
 		case .commandV:
@@ -84,7 +85,7 @@ final class TextInserter {
 		case .copyOnly:
 			ClipboardWriter.write(text, to: pasteboard, transient: false)
 		case .externalScript:
-			await runScript(text, settings: settings)
+			inserted = await runScript(text, settings: settings)
 		}
 
 		if context == .finalTranscript, settings.clipboardHandling == .keepTranscript,
@@ -93,7 +94,7 @@ final class TextInserter {
 			ClipboardWriter.write(text, to: pasteboard, transient: false)
 		}
 
-		if settings.shouldAutoSubmit(for: context) {
+		if inserted, settings.shouldAutoSubmit(for: context) {
 			await sleep(milliseconds: autoSubmitDelayMs)
 			keyPoster.postKey(KeyCode.returnKey, flags: settings.autoSubmitKey.flags)
 		}
@@ -111,15 +112,17 @@ final class TextInserter {
 		}
 	}
 
-	private func runScript(_ text: String, settings: TextInsertionSettings) async {
+	private func runScript(_ text: String, settings: TextInsertionSettings) async -> Bool {
 		do {
 			try await ExternalScriptRunner.run(path: settings.externalScriptPath, text: text)
 			logger.info("Insertion script finished for a \(text.count)-character transcript")
+			return true
 		} catch {
 			// Keep the words recoverable when the script cannot deliver them
 			ClipboardWriter.write(text, to: pasteboard, transient: false)
 			logger.error(
 				"Insertion script failed, transcript copied to clipboard: \(error.localizedDescription)")
+			return false
 		}
 	}
 
