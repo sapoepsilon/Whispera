@@ -47,6 +47,20 @@ struct TranscriptionHistoryView: View {
 	@State private var errorMessage: String?
 	@State private var showingClearConfirmation = false
 	@State private var copiedID: UUID?
+	@State private var pendingPurge: HistoryPurge?
+	@State private var retentionDebouncer = DebouncedAction(delay: .seconds(3))
+
+	enum HistoryPurge: Identifiable {
+		case everything(count: Int)
+		case recordings
+
+		var id: String {
+			switch self {
+			case .everything: return "everything"
+			case .recordings: return "recordings"
+			}
+		}
+	}
 
 	@AppStorage(HistorySettings.enabledKey) private var historyEnabled = HistorySettings.defaultEnabled
 	@AppStorage(HistorySettings.saveAudioKey) private var saveAudio = HistorySettings.defaultSaveAudio
@@ -68,10 +82,46 @@ struct TranscriptionHistoryView: View {
 				.padding(.vertical, 10)
 			entryList
 		}
-		.onChange(of: retentionRaw) { _, _ in store.applyRetention() }
-		.onChange(of: historyLimit) { _, _ in store.applyRetention() }
+		.onChange(of: retentionRaw) { _, _ in scheduleRetention() }
+		.onChange(of: historyLimit) { _, _ in scheduleRetention() }
+		.onChange(of: historyEnabled) { wasEnabled, isEnabled in
+			if wasEnabled && !isEnabled && !store.entries.isEmpty {
+				pendingPurge = .everything(count: store.entries.count)
+			}
+		}
+		.onChange(of: saveAudio) { wasSaving, isSaving in
+			if wasSaving && !isSaving && store.hasSavedRecordings {
+				pendingPurge = .recordings
+			}
+		}
 		.onAppear { store.reload() }
-		.onDisappear { player.stop() }
+		.onDisappear {
+			player.stop()
+			retentionDebouncer.flush()
+		}
+		.alert(
+			purgeTitle,
+			isPresented: Binding(get: { pendingPurge != nil }, set: { if !$0 { pendingPurge = nil } }),
+			presenting: pendingPurge
+		) { purge in
+			Button("Delete", role: .destructive) {
+				player.stop()
+				switch purge {
+				case .everything: store.deleteAllEntries()
+				case .recordings: store.deleteAllRecordings()
+				}
+			}
+			Button("Keep", role: .cancel) {}
+		} message: { purge in
+			switch purge {
+			case .everything(let count):
+				Text(
+					"New dictations are no longer saved. Delete the \(count) entries already in history, including starred ones and their recordings?"
+				)
+			case .recordings:
+				Text("New recordings are no longer saved. Delete the recordings already saved? The text of each entry is kept.")
+			}
+		}
 		.alert(
 			"History",
 			isPresented: Binding(
@@ -93,6 +143,17 @@ struct TranscriptionHistoryView: View {
 		}
 	}
 
+	private var purgeTitle: String {
+		switch pendingPurge {
+		case .recordings: return "Delete saved recordings?"
+		default: return "Delete saved history?"
+		}
+	}
+
+	private func scheduleRetention() {
+		retentionDebouncer.schedule { [store] in store.applyRetention() }
+	}
+
 	private var settingsSection: some View {
 		SettingsSection("History") {
 			SettingRow("Save transcription history", description: "Keep each dictation so you can find it later")
@@ -102,7 +163,8 @@ struct TranscriptionHistoryView: View {
 					.labelsHidden()
 			}
 			SettingRow(
-				"Save recordings", description: "Keep the audio so entries can be replayed or re-transcribed"
+				"Save recordings",
+				description: "Keep the audio so entries can be replayed or re-transcribed. Recordings stay on this Mac and are left out of Time Machine backups."
 			) {
 				Toggle("", isOn: $saveAudio)
 					.toggleStyle(.switch)

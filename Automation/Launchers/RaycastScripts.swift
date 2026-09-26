@@ -45,8 +45,12 @@ struct RaycastScriptCommand: Equatable {
 enum RaycastScripts {
 	static let defaultCLIPath = "/Applications/Whispera.app/Contents/MacOS/Whispera"
 
+	/// Read at run time so the token never lands in a committed or shared script.
+	static let tokenLine =
+		"token=\"$(cat \"$HOME/Library/Application Support/Whispera/\(RemoteControlToken.fileName)\" 2>/dev/null)\""
+
 	static func commands(cliPath: String = defaultCLIPath) -> [RaycastScriptCommand] {
-		let cli = "WHISPERA=\"${WHISPERA_CLI:-\(cliPath)}\""
+		let cli = "WHISPERA=\"${WHISPERA_CLI:-\(escapeForDoubleQuotes(cliPath))}\""
 		return [
 			urlCommand("toggle", title: "Toggle Dictation", description: "Start or stop Whispera dictation."),
 			urlCommand("start", title: "Start Dictation", description: "Start Whispera dictation."),
@@ -73,7 +77,8 @@ enum RaycastScripts {
 				mode: .silent,
 				argumentPlaceholder: "openai_whisper-small.en",
 				body: """
-					open -g "whispera://model?name=$1"
+					\(tokenLine)
+					open -g "whispera://model?name=$1&token=$token"
 					"""
 			),
 			RaycastScriptCommand(
@@ -116,14 +121,27 @@ enum RaycastScripts {
 		}
 	}
 
+	/// Escapes the characters bash still interprets inside double quotes.
+	static func escapeForDoubleQuotes(_ value: String) -> String {
+		var escaped = ""
+		for character in value {
+			if "\\\"$`".contains(character) { escaped.append("\\") }
+			escaped.append(character)
+		}
+		return escaped
+	}
+
 	private static func urlCommand(_ verb: String, title: String, description: String) -> RaycastScriptCommand {
-		RaycastScriptCommand(
+		let needsToken = RemoteCommand(url: URL(string: "whispera://\(verb)")!)?.requiresToken ?? true
+		return RaycastScriptCommand(
 			fileName: "whispera-\(verb).sh",
 			title: title,
 			description: description,
 			mode: .silent,
 			argumentPlaceholder: nil,
-			body: "open -g \"whispera://\(verb)\""
+			body: needsToken
+				? "\(tokenLine)\nopen -g \"whispera://\(verb)?token=$token\""
+				: "open -g \"whispera://\(verb)\""
 		)
 	}
 }

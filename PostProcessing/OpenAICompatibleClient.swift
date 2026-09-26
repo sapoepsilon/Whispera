@@ -12,6 +12,7 @@ enum PostProcessingError: LocalizedError, Equatable {
 	case emptyResponse
 	case malformedResponse
 	case appleIntelligenceUnavailable(reason: String)
+	case insecureKeyTransport(host: String)
 
 	var errorDescription: String? {
 		switch self {
@@ -29,6 +30,8 @@ enum PostProcessingError: LocalizedError, Equatable {
 			return "Provider response could not be decoded"
 		case .appleIntelligenceUnavailable(let reason):
 			return "Apple Intelligence is unavailable: \(reason)"
+		case .insecureKeyTransport(let host):
+			return "Refusing to send your API key to \(host) over plain http. Use an https:// base URL, or remove the key for a local server."
 		}
 	}
 }
@@ -101,9 +104,33 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		return url
 	}
 
+	/// An API key may travel over plain http only to this Mac (Ollama, LM Studio), where nothing
+	/// on the network can read it.
+	static func canSendKey(to url: URL) -> Bool {
+		guard url.scheme?.lowercased() == "http" else { return true }
+		return isLoopback(host: url.host ?? "")
+	}
+
+	static func isLoopback(host: String) -> Bool {
+		let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+		return host == "localhost" || host.hasSuffix(".localhost") || host == "::1"
+			|| host.hasPrefix("127.")
+	}
+
+	/// For the settings screen, so the problem shows up before the first dictation fails.
+	static func insecureKeyWarning(baseURL: String, hasKey: Bool) -> String? {
+		guard hasKey, let url = endpoint(baseURL: baseURL, path: "models"), !canSendKey(to: url) else {
+			return nil
+		}
+		return "Plain http to \(url.host ?? baseURL) would expose your API key, so Whispera will not send it. Use https://."
+	}
+
 	private func makeRequest(path: String, method: String) throws -> URLRequest {
 		guard let url = Self.endpoint(baseURL: baseURL, path: path) else {
 			throw PostProcessingError.invalidBaseURL(baseURL)
+		}
+		if let apiKey, !apiKey.isEmpty, !Self.canSendKey(to: url) {
+			throw PostProcessingError.insecureKeyTransport(host: url.host ?? baseURL)
 		}
 		var request = URLRequest(url: url, timeoutInterval: timeout)
 		request.httpMethod = method

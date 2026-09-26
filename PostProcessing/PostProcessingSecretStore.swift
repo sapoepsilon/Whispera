@@ -4,6 +4,14 @@ import Security
 protocol PostProcessingSecretStore: Sendable {
 	func apiKey(for providerID: String) throws -> String?
 	func setAPIKey(_ key: String?, for providerID: String) throws
+	/// Answers without loading the secret, for UI that only shows whether a key is saved.
+	func hasAPIKey(for providerID: String) throws -> Bool
+}
+
+extension PostProcessingSecretStore {
+	func hasAPIKey(for providerID: String) throws -> Bool {
+		try apiKey(for: providerID) != nil
+	}
 }
 
 enum KeychainError: LocalizedError, Equatable {
@@ -48,6 +56,20 @@ struct KeychainSecretStore: PostProcessingSecretStore {
 			return nil
 		default:
 			throw KeychainError.unexpectedStatus(status)
+		}
+	}
+
+	func hasAPIKey(for providerID: String) throws -> Bool {
+		var query = baseQuery(for: providerID)
+		query[kSecReturnAttributes as String] = true
+		query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+		var result: AnyObject?
+		let status = SecItemCopyMatching(query as CFDictionary, &result)
+		switch status {
+		case errSecSuccess: return true
+		case errSecItemNotFound: return false
+		default: throw KeychainError.unexpectedStatus(status)
 		}
 	}
 

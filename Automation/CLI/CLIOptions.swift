@@ -7,6 +7,16 @@ struct CLIOptions: Equatable {
 		case listDevices
 		case transcribe
 		case remote(RemoteCommand)
+
+		var logName: String {
+			switch self {
+			case .help: return "help"
+			case .listModels: return "list-models"
+			case .listDevices: return "list-devices"
+			case .transcribe: return "transcribe"
+			case .remote(let command): return "remote \(command.logDescription)"
+			}
+		}
 	}
 
 	var action: Action = .help

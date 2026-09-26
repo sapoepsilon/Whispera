@@ -117,6 +117,12 @@ struct PostProcessingSettingsView: View {
 					if provider.allowsBaseURLEdit { settings.setBaseURL(url, for: provider.id) }
 				}
 		}
+		if let warning = OpenAICompatibleClient.insecureKeyWarning(baseURL: baseURL, hasKey: hasSavedKey) {
+			Label(warning, systemImage: "exclamationmark.triangle.fill")
+				.font(.caption)
+				.foregroundColor(.orange)
+				.fixedSize(horizontal: false, vertical: true)
+		}
 
 		SettingRow(
 			"API key",
@@ -223,7 +229,7 @@ struct PostProcessingSettingsView: View {
 		baseURL = settings.baseURL(for: provider)
 		apiKeyDraft = ""
 		fetchedModels = []
-		hasSavedKey = provider.kind == .openAICompatible && ((try? secrets.apiKey(for: provider.id)) ?? nil) != nil
+		hasSavedKey = provider.kind == .openAICompatible && ((try? secrets.hasAPIKey(for: provider.id)) ?? false)
 		if prompts.isEmpty {
 			prompts = settings.prompts
 			selectedPromptID = settings.selectedPromptID

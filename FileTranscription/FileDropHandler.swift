@@ -441,7 +441,7 @@ class FileDropHandler: DragDropHandler {
 						}
 					}
 					let text = stringObject as String
-					logger.info("Found text content via NSString: \(text)")
+					logger.userText("Found text content via NSString", text)
 					foundText = true
 
 					let extractedURLs = extractURLsFromText(text)
@@ -487,7 +487,7 @@ class FileDropHandler: DragDropHandler {
 							}
 
 							if let text = text {
-								logger.info("Successfully extracted text (\(textType)): \(text)")
+								logger.userText("Successfully extracted text (\(textType))", text)
 								foundText = true
 
 								// Process the text for URLs

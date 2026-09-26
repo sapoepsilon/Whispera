@@ -37,7 +37,9 @@ struct HistorySettings: Equatable, Sendable {
 	static let limitKey = "historyLimit"
 
 	static let defaultEnabled = true
-	static let defaultSaveAudio = true
+	/// Raw audio is opt-in: it can hold anything said near the mic and is backed up with the rest
+	/// of Application Support unless excluded.
+	static let defaultSaveAudio = false
 	static let defaultRetention = HistoryRetentionPeriod.preserveLimit
 	static let defaultLimit = 50
 	static let limitRange = 1...10_000
@@ -69,6 +71,9 @@ struct HistorySettings: Equatable, Sendable {
 			limit: min(max(storedLimit, Self.limitRange.lowerBound), Self.limitRange.upperBound)
 		)
 	}
+
+	/// Whether a finished dictation's samples are worth keeping in memory for history at all.
+	var keepsAudio: Bool { isEnabled && savesAudio }
 
 	func save(to defaults: UserDefaults) {
 		defaults.set(isEnabled, forKey: Self.enabledKey)

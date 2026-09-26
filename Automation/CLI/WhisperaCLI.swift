@@ -17,7 +17,8 @@ enum WhisperaCLI {
 			return 2
 		}
 
-		AppLogger.shared.general.info("CLI invocation: \(arguments.joined(separator: " "))")
+		// Arguments can hold private file paths, so only the action is logged.
+		AppLogger.shared.general.info("CLI invocation: \(options.action.logName)")
 
 		do {
 			switch options.action {
@@ -142,14 +143,27 @@ enum WhisperaCLI {
 	}
 
 	private static func sendRemote(_ command: RemoteCommand, defaults: UserDefaults) async throws {
-		guard RemoteControlSettings.isURLSchemeEnabled(in: defaults) else {
-			throw CLIRemoteError.urlControlDisabled
-		}
+		let url = try remoteURL(for: command, defaults: defaults)
 		let configuration = NSWorkspace.OpenConfiguration()
 		configuration.activates = false
 		// Target this bundle so the command reaches the copy of Whispera the CLI belongs to.
 		_ = try await NSWorkspace.shared.open(
-			[command.url], withApplicationAt: Bundle.main.bundleURL, configuration: configuration)
+			[url], withApplicationAt: Bundle.main.bundleURL, configuration: configuration)
+	}
+
+	/// The CLI runs as the same user, so it can read the token file and prove it is not a web page.
+	static func remoteURL(
+		for command: RemoteCommand, defaults: UserDefaults,
+		tokenDirectory: URL = RemoteControlToken.defaultDirectory
+	) throws -> URL {
+		guard command.isAlwaysAllowedFromURL || RemoteControlSettings.isURLSchemeEnabled(in: defaults) else {
+			throw CLIRemoteError.urlControlDisabled
+		}
+		guard command.requiresToken else { return command.url }
+		guard let token = RemoteControlToken.load(in: tokenDirectory) else {
+			throw CLIRemoteError.tokenUnavailable
+		}
+		return command.url(token: token)
 	}
 
 	private static func debugLog(_ options: CLIOptions, _ message: String) {
@@ -178,8 +192,14 @@ enum WhisperaCLI {
 
 enum CLIRemoteError: LocalizedError {
 	case urlControlDisabled
+	case tokenUnavailable
 
 	var errorDescription: String? {
-		"Remote control is off. Enable \"Allow whispera:// links\" in Whispera Settings > Automation."
+		switch self {
+		case .urlControlDisabled:
+			return "Remote control is off. Enable \"Allow whispera:// links\" in Whispera Settings > Automation."
+		case .tokenUnavailable:
+			return "Could not read or create the remote control token in ~/Library/Application Support/Whispera."
+		}
 	}
 }

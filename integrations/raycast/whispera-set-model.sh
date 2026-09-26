@@ -13,4 +13,5 @@
 # @raycast.description Switch Whispera to an already downloaded model (see List Models).
 # @raycast.author Whispera
 
-open -g "whispera://model?name=$1"
+token="$(cat "$HOME/Library/Application Support/Whispera/remote-control-token" 2>/dev/null)"
+open -g "whispera://model?name=$1&token=$token"

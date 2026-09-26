@@ -52,14 +52,79 @@ struct RemoteCommandParsingTests {
 		#expect(RemoteCommand.resolveLanguageName("") == nil)
 	}
 
-	@Test func urlSchemeDefaultsToEnabledAndHonorsOptOut() throws {
+	@Test func urlSchemeDefaultsToDisabledAndHonorsOptIn() throws {
 		let suite = "RemoteControlSettingsTests-\(UUID().uuidString)"
 		let defaults = try #require(UserDefaults(suiteName: suite))
 		defer { defaults.removePersistentDomain(forName: suite) }
 
-		#expect(RemoteControlSettings.isURLSchemeEnabled(in: defaults))
-		defaults.set(false, forKey: RemoteControlSettings.urlSchemeEnabledKey)
 		#expect(!RemoteControlSettings.isURLSchemeEnabled(in: defaults))
+		defaults.set(true, forKey: RemoteControlSettings.urlSchemeEnabledKey)
+		#expect(RemoteControlSettings.isURLSchemeEnabled(in: defaults))
+	}
+
+	@Test func onlyMicAndModelCommandsRequireAToken() {
+		#expect(RemoteCommand.toggle.requiresToken)
+		#expect(RemoteCommand.togglePostProcess.requiresToken)
+		#expect(RemoteCommand.start.requiresToken)
+		#expect(RemoteCommand.setModel("x").requiresToken)
+		#expect(!RemoteCommand.stop.requiresToken)
+		#expect(!RemoteCommand.cancel.requiresToken)
+		#expect(!RemoteCommand.setLanguage("de").requiresToken)
+		#expect(RemoteCommand.stop.isAlwaysAllowedFromURL)
+		#expect(RemoteCommand.cancel.isAlwaysAllowedFromURL)
+		#expect(!RemoteCommand.setLanguage("de").isAlwaysAllowedFromURL)
+	}
+
+	@Test func tokenIsAddedOnlyToCommandsThatNeedItAndDoesNotChangeParsing() throws {
+		let token = String(repeating: "ab", count: 32)
+		let start = RemoteCommand.start.url(token: token)
+		#expect(RemoteCommand.token(in: start) == token)
+		#expect(RemoteCommand(url: start) == .start)
+		let model = RemoteCommand.setModel("openai_whisper-tiny.en").url(token: token)
+		#expect(RemoteCommand(url: model) == .setModel("openai_whisper-tiny.en"))
+		#expect(RemoteCommand.token(in: model) == token)
+		#expect(RemoteCommand.token(in: RemoteCommand.stop.url(token: token)) == nil)
+	}
+}
+
+struct RemoteControlTokenTests {
+	private func makeDirectory() -> URL {
+		FileManager.default.temporaryDirectory.appendingPathComponent("rc-token-\(UUID().uuidString)")
+	}
+
+	@Test func createsAUserOnlyTokenOnceAndReusesIt() throws {
+		let directory = makeDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		#expect(RemoteControlToken.load(in: directory, createIfMissing: false) == nil)
+		let token = try #require(RemoteControlToken.load(in: directory))
+		#expect(RemoteControlToken.isWellFormed(token))
+		#expect(RemoteControlToken.load(in: directory) == token)
+
+		let attributes = try FileManager.default.attributesOfItem(
+			atPath: RemoteControlToken.fileURL(in: directory).path)
+		let permissions = try #require(attributes[.posixPermissions] as? NSNumber).intValue
+		#expect(permissions & 0o077 == 0, "token file must not be readable by other users")
+	}
+
+	@Test func regenerateInvalidatesTheOldToken() throws {
+		let directory = makeDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		let first = try #require(RemoteControlToken.load(in: directory))
+		let second = try RemoteControlToken.regenerate(in: directory)
+		#expect(first != second)
+		#expect(RemoteControlToken.load(in: directory) == second)
+	}
+
+	@Test func matchingRejectsMissingWrongAndMalformedTokens() {
+		let token = String(repeating: "0f", count: 32)
+		#expect(RemoteControlToken.matches(token, expected: token))
+		#expect(!RemoteControlToken.matches(nil, expected: token))
+		#expect(!RemoteControlToken.matches("", expected: token))
+		#expect(!RemoteControlToken.matches(String(repeating: "0e", count: 32), expected: token))
+		#expect(!RemoteControlToken.matches(token, expected: nil))
+		#expect(!RemoteControlToken.matches("", expected: ""))
 	}
 }
 
@@ -119,7 +184,12 @@ struct RemoteControlCenterTests {
 	private func makeCenter() throws -> (RemoteControlCenter, UserDefaults, String) {
 		let suite = "RemoteControlCenterTests-\(UUID().uuidString)"
 		let defaults = try #require(UserDefaults(suiteName: suite))
-		return (RemoteControlCenter(defaults: defaults), defaults, suite)
+		let tokenDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+		return (RemoteControlCenter(defaults: defaults, tokenDirectory: tokenDirectory), defaults, suite)
+	}
+
+	private func tokenDirectory(for suite: String) -> URL {
+		FileManager.default.temporaryDirectory.appendingPathComponent(suite)
 	}
 
 	@Test func startAndStopAreIdempotent() async throws {
@@ -203,28 +273,100 @@ struct RemoteControlCenterTests {
 		#expect(switcher.switchedTo == ["openai_whisper-tiny.en"])
 	}
 
-	@Test func disabledURLSchemeIgnoresLinks() async throws {
+	@Test func freshInstallIgnoresMicLinksEvenWithAValidToken() async throws {
 		let (center, defaults, suite) = try makeCenter()
-		defer { defaults.removePersistentDomain(forName: suite) }
+		defer {
+			defaults.removePersistentDomain(forName: suite)
+			try? FileManager.default.removeItem(at: tokenDirectory(for: suite))
+		}
 		let controller = FakeDictationController()
 		center.register(controller: controller)
-		defaults.set(false, forKey: RemoteControlSettings.urlSchemeEnabledKey)
+		let token = try #require(RemoteControlToken.load(in: tokenDirectory(for: suite)))
 
 		#expect(center.handleURL(RemoteCommand.toggle.url) == false)
+		#expect(center.handleURL(RemoteCommand.start.url(token: token)) == false)
+		#expect(center.handleURL(RemoteCommand.setLanguage("de").url) == false)
+		#expect(center.handleURL(RemoteCommand.setModel("m").url(token: token)) == false)
+		try await Task.sleep(nanoseconds: 50_000_000)
 		#expect(controller.toggles == 0)
+		#expect(defaults.string(forKey: "selectedLanguage") == nil)
 	}
 
-	@Test func enabledURLSchemeDispatchesLinks() async throws {
+	@Test func stopAndCancelLinksWorkEvenWhenURLControlIsOff() async throws {
 		let (center, defaults, suite) = try makeCenter()
 		defer { defaults.removePersistentDomain(forName: suite) }
 		let controller = FakeDictationController()
+		controller.isRecording = true
 		center.register(controller: controller)
 
-		#expect(center.handleURL(RemoteCommand.toggle.url))
+		#expect(center.authorizeURL(.stop, url: RemoteCommand.stop.url) == .allowed)
+		#expect(center.authorizeURL(.cancel, url: RemoteCommand.cancel.url) == .allowed)
+		#expect(center.handleURL(RemoteCommand.cancel.url))
+		for _ in 0..<50 where controller.cancels == 0 {
+			try await Task.sleep(nanoseconds: 10_000_000)
+		}
+		#expect(controller.cancels == 1)
+	}
+
+	@Test func enabledURLControlStillRejectsMicLinksWithoutTheToken() async throws {
+		let (center, defaults, suite) = try makeCenter()
+		defer {
+			defaults.removePersistentDomain(forName: suite)
+			try? FileManager.default.removeItem(at: tokenDirectory(for: suite))
+		}
+		defaults.set(true, forKey: RemoteControlSettings.urlSchemeEnabledKey)
+		let token = try #require(RemoteControlToken.load(in: tokenDirectory(for: suite)))
+		let wrong = String(repeating: "a", count: 64)
+
+		for command in [RemoteCommand.toggle, .togglePostProcess, .start, .setModel("m")] {
+			#expect(center.authorizeURL(command, url: command.url) == .denied("missing or invalid token"))
+			#expect(center.authorizeURL(command, url: command.url(token: wrong)) != .allowed)
+			#expect(center.authorizeURL(command, url: command.url(token: token)) == .allowed)
+		}
+		#expect(center.authorizeURL(.setLanguage("de"), url: RemoteCommand.setLanguage("de").url) == .allowed)
+	}
+
+	@Test func micLinksAreRejectedWhenNoTokenExistsYet() throws {
+		let (center, defaults, suite) = try makeCenter()
+		defer { defaults.removePersistentDomain(forName: suite) }
+		defaults.set(true, forKey: RemoteControlSettings.urlSchemeEnabledKey)
+
+		let guess = RemoteCommand.start.url(token: String(repeating: "0", count: 64))
+		#expect(center.authorizeURL(.start, url: guess) != .allowed)
+		#expect(!FileManager.default.fileExists(atPath: tokenDirectory(for: suite).path))
+	}
+
+	@Test func enabledURLSchemeDispatchesTokenLinks() async throws {
+		let (center, defaults, suite) = try makeCenter()
+		defer {
+			defaults.removePersistentDomain(forName: suite)
+			try? FileManager.default.removeItem(at: tokenDirectory(for: suite))
+		}
+		defaults.set(true, forKey: RemoteControlSettings.urlSchemeEnabledKey)
+		let token = try #require(RemoteControlToken.load(in: tokenDirectory(for: suite)))
+		let controller = FakeDictationController()
+		center.register(controller: controller)
+
+		#expect(center.handleURL(RemoteCommand.toggle.url(token: token)))
 		#expect(center.handleURL(URL(string: "whispera://bogus")!) == false)
 		for _ in 0..<50 where controller.toggles == 0 {
 			try await Task.sleep(nanoseconds: 10_000_000)
 		}
 		#expect(controller.toggles == 1)
+	}
+}
+
+struct TranscribeIntentFileNameTests {
+	@Test(arguments: [
+		("talk.m4a", "talk.m4a"),
+		("../../etc/passwd", "passwd"),
+		("/abs/path/clip.wav", "clip.wav"),
+		("", "shortcut-audio"),
+		("..", "shortcut-audio"),
+		("/", "shortcut-audio"),
+		("   ", "shortcut-audio"),
+	])
+	func keepsOnlyTheLastPathComponent(raw: String, expected: String) {
+		#expect(TranscribeAudioFileIntent.safeFileName(raw) == expected)
 	}
 }

@@ -655,9 +655,11 @@ import WhisperKit
 		isTranscribing = false
 		shouldShowLiveTranscriptionWindow = false
 		if isLiveTranscriptionMode {
+			// A long session is tens of MB of samples, so they are copied only when history keeps them.
+			let keepsAudio = HistorySettings(defaults: .standard).keepsAudio
 			lastLiveSession = (
 				text: Self.liveSessionText(confirmed: confirmedText, pending: pendingText),
-				samples: Array(whisperKit?.audioProcessor.audioSamples ?? [])
+				samples: keepsAudio ? Array(whisperKit?.audioProcessor.audioSamples ?? []) : []
 			)
 		}
 		whisperKit?.audioProcessor.stopRecording()
@@ -705,6 +707,7 @@ import WhisperKit
 		pendingText = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
+		lastLiveSession = (text: "", samples: [])
 		isLiveTranscriptionMode = false
 		dictationWordTracker?.endSession()
 		releaseLiveStreamModelUse()
@@ -1168,8 +1171,8 @@ import WhisperKit
 						enableTranslation: enableTranslation)
 
 					if !transcription.isEmpty {
-						AppLogger.shared.transcriber.log(
-							"WhisperKit \(logPrefix) transcription completed: \(transcription)")
+						AppLogger.shared.transcriber.userText(
+							"WhisperKit \(logPrefix) transcription completed", transcription)
 						return transcription
 					} else {
 						AppLogger.shared.transcriber.log("Transcription returned empty text")
@@ -1230,8 +1233,8 @@ import WhisperKit
 								rawTranscription, detectedLanguage: fallbackResult.first?.language,
 								enableTranslation: enableTranslation)
 							if !transcription.isEmpty {
-								AppLogger.shared.transcriber.log(
-									"WhisperKit \(logPrefix) transcription completed with fallback: \(transcription)")
+								AppLogger.shared.transcriber.userText(
+									"WhisperKit \(logPrefix) transcription completed with fallback", transcription)
 								return transcription
 							}
 						}
@@ -1436,8 +1439,8 @@ import WhisperKit
 				enableTranslation: enableTranslation)
 
 			if !transcription.isEmpty {
-				AppLogger.shared.transcriber.log(
-					"WhisperKit segment transcription completed: \(transcription)")
+				AppLogger.shared.transcriber.userText(
+					"WhisperKit segment transcription completed", transcription)
 				return transcription
 			} else {
 				AppLogger.shared.transcriber.log("Segment transcription returned empty text")
@@ -2060,8 +2063,8 @@ import WhisperKit
 				AppLogger.shared.transcriber.log("\(engine.modelID) returned empty text")
 				return "No speech detected"
 			}
-			AppLogger.shared.transcriber.log(
-				"\(engine.modelID) \(logPrefix) transcription completed: \(transcript.text)")
+			AppLogger.shared.transcriber.info(
+				"\(engine.modelID) \(logPrefix) transcription completed (\(ExtendedLogger.redactedSummary(transcript.text)))")
 			return transcript.text
 		} catch {
 			AppLogger.shared.transcriber.error("\(engine.modelID) transcription failed: \(error)")

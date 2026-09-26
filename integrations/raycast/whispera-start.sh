@@ -12,4 +12,5 @@
 # @raycast.description Start Whispera dictation.
 # @raycast.author Whispera
 
-open -g "whispera://start"
+token="$(cat "$HOME/Library/Application Support/Whispera/remote-control-token" 2>/dev/null)"
+open -g "whispera://start?token=$token"

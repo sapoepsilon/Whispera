@@ -21,6 +21,50 @@ struct RaycastScriptsTests {
 		}
 	}
 
+	@Test func micScriptsReadTheTokenAtRunTimeAndSafeOnesDoNot() {
+		let byName = Dictionary(uniqueKeysWithValues: RaycastScripts.commands().map { ($0.fileName, $0.body) })
+		for name in ["whispera-toggle.sh", "whispera-start.sh", "whispera-set-model.sh"] {
+			let body = byName[name] ?? ""
+			#expect(body.contains(RaycastScripts.tokenLine), "\(name)")
+			#expect(body.contains("token=$token"), "\(name)")
+		}
+		for name in ["whispera-stop.sh", "whispera-cancel.sh", "whispera-set-language.sh"] {
+			#expect(!(byName[name] ?? "").contains("token"), "\(name)")
+		}
+		let tokenPath = RemoteControlToken.fileURL().path
+		let home = FileManager.default.homeDirectoryForCurrentUser.path
+		#expect(tokenPath.hasPrefix(home))
+		#expect(RaycastScripts.tokenLine.contains(tokenPath.replacingOccurrences(of: home, with: "$HOME")))
+	}
+
+	@Test func tokenLineReadsTheTokenFileInBash() throws {
+		let home = FileManager.default.temporaryDirectory.appendingPathComponent("raycast-home-\(UUID().uuidString)")
+		defer { try? FileManager.default.removeItem(at: home) }
+		let directory = home.appendingPathComponent("Library/Application Support/Whispera")
+		let token = try RemoteControlToken.regenerate(in: directory)
+		#expect(try runBash("\(RaycastScripts.tokenLine)\nprintf %s \"$token\"", home: home.path) == token)
+	}
+
+	@Test func cliPathWithShellMetacharactersIsEscaped() throws {
+		let hostile = "/tmp/We\"ird $(echo pwned) `id` \\x/Whispera"
+		let scripts = RaycastScripts.commands(cliPath: hostile)
+		let body = try #require(scripts.first { $0.fileName == "whispera-list-models.sh" }).body
+		let assignment = try #require(body.split(separator: "\n").first { $0.hasPrefix("WHISPERA=") })
+		#expect(try runBash("unset WHISPERA_CLI\n\(assignment)\nprintf %s \"$WHISPERA\"") == hostile)
+	}
+
+	private func runBash(_ script: String, home: String? = nil) throws -> String {
+		let process = Process()
+		process.executableURL = URL(fileURLWithPath: "/bin/bash")
+		process.arguments = ["-c", script]
+		if let home { process.environment = ["HOME": home, "PATH": "/usr/bin:/bin"] }
+		let pipe = Pipe()
+		process.standardOutput = pipe
+		try process.run()
+		process.waitUntilExit()
+		return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+	}
+
 	@Test func dictationScriptsOpenURLsTheAppUnderstands() throws {
 		let expected: [String: RemoteCommand] = [
 			"whispera-toggle.sh": .toggle,

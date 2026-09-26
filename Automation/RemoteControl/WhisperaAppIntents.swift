@@ -107,11 +107,19 @@ struct TranscribeAudioFileIntent: AppIntent {
 		if let fileURL = file.fileURL, FileManager.default.isReadableFile(atPath: fileURL.path) {
 			return (fileURL, false)
 		}
-		let name = file.filename.isEmpty ? "shortcut-audio" : file.filename
+		let name = Self.safeFileName(file.filename)
 		let url = FileManager.default.temporaryDirectory
 			.appendingPathComponent("whispera-intent-\(UUID().uuidString)-\(name)")
 		try file.data.write(to: url)
 		return (url, true)
+	}
+
+	/// Keeps only the last path component so a crafted name cannot point outside the temp folder.
+	static func safeFileName(_ raw: String) -> String {
+		let last = (raw as NSString).lastPathComponent.replacingOccurrences(of: ":", with: "-")
+		let trimmed = last.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !trimmed.isEmpty, trimmed != ".", trimmed != "..", trimmed != "/" else { return "shortcut-audio" }
+		return String(trimmed.prefix(200))
 	}
 }
 

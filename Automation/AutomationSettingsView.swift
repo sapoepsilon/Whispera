@@ -2,7 +2,9 @@ import AppKit
 import SwiftUI
 
 struct AutomationSettingsView: View {
-	@AppStorage(RemoteControlSettings.urlSchemeEnabledKey) private var urlSchemeEnabled = true
+	@AppStorage(RemoteControlSettings.urlSchemeEnabledKey) private var urlSchemeEnabled =
+		RemoteControlSettings.urlSchemeEnabledDefault
+	@State private var token: String?
 
 	var body: some View {
 		ScrollView {
@@ -14,6 +16,9 @@ struct AutomationSettingsView: View {
 			}
 			.padding(20)
 		}
+		.onChange(of: urlSchemeEnabled, initial: true) { _, enabled in
+			if enabled && token == nil { token = RemoteControlToken.load() }
+		}
 	}
 
 	private var remoteControlSection: some View {
@@ -21,7 +26,7 @@ struct AutomationSettingsView: View {
 			SettingRow(
 				"Allow whispera:// links",
 				description:
-					"Lets Stream Deck, launchers, scripts and browser links start, stop or cancel dictation."
+					"Lets Stream Deck, launchers and scripts control dictation. Links that start dictation or switch the model must carry this Mac's private token, so web pages cannot open the mic. Stop and cancel links always work."
 			) {
 				Toggle("", isOn: $urlSchemeEnabled)
 					.toggleStyle(.switch)
@@ -29,9 +34,12 @@ struct AutomationSettingsView: View {
 			}
 
 			VStack(alignment: .leading, spacing: 6) {
-				ForEach(Self.exampleCommands, id: \.url) { example in
-					CopyableCommandRow(title: example.title, command: example.url)
+				ForEach(Self.exampleCommands) { example in
+					CopyableCommandRow(
+						title: example.title, command: example.command.url(token: token).absoluteString)
 				}
+				Button("Reset Token") { resetToken() }
+					.help("Invalidates every link and script that carries the current token")
 			}
 			.disabled(!urlSchemeEnabled)
 			.opacity(urlSchemeEnabled ? 1 : 0.5)
@@ -45,14 +53,28 @@ struct AutomationSettingsView: View {
 		}
 	}
 
-	private static let exampleCommands: [(title: String, url: String)] = [
-		("Toggle", RemoteCommand.toggle.url.absoluteString),
-		("Toggle + post-process", RemoteCommand.togglePostProcess.url.absoluteString),
-		("Start", RemoteCommand.start.url.absoluteString),
-		("Stop", RemoteCommand.stop.url.absoluteString),
-		("Cancel", RemoteCommand.cancel.url.absoluteString),
-		("Language", RemoteCommand.setLanguage("german").url.absoluteString),
-		("Model", RemoteCommand.setModel("openai_whisper-small.en").url.absoluteString),
+	private func resetToken() {
+		do {
+			token = try RemoteControlToken.regenerate()
+		} catch {
+			AppLogger.shared.general.error("Could not reset the remote control token: \(error.localizedDescription)")
+		}
+	}
+
+	private struct ExampleCommand: Identifiable {
+		let title: String
+		let command: RemoteCommand
+		var id: String { title }
+	}
+
+	private static let exampleCommands: [ExampleCommand] = [
+		ExampleCommand(title: "Toggle", command: .toggle),
+		ExampleCommand(title: "Toggle + post-process", command: .togglePostProcess),
+		ExampleCommand(title: "Start", command: .start),
+		ExampleCommand(title: "Stop", command: .stop),
+		ExampleCommand(title: "Cancel", command: .cancel),
+		ExampleCommand(title: "Language", command: .setLanguage("german")),
+		ExampleCommand(title: "Model", command: .setModel("openai_whisper-small.en")),
 	]
 }
 
