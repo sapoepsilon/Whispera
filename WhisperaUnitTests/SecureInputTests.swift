@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import Foundation
+import Observation
 import Testing
 
 @testable import Whispera
@@ -149,6 +150,66 @@ struct SecureInputMonitorTests {
 		defaults.set(true, forKey: SecureInputMonitor.Keys.fallbackEnabled)
 		monitor.reconcileFallback()
 		#expect(monitor.fallbackStatus == .active)
+	}
+
+	private final class ChangeCounter: @unchecked Sendable {
+		var count = 0
+	}
+
+	private func trackChanges(of monitor: SecureInputMonitor, into counter: ChangeCounter) {
+		withObservationTracking {
+			_ = monitor.isEnabled
+			_ = monitor.isSustained
+			_ = monitor.culprit
+			_ = monitor.fallbackStatus
+		} onChange: {
+			counter.count += 1
+		}
+	}
+
+	@Test func steadyStatePollsDoNotInvalidateObservers() {
+		let (monitor, fake, defaults, suite) = makeMonitor()
+		defer {
+			monitor.stop()
+			defaults.removePersistentDomain(forName: suite)
+		}
+		monitor.configure(hotKeySpec: { self.testSpec }, action: {})
+		let start = Date()
+		let counter = ChangeCounter()
+
+		trackChanges(of: monitor, into: counter)
+		for tick in 0..<5 {
+			monitor.poll(now: start.addingTimeInterval(TimeInterval(tick)))
+		}
+		#expect(counter.count == 0)
+
+		fake.enabled = true
+		monitor.poll(now: start.addingTimeInterval(10))
+		#expect(counter.count == 1)
+
+		monitor.poll(now: start.addingTimeInterval(20))
+		trackChanges(of: monitor, into: counter)
+		let settled = counter.count
+		for tick in 21..<26 {
+			monitor.poll(now: start.addingTimeInterval(TimeInterval(tick)))
+		}
+		monitor.reconcileFallback()
+		#expect(counter.count == settled)
+	}
+
+	@Test func pollsCoarselyAndStopsPolling() {
+		let (monitor, _, defaults, suite) = makeMonitor()
+		defer {
+			monitor.stop()
+			defaults.removePersistentDomain(forName: suite)
+		}
+		#expect(SecureInputMonitor.pollInterval >= 2)
+		#expect(SecureInputMonitor.pollTolerance >= SecureInputMonitor.pollInterval / 2)
+		#expect(!monitor.isPolling)
+		monitor.start()
+		#expect(monitor.isPolling)
+		monitor.stop()
+		#expect(!monitor.isPolling)
 	}
 
 	@Test func carbonHotKeyRegistersAndUnregisters() {
