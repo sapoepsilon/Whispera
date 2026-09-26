@@ -48,7 +48,15 @@ struct TranscriptionHistoryView: View {
 	@State private var showingClearConfirmation = false
 	@State private var copiedID: UUID?
 	@State private var pendingPurge: HistoryPurge?
-	@State private var retentionDebouncer = DebouncedAction(delay: .seconds(3))
+	@State private var pendingRetention: RetentionChange?
+
+	/// A retention change that would delete entries straight away, held until the user confirms.
+	struct RetentionChange: Identifiable {
+		let id = UUID()
+		let periodRaw: String
+		let limit: Int
+		let deletionCount: Int
+	}
 
 	enum HistoryPurge: Identifiable {
 		case everything(count: Int)
@@ -83,8 +91,6 @@ struct TranscriptionHistoryView: View {
 				.padding(.vertical, 10)
 			entryList
 		}
-		.onChange(of: retentionRaw) { _, _ in scheduleRetention() }
-		.onChange(of: historyLimit) { _, _ in scheduleRetention() }
 		.onChange(of: historyEnabled) { wasEnabled, isEnabled in
 			if wasEnabled && !isEnabled && !store.entries.isEmpty {
 				pendingPurge = .everything(count: store.entries.count)
@@ -96,9 +102,18 @@ struct TranscriptionHistoryView: View {
 			}
 		}
 		.onAppear { store.reload() }
-		.onDisappear {
-			player.stop()
-			retentionDebouncer.flush()
+		.onDisappear { player.stop() }
+		.alert(
+			"Delete older history?",
+			isPresented: Binding(get: { pendingRetention != nil }, set: { if !$0 { pendingRetention = nil } }),
+			presenting: pendingRetention
+		) { change in
+			Button("Delete", role: .destructive) { commitRetention(periodRaw: change.periodRaw, limit: change.limit) }
+			Button("Cancel", role: .cancel) {}
+		} message: { change in
+			Text(
+				"This deletes \(change.deletionCount) entries and their recordings now. Starred entries are kept."
+			)
 		}
 		.alert(
 			purgeTitle,
@@ -151,8 +166,31 @@ struct TranscriptionHistoryView: View {
 		}
 	}
 
-	private func scheduleRetention() {
-		retentionDebouncer.schedule { [store] in store.applyRetention() }
+	private var retentionSelection: Binding<String> {
+		Binding(get: { retentionRaw }, set: { proposeRetention(periodRaw: $0, limit: historyLimit) })
+	}
+
+	private var limitSelection: Binding<Int> {
+		Binding(get: { historyLimit }, set: { proposeRetention(periodRaw: retentionRaw, limit: $0) })
+	}
+
+	/// Retention deletes permanently, so a change that would remove entries asks first; the
+	/// setting is only stored once confirmed.
+	private func proposeRetention(periodRaw: String, limit: Int) {
+		guard periodRaw != retentionRaw || limit != historyLimit else { return }
+		let period = HistoryRetentionPeriod(rawValue: periodRaw) ?? HistorySettings.defaultRetention
+		let count = store.retentionDeletionCount(period: period, limit: limit)
+		if count == 0 {
+			commitRetention(periodRaw: periodRaw, limit: limit)
+		} else {
+			pendingRetention = RetentionChange(periodRaw: periodRaw, limit: limit, deletionCount: count)
+		}
+	}
+
+	private func commitRetention(periodRaw: String, limit: Int) {
+		retentionRaw = periodRaw
+		historyLimit = limit
+		store.applyRetention()
 	}
 
 	private var settingsSection: some View {
@@ -173,7 +211,7 @@ struct TranscriptionHistoryView: View {
 			}
 			.disabled(!historyEnabled)
 			SettingRow("Delete entries after", description: "Starred entries are never deleted automatically") {
-				Picker("", selection: $retentionRaw) {
+				Picker("", selection: retentionSelection) {
 					ForEach(HistoryRetentionPeriod.allCases) { period in
 						Text(period.displayName).tag(period.rawValue)
 					}
@@ -184,7 +222,7 @@ struct TranscriptionHistoryView: View {
 			if retentionRaw == HistoryRetentionPeriod.preserveLimit.rawValue {
 				SettingRow("Entries to keep") {
 					Stepper(
-						"\(historyLimit)", value: $historyLimit, in: HistorySettings.limitRange,
+						"\(historyLimit)", value: limitSelection, in: HistorySettings.limitRange,
 						step: historyLimit >= 100 ? 50 : 5)
 				}
 			}
