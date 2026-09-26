@@ -194,12 +194,9 @@ struct FeedbackSoundSettingsRows: View {
 		guard panel.runModal() == .OK, let url = panel.url else { return }
 
 		do {
-			let imported = try FeedbackSoundPlayer.importCustomSound(from: url, start: start)
-			let previous = start ? customStartPath : customStopPath
+			let imported = try FeedbackSoundPlayer.replaceCustomSound(
+				from: url, start: start, keeping: start ? customStopPath : customStartPath)
 			if start { customStartPath = imported.path } else { customStopPath = imported.path }
-			if !previous.isEmpty, previous != imported.path {
-				try? FileManager.default.removeItem(atPath: previous)
-			}
 			FeedbackSoundPlayer.shared.play(start: start)
 		} catch {
 			AppLogger.shared.audioManager.error("Failed to import custom sound: \(error)")

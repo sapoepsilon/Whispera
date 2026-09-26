@@ -79,3 +79,25 @@ struct WhatsNewTests {
 		#expect(try WhatsNewReleaseNotes.decodeBody(from: Data(json.utf8)) == "## Fixes\n- Faster startup")
 	}
 }
+
+struct WhatsNewNetworkPolicyTests {
+	private func defaults() -> UserDefaults {
+		let suite = "WhatsNewNetworkPolicyTests.\(UUID().uuidString)"
+		let defaults = UserDefaults(suiteName: suite)!
+		defaults.removePersistentDomain(forName: suite)
+		return defaults
+	}
+
+	@Test func releaseNotesAreFetchedAtLaunchOnlyWhileUpdateChecksAreOn() {
+		let store = defaults()
+		let tracker = WhatsNewTracker(defaults: store)
+		#expect(tracker.updateChecksEnabled)
+
+		store.set(false, forKey: "SUEnableAutomaticChecks")
+		#expect(!tracker.updateChecksEnabled, "Turning off update checks in Settings must stop the fetch")
+
+		store.set(true, forKey: "SUEnableAutomaticChecks")
+		store.set(false, forKey: "autoCheckForUpdates")
+		#expect(!tracker.updateChecksEnabled)
+	}
+}

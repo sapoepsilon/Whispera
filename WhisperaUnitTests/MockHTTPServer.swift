@@ -23,6 +23,7 @@ final class MockHTTPServer: @unchecked Sendable {
 		var status: Int = 200
 		var body: Data
 		var contentType = "application/json"
+		var headers: [String: String] = [:]
 
 		static func json(_ object: Any, status: Int = 200) -> Response {
 			Response(status: status, body: (try? JSONSerialization.data(withJSONObject: object)) ?? Data())
@@ -106,6 +107,9 @@ final class MockHTTPServer: @unchecked Sendable {
 		var head = "HTTP/1.1 \(response.status) Mock\r\n"
 		head += "Content-Type: \(response.contentType)\r\n"
 		head += "Content-Length: \(response.body.count)\r\n"
+		for (name, value) in response.headers {
+			head += "\(name): \(value)\r\n"
+		}
 		head += "Connection: close\r\n\r\n"
 		var payload = Data(head.utf8)
 		payload.append(response.body)

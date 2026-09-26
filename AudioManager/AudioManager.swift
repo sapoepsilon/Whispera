@@ -1079,20 +1079,35 @@ extension AudioManager {
 				finishTranscription(id)
 				return
 			}
-			let processed = await postProcessIfRequested(rawTranscription, requested: session.postProcess)
+			let secureBeforeProcessing = SecureDictation.isSecureInputActive
+			let processed = await postProcessIfRequested(
+				rawTranscription,
+				requested: SecureDictationPolicy.resolve(
+					postProcessRequested: session.postProcess, secureInput: secureBeforeProcessing
+				).postProcess)
 			let transcription = processed.text
 			guard !ledger.isCancelled(id) else {
 				AppLogger.shared.audioManager.info("Discarding post-processed text of a cancelled recording")
 				return
 			}
-			lastTranscription = transcription
+			let policy = SecureDictationPolicy.resolve(
+				postProcessRequested: session.postProcess,
+				secureInput: secureBeforeProcessing || SecureDictation.isSecureInputActive)
+			if policy.rememberAsLastTranscription {
+				lastTranscription = transcription
+			} else {
+				AppLogger.shared.audioManager.info(
+					"Secure input is on; the dictation is pasted but not kept in history or post-processed")
+			}
 			finishTranscription(id)
 
 			if session.mode == .text {
-				pasteToFocusedApp(transcription)
+				pasteToFocusedApp(transcription, concealed: policy.concealClipboard)
 			}
 			// After the paste so saving the recording never delays the text
-			recordHistory(text: rawTranscription, audio: historyAudio, postProcessing: processed.history)
+			if policy.saveToHistory {
+				recordHistory(text: rawTranscription, audio: historyAudio, postProcessing: processed.history)
+			}
 		} catch {
 			guard !ledger.isCancelled(id) else { return }
 			transcriptionError = error.localizedDescription
@@ -1114,6 +1129,11 @@ extension AudioManager {
 		source: TranscriptionHistorySource = .dictation, errorMessage: String? = nil,
 		postProcessing: HistoryPostProcessing? = nil, postProcessRequested: Bool = false
 	) {
+		// Also covers live dictation, whose segments were typed into whatever field has focus
+		guard !SecureDictation.isSecureInputActive else {
+			AppLogger.shared.audioManager.info("Secure input is on; not saving this dictation to history")
+			return
+		}
 		TranscriptionHistoryStore.shared.record(
 			text: text,
 			audio: audio,
@@ -1189,8 +1209,8 @@ extension AudioManager {
 	fileprivate func playFeedbackSound(start: Bool) {
 		FeedbackSoundPlayer.shared.play(start: start)
 	}
-	fileprivate func pasteToFocusedApp(_ text: String) {
-		TextInserter.shared.insert(text, context: .finalTranscript)
+	fileprivate func pasteToFocusedApp(_ text: String, concealed: Bool = false) {
+		TextInserter.shared.insert(text, context: .finalTranscript, concealed: concealed)
 	}
 	fileprivate func checkAndRequestMicrophonePermission() {
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {

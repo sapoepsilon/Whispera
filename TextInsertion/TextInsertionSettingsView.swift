@@ -5,6 +5,9 @@ struct TextInsertionSettingsView: View {
 	private var pasteMethod: PasteMethod = .commandV
 	@AppStorage(TextInsertionSettings.Keys.externalScriptPath)
 	private var externalScriptPath = ""
+	@AppStorage(TextInsertionSettings.Keys.externalScriptApproval)
+	private var externalScriptApproval = ""
+	@State private var scriptError: String?
 	@AppStorage(TextInsertionSettings.Keys.autoSubmit)
 	private var autoSubmit = false
 	@AppStorage(TextInsertionSettings.Keys.autoSubmitKey)
@@ -37,10 +40,14 @@ struct TextInsertionSettingsView: View {
 							"Script",
 							description: scriptDescription
 						) {
+							// Read-only: the script must be picked with the file panel so it can be approved
 							HStack(spacing: 8) {
-								TextField("/path/to/script", text: $externalScriptPath)
-									.textFieldStyle(.roundedBorder)
-									.frame(width: 200)
+								Text(externalScriptPath.isEmpty ? String(localized: "No script chosen") : externalScriptPath)
+									.font(.system(.body, design: .monospaced))
+									.foregroundColor(externalScriptPath.isEmpty ? .secondary : .primary)
+									.lineLimit(1)
+									.truncationMode(.middle)
+									.frame(width: 200, alignment: .leading)
 								Button("Choose…") { chooseScript() }
 									.buttonStyle(.bordered)
 							}
@@ -122,15 +129,33 @@ struct TextInsertionSettingsView: View {
 			}
 			.padding(20)
 		}
+		.alert(
+			"Can't Use This Script",
+			isPresented: Binding(get: { scriptError != nil }, set: { if !$0 { scriptError = nil } }),
+			presenting: scriptError
+		) { _ in
+			Button("OK", role: .cancel) {}
+		} message: { message in
+			Text(message)
+		}
 	}
+
+	private static let scriptUsage = String(
+		localized:
+			"Receives the transcript on standard input and in WHISPERA_TRANSCRIPT. Choose the script again after editing it."
+	)
 
 	private var scriptDescription: String {
 		if externalScriptPath.isEmpty {
-			return "Receives the transcript as $1 and in WHISPERA_TRANSCRIPT"
+			return Self.scriptUsage
 		}
 		do {
-			_ = try ExternalScriptRunner.validate(path: externalScriptPath)
-			return "Receives the transcript as $1 and in WHISPERA_TRANSCRIPT"
+			let url = try ExternalScriptRunner.validate(path: externalScriptPath)
+			try ExternalScriptRunner.checkOwnershipAndPermissions(of: url.path)
+			guard ScriptApproval.isApproved(path: url.path, approval: externalScriptApproval) else {
+				return ExternalScriptError.notApproved.localizedDescription
+			}
+			return Self.scriptUsage
 		} catch {
 			return error.localizedDescription
 		}
@@ -142,8 +167,12 @@ struct TextInsertionSettingsView: View {
 		panel.canChooseDirectories = false
 		panel.allowsMultipleSelection = false
 		panel.prompt = String(localized: "Use Script")
-		if panel.runModal() == .OK, let url = panel.url {
+		guard panel.runModal() == .OK, let url = panel.url else { return }
+		do {
+			externalScriptApproval = try ScriptApproval.approve(path: url.path)
 			externalScriptPath = url.path
+		} catch {
+			scriptError = error.localizedDescription
 		}
 	}
 

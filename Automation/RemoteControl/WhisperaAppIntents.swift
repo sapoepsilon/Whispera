@@ -21,6 +21,8 @@ struct ToggleDictationIntent: AppIntent {
 	static var description = IntentDescription(
 		"Starts dictation, or stops it and inserts the transcript into the focused app.")
 	static var openAppWhenRun = false
+	// Opens the microphone, so Siri or a shortcut cannot trigger it on a locked Mac
+	static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@MainActor
 	func perform() async throws -> some IntentResult & ReturnsValue<String> {
@@ -32,6 +34,7 @@ struct StartDictationIntent: AppIntent {
 	static var title: LocalizedStringResource = "Start Dictation"
 	static var description = IntentDescription("Starts dictation if it is not already running.")
 	static var openAppWhenRun = false
+	static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@MainActor
 	func perform() async throws -> some IntentResult & ReturnsValue<String> {
@@ -83,12 +86,15 @@ struct CopyLastTranscriptIntent: AppIntent {
 	static var description = IntentDescription(
 		"Copies the most recent Whispera transcript to the clipboard and returns it.")
 	static var openAppWhenRun = false
+	static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
 	@MainActor
 	func perform() async throws -> some IntentResult & ReturnsValue<String> {
-		let outcome = await RemoteControlCenter.shared.handle(.copyLastTranscript, source: .intent)
-		guard outcome == .performed else { throw RemoteCommandIntentError(message: outcome.message) }
-		return .result(value: NSPasteboard.general.string(forType: .string) ?? "")
+		AppLogger.shared.general.info("Remote command copy-last from intent")
+		guard let text = RemoteControlCenter.shared.copyLastTranscriptText() else {
+			throw RemoteCommandIntentError(message: RemoteCommandOutcome.ignored("No transcript yet").message)
+		}
+		return .result(value: text)
 	}
 }
 

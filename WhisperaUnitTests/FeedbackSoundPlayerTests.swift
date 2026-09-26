@@ -113,3 +113,42 @@ struct FeedbackSoundPlayerTests {
 		}
 	}
 }
+
+@MainActor
+struct CustomSoundReplacementTests {
+	private let glass = URL(fileURLWithPath: "/System/Library/Sounds/Glass.aiff")
+	private let ping = URL(fileURLWithPath: "/System/Library/Sounds/Ping.aiff")
+
+	@Test func replacingASoundDeletesTheOldCopyButKeepsTheOtherSlot() throws {
+		let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+		defer { try? FileManager.default.removeItem(at: folder) }
+
+		let stop = try FeedbackSoundPlayer.replaceCustomSound(from: ping, start: false, keeping: nil, directory: folder)
+		let first = try FeedbackSoundPlayer.replaceCustomSound(
+			from: glass, start: true, keeping: stop.path, directory: folder)
+		let second = try FeedbackSoundPlayer.replaceCustomSound(
+			from: ping, start: true, keeping: stop.path, directory: folder)
+
+		#expect(!FileManager.default.fileExists(atPath: first.path))
+		#expect(FileManager.default.fileExists(atPath: second.path))
+		#expect(FileManager.default.fileExists(atPath: stop.path))
+		let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+		#expect(names.count == 2)
+	}
+
+	@Test func neverDeletesFilesOutsideTheSoundsFolder() throws {
+		let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+		defer { try? FileManager.default.removeItem(at: root) }
+		let folder = root.appendingPathComponent("Sounds")
+		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+		let precious = root.appendingPathComponent("start-precious.txt")
+		try Data("keep".utf8).write(to: precious)
+
+		// A settings value pointing elsewhere must not be treated as a sound to clean up
+		_ = try FeedbackSoundPlayer.replaceCustomSound(
+			from: glass, start: true, keeping: precious.path, directory: folder)
+		_ = try FeedbackSoundPlayer.replaceCustomSound(from: glass, start: true, keeping: nil, directory: folder)
+
+		#expect(FileManager.default.fileExists(atPath: precious.path))
+	}
+}

@@ -787,3 +787,105 @@ struct DebouncedActionTests {
 		#expect(runs == 0)
 	}
 }
+
+// MARK: - Privacy hygiene
+
+@MainActor
+struct TranscriptionHistoryPrivacyTests {
+	private func bytesOnDisk(_ store: TranscriptionHistoryStore) -> Data {
+		var data = Data()
+		for suffix in ["", "-wal", "-shm"] {
+			if let chunk = try? Data(contentsOf: URL(fileURLWithPath: store.storeURL.path + suffix)) {
+				data.append(chunk)
+			}
+		}
+		return data
+	}
+
+	@Test func historyFolderIsExcludedFromBackups() throws {
+		let directory = makeTempDirectory()
+		let store = TranscriptionHistoryStore(directory: directory, defaults: makeDefaults())
+		_ = store.record(text: "backup check", audio: nil, source: .dictation, modelName: nil, language: nil)
+
+		let values = try directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+		#expect(values.isExcludedFromBackup == true)
+		let recordings = try store.audioDirectory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+		#expect(recordings.isExcludedFromBackup == true)
+	}
+
+	@Test func deletedTextIsScrubbedFromTheDatabaseFiles() async {
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
+		let marker = "QUOKKA-\(UUID().uuidString)"
+		for index in 0..<5 {
+			_ = store.record(
+				text: "\(marker) number \(index)", audio: nil, source: .dictation, modelName: nil, language: nil)
+		}
+		#expect(bytesOnDisk(store).range(of: Data(marker.utf8)) != nil, "The marker should be on disk first")
+
+		store.deleteAllEntries()
+		await store.flushScrub()
+
+		#expect(store.entries.isEmpty)
+		#expect(bytesOnDisk(store).range(of: Data(marker.utf8)) == nil, "Deleted text is still recoverable")
+	}
+
+	@Test func storeKeepsWorkingAfterAScrub() async throws {
+		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
+		let doomed = try #require(
+			store.record(text: "delete me", audio: nil, source: .dictation, modelName: nil, language: nil))
+		store.delete(doomed)
+		await store.flushScrub()
+
+		let kept = store.record(text: "still works", audio: nil, source: .dictation, modelName: nil, language: nil)
+		#expect(kept != nil)
+		store.reload()
+		#expect(store.entries.map(\.text) == ["still works"])
+	}
+
+	@Test func turningHistoryOffAnywhereAsksToPurge() {
+		let defaults = makeDefaults()
+		var prompts = 0
+		let store = TranscriptionHistoryStore(
+			directory: makeTempDirectory(), defaults: defaults, presentOptOutPrompt: { prompts += 1 })
+		_ = store.record(text: "one", audio: nil, source: .dictation, modelName: nil, language: nil)
+		_ = store.record(text: "two", audio: nil, source: .dictation, modelName: nil, language: nil)
+
+		// Same as `defaults write ... historyEnabled -bool NO` or a toggle outside the history view
+		defaults.set(false, forKey: HistorySettings.enabledKey)
+
+		#expect(store.pendingOptOutPurge == 2)
+		#expect(prompts == 1, "No history view is open, so the window must be brought up to ask")
+
+		store.deleteAllEntries()
+		#expect(store.pendingOptOutPurge == nil)
+		#expect(store.entries.isEmpty)
+	}
+
+	@Test func openHistoryViewShowsThePromptItself() {
+		let defaults = makeDefaults()
+		var prompts = 0
+		let store = TranscriptionHistoryStore(
+			directory: makeTempDirectory(), defaults: defaults, presentOptOutPrompt: { prompts += 1 })
+		_ = store.record(text: "one", audio: nil, source: .dictation, modelName: nil, language: nil)
+		store.viewDidAppear()
+
+		defaults.set(false, forKey: HistorySettings.enabledKey)
+		#expect(store.pendingOptOutPurge == 1)
+		#expect(prompts == 0)
+
+		store.keepEntriesAfterOptOut()
+		#expect(store.pendingOptOutPurge == nil)
+		#expect(store.entries.count == 1)
+	}
+
+	@Test func noPromptWithoutEntriesOrWhenTurningHistoryOn() {
+		let defaults = makeDefaults()
+		var prompts = 0
+		let store = TranscriptionHistoryStore(
+			directory: makeTempDirectory(), defaults: defaults, presentOptOutPrompt: { prompts += 1 })
+		defaults.set(false, forKey: HistorySettings.enabledKey)
+		defaults.set(true, forKey: HistorySettings.enabledKey)
+		#expect(store.pendingOptOutPurge == nil)
+		#expect(prompts == 0)
+	}
+}

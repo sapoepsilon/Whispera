@@ -63,14 +63,14 @@ enum RemoteCommand: Equatable, Sendable {
 
 	var url: URL { url(token: nil) }
 
-	/// Commands that can open the microphone, change the loaded model, put a transcript on the
-	/// clipboard, show history or write to the dictionary. Over the URL scheme they need the
-	/// per-install token, because any web page or app can open a whispera:// link.
+	/// Commands that can open the microphone, change the loaded model or language, put a
+	/// transcript on the clipboard, show history or write to the dictionary. Over the URL scheme
+	/// they need the per-install token, because any web page or app can open a whispera:// link.
 	var requiresToken: Bool {
 		switch self {
-		case .toggle, .togglePostProcess, .start, .setModel: return true
+		case .toggle, .togglePostProcess, .start, .setModel, .setLanguage: return true
 		case .copyLastTranscript, .openHistory, .addWord: return true
-		case .stop, .cancel, .setLanguage: return false
+		case .stop, .cancel: return false
 		}
 	}
 
@@ -123,8 +123,8 @@ enum RemoteCommand: Equatable, Sendable {
 		case .start: return "start"
 		case .stop: return "stop"
 		case .cancel: return "cancel"
-		case .setLanguage(let language): return "language(\(language))"
-		case .setModel(let model): return "model(\(model))"
+		case .setLanguage(let language): return "language(\(Self.sanitizedForLog(language)))"
+		case .setModel(let model): return "model(\(Self.sanitizedForLog(model)))"
 		case .copyLastTranscript: return "copy-last"
 		case .openHistory: return "history"
 		// The word itself stays out of the log like other dictation content.
@@ -144,6 +144,14 @@ enum RemoteCommand: Equatable, Sendable {
 			return normalized
 		}
 		return Constants.languages.first { $0.value == normalized }?.key
+	}
+
+	/// Link arguments are attacker-controlled and percent-decoded, so a %0A could forge a line in
+	/// the shareable log file. Keeps only characters a language or model name needs.
+	static func sanitizedForLog(_ value: String, limit: Int = 48) -> String {
+		let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " ._-"))
+		let cleaned = String(String.UnicodeScalarView(value.unicodeScalars.map { allowed.contains($0) ? $0 : "?" }))
+		return cleaned.count > limit ? String(cleaned.prefix(limit)) + "..." : cleaned
 	}
 
 	static let maxWordLength = 100

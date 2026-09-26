@@ -166,14 +166,41 @@ final class FeedbackSoundPlayer: NSObject, NSSoundDelegate {
 		}
 	}
 
+	static var defaultSoundsDirectory: URL {
+		FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+			.appendingPathComponent("Whispera")
+			.appendingPathComponent("Sounds")
+	}
+
+	/// Imports the new sound and deletes every earlier copy for the same slot, so replacing a
+	/// sound never leaves the old file behind. Only files inside the Sounds folder are deleted,
+	/// whatever path the settings hold.
+	static func replaceCustomSound(
+		from source: URL, start: Bool, keeping other: String?, directory: URL? = nil
+	) throws -> URL {
+		let folder = directory ?? defaultSoundsDirectory
+		let imported = try importCustomSound(from: source, start: start, directory: folder)
+		pruneCustomSounds(in: folder, keeping: [imported.path, other].compactMap { $0 })
+		return imported
+	}
+
+	static func pruneCustomSounds(in folder: URL, keeping paths: [String]) {
+		let kept = Set(paths.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path })
+		guard
+			let files = try? FileManager.default.contentsOfDirectory(
+				at: folder, includingPropertiesForKeys: nil)
+		else { return }
+		for file in files where !kept.contains(file.resolvingSymlinksInPath().path) {
+			let name = file.lastPathComponent
+			guard name.hasPrefix("start-") || name.hasPrefix("stop-") else { continue }
+			try? FileManager.default.removeItem(at: file)
+		}
+	}
+
 	/// Copies a user-picked sound into Application Support so it keeps working if
 	/// the original is moved or deleted.
 	static func importCustomSound(from source: URL, start: Bool, directory: URL? = nil) throws -> URL {
-		let folder =
-			directory
-			?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-			.appendingPathComponent("Whispera")
-			.appendingPathComponent("Sounds")
+		let folder = directory ?? defaultSoundsDirectory
 		try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
 		let ext = source.pathExtension.isEmpty ? "aiff" : source.pathExtension.lowercased()

@@ -55,8 +55,7 @@ struct RemoteHistoryActions {
 			return text
 		},
 		copyToClipboard: { text in
-			NSPasteboard.general.clearContents()
-			NSPasteboard.general.setString(text, forType: .string)
+			ClipboardWriter.write(text, to: .general, transient: false)
 		},
 		openHistory: { HistoryWindowController.shared.show() }
 	)
@@ -151,7 +150,7 @@ final class RemoteControlCenter: NSObject {
 	func handleURL(_ url: URL) -> Bool {
 		// Only the verb is logged; the query can carry the token.
 		guard let command = RemoteCommand(url: url) else {
-			logger.error("Unrecognized whispera:// URL verb: \(url.host ?? url.path)")
+			logger.error("Unrecognized whispera:// URL verb: \(RemoteCommand.sanitizedForLog(url.host ?? url.path))")
 			return false
 		}
 		if case .denied(let reason) = authorizeURL(command, url: url) {
@@ -221,11 +220,15 @@ final class RemoteControlCenter: NSObject {
 	}
 
 	private func copyLastTranscript() -> RemoteCommandOutcome {
-		guard let text = historyActions.lastTranscript(controller) else {
-			return .ignored("No transcript yet")
-		}
+		copyLastTranscriptText() == nil ? .ignored("No transcript yet") : .performed
+	}
+
+	/// Copies the last transcript and returns exactly what was copied, so a caller never has to
+	/// read the clipboard back (by then another app may have replaced it).
+	func copyLastTranscriptText() -> String? {
+		guard let text = historyActions.lastTranscript(controller) else { return nil }
 		historyActions.copyToClipboard(text)
-		return .performed
+		return text
 	}
 
 	private func addWords(_ input: String) -> RemoteCommandOutcome {
@@ -245,7 +248,7 @@ final class RemoteControlCenter: NSObject {
 
 	private func applyLanguage(_ input: String) -> RemoteCommandOutcome {
 		guard let name = RemoteCommand.resolveLanguageName(input) else {
-			return .rejected("Unknown language: \(input)")
+			return .rejected("Unknown language: \(RemoteCommand.sanitizedForLog(input))")
 		}
 		defaults.set(false, forKey: "autoDetectLanguageFromKeyboard")
 		defaults.set(name, forKey: "selectedLanguage")

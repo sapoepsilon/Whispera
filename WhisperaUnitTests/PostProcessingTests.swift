@@ -471,6 +471,12 @@ struct PostProcessingKeyTransportTests {
 		("http://127.0.0.1:11434/v1", true),
 		("http://localhost:1234/v1", true),
 		("http://[::1]:8080/v1", true),
+		("http://127.1.2.3:8080/v1", true),
+		("http://127.attacker.example/v1", false),
+		("http://127.0.0.1.nip.io/v1", false),
+		("http://evil.localhost/v1", false),
+		("http://[::ffff:127.0.0.1]:8080/v1", true),
+		("http://[::2]:8080/v1", false),
 		("http://llm.lan:8080/v1", false),
 		("http://192.168.1.20:11434/v1", false),
 		("http://api.example.com/v1", false),
@@ -487,6 +493,48 @@ struct PostProcessingKeyTransportTests {
 			baseURL: "http://203.0.113.9:8080/v1", apiKey: "sk-secret", model: "m", timeout: 1)
 		await #expect(throws: PostProcessingError.insecureKeyTransport(host: "203.0.113.9")) {
 			_ = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+		}
+	}
+
+	@Test func redirectToAnotherOriginDropsTheKey() async throws {
+		let target = try MockHTTPServer { _ in chatCompletion("done") }
+		try await target.start()
+		defer { target.stop() }
+		let origin = try MockHTTPServer { _ in
+			MockHTTPServer.Response(
+				status: 307, body: Data(),
+				headers: ["Location": "http://127.0.0.1:\(target.port)/v1/chat/completions"])
+		}
+		try await origin.start()
+		defer { origin.stop() }
+
+		let client = OpenAICompatibleClient(baseURL: origin.baseURL, apiKey: "sk-secret-key", model: "m", timeout: 5)
+		let output = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+
+		#expect(output == "done")
+		#expect(origin.requests.first?.header("Authorization") == "Bearer sk-secret-key")
+		#expect(target.requests.count == 1)
+		#expect(target.requests.first?.header("Authorization") == nil, "The key followed the redirect")
+	}
+
+	@Test func sameOriginRedirectKeepsTheKey() throws {
+		var original = URLRequest(url: URL(string: "https://api.example.com/v1/chat/completions")!)
+		original.setValue("Bearer k", forHTTPHeaderField: "Authorization")
+		var proposed = URLRequest(url: URL(string: "https://api.example.com/v2/chat/completions")!)
+		proposed.setValue("Bearer k", forHTTPHeaderField: "Authorization")
+		#expect(
+			OpenAICompatibleClient.redirectedRequest(proposed, from: original)
+				.value(forHTTPHeaderField: "Authorization") == "Bearer k")
+
+		for target in [
+			"http://api.example.com/v1/chat/completions", "https://other.example.com/v1/chat/completions",
+			"https://api.example.com:8443/v1/chat/completions",
+		] {
+			var redirect = URLRequest(url: URL(string: target)!)
+			redirect.setValue("Bearer k", forHTTPHeaderField: "Authorization")
+			#expect(
+				OpenAICompatibleClient.redirectedRequest(redirect, from: original)
+					.value(forHTTPHeaderField: "Authorization") == nil, "\(target)")
 		}
 	}
 
@@ -596,5 +644,21 @@ struct StructuredOutputTests {
 			try await client.process(PostProcessingMessages(system: nil, user: "x"))
 		}
 		#expect(server.requests.count == 1)
+	}
+}
+
+struct PostProcessingConsentTests {
+	@Test func consentNamesTheProviderThatReceivesTheTranscript() throws {
+		let openAI = try #require(PostProcessingProvider.provider(withID: "openai"))
+		#expect(openAI.consentText(baseURL: openAI.defaultBaseURL).contains("OpenAI"))
+
+		let openRouter = try #require(PostProcessingProvider.provider(withID: "openrouter"))
+		#expect(openRouter.consentText(baseURL: openRouter.defaultBaseURL).contains("OpenRouter"))
+
+		let custom = try #require(PostProcessingProvider.provider(withID: PostProcessingProvider.customID))
+		#expect(custom.consentText(baseURL: "https://llm.example.org/v1").contains("llm.example.org"))
+
+		let apple = try #require(PostProcessingProvider.provider(withID: PostProcessingProvider.appleIntelligenceID))
+		#expect(apple.consentText(baseURL: "").contains("Apple Intelligence"))
 	}
 }

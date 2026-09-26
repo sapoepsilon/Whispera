@@ -81,8 +81,9 @@ enum RaycastScripts {
 				mode: .silent,
 				argumentPlaceholder: "German or de",
 				body: """
+					\(tokenLine)
 					language="$1"
-					open -g "whispera://language?name=${language// /%20}"
+					open -g "whispera://language?name=${language// /%20}&token=$token"
 					"""
 			),
 			RaycastScriptCommand(

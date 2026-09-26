@@ -26,7 +26,7 @@ struct AutomationSettingsView: View {
 			SettingRow(
 				"Allow whispera:// links",
 				description:
-					"Lets Stream Deck, launchers and scripts control dictation. Links that start dictation, switch the model, open or copy from history, or add words must carry this Mac's private token, so web pages cannot open the mic or read your transcripts. Stop and cancel links always work."
+					"Lets Stream Deck, launchers and scripts control dictation. Links that start dictation, switch the model or language, open or copy from history, or add words must carry this Mac's private token, so web pages cannot open the mic or read your transcripts. Stop and cancel links always work."
 			) {
 				Toggle("", isOn: $urlSchemeEnabled)
 					.toggleStyle(.switch)
@@ -35,8 +35,11 @@ struct AutomationSettingsView: View {
 
 			VStack(alignment: .leading, spacing: 6) {
 				ForEach(Self.exampleCommands) { example in
+					let command = example.command.url(token: token).absoluteString
 					CopyableCommandRow(
-						title: example.title, command: example.command.url(token: token).absoluteString)
+						title: example.title, command: command,
+						displayCommand: Self.maskingToken(in: command, token: token),
+						isSecret: token != nil && example.command.requiresToken)
 				}
 				Button("Reset Token") { resetToken() }
 					.help("Invalidates every link and script that carries the current token")
@@ -61,6 +64,12 @@ struct AutomationSettingsView: View {
 		}
 	}
 
+	/// Screen shares and screenshots should not show the token, so rows display a placeholder.
+	static func maskingToken(in command: String, token: String?) -> String {
+		guard let token, !token.isEmpty else { return command }
+		return command.replacingOccurrences(of: token, with: "••••••")
+	}
+
 	private struct ExampleCommand: Identifiable {
 		let title: String
 		let command: RemoteCommand
@@ -81,6 +90,9 @@ struct AutomationSettingsView: View {
 struct CopyableCommandRow: View {
 	let title: String
 	let command: String
+	var displayCommand: String?
+	/// Copied with the concealed and transient markers so clipboard managers do not keep it.
+	var isSecret = false
 
 	var body: some View {
 		HStack(spacing: 8) {
@@ -88,15 +100,14 @@ struct CopyableCommandRow: View {
 				.font(.caption)
 				.foregroundColor(.secondary)
 				.frame(width: 70, alignment: .leading)
-			Text(command)
+			Text(displayCommand ?? command)
 				.font(.system(.caption, design: .monospaced))
 				.textSelection(.enabled)
 				.lineLimit(1)
 				.truncationMode(.middle)
 			Spacer(minLength: 4)
 			Button {
-				NSPasteboard.general.clearContents()
-				NSPasteboard.general.setString(command, forType: .string)
+				ClipboardWriter.write(command, to: .general, transient: isSecret, concealed: isSecret)
 			} label: {
 				Image(systemName: "doc.on.doc")
 			}

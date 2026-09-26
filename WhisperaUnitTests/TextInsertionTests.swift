@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import CryptoKit
 import Foundation
 import Testing
 
@@ -570,25 +571,108 @@ struct PasteMethodTests {
 }
 
 struct ExternalScriptRunnerTests {
+	private let keyStore = InMemoryScriptApprovalKeyStore()
+
 	private func makeScript(_ body: String) throws -> (script: URL, directory: URL) {
 		let directory = FileManager.default.temporaryDirectory
 			.appendingPathComponent("whispera-script-tests-\(UUID().uuidString)")
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
 		let script = directory.appendingPathComponent("insert.sh")
 		try ("#!/bin/sh\n" + body).write(to: script, atomically: true, encoding: .utf8)
 		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
 		return (script, directory)
 	}
 
-	@Test func passesTranscriptAsArgumentAndEnvironment() async throws {
+	private func approveAndRun(_ script: URL, text: String, timeout: TimeInterval = 10) async throws {
+		let approval = try ScriptApproval.approve(path: script.path, keyStore: keyStore)
+		try await ExternalScriptRunner.run(
+			path: script.path, approval: approval, text: text, timeout: timeout, keyStore: keyStore)
+	}
+
+	@Test func passesTranscriptOnStdinAndEnvironmentButNotArgv() async throws {
 		let (script, directory) = try makeScript(
-			"printf '%s|%s' \"$1\" \"$WHISPERA_TRANSCRIPT\" > \"$(dirname \"$0\")/out.txt\"\n")
+			"printf '%s|%s|%s' \"$#\" \"$(cat)\" \"$WHISPERA_TRANSCRIPT\" > \"$(dirname \"$0\")/out.txt\"\n")
 		defer { try? FileManager.default.removeItem(at: directory) }
 
-		try await ExternalScriptRunner.run(path: script.path, text: "it's \"quoted\" text")
+		try await approveAndRun(script, text: "it's \"quoted\" text")
 
 		let output = try String(contentsOf: directory.appendingPathComponent("out.txt"), encoding: .utf8)
-		#expect(output == "it's \"quoted\" text|it's \"quoted\" text")
+		#expect(output == "0|it's \"quoted\" text|it's \"quoted\" text")
+	}
+
+	@Test func runsWithAMinimalEnvironment() async throws {
+		let (script, directory) = try makeScript("env > \"$(dirname \"$0\")/env.txt\"\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		try await approveAndRun(script, text: "x")
+
+		let output = try String(contentsOf: directory.appendingPathComponent("env.txt"), encoding: .utf8)
+		let names = Set(output.split(separator: "\n").compactMap { $0.split(separator: "=").first.map(String.init) })
+		let allowed: Set<String> = [
+			"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+			ExternalScriptRunner.transcriptEnvironmentKey, "PWD", "SHLVL", "_", "OLDPWD", "__CF_USER_TEXT_ENCODING",
+		]
+		#expect(names.subtracting(allowed).isEmpty, "Leaked: \(names.subtracting(allowed).sorted())")
+		#expect(names.contains(ExternalScriptRunner.transcriptEnvironmentKey))
+	}
+
+	@Test func refusesAPathThatWasNeverApprovedInSettings() async throws {
+		let (script, directory) = try makeScript("touch \"$(dirname \"$0\")/ran\"\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		// What `defaults write ... externalScriptPath /tmp/x` produces: a path with no approval
+		await #expect(throws: ExternalScriptError.notApproved) {
+			try await ExternalScriptRunner.run(path: script.path, approval: "", text: "x", keyStore: keyStore)
+		}
+		// Or an approval forged without the Keychain key
+		let forged = try ScriptApproval.approve(path: script.path, keyStore: InMemoryScriptApprovalKeyStore())
+		await #expect(throws: ExternalScriptError.notApproved) {
+			try await ExternalScriptRunner.run(path: script.path, approval: forged, text: "x", keyStore: keyStore)
+		}
+		#expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("ran").path))
+	}
+
+	@Test func refusesAScriptThatChangedAfterItWasApproved() async throws {
+		let (script, directory) = try makeScript("exit 0\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let approval = try ScriptApproval.approve(path: script.path, keyStore: keyStore)
+
+		try "#!/bin/sh\ntouch \"$(dirname \"$0\")/ran\"\n".write(to: script, atomically: true, encoding: .utf8)
+		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+
+		await #expect(throws: ExternalScriptError.notApproved) {
+			try await ExternalScriptRunner.run(path: script.path, approval: approval, text: "x", keyStore: keyStore)
+		}
+		#expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("ran").path))
+	}
+
+	@Test func refusesAnApprovalCopiedToAnotherScript() async throws {
+		let (first, firstDirectory) = try makeScript("exit 0\n")
+		let (second, secondDirectory) = try makeScript("exit 0\n")
+		defer {
+			try? FileManager.default.removeItem(at: firstDirectory)
+			try? FileManager.default.removeItem(at: secondDirectory)
+		}
+		let approval = try ScriptApproval.approve(path: first.path, keyStore: keyStore)
+		#expect(ScriptApproval.isApproved(path: first.path, approval: approval, keyStore: keyStore))
+		#expect(!ScriptApproval.isApproved(path: second.path, approval: approval, keyStore: keyStore))
+	}
+
+	@Test func refusesScriptsOtherUsersCanWrite() throws {
+		let (script, directory) = try makeScript("exit 0\n")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: script.path)
+		#expect(throws: ExternalScriptError.unsafePermissions("it is writable by other users")) {
+			try ScriptApproval.approve(path: script.path, keyStore: keyStore)
+		}
+
+		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+		try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: directory.path)
+		#expect(throws: ExternalScriptError.unsafePermissions("its folder is writable by other users")) {
+			try ScriptApproval.approve(path: script.path, keyStore: keyStore)
+		}
 	}
 
 	@Test func nonZeroExitIsAnError() async throws {
@@ -596,7 +680,7 @@ struct ExternalScriptRunnerTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 
 		await #expect(throws: ExternalScriptError.failed(exitCode: 3)) {
-			try await ExternalScriptRunner.run(path: script.path, text: "x")
+			try await approveAndRun(script, text: "x")
 		}
 	}
 
@@ -605,7 +689,31 @@ struct ExternalScriptRunnerTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 
 		await #expect(throws: ExternalScriptError.timedOut) {
-			try await ExternalScriptRunner.run(path: script.path, text: "x", timeout: 0.3)
+			try await approveAndRun(script, text: "x", timeout: 0.3)
+		}
+	}
+
+	@Test func timeoutKillsTheWholeProcessGroupEvenWhenSIGTERMIsIgnored() async throws {
+		let (script, directory) = try makeScript(
+			"""
+			trap '' TERM
+			sleep 30 &
+			echo $! > "$(dirname "$0")/child.pid"
+			echo $$ > "$(dirname "$0")/parent.pid"
+			while :; do sleep 1; done
+
+			""")
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		await #expect(throws: ExternalScriptError.timedOut) {
+			try await approveAndRun(script, text: "x", timeout: 0.5)
+		}
+		try await Task.sleep(nanoseconds: UInt64((ExternalScriptRunner.terminationGrace + 1) * 1_000_000_000))
+
+		for name in ["parent.pid", "child.pid"] {
+			let raw = try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8)
+			let pid = try #require(pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines)))
+			#expect(kill(pid, 0) != 0, "\(name) \(pid) is still running")
 		}
 	}
 
@@ -796,5 +904,19 @@ struct TrailingSpaceTests {
 
 		settings(true).save(to: defaults)
 		#expect(TextInsertionSettings(defaults: defaults).appendTrailingSpace)
+	}
+}
+
+final class InMemoryScriptApprovalKeyStore: ScriptApprovalKeyStore, @unchecked Sendable {
+	private let lock = NSLock()
+	private var stored: SymmetricKey?
+
+	func key(createIfMissing: Bool) throws -> SymmetricKey? {
+		lock.lock()
+		defer { lock.unlock() }
+		if stored == nil, createIfMissing {
+			stored = SymmetricKey(size: .bits256)
+		}
+		return stored
 	}
 }

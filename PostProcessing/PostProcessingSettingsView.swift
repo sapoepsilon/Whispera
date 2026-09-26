@@ -38,7 +38,7 @@ struct PostProcessingSettingsView: View {
 				SettingsSection("Post-Processing") {
 					SettingRow(
 						"Enable post-processing",
-						description: "Send the transcript to a language model to clean it up before it is pasted."
+						description: provider.consentText(baseURL: baseURL.isEmpty ? settings.baseURL(for: provider) : baseURL)
 					) {
 						Toggle("", isOn: $isEnabled).labelsHidden().toggleStyle(.switch)
 					}

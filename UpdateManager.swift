@@ -42,6 +42,9 @@ class UpdateManager: NSObject {
 	var releaseNotes: String?
 	var downloadingVersion: String?
 	var downloadLocation: String?
+	/// The disk image this process downloaded. A file that merely exists in ~/Downloads under the
+	/// expected name is never trusted: anything could have put it there.
+	private(set) var downloadedUpdate: (version: String, path: String)?
 
 	// MARK: - Private Properties
 	private var downloadTask: URLSessionDownloadTask?
@@ -49,12 +52,10 @@ class UpdateManager: NSObject {
 
 	// MARK: - Computed Properties
 	var isUpdateDownloaded: Bool {
-		guard let latestVersion = latestVersion else { return false }
-		guard
-			let downloadsDir = downloadsDirectory
-		else { return false }
-		let localURL = downloadsDir.appendingPathComponent("Whispera-\(latestVersion).dmg")
-		return FileManager.default.fileExists(atPath: localURL.path)
+		guard let latestVersion, let downloadedUpdate, downloadedUpdate.version == latestVersion else {
+			return false
+		}
+		return FileManager.default.fileExists(atPath: downloadedUpdate.path)
 	}
 
 	// MARK: - Settings
@@ -85,9 +86,17 @@ class UpdateManager: NSObject {
 	}
 
 	@ObservationIgnored private let downloadsDirectoryOverride: URL?
+	@ObservationIgnored let applicationsDirectory: URL
+	@ObservationIgnored private let verifyApp: (URL) throws -> Void
 
-	init(downloadsDirectory: URL? = nil) {
+	init(
+		downloadsDirectory: URL? = nil,
+		applicationsDirectory: URL = URL(fileURLWithPath: "/Applications"),
+		verifyApp: @escaping (URL) throws -> Void = { try UpdateSignatureVerifier.verify(appAt: $0) }
+	) {
 		downloadsDirectoryOverride = downloadsDirectory
+		self.applicationsDirectory = applicationsDirectory
+		self.verifyApp = verifyApp
 		super.init()
 		setupDefaultSettings()
 		setupURLSession()
@@ -192,26 +201,11 @@ class UpdateManager: NSObject {
 		}
 
 		guard let documentsPath = downloadsDirectory else { throw UpdateError.downloadFailed }
-		let localURL = documentsPath.appendingPathComponent("Whispera-\(latestVersion ?? "latest").dmg")
+		let version = latestVersion ?? "latest"
+		let localURL = documentsPath.appendingPathComponent("Whispera-\(version).dmg")
 
-		// Check if file already exists
-		if FileManager.default.fileExists(atPath: localURL.path) {
-			AppLogger.shared.general.info("Update file already exists at: \(localURL.path)")
-			downloadLocation = localURL.path
-
-			// Auto-install if enabled
-			if autoInstallUpdates {
-				let success = await installUpdate(from: localURL.path)
-				if !success {
-					throw UpdateError.installationFailed
-				}
-			} else {
-				// Show notification to user
-				showInstallUpdateNotification(dmgPath: localURL.path)
-			}
-			return
-		}
-
+		// An existing file of that name is not reused; the fresh download replaces it
+		downloadedUpdate = nil
 		isDownloadingUpdate = true
 		downloadProgress = 0.0
 		downloadingVersion = latestVersion
@@ -241,6 +235,7 @@ class UpdateManager: NSObject {
 							try FileManager.default.removeItem(at: localURL)
 						}
 						try FileManager.default.moveItem(at: tempURL, to: localURL)
+						self?.downloadedUpdate = (version, localURL.path)
 
 						AppLogger.shared.general.info("Update downloaded to: \(localURL.path)")
 
@@ -279,23 +274,11 @@ class UpdateManager: NSObject {
 
 	@MainActor
 	func installDownloadedUpdate() async throws {
-		guard let latestVersion = latestVersion else {
+		guard isUpdateDownloaded, let downloadedUpdate else {
 			throw UpdateError.downloadFailed
 		}
 
-		guard
-			let downloadsDir = downloadsDirectory
-		else {
-			throw UpdateError.downloadFailed
-		}
-
-		let localURL = downloadsDir.appendingPathComponent("Whispera-\(latestVersion).dmg")
-
-		guard FileManager.default.fileExists(atPath: localURL.path) else {
-			throw UpdateError.downloadFailed
-		}
-
-		let success = await installUpdate(from: localURL.path)
+		let success = await installUpdate(from: downloadedUpdate.path)
 		if !success {
 			throw UpdateError.installationFailed
 		}
@@ -303,50 +286,46 @@ class UpdateManager: NSObject {
 
 	// MARK: - Update Installation
 
+	/// Installs only an app signed with Whispera's Developer ID. The check runs on the copy that
+	/// will be moved into place, after it has left the disk image, so the image cannot be swapped
+	/// between the check and the install.
 	@MainActor
 	func installUpdate(from dmgPath: String) async -> Bool {
+		let destinationURL = applicationsDirectory.appendingPathComponent("Whispera.app")
+		let stagedURL = applicationsDirectory.appendingPathComponent(".Whispera-update-\(UUID().uuidString).app")
+		defer { try? FileManager.default.removeItem(at: stagedURL) }
 		do {
-			// Mount the DMG
-			let mountResult = try await mountDMG(at: dmgPath)
-			guard let mountPoint = mountResult else {
+			guard let mountPoint = try await mountDMG(at: dmgPath) else {
 				throw UpdateError.installationFailed
 			}
-
-			// Find the app bundle in the mounted DMG
-			let appPath = mountPoint.appendingPathComponent("Whispera.app")
-			guard FileManager.default.fileExists(atPath: appPath.path) else {
-				try unmountDMG(at: mountPoint)
-				throw UpdateError.installationFailed
+			do {
+				let appPath = mountPoint.appendingPathComponent("Whispera.app")
+				guard FileManager.default.fileExists(atPath: appPath.path) else {
+					throw UpdateError.installationFailed
+				}
+				try FileManager.default.copyItem(at: appPath, to: stagedURL)
+			} catch {
+				try? unmountDMG(at: mountPoint)
+				throw error
 			}
+			try? unmountDMG(at: mountPoint)
 
-			// Copy to Applications folder
-			let applicationsURL = URL(fileURLWithPath: "/Applications")
-			let destinationURL = applicationsURL.appendingPathComponent("Whispera.app")
+			try verifyApp(stagedURL)
 
-			// Remove existing app if it exists
 			if FileManager.default.fileExists(atPath: destinationURL.path) {
-				try FileManager.default.removeItem(at: destinationURL)
+				_ = try FileManager.default.replaceItemAt(destinationURL, withItemAt: stagedURL)
+			} else {
+				try FileManager.default.moveItem(at: stagedURL, to: destinationURL)
 			}
 
-			// Copy new version
-			try FileManager.default.copyItem(at: appPath, to: destinationURL)
+			try? FileManager.default.removeItem(atPath: dmgPath)
+			downloadedUpdate = nil
 
-			// Unmount DMG
-			try unmountDMG(at: mountPoint)
-
-			// Clean up downloaded DMG
-			try FileManager.default.removeItem(atPath: dmgPath)
-
-			// Post notification
 			NotificationCenter.default.post(name: UpdateManager.updateInstalledNotification, object: nil)
-
-			// Restart app
 			restartApp()
-
 			return true
-
 		} catch {
-			AppLogger.shared.general.error("Failed to install update: \(error)")
+			AppLogger.shared.general.error("Failed to install update: \(error.localizedDescription)")
 			return false
 		}
 	}
@@ -355,7 +334,7 @@ class UpdateManager: NSObject {
 		// Use hdiutil to mount the DMG
 		let process = Process()
 		process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-		process.arguments = ["attach", path, "-nobrowse", "-quiet"]
+		process.arguments = ["attach", path, "-nobrowse", "-readonly", "-noautoopen"]
 
 		let pipe = Pipe()
 		process.standardOutput = pipe
