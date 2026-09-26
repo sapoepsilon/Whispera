@@ -23,12 +23,12 @@ struct RaycastScriptsTests {
 
 	@Test func micScriptsReadTheTokenAtRunTimeAndSafeOnesDoNot() {
 		let byName = Dictionary(uniqueKeysWithValues: RaycastScripts.commands().map { ($0.fileName, $0.body) })
-		for name in ["whispera-toggle.sh", "whispera-start.sh", "whispera-set-model.sh"] {
+		for name in ["whispera-toggle.sh", "whispera-start.sh", "whispera-set-model.sh", "whispera-set-language.sh"] {
 			let body = byName[name] ?? ""
 			#expect(body.contains(RaycastScripts.tokenLine), "\(name)")
 			#expect(body.contains("token=$token"), "\(name)")
 		}
-		for name in ["whispera-stop.sh", "whispera-cancel.sh", "whispera-set-language.sh"] {
+		for name in ["whispera-stop.sh", "whispera-cancel.sh"] {
 			#expect(!(byName[name] ?? "").contains("token"), "\(name)")
 		}
 		let tokenPath = RemoteControlToken.fileURL().path

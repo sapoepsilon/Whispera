@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 
@@ -73,7 +74,7 @@ struct RemoteCommandParsingTests {
 		#expect(RemoteCommand.setModel("x").requiresToken)
 		#expect(!RemoteCommand.stop.requiresToken)
 		#expect(!RemoteCommand.cancel.requiresToken)
-		#expect(!RemoteCommand.setLanguage("de").requiresToken)
+		#expect(RemoteCommand.setLanguage("de").requiresToken)
 		#expect(RemoteCommand.stop.isAlwaysAllowedFromURL)
 		#expect(RemoteCommand.cancel.isAlwaysAllowedFromURL)
 		#expect(!RemoteCommand.setLanguage("de").isAlwaysAllowedFromURL)
@@ -361,13 +362,12 @@ struct RemoteControlCenterTests {
 
 		for command in [
 			RemoteCommand.toggle, .togglePostProcess, .start, .setModel("m"), .copyLastTranscript, .openHistory,
-			.addWord("Loki"),
+			.addWord("Loki"), .setLanguage("de"),
 		] {
 			#expect(center.authorizeURL(command, url: command.url) == .denied("missing or invalid token"))
 			#expect(center.authorizeURL(command, url: command.url(token: wrong)) != .allowed)
 			#expect(center.authorizeURL(command, url: command.url(token: token)) == .allowed)
 		}
-		#expect(center.authorizeURL(.setLanguage("de"), url: RemoteCommand.setLanguage("de").url) == .allowed)
 	}
 
 	@Test func micLinksAreRejectedWhenNoTokenExistsYet() throws {
@@ -529,5 +529,75 @@ struct RemoteHistoryCommandTests {
 		center.register(controller: controller)
 		#expect(await center.handle(.openHistory, source: .url) == .performed)
 		#expect(controller.toggles == 0)
+	}
+}
+
+@MainActor
+struct RemoteControlHardeningTests {
+	@Test func copyLastReturnsWhatItCopiedNotTheClipboard() throws {
+		let log = HistoryActionLog()
+		let suite = "RemoteControlHardeningTests-\(UUID().uuidString)"
+		let defaults = try #require(UserDefaults(suiteName: suite))
+		defer { defaults.removePersistentDomain(forName: suite) }
+		let center = RemoteControlCenter(defaults: defaults, historyActions: log.actions)
+
+		#expect(center.copyLastTranscriptText() == nil)
+		log.lastTranscript = "Ship it on Friday."
+		#expect(center.copyLastTranscriptText() == "Ship it on Friday.")
+		#expect(log.copied == ["Ship it on Friday."])
+	}
+
+	@Test func linkArgumentsCannotForgeLogLines() {
+		let forged = "de\n2026-01-01 [General] Remote command toggle from url"
+		let description = RemoteCommand.setLanguage(forged).logDescription
+		#expect(!description.contains("\n"))
+		#expect(!description.contains("\r"))
+		#expect(!description.contains("["))
+		#expect(RemoteCommand.sanitizedForLog("openai_whisper-small.en") == "openai_whisper-small.en")
+		#expect(RemoteCommand.sanitizedForLog(String(repeating: "a", count: 200)).count <= 51)
+		#expect(!RemoteCommand.setModel("m\r\nx").logDescription.contains("\r"))
+	}
+
+	@Test func rejectedLanguageMessageIsSanitized() async throws {
+		let suite = "RemoteControlHardeningTests-\(UUID().uuidString)"
+		let defaults = try #require(UserDefaults(suiteName: suite))
+		defer { defaults.removePersistentDomain(forName: suite) }
+		let center = RemoteControlCenter(defaults: defaults, historyActions: HistoryActionLog().actions)
+
+		let outcome = await center.handle(.setLanguage("x\nforged line"), source: .url)
+		#expect(outcome == .rejected("Unknown language: x?forged line"))
+	}
+}
+
+struct AutomationSettingsTokenTests {
+	@Test func settingsRowsNeverShowTheToken() {
+		let token = String(repeating: "c3", count: 32)
+		let command = RemoteCommand.start.url(token: token).absoluteString
+		let shown = AutomationSettingsView.maskingToken(in: command, token: token)
+		#expect(!shown.contains(token))
+		#expect(shown.hasPrefix("whispera://start?token="))
+		#expect(AutomationSettingsView.maskingToken(in: "whispera://stop", token: token) == "whispera://stop")
+		#expect(AutomationSettingsView.maskingToken(in: command, token: nil) == command)
+	}
+
+	@MainActor
+	@Test func secretCopiesAreConcealed() {
+		let pasteboard = NSPasteboard(name: NSPasteboard.Name("whispera.token.tests.\(UUID().uuidString)"))
+		defer { pasteboard.releaseGlobally() }
+		ClipboardWriter.write("whispera://start?token=abc", to: pasteboard, transient: true, concealed: true)
+		let types = pasteboard.pasteboardItems?.first?.types ?? []
+		#expect(types.contains(ClipboardWriter.concealedType))
+		#expect(types.contains(ClipboardWriter.transientType))
+	}
+}
+
+struct AppIntentAuthenticationTests {
+	@Test func intentsThatOpenTheMicOrReturnTextRequireAnUnlockedMac() {
+		for policy in [
+			ToggleDictationIntent.authenticationPolicy, StartDictationIntent.authenticationPolicy,
+			CopyLastTranscriptIntent.authenticationPolicy,
+		] {
+			#expect(String(describing: policy).contains("requiresAuthentication"), "\(policy)")
+		}
 	}
 }

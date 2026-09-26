@@ -13,5 +13,6 @@
 # @raycast.description Switch Whispera's transcription language by name or code.
 # @raycast.author Whispera
 
+token="$(cat "$HOME/Library/Application Support/Whispera/remote-control-token" 2>/dev/null)"
 language="$1"
-open -g "whispera://language?name=${language// /%20}"
+open -g "whispera://language?name=${language// /%20}&token=$token"
