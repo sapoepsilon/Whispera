@@ -13,18 +13,28 @@ cask "whispera" do
   end
 
   auto_updates true
+  depends_on arch: :arm64
   depends_on macos: :sonoma
 
   app "Whispera.app"
 
-  uninstall quit: "com.macwhisper.app"
+  uninstall launchctl: "com.macwhisper.app",
+            quit:      "com.macwhisper.app"
 
   zap trash: [
     "~/Library/Application Support/Whispera",
     "~/Library/Caches/com.macwhisper.app",
     "~/Library/HTTPStorages/com.macwhisper.app",
     "~/Library/HTTPStorages/com.macwhisper.app.binarycookies",
+    "~/Library/LaunchAgents/com.macwhisper.app.plist",
     "~/Library/Preferences/com.macwhisper.app.plist",
     "~/Library/Saved Application State/com.macwhisper.app.savedState",
   ]
+
+  caveats <<~EOS
+    `brew uninstall --zap` leaves the Keychain items Whispera creates: post-processing
+    API keys (service "com.macwhisper.app.post-processing") and the insertion script
+    approval key (service "com.macwhisper.app.insertion-script"). Remove them in
+    Keychain Access if you no longer need them.
+  EOS
 end
