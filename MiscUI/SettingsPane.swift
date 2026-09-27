@@ -139,5 +139,17 @@ enum SettingsLayout {
 		return target == current ? nil : target
 	}
 
+	/// The grown frame keeps the window's top edge and horizontal center where it fits. The
+	/// window's own constraint only keeps the title bar on screen, so a window that grows past
+	/// the bottom of a short screen is moved up here.
+	static func openingFrame(from frame: NSRect, size: NSSize, visible: NSRect) -> NSRect {
+		func clamp(_ origin: CGFloat, length: CGFloat, min lower: CGFloat, max upper: CGFloat) -> CGFloat {
+			max(lower, min(origin, upper - length))
+		}
+		let x = clamp(frame.midX - size.width / 2, length: size.width, min: visible.minX, max: visible.maxX)
+		let y = clamp(frame.maxY - size.height, length: size.height, min: visible.minY, max: visible.maxY)
+		return NSRect(x: x, y: y, width: size.width, height: size.height)
+	}
+
 	static let sizedToIdealKey = "settingsWindowSizedToIdeal"
 }

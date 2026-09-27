@@ -63,9 +63,9 @@ struct SettingsWindowConfigurator: NSViewRepresentable {
 					alreadySized: alreadySized)
 			else { return }
 			let size = NSSize(width: target.width + chrome.width, height: target.height + chrome.height)
-			let grown = NSRect(
-				x: frame.midX - size.width / 2, y: frame.maxY - size.height, width: size.width, height: size.height)
-			window.setFrame(window.constrainFrameRect(grown, to: window.screen), display: true)
+			let screen = window.screen ?? NSScreen.main
+			let grown = SettingsLayout.openingFrame(from: frame, size: size, visible: screen?.visibleFrame ?? frame)
+			window.setFrame(window.constrainFrameRect(grown, to: screen), display: true)
 		}
 
 		func apply() {

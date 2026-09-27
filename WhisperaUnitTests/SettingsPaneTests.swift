@@ -170,6 +170,32 @@ struct SettingsPaneTests {
 				available: NSSize(width: 700, height: 400), alreadySized: false) == nil)
 	}
 
+	@Test func grownWindowKeepsItsTopWhenItFits() {
+		let visible = NSRect(x: 0, y: 0, width: 1440, height: 875)
+		let frame = NSRect(x: 270, y: 300, width: 900, height: 552)
+		#expect(
+			SettingsLayout.openingFrame(from: frame, size: NSSize(width: 958, height: 668), visible: visible)
+				== NSRect(x: 241, y: 184, width: 958, height: 668))
+	}
+
+	@Test func grownWindowMovesUpInsteadOfHangingOffTheBottomOfAShortScreen() {
+		// A 1133x744 display: the scene opened the window 127 pt below the top of the screen
+		let visible = NSRect(x: 0, y: 0, width: 1133, height: 719)
+		let frame = NSRect(x: 114, y: 65, width: 904, height: 552)
+		let grown = SettingsLayout.openingFrame(from: frame, size: NSSize(width: 904, height: 672), visible: visible)
+		#expect(grown.size == NSSize(width: 904, height: 672))
+		#expect(grown.minY == visible.minY)
+		#expect(visible.contains(grown))
+	}
+
+	@Test func grownWindowStaysOnTheScreenHorizontally() {
+		let visible = NSRect(x: 1440, y: 0, width: 1000, height: 800)
+		let frame = NSRect(x: 1450, y: 100, width: 600, height: 552)
+		let grown = SettingsLayout.openingFrame(from: frame, size: NSSize(width: 958, height: 668), visible: visible)
+		#expect(grown.minX == visible.minX)
+		#expect(visible.contains(grown))
+	}
+
 	@Test func everyLanguageOpensAtItsOwnIdealWidth() throws {
 		for language in Self.shippedLanguages {
 			let sidebar = SettingsLayout.paneSidebarWidth(sizeMode: 3, bundle: try Self.bundle(for: language))
