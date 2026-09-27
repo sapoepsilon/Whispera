@@ -256,6 +256,7 @@ struct LogViewerView: View {
 	@State private var query = ""
 	@State private var autoScroll = true
 	@State private var isPaused = false
+	@Environment(\.settingsPaneIsActive) private var isActivePane
 
 	private var visibleEntries: [LogEntry] {
 		tailer.entries.filter { $0.matches(minimum: filterLevel, query: query) }
@@ -342,7 +343,10 @@ struct LogViewerView: View {
 		}
 		.padding(20)
 		.onAppear {
-			if !isPaused { tailer.start() }
+			if isActivePane && !isPaused { tailer.start() }
+		}
+		.onChange(of: isActivePane) { _, isActive in
+			if isActive && !isPaused { tailer.start() } else { tailer.stop() }
 		}
 		.onDisappear { tailer.stop() }
 	}

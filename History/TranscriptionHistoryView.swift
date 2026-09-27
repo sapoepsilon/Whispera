@@ -49,6 +49,7 @@ struct TranscriptionHistoryView: View {
 	@State private var copiedID: UUID?
 	@State private var pendingPurge: HistoryPurge?
 	@State private var pendingRetention: RetentionChange?
+	@Environment(\.settingsPaneIsActive) private var isActivePane
 
 	/// A retention change that would delete entries straight away, held until the user confirms.
 	struct RetentionChange: Identifiable {
@@ -81,6 +82,19 @@ struct TranscriptionHistoryView: View {
 		TranscriptionHistoryStore.filter(store.entries, query: searchText, starredOnly: starredOnly)
 	}
 
+	private func becameVisible() {
+		store.reload()
+		store.viewDidAppear()
+		if let notice = store.acknowledgeStoreNotice() {
+			errorMessage = notice
+		}
+	}
+
+	private func becameHidden() {
+		store.viewDidDisappear()
+		player.stop()
+	}
+
 	var body: some View {
 		VStack(spacing: 0) {
 			settingsSection
@@ -97,15 +111,13 @@ struct TranscriptionHistoryView: View {
 			}
 		}
 		.onAppear {
-			store.reload()
-			store.viewDidAppear()
-			if let notice = store.acknowledgeStoreNotice() {
-				errorMessage = notice
-			}
+			if isActivePane { becameVisible() }
+		}
+		.onChange(of: isActivePane) { _, isActive in
+			if isActive { becameVisible() } else { becameHidden() }
 		}
 		.onDisappear {
-			store.viewDidDisappear()
-			player.stop()
+			if isActivePane { becameHidden() }
 		}
 		.alert(
 			"Delete older history?",

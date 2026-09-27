@@ -5,22 +5,27 @@ import SwiftUI
 /// allows, so the sidebar layout restores it on the hosting window whenever it is removed.
 struct SettingsWindowConfigurator: NSViewRepresentable {
 	let minimumSize: NSSize
+	let idealSize: NSSize
 
 	func makeNSView(context: Context) -> ConfiguringView {
-		ConfiguringView(minimumSize: minimumSize)
+		ConfiguringView(minimumSize: minimumSize, idealSize: idealSize)
 	}
 
 	func updateNSView(_ view: ConfiguringView, context: Context) {
 		view.minimumSize = minimumSize
+		view.idealSize = idealSize
 		view.apply()
 	}
 
 	final class ConfiguringView: NSView {
 		var minimumSize: NSSize
+		var idealSize: NSSize
 		private var styleObservation: NSKeyValueObservation?
+		private weak var openedWindow: NSWindow?
 
-		init(minimumSize: NSSize) {
+		init(minimumSize: NSSize, idealSize: NSSize) {
 			self.minimumSize = minimumSize
+			self.idealSize = idealSize
 			super.init(frame: .zero)
 		}
 
@@ -35,6 +40,32 @@ struct SettingsWindowConfigurator: NSViewRepresentable {
 				DispatchQueue.main.async { window.styleMask.insert(.resizable) }
 			}
 			apply()
+			guard let window, window !== openedWindow else { return }
+			openedWindow = window
+			// SwiftUI sizes the Settings window after the content attaches; grow it once that is done.
+			DispatchQueue.main.async { [weak self] in self?.growToIdealSizeOnce() }
+		}
+
+		private func growToIdealSizeOnce() {
+			guard let window else { return }
+			let defaults = UserDefaults.standard
+			let alreadySized = defaults.bool(forKey: SettingsLayout.sizedToIdealKey)
+			defaults.set(true, forKey: SettingsLayout.sizedToIdealKey)
+			let frame = window.frame
+			// The Settings window draws under its title bar, so measure the area below it.
+			let content = window.contentLayoutRect.size
+			let chrome = NSSize(width: frame.width - content.width, height: frame.height - content.height)
+			let visible = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? idealSize
+			let available = NSSize(width: visible.width - chrome.width, height: visible.height - chrome.height)
+			guard
+				let target = SettingsLayout.openingContentSize(
+					current: content, minimum: minimumSize, ideal: idealSize, available: available,
+					alreadySized: alreadySized)
+			else { return }
+			let size = NSSize(width: target.width + chrome.width, height: target.height + chrome.height)
+			let grown = NSRect(
+				x: frame.midX - size.width / 2, y: frame.maxY - size.height, width: size.width, height: size.height)
+			window.setFrame(window.constrainFrameRect(grown, to: window.screen), display: true)
 		}
 
 		func apply() {

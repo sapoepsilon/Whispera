@@ -509,5 +509,7 @@ final class SettingsViewUITests: XCTestCase {
 			XCTAssertTrue(
 				app.staticTexts[text].waitForExistence(timeout: 5), "Selecting \(pane) should show \"\(text)\"")
 		}
+		XCTAssertFalse(
+			app.staticTexts["Remote Control"].exists, "Panes kept mounted behind the selected one must stay hidden")
 	}
 }

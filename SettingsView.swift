@@ -219,7 +219,11 @@ struct SettingsView: View {
 		SettingsPane.resolve(selectedPane, visible: visiblePanes)
 	}
 
-	private var sidebarWidth: CGFloat { SettingsLayout.paneSidebarWidth }
+	// Observing the size mode here (it is written by System Settings > Appearance) re-measures the
+	// sidebar when the user changes the sidebar icon size while Settings is open.
+	@AppStorage(SettingsLayout.sidebarSizeModeKey) private var sidebarSizeMode = 2
+
+	private var sidebarWidth: CGFloat { SettingsLayout.paneSidebarWidth(sizeMode: sidebarSizeMode) }
 
 	// Clicking the empty space below the rows clears a List selection; keep the current pane instead.
 	private var sidebarSelection: Binding<SettingsPane?> {
@@ -237,16 +241,25 @@ struct SettingsView: View {
 			.accessibilityIdentifier("settingsSidebar")
 			.frame(width: sidebarWidth)
 			Divider()
-			paneContent(currentPane)
-				.frame(minWidth: SettingsLayout.minimumDetailWidth, maxWidth: .infinity, maxHeight: .infinity)
+			SettingsPaneStack(visible: visiblePanes, current: currentPane) { pane in
+				paneContent(pane)
+			}
+			.frame(minWidth: SettingsLayout.minimumDetailWidth, maxWidth: .infinity, maxHeight: .infinity)
 		}
 		.navigationTitle(currentPane.title())
+		.onChange(of: visiblePanes) { _, panes in
+			// Forget a selection that was hidden, so showing the row again does not jump back to it.
+			if !panes.contains(selectedPane) { selectedPane = currentPane }
+		}
 		.background(DebugModeShortcut())
 		.background(
 			SettingsWindowConfigurator(
 				minimumSize: NSSize(
 					width: SettingsLayout.minimumWindowWidth(sidebarWidth: sidebarWidth),
-					height: SettingsLayout.minimumHeight)))
+					height: SettingsLayout.minimumHeight),
+				idealSize: NSSize(
+					width: SettingsLayout.idealWindowWidth(sidebarWidth: sidebarWidth),
+					height: SettingsLayout.idealHeight)))
 		.frame(
 			minWidth: SettingsLayout.minimumWindowWidth(sidebarWidth: sidebarWidth),
 			idealWidth: SettingsLayout.idealWindowWidth(sidebarWidth: sidebarWidth),

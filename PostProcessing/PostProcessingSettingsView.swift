@@ -28,6 +28,7 @@ struct PostProcessingSettingsView: View {
 	@State private var shortcutMonitor: Any?
 	@State private var recorderToken: UUID?
 	@State private var alert: PostProcessingAlert?
+	@Environment(\.settingsPaneIsActive) private var isActivePane
 
 	private var provider: PostProcessingProvider {
 		PostProcessingProvider.provider(withID: providerID) ?? PostProcessingProvider.all[0]
@@ -85,6 +86,9 @@ struct PostProcessingSettingsView: View {
 		.onAppear(perform: loadProviderState)
 		.onChange(of: providerID) { _ in loadProviderState() }
 		.onChange(of: prompts) { updated in settings.prompts = updated }
+		.onChange(of: isActivePane) { _, isActive in
+			if !isActive { stopRecordingShortcut() }
+		}
 		.onDisappear(perform: stopRecordingShortcut)
 		.alert(
 			alert?.title ?? "", isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } }),

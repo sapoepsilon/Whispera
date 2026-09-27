@@ -64,6 +64,13 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 		guard let selection, visible.contains(selection) else { return .general }
 		return selection
 	}
+
+	/// Panes stay mounted once opened so switching rows keeps their in-progress state (a running
+	/// benchmark, a History search, an unsaved API key), as the old tab view did. Unopened panes
+	/// are not built, and a pane that gets hidden is dropped until it is opened again.
+	static func mounted(opened: Set<SettingsPane>, current: SettingsPane, visible: [SettingsPane]) -> [SettingsPane] {
+		visible.filter { $0 == current || opened.contains($0) }
+	}
 }
 
 /// The sidebar has a fixed width that fits the longest row label in the current language, so
@@ -87,18 +94,24 @@ enum SettingsLayout {
 		}
 	}
 
-	static var currentSidebarFont: NSFont {
-		let sizeMode = UserDefaults.standard.integer(forKey: "NSTableViewDefaultSizeMode")
-		return .systemFont(ofSize: sidebarFontSize(sizeMode: sizeMode))
+	static let sidebarSizeModeKey = "NSTableViewDefaultSizeMode"
+
+	static func sidebarFont(sizeMode: Int) -> NSFont {
+		.systemFont(ofSize: sidebarFontSize(sizeMode: sizeMode))
 	}
 
-	static func sidebarWidth(forTitles titles: [String], font: NSFont = currentSidebarFont) -> CGFloat {
+	static func sidebarWidth(forTitles titles: [String], font: NSFont) -> CGFloat {
 		let widest = titles.map { ceil(($0 as NSString).size(withAttributes: [.font: font]).width) }.max() ?? 0
 		return max(minimumSidebarWidth, widest + sidebarRowChrome)
 	}
 
-	static var paneSidebarWidth: CGFloat {
-		sidebarWidth(forTitles: SettingsPane.allCases.map { $0.title() })
+	static func paneSidebarWidth(sizeMode: Int, bundle: Bundle = .main) -> CGFloat {
+		sidebarWidth(
+			forTitles: SettingsPane.allCases.map { $0.title(bundle: bundle) }, font: sidebarFont(sizeMode: sizeMode))
+	}
+
+	static var currentSizeMode: Int {
+		UserDefaults.standard.integer(forKey: sidebarSizeModeKey)
 	}
 
 	static func minimumWindowWidth(sidebarWidth: CGFloat) -> CGFloat {
@@ -112,4 +125,19 @@ enum SettingsLayout {
 	static func size(_ size: NSSize, atLeast minimum: NSSize) -> NSSize {
 		NSSize(width: max(size.width, minimum.width), height: max(size.height, minimum.height))
 	}
+
+	/// The Settings scene ignores the content's ideal size and opens at a fixed default that is
+	/// too short for the panes. The first time the sidebar layout opens, the window grows to the
+	/// ideal size, capped to the screen; after that the frame SwiftUI restores is the user's size.
+	static func openingContentSize(
+		current: NSSize, minimum: NSSize, ideal: NSSize, available: NSSize, alreadySized: Bool
+	) -> NSSize? {
+		guard !alreadySized else { return nil }
+		let target = NSSize(
+			width: max(current.width, minimum.width, min(ideal.width, available.width)),
+			height: max(current.height, minimum.height, min(ideal.height, available.height)))
+		return target == current ? nil : target
+	}
+
+	static let sizedToIdealKey = "settingsWindowSizedToIdeal"
 }

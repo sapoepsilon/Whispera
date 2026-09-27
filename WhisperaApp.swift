@@ -567,7 +567,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		window.isReleasedWhenClosed = false
 		window.setContentSize(
 			NSSize(
-				width: SettingsLayout.idealWindowWidth(sidebarWidth: SettingsLayout.paneSidebarWidth),
+				width: SettingsLayout.idealWindowWidth(
+					sidebarWidth: SettingsLayout.paneSidebarWidth(sizeMode: SettingsLayout.currentSizeMode)),
 				height: SettingsLayout.idealHeight))
 		window.center()
 		settingsWindow = window
