@@ -252,14 +252,12 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 
 		// Configure decoding options based on timestamp requirements
 		if withTimestamps {
-			logger.info("Configuring for timestamps - withoutTimestamps: false, wordTimestamps: true")
 			// Configure for timestamp output
 			whisperKit.updateAdvancedSettings(
 				withoutTimestamps: false,
 				wordTimestamps: true
 			)
 		} else {
-			logger.info("Configuring for plain text - withoutTimestamps: true, wordTimestamps: false")
 			whisperKit.updateAdvancedSettings(
 				withoutTimestamps: true,
 				wordTimestamps: false
@@ -268,6 +266,9 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 
 		// Get updated options with timestamp settings
 		let decodingOptions = whisperKit.getCurrentDecodingOptions(enableTranslation: enableTranslation)
+		// Custom words turn word timestamps off, so the options actually sent are logged
+		logger.info(
+			"Decoding file with timestamps: \(!decodingOptions.withoutTimestamps), word timestamps: \(decodingOptions.wordTimestamps)")
 
 		// Store the progress object for cancellation
 		currentProgress = whisperKitInstance.progress
