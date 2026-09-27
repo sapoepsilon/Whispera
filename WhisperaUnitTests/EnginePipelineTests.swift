@@ -97,15 +97,76 @@ struct LiveSegmentConfirmationTests {
 		)
 	}
 
-	@Test func confirmationPointStaysInsideTheAudioAndNeverMovesBack() {
+	/// Short windows come back with timestamps past the end of the audio. Clamping the cut to the
+	/// audio end moved it past "there", which was still pending: the next pass decoded after it and
+	/// the final text was "Hello. friend".
+	@Test func timestampsPastTheAudioConfirmNothingAndLoseNoWords() {
 		var confirmer = LiveSegmentConfirmer(holdBack: 1)
-		// Short windows come back with timestamps past the end of the audio
-		let result = confirmTwice(&confirmer, [seg("Hello.", 0.2, 19.8), seg("there", 19.9, 25)], audio: 1.4)
-		#expect(result.confirmedAddition == "Hello.")
-		#expect(confirmer.confirmedThroughSeconds == 1.4)
-		let later = confirmTwice(&confirmer, [seg("there", 0.5, 1.0), seg("friend", 1.2, 1.5)], audio: 1.6)
-		#expect(later.confirmedAddition.isEmpty, "a segment ending before 1.4 s is already typed")
-		#expect(confirmer.confirmedThroughSeconds == 1.4)
+		var typed = ""
+		func pass(_ segments: [LiveSegment], _ audio: Float) -> LiveSegmentConfirmer.Result {
+			let result = confirmer.apply(segments, audioSeconds: audio, process: { $0 })
+			if !result.confirmedAddition.isEmpty {
+				typed = WhisperKitTranscriber.appendingConfirmed(result.confirmedAddition, to: typed)
+			}
+			return result
+		}
+		_ = pass([seg("Hello.", 0.2, 19.8), seg("there", 19.9, 25)], 1.4)
+		_ = pass([seg("Hello.", 0.2, 19.8), seg("there", 19.9, 25)], 1.4)
+		#expect(typed.isEmpty)
+		#expect(confirmer.confirmedThroughSeconds == 0)
+		let sane = [seg("Hello.", 0.2, 0.6), seg("there", 0.7, 1.0), seg("friend", 1.2, 1.5)]
+		_ = pass(sane, 1.6)
+		let last = pass(sane, 1.7)
+		#expect(typed == "Hello. there")
+		#expect(confirmer.confirmedThroughSeconds == 1.0, "the cut stays at the end of the last confirmed segment")
+		#expect(WhisperKitTranscriber.committingLiveTail(last.pendingText, to: typed) == "Hello. there friend")
+	}
+
+	/// The cut came from one pass's timestamps: a decode that ended the first sentence at 1.84 s
+	/// instead of 4.36 s moved the decode start into speech already typed, so its end was typed again.
+	@Test func oneUnstablePassDoesNotMoveTheCut() {
+		var confirmer = LiveSegmentConfirmer(holdBack: 1)
+		let stable = [seg("The quick brown fox.", 0, 4.36), seg("Next.", 4.8, 6)]
+		_ = confirmer.apply(stable, audioSeconds: 6.2, process: { $0 })
+		let unstable = confirmer.apply(
+			[seg("The quick brown fox.", 0, 1.84), seg("Next.", 4.8, 6)], audioSeconds: 6.4, process: { $0 })
+		#expect(unstable.confirmedAddition.isEmpty)
+		#expect(confirmer.confirmedThroughSeconds == 0)
+	}
+
+	@Test func theCutTakesTheLaterEndOfTwoAgreeingPasses() {
+		var confirmer = LiveSegmentConfirmer(holdBack: 1)
+		_ = confirmer.apply([seg("The quick brown fox.", 0, 4.36), seg("Next.", 4.8, 6)], audioSeconds: 6.2, process: { $0 })
+		let result = confirmer.apply(
+			[seg("The quick brown fox.", 0, 4.1), seg("Next.", 4.6, 6)], audioSeconds: 6.4, process: { $0 })
+		#expect(result.confirmedAddition == "The quick brown fox.")
+		#expect(confirmer.confirmedThroughSeconds == 4.36)
+	}
+
+	/// Neither pass may place the cut past the start of the next segment's speech.
+	@Test func theCutNeverPassesTheNextSegmentInEitherPass() {
+		var confirmer = LiveSegmentConfirmer(holdBack: 1)
+		_ = confirmer.apply([seg("One two.", 0, 2.4), seg("Three.", 2.5, 3)], audioSeconds: 3.2, process: { $0 })
+		let result = confirmer.apply([seg("One two.", 0, 2.0), seg("Three.", 2.1, 3)], audioSeconds: 3.4, process: { $0 })
+		#expect(result.confirmedAddition.isEmpty, "the passes disagree on where 'Three.' starts")
+		#expect(confirmer.confirmedThroughSeconds == 0)
+	}
+
+	/// With nothing held back no words can lie past the confirmed segments, so an end past the
+	/// audio is clamped to it; Whisper often ends a clip's last segment a little after the audio.
+	@Test func aWhollyConfirmedPassMayEndPastTheAudio() {
+		var confirmer = LiveSegmentConfirmer(holdBack: 0)
+		let segments = [seg("One.", 0, 1), seg("Two.", 1, 2.3)]
+		_ = confirmer.apply(segments, audioSeconds: 2.0, process: { $0 })
+		#expect(confirmer.apply(segments, audioSeconds: 2.0, process: { $0 }).confirmedAddition == "One. Two.")
+		#expect(confirmer.confirmedThroughSeconds == 2.0)
+	}
+
+	@Test func segmentsOutOfOrderConfirmNothing() {
+		var confirmer = LiveSegmentConfirmer(holdBack: 1)
+		let jumbled = [seg("One.", 0, 3), seg("Two.", 1, 2), seg("Three.", 3.5, 4)]
+		_ = confirmer.apply(jumbled, audioSeconds: 5, process: { $0 })
+		#expect(confirmer.apply(jumbled, audioSeconds: 5, process: { $0 }).confirmedAddition.isEmpty)
 	}
 
 	@Test func stopCommitsEveryUnconfirmedSegmentOnce() {
@@ -292,7 +353,7 @@ struct LiveTextPipelineWhisperKitTests {
 		let seconds = Float(samples.count) / Float(WhisperKit.sampleRate)
 		_ = confirmer.apply(segments, audioSeconds: seconds, process: fillerProcessor(["fox"]))
 		let result = confirmer.apply(segments, audioSeconds: seconds, process: fillerProcessor(["fox"]))
-		#expect(result.confirmedSegmentCount == segments.count)
+		#expect(result.confirmedSegmentCount == segments.count, "\(segments) over \(seconds) s")
 		#expect(result.confirmedAddition.lowercased().contains("forest"))
 		#expect(!result.confirmedAddition.lowercased().contains("fox"), "got \(result.confirmedAddition)")
 	}
