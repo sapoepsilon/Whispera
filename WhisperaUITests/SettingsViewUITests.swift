@@ -479,4 +479,35 @@ final class SettingsViewUITests: XCTestCase {
 			)
 		}
 	}
+
+	func testSidebarListsEverySectionAndSwitchesContent() throws {
+		let app = XCUIApplication()
+		app.launch()
+		app.typeKey(",", modifierFlags: .command)
+
+		let sidebar = app.descendants(matching: .any).matching(identifier: "settingsSidebar").firstMatch
+		XCTAssertTrue(sidebar.waitForExistence(timeout: 10), "Settings should show a sidebar instead of a tab bar")
+
+		let alwaysVisible = [
+			"general", "textInsertion", "storage", "fileTranscription", "history", "automation", "benchmark",
+			"postProcessing",
+		]
+		for pane in alwaysVisible {
+			let row = app.descendants(matching: .any).matching(identifier: "settingsSidebar.\(pane)").firstMatch
+			XCTAssertTrue(row.waitForExistence(timeout: 5), "Sidebar row \(pane) should exist")
+			XCTAssertTrue(row.isHittable, "Sidebar row \(pane) should be reachable without an overflow menu")
+		}
+
+		let expectations: [(pane: String, text: String)] = [
+			("automation", "Remote Control"),
+			("fileTranscription", "Supported Formats"),
+			("storage", "Application Logs"),
+			("general", "Global Shortcut"),
+		]
+		for (pane, text) in expectations {
+			app.descendants(matching: .any).matching(identifier: "settingsSidebar.\(pane)").firstMatch.click()
+			XCTAssertTrue(
+				app.staticTexts[text].waitForExistence(timeout: 5), "Selecting \(pane) should show \"\(text)\"")
+		}
+	}
 }
