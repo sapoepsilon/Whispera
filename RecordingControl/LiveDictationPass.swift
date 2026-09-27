@@ -131,8 +131,9 @@ final class LiveDictationPass {
 
 		let options = liveOptions(settings.base, windowHasSpeech: speech.inWindow)
 		let work = Task { @MainActor in try await decode(window, options) }
+		let limit = Self.finalDecodeLimit(timeLimit, windowSamples: window.count)
 		let deadline = Task {
-			try await Task.sleep(for: timeLimit)
+			try await Task.sleep(for: limit)
 			work.cancel()
 		}
 		defer { deadline.cancel() }
@@ -152,6 +153,13 @@ final class LiveDictationPass {
 		appliedThroughSample = decodedThroughSample
 		pendingTail = confirmer.unconfirmedText(segments)
 		return pendingTail
+	}
+
+	/// A window no pass decoded yet, such as a whole dictation stopped while a slow model load
+	/// held the passes back, is dropped when the final decode gives up, so it gets as long as the
+	/// audio lasts.
+	nonisolated static func finalDecodeLimit(_ timeLimit: Duration, windowSamples: Int) -> Duration {
+		max(timeLimit, .seconds(Double(windowSamples) / Double(WhisperKit.sampleRate)))
 	}
 
 	/// The options for one pass over a window that starts at the confirmation point. Timestamps
