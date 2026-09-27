@@ -428,8 +428,11 @@ struct OnboardingStateSavingTests {
 
 struct OnboardingReviewTests {
 	/// QA: reopening onboarding from Settings and closing it partway left the app marked as never
-	/// onboarded, so the next launch started the wizard over. Reviewing must not touch the flag.
-	@Test func reviewingOnboardingKeepsTheCompletionFlag() {
+	/// onboarded, so the next launch started the wizard over. Settings now only calls
+	/// `OnboardingReview.open`, and this checks that the request posts the notification the app
+	/// delegate observes and writes nothing. The Settings button and the delegate's observer are
+	/// not exercised here.
+	@Test func reviewRequestOnlyPostsTheShowNotification() {
 		let before = UserDefaults.standard.object(forKey: OnboardingReview.completedKey) as? Bool
 		let center = NotificationCenter()
 		var shown = 0

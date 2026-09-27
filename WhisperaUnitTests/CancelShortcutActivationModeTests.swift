@@ -7,14 +7,29 @@ import Testing
 /// Esc was only exercised in hold mode on the signed app, where the key-combination rule of the
 /// held dictation key cancels first. In toggle mode the key is up while recording, so the cancel
 /// shortcut alone has to do it, and the next tap must start a fresh recording.
+///
+/// These drive the shortcut and activation state machines and hand an Esc key event to the
+/// installed cancel monitor. The wiring between them in GlobalShortcutManager and AppDelegate,
+/// and the system's delivery of the key to the monitor, are not covered here.
 @MainActor
 struct CancelShortcutActivationModeTests {
+	/// An Esc key press as the monitor receives it; `fromWhispera` marks it the way Whispera's own
+	/// text insertion marks the keys it posts.
+	static func escapeEvent(fromWhispera: Bool = false) throws -> NSEvent {
+		let key = try #require(CGEvent(keyboardEventSource: nil, virtualKey: CancelShortcut.escapeKeyCode, keyDown: true))
+		key.setIntegerValueField(.eventSourceUnixProcessID, value: 1)
+		if fromWhispera {
+			SyntheticKeyEvent.tag(key)
+		}
+		return try #require(NSEvent(cgEvent: key))
+	}
+
 	static let escape = ModifierOnlyInput(kind: .keyDown)
 	static let rightCommandDown = ModifierOnlyInput(
 		kind: .flagsChanged(keyCode: 54, flags: NSEvent.ModifierFlags(rawValue: NSEvent.ModifierFlags.command.rawValue | 0x10)))
 	static let rightCommandUp = ModifierOnlyInput(kind: .flagsChanged(keyCode: 54, flags: []))
 
-	@Test func escapeCancelsAToggleRecordingAndTheNextTapStartsANewOne() {
+	@Test func escapeCancelsAToggleRecordingAndTheNextTapStartsANewOne() throws {
 		var shortcut = ModifierOnlyShortcutMachine(key: .rightCommand)
 		var activation = ActivationStateMachine(mode: .toggle, holdThreshold: 0.3)
 		let start = Date()
@@ -29,11 +44,17 @@ struct CancelShortcutActivationModeTests {
 		// Esc while recording with the dictation key up: not a combination, so only the cancel
 		// shortcut acts, and it is armed while the microphone records
 		#expect(shortcut.handle(Self.escape, recorderListening: false, mode: .toggle, isSessionActive: true) == [])
-		#expect(CancelShortcut.matches(keyCode: CancelShortcut.escapeKeyCode, modifiers: []))
 		#expect(CancelShortcutPolicy.shouldListen(isRecording: true, isStarting: false, enabled: true))
 		var cancels = 0
-		CancelShortcutMonitor(isSecureInputEnabled: { false }) { cancels += 1 }.fire(now: start.addingTimeInterval(3))
+		let monitor = CancelShortcutMonitor(binding: { .escape }, isSecureInputEnabled: { false }) { cancels += 1 }
+		#expect(!monitor.receive(try Self.escapeEvent()), "the monitor only acts while a recording is on")
+		monitor.setActive(true)
+		defer { monitor.setActive(false) }
+		#expect(!monitor.receive(try Self.escapeEvent(fromWhispera: true), now: start.addingTimeInterval(2)))
+		#expect(cancels == 0, "an Esc Whispera typed itself is not the user cancelling")
+		#expect(monitor.receive(try Self.escapeEvent(), now: start.addingTimeInterval(3)))
 		#expect(cancels == 1)
+		monitor.setActive(false)
 
 		// After the cancel the session is over, so the next tap starts instead of stopping
 		#expect(shortcut.handle(Self.rightCommandDown, recorderListening: false, mode: .toggle, isSessionActive: false) == [])

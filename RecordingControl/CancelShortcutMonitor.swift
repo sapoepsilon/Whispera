@@ -209,6 +209,20 @@ final class CancelShortcutMonitor {
 		}
 	}
 
+	/// A key press both monitors act on: the installed shortcut, typed by the user rather than
+	/// posted by Whispera's own text insertion.
+	nonisolated static func isCancelPress(_ event: NSEvent, binding: CancelShortcutBinding) -> Bool {
+		binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags) && !SyntheticKeyEvent.isSelfPosted(event)
+	}
+
+	/// What either monitor does with a key press; true when it cancelled.
+	@discardableResult
+	func receive(_ event: NSEvent, now: Date = Date()) -> Bool {
+		guard isActive, Self.isCancelPress(event, binding: installedBinding) else { return false }
+		fire(now: now)
+		return true
+	}
+
 	func fire(now: Date = Date()) {
 		if let lastCancelAt, now.timeIntervalSince(lastCancelAt) < CancelShortcut.duplicateWindow { return }
 		lastCancelAt = now
@@ -228,21 +242,12 @@ final class CancelShortcutMonitor {
 		let binding = self.binding()
 		installedBinding = binding
 		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-			guard binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags),
-				!SyntheticKeyEvent.isSelfPosted(event)
-			else {
-				return
-			}
+			guard Self.isCancelPress(event, binding: binding) else { return }
 			Task { @MainActor in self?.fire() }
 		}
+		// Local monitors run on the main thread, and a cancel press is swallowed
 		localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-			guard binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags),
-				!SyntheticKeyEvent.isSelfPosted(event)
-			else {
-				return event
-			}
-			Task { @MainActor in self?.fire() }
-			return nil
+			MainActor.assumeIsolated { self?.receive(event) ?? false } ? nil : event
 		}
 		reconcileSecureInput()
 		let timer = Timer(timeInterval: Self.secureInputPollInterval, repeats: true) { [weak self] _ in

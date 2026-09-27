@@ -32,6 +32,14 @@ struct PromptTimestampRulesFilterTests {
 		return logits
 	}
 
+	/// One text token far more likely than the rest, so WhisperKit's "timestamps together outweigh
+	/// every text token" rule does not mask text; only the pair rule can.
+	func logitsFavouringText(_ token: Int) throws -> MLMultiArray {
+		let logits = try zeroLogits()
+		logits.withUnsafeMutableBufferPointer(ofType: Float16.self) { pointer, _ in pointer[token] = 12 }
+		return logits
+	}
+
 	func value(_ logits: MLMultiArray, at index: Int) -> Float {
 		logits.withUnsafeBufferPointer(ofType: Float16.self) { Float($0[index]) }
 	}
@@ -72,8 +80,12 @@ struct PromptTimestampRulesFilterTests {
 		#expect(value(untouched, at: timestamp(0.5)) == 0)
 
 		let filter = PromptTimestampRulesFilter { multilingualTokens }
+		let paired = filter.filterLogits(try logitsFavouringText(440), withTokens: promptedPrefill + [440, 2068])
+		#expect(value(paired, at: 440) == 12, "these logits leave text alone when no timestamp is open")
+		let unpaired = filter.filterLogits(try logitsFavouringText(440), withTokens: tokens)
+		#expect(value(unpaired, at: 440) == -.infinity, "text cannot follow an unpaired timestamp")
+
 		let filtered = filter.filterLogits(try zeroLogits(), withTokens: tokens)
-		#expect(value(filtered, at: 440) == -.infinity, "text cannot follow an unpaired timestamp")
 		#expect(value(filtered, at: special.noTimestampsToken) == -.infinity)
 		#expect(value(filtered, at: timestamp(0.5)) == -.infinity, "timestamps cannot go back")
 		#expect(value(filtered, at: timestamp(1)) == 0, "the pair can close")
