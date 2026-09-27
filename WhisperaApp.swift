@@ -191,7 +191,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 			// Listen for show onboarding requests from settings
 			NotificationCenter.default.addObserver(
-				forName: NSNotification.Name("ShowOnboarding"),
+				forName: OnboardingReview.showNotification,
 				object: nil,
 				queue: .main
 			) { [weak self] _ in

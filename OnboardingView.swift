@@ -202,3 +202,15 @@ struct OnboardingView: View {
 			name: NSNotification.Name("OnboardingCompleted"), object: nil)
 	}
 }
+
+/// "Review onboarding" in Settings reopens the wizard for someone who already finished it.
+/// It leaves the completion flag alone: closing the window partway used to leave it false, so
+/// the next launch started onboarding over. Finishing the review still runs completeOnboarding.
+enum OnboardingReview {
+	static let completedKey = "hasCompletedOnboarding"
+	static let showNotification = NSNotification.Name("ShowOnboarding")
+
+	static func open(center: NotificationCenter = .default) {
+		center.post(name: showNotification, object: nil)
+	}
+}

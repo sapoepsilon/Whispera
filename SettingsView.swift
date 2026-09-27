@@ -1526,12 +1526,7 @@ struct SettingsView: View {
 	}
 
 	private func showOnboardingAgain() {
-		// Reset the onboarding completion flag
-		UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-
-		// Post notification to show onboarding
-		NotificationCenter.default.post(name: NSNotification.Name("ShowOnboarding"), object: nil)
-
+		OnboardingReview.open()
 	}
 
 	private func showLLMSettings() {
