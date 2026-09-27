@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Testing
+import WhisperKit
 
 @testable import Whispera
 
@@ -131,6 +132,45 @@ struct StreamCaptureBufferTests {
 		let samples = buffer.finishCapture()
 		#expect(!samples.isEmpty)
 		#expect((samples.map(abs).max() ?? 0) > 0.1)
+	}
+
+	/// Measured on the plain downmix: a mic on input 1 of a 2-channel interface came out at 0.50 of
+	/// its level (an 8-channel interface could not even be mixed that way), enough for Skip
+	/// Silence's fixed floor to start dropping quiet speakers.
+	@Test(arguments: [2, 8])
+	func mixingAllChannelsKeepsTheLevelOfAMicOnOneInput(channels: Int) throws {
+		let layout = try #require(AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | UInt32(channels)))
+		let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, interleaved: false, channelLayout: layout)
+		let frames = 48000
+		let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)))
+		input.frameLength = AVAudioFrameCount(frames)
+		let data = try #require(input.floatChannelData)
+		for channel in 0..<channels {
+			for index in 0..<frames {
+				data[channel][index] = channel == 0 ? sin(Float(index) * 2 * .pi * 440 / 48000) * 0.1 : 0.0005
+			}
+		}
+		let buffer = StreamCaptureBuffer()
+		buffer.beginCapture(channelSelection: InputChannelSelection.mixAllChannels)
+		_ = buffer.ingest(input, format: format)
+		let samples = buffer.finishCapture()
+		// The resampler's start-up and tail are left out of the measurement
+		let level = AudioProcessor.calculateAverageEnergy(of: Array(samples.dropFirst(800).dropLast(800)))
+		let micLevel = Float(0.1) / Float(2).squareRoot()
+		#expect(abs(level / micLevel - 1) < 0.05, "\(channels) channels: \(level / micLevel) of the mic's level")
+	}
+
+	@Test func mixingAllChannelsAveragesAStereoMic() throws {
+		let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
+		let frames = 4800
+		let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)))
+		input.frameLength = AVAudioFrameCount(frames)
+		for index in 0..<frames {
+			input.floatChannelData![0][index] = 0.2
+			input.floatChannelData![1][index] = 0.1
+		}
+		let mono = InputChannelSelection.isolate(input, selected: InputChannelSelection.mixAllChannels)
+		#expect(mono.floatChannelData![0][100] == Float(0.15))
 	}
 
 	@Test func dropsAudioWhileNotCapturing() {

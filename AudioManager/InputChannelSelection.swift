@@ -1,4 +1,5 @@
 import AVFoundation
+import Accelerate
 import Foundation
 import WhisperKit
 
@@ -22,10 +23,44 @@ enum InputChannelSelection {
 	}
 
 	static func isolate(_ buffer: AVAudioPCMBuffer, selected: Int) -> AVAudioPCMBuffer {
-		guard
-			let mode = channelMode(selected: selected, channelCount: Int(buffer.format.channelCount)),
-			let mono = AudioProcessor.convertToMono(buffer, mode: mode)
-		else { return buffer }
+		guard let mode = channelMode(selected: selected, channelCount: Int(buffer.format.channelCount)) else {
+			return mixActiveChannels(buffer) ?? buffer
+		}
+		return AudioProcessor.convertToMono(buffer, mode: mode) ?? buffer
+	}
+
+	/// A channel counts as carrying sound when it is at least this loud relative to the loudest.
+	static let activeChannelLevel: Float = 0.25
+
+	/// "All channels" as mono without lowering the level: the channels carrying sound are averaged
+	/// and the quiet ones left out. A plain downmix averages every channel, so a mic on one input
+	/// of a 2-channel interface came through at half its level (an eighth on 8 channels), and
+	/// Skip Silence's fixed energy floor then dropped quiet speakers. Returns nil for mono or
+	/// interleaved input, which the converter's downmix handles.
+	static func mixActiveChannels(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+		let channels = Int(buffer.format.channelCount)
+		let frames = Int(buffer.frameLength)
+		guard channels > 1, !buffer.format.isInterleaved, let data = buffer.floatChannelData,
+			let format = AVAudioFormat(standardFormatWithSampleRate: buffer.format.sampleRate, channels: 1),
+			let mono = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(max(frames, 1))),
+			let output = mono.floatChannelData?[0]
+		else { return nil }
+		mono.frameLength = AVAudioFrameCount(frames)
+		guard frames > 0 else { return mono }
+
+		let levels = (0..<channels).map { channel -> Float in
+			var rms: Float = 0
+			vDSP_rmsqv(data[channel], 1, &rms, vDSP_Length(frames))
+			return rms
+		}
+		let loudest = levels.max() ?? 0
+		let active = loudest > 0 ? (0..<channels).filter { levels[$0] >= loudest * activeChannelLevel } : [0]
+		vDSP_vclr(output, 1, vDSP_Length(frames))
+		for channel in active {
+			vDSP_vadd(output, 1, data[channel], 1, output, 1, vDSP_Length(frames))
+		}
+		var scale = 1 / Float(active.count)
+		vDSP_vsmul(output, 1, &scale, output, 1, vDSP_Length(frames))
 		return mono
 	}
 

@@ -20,9 +20,12 @@ struct InputChannelSelectionTests {
 		return buffer
 	}
 
-	@Test func mixingLeavesBufferUntouched() throws {
+	@Test func mixingAveragesTheChannelsCarryingSound() throws {
 		let buffer = try stereoBuffer(left: 0.5, right: -0.25)
-		#expect(InputChannelSelection.isolate(buffer, selected: 0) === buffer)
+		let mono = InputChannelSelection.isolate(buffer, selected: 0)
+		#expect(mono.format.channelCount == 1)
+		let samples = try #require(mono.floatChannelData)[0]
+		#expect((0..<Int(mono.frameLength)).allSatisfy { samples[$0] == 0.125 })
 	}
 
 	@Test(arguments: [(1, Float(0.5)), (2, Float(-0.25))])
@@ -38,7 +41,7 @@ struct InputChannelSelectionTests {
 
 	@Test func channelTheDeviceDoesNotHaveFallsBackToMixing() throws {
 		let buffer = try stereoBuffer(left: 0.5, right: -0.25)
-		#expect(InputChannelSelection.isolate(buffer, selected: 5) === buffer)
+		#expect(InputChannelSelection.isolate(buffer, selected: 5).format.channelCount == 1)
 		#expect(InputChannelSelection.channelMode(selected: 3, channelCount: 2) == nil)
 	}
 
