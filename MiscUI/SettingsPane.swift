@@ -1,0 +1,115 @@
+import AppKit
+
+enum SettingsPane: String, CaseIterable, Identifiable {
+	case general
+	case textInsertion
+	case storage
+	case liveTranscription
+	case fileTranscription
+	case history
+	case automation
+	case benchmark
+	case postProcessing
+	case debug
+
+	var id: String { rawValue }
+
+	func title(bundle: Bundle = .main) -> String {
+		switch self {
+		case .general: return String(localized: "General", bundle: bundle)
+		case .textInsertion: return String(localized: "Text Insertion", bundle: bundle)
+		case .storage: return String(localized: "Storage & Downloads", bundle: bundle)
+		case .liveTranscription: return String(localized: "Live Transcription", bundle: bundle)
+		case .fileTranscription: return String(localized: "File Transcription", bundle: bundle)
+		case .history: return String(localized: "History", bundle: bundle)
+		case .automation: return String(localized: "Automation", bundle: bundle)
+		case .benchmark: return String(localized: "Benchmark", bundle: bundle)
+		case .postProcessing: return String(localized: "Post-Processing", bundle: bundle)
+		case .debug: return String(localized: "Debug", bundle: bundle)
+		}
+	}
+
+	var systemImage: String {
+		switch self {
+		case .general: return "gear"
+		case .textInsertion: return "text.cursor"
+		case .storage: return "internaldrive"
+		case .liveTranscription: return "waveform"
+		case .fileTranscription: return "doc.on.doc"
+		case .history: return "clock.arrow.circlepath"
+		case .automation: return "bolt.horizontal"
+		case .benchmark: return "speedometer"
+		case .postProcessing: return "wand.and.stars"
+		case .debug: return "ladybug"
+		}
+	}
+
+	var accessibilityIdentifier: String { "settingsSidebar.\(rawValue)" }
+
+	/// Live Transcription only appears while streaming is on and Debug only in Debug Mode,
+	/// matching the tabs these rows replaced.
+	static func visible(debugModeEnabled: Bool, liveTranscriptionEnabled: Bool) -> [SettingsPane] {
+		allCases.filter { pane in
+			switch pane {
+			case .liveTranscription: return liveTranscriptionEnabled
+			case .debug: return debugModeEnabled
+			default: return true
+			}
+		}
+	}
+
+	/// A pane that was hidden while selected (Debug Mode or streaming turned off) falls back to
+	/// General instead of leaving the detail column empty.
+	static func resolve(_ selection: SettingsPane?, visible: [SettingsPane]) -> SettingsPane {
+		guard let selection, visible.contains(selection) else { return .general }
+		return selection
+	}
+}
+
+/// The sidebar has a fixed width that fits the longest row label in the current language, so
+/// French and Spanish rows are never truncated; the detail column keeps the room the panes had.
+enum SettingsLayout {
+	static let minimumSidebarWidth: CGFloat = 200
+	/// Icon, the space after it, the selection highlight insets and the column's own padding.
+	static let sidebarRowChrome: CGFloat = 76
+	static let minimumDetailWidth: CGFloat = 520
+	static let idealDetailWidth: CGFloat = 680
+	static let minimumHeight: CGFloat = 520
+	static let idealHeight: CGFloat = 640
+
+	/// Sidebar rows follow the "Sidebar icon size" choice in System Settings > Appearance, which
+	/// macOS stores as the table size mode (1 small, 2 medium, 3 large).
+	static func sidebarFontSize(sizeMode: Int) -> CGFloat {
+		switch sizeMode {
+		case 1: return 11
+		case 3: return 15
+		default: return 13
+		}
+	}
+
+	static var currentSidebarFont: NSFont {
+		let sizeMode = UserDefaults.standard.integer(forKey: "NSTableViewDefaultSizeMode")
+		return .systemFont(ofSize: sidebarFontSize(sizeMode: sizeMode))
+	}
+
+	static func sidebarWidth(forTitles titles: [String], font: NSFont = currentSidebarFont) -> CGFloat {
+		let widest = titles.map { ceil(($0 as NSString).size(withAttributes: [.font: font]).width) }.max() ?? 0
+		return max(minimumSidebarWidth, widest + sidebarRowChrome)
+	}
+
+	static var paneSidebarWidth: CGFloat {
+		sidebarWidth(forTitles: SettingsPane.allCases.map { $0.title() })
+	}
+
+	static func minimumWindowWidth(sidebarWidth: CGFloat) -> CGFloat {
+		sidebarWidth + minimumDetailWidth
+	}
+
+	static func idealWindowWidth(sidebarWidth: CGFloat) -> CGFloat {
+		sidebarWidth + idealDetailWidth
+	}
+
+	static func size(_ size: NSSize, atLeast minimum: NSSize) -> NSSize {
+		NSSize(width: max(size.width, minimum.width), height: max(size.height, minimum.height))
+	}
+}

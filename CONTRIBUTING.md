@@ -9,7 +9,7 @@ Open a [GitHub issue](https://github.com/sapoepsilon/Whispera/issues) with:
 - macOS version and Mac model
 - Steps to reproduce
 - Expected vs actual behavior
-- Relevant logs: Settings > Storage & Downloads > Application Logs > Show in Finder, or `~/Library/Application Support/Whispera/Logs`. Logs are only written while Extended Logging (same section) is on, which is the default. The live log viewer is the Debug tab, which appears after you turn on Debug Mode there.
+- Relevant logs: Settings > Storage & Downloads > Application Logs > Show in Finder, or `~/Library/Application Support/Whispera/Logs`. Logs are only written while Extended Logging (same section) is on, which is the default. The live log viewer is the Debug section of the Settings sidebar, which appears after you turn on Debug Mode there.
 
 ## Submitting Pull Requests
 

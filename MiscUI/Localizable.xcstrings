@@ -13525,25 +13525,25 @@
         }
       }
     },
-    "Press ⇧⌘D in Settings to hide this tab.": {
+    "Press ⇧⌘D in Settings to hide this section.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drücke ⇧⌘D in den Einstellungen, um diesen Tab auszublenden."
+            "value": "Drücke ⇧⌘D in den Einstellungen, um diesen Bereich auszublenden."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pulsa ⇧⌘D en Ajustes para ocultar esta pestaña."
+            "value": "Pulsa ⇧⌘D en Ajustes para ocultar esta sección."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Appuyez sur ⇧⌘D dans les réglages pour masquer cet onglet."
+            "value": "Appuyez sur ⇧⌘D dans les réglages pour masquer cette section."
           }
         }
       }
@@ -16975,25 +16975,25 @@
         }
       }
     },
-    "Show the Debug tab with a live log viewer (⇧⌘D)": {
+    "Show the Debug section with a live log viewer (⇧⌘D)": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tab „Debug“ mit Live-Protokollansicht zeigen (⇧⌘D)"
+            "value": "Bereich „Debug“ mit Live-Protokollansicht zeigen (⇧⌘D)"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mostrar la pestaña Depuración con un visor de registros en vivo (⇧⌘D)"
+            "value": "Mostrar la sección Depuración con un visor de registros en vivo (⇧⌘D)"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Afficher l'onglet Débogage avec un visualiseur de journaux en direct (⇧⌘D)"
+            "value": "Afficher la section Débogage avec un visualiseur de journaux en direct (⇧⌘D)"
           }
         }
       }

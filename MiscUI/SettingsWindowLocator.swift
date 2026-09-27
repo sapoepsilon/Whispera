@@ -1,7 +1,7 @@
 import AppKit
 
 /// Finds the SwiftUI Settings window without relying on its title, which follows the selected
-/// tab and is translated once the app runs in Spanish, German or French.
+/// section and is translated once the app runs in Spanish, German or French.
 enum SettingsWindowLocator {
 	static let swiftUIIdentifier = "com_apple_SwiftUI_Settings_window"
 	/// The fallback window AppDelegate hosts when the SwiftUI openSettings action no-ops.

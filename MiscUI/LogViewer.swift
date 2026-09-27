@@ -224,8 +224,8 @@ final class LogTailer {
 	}
 }
 
-/// Shown in both the Storage and Debug tabs, so it reads the stored level rather than keeping
-/// its own copy that the other tab's picker would leave stale.
+/// Shown in both the Storage and Debug panes, so it reads the stored level rather than keeping
+/// its own copy that the other pane's picker would leave stale.
 struct LogLevelSettingRow: View {
 	@AppStorage(LogLevel.defaultsKey) private var storedLevel: String?
 
@@ -265,7 +265,7 @@ struct LogViewerView: View {
 		VStack(alignment: .leading, spacing: 12) {
 			SettingsSection("Logging") {
 				LogLevelSettingRow()
-				Text("Press ⇧⌘D in Settings to hide this tab.")
+				Text("Press ⇧⌘D in Settings to hide this section.")
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}

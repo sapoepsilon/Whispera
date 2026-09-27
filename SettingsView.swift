@@ -209,20 +209,169 @@ struct SettingsView: View {
 	@AppStorage("enableExtendedLogging") private var enableExtendedLogging = true
 	@AppStorage(DebugMode.defaultsKey) private var debugModeEnabled = false
 
-	private var tabTitles: [String] {
-		var titles = [
-			String(localized: "General"), String(localized: "Text Insertion"),
-			String(localized: "Storage & Downloads"), String(localized: "File Transcription"),
-			String(localized: "History"), String(localized: "Automation"), String(localized: "Benchmark"),
-			String(localized: "Post-Processing"),
-		]
-		if debugModeEnabled { titles.append(String(localized: "Debug")) }
-		return titles
+	@State private var selectedPane: SettingsPane = .general
+
+	private var visiblePanes: [SettingsPane] {
+		SettingsPane.visible(debugModeEnabled: debugModeEnabled, liveTranscriptionEnabled: enableStreaming)
+	}
+
+	private var currentPane: SettingsPane {
+		SettingsPane.resolve(selectedPane, visible: visiblePanes)
+	}
+
+	private var sidebarWidth: CGFloat { SettingsLayout.paneSidebarWidth }
+
+	// Clicking the empty space below the rows clears a List selection; keep the current pane instead.
+	private var sidebarSelection: Binding<SettingsPane?> {
+		Binding(get: { currentPane }, set: { if let pane = $0 { selectedPane = pane } })
 	}
 
 	var body: some View {
-		TabView {
-			// MARK: - General Tab
+		HStack(spacing: 0) {
+			List(visiblePanes, selection: sidebarSelection) { pane in
+				Label(pane.title(), systemImage: pane.systemImage)
+					.tag(pane)
+					.accessibilityIdentifier(pane.accessibilityIdentifier)
+			}
+			.listStyle(.sidebar)
+			.accessibilityIdentifier("settingsSidebar")
+			.frame(width: sidebarWidth)
+			Divider()
+			paneContent(currentPane)
+				.frame(minWidth: SettingsLayout.minimumDetailWidth, maxWidth: .infinity, maxHeight: .infinity)
+		}
+		.navigationTitle(currentPane.title())
+		.background(DebugModeShortcut())
+		.background(
+			SettingsWindowConfigurator(
+				minimumSize: NSSize(
+					width: SettingsLayout.minimumWindowWidth(sidebarWidth: sidebarWidth),
+					height: SettingsLayout.minimumHeight)))
+		.frame(
+			minWidth: SettingsLayout.minimumWindowWidth(sidebarWidth: sidebarWidth),
+			idealWidth: SettingsLayout.idealWindowWidth(sidebarWidth: sidebarWidth),
+			minHeight: SettingsLayout.minimumHeight,
+			idealHeight: SettingsLayout.idealHeight
+		)
+		.onAppear {
+			loadAvailableModels()
+			checkLaunchAtStartupStatus()
+			updateLogsSize()
+		}
+		.onReceive(
+			NotificationCenter.default
+				.publisher(
+					for: NSNotification.Name("WhisperKitModelStateChanged")
+				)
+		) { _ in
+			// Force UI update when model state changes
+			loadAvailableModels()
+		}
+		.onDisappear {
+			stopRecording()
+			stopRecordingFileShortcut()
+		}
+		.onChange(of: selectedModel) { newModel in
+			// Only auto-switch if auto-download is enabled
+			if autoDownloadModel {
+				Task {
+					await switchToModel(newModel)
+				}
+			}
+		}
+		.onChange(of: launchAtStartup) { newValue in
+			setLaunchAtStartup(newValue)
+		}
+		.alert("Error", isPresented: $showingError) {
+			Button("OK") {
+				showingError = false
+				errorMessage = nil
+			}
+		} message: {
+			Text(errorMessage ?? String(localized: "An unknown error occurred"))
+		}
+		.alert(
+			"Update Error",
+			isPresented: $showingUpdaterError,
+			presenting: softwareUpdater.lastUpdaterError
+		) { _ in
+			Button("OK") { softwareUpdater.lastUpdaterError = nil }
+		} message: { error in
+			Text(error)
+		}
+		.onChange(of: softwareUpdater.lastUpdaterError) {
+			showingUpdaterError = softwareUpdater.lastUpdaterError != nil
+		}
+		.alert("Storage Details", isPresented: $showingStorageDetails) {
+			Button("OK") {}
+		} message: {
+			Text(
+				appLibraryManager
+					.getDetailedStorageInfo()
+					.joined(separator: "\n")
+			)
+		}
+		.alert(
+			"Clear All Models",
+			isPresented: $showingClearAllConfirmation
+		) {
+			if confirmationStep == 0 {
+				Button("Cancel", role: .cancel) {
+					confirmationStep = 0
+				}
+				Button("Continue", role: .destructive) {
+					Task {
+						do {
+							try await appLibraryManager.removeAllModels()
+							confirmationStep = 0
+						} catch {
+							errorMessage = String(
+								localized: "Failed to clear models: \(error.localizedDescription)")
+							showingError = true
+							confirmationStep = 0
+						}
+					}
+				}
+			}
+		} message: {
+			if confirmationStep == 0 {
+				Text(
+					"This will permanently delete all downloaded WhisperKit models. You'll need to re-download them if you want to use them again.\n\nStorage to be freed: \(appLibraryManager.totalStorageFormatted)"
+				)
+			} else {
+				Text(
+					"Are you absolutely certain? This action cannot be undone.\n\nAll \(appLibraryManager.modelsCount) models will be permanently deleted."
+				)
+			}
+		}
+		.alert(
+			"Clear Application Logs",
+			isPresented: $showingClearLogsConfirmation
+		) {
+			Button("Cancel", role: .cancel) {}
+			Button("Clear Logs", role: .destructive) {
+				Task {
+					do {
+						try await appLibraryManager.clearLogs()
+						updateLogsSize()
+					} catch {
+						errorMessage = String(
+							localized: "Failed to clear logs: \(error.localizedDescription)")
+						showingError = true
+					}
+				}
+			}
+		} message: {
+			Text(
+				"This will permanently delete all application logs. This action cannot be undone."
+			)
+		}
+	}
+
+	@ViewBuilder
+	private func paneContent(_ pane: SettingsPane) -> some View {
+		switch pane {
+		case .general:
 			ScrollView {
 				VStack(spacing: 24) {
 					// MARK: - App Version Section
@@ -662,16 +811,9 @@ struct SettingsView: View {
 				}
 				.padding(20)
 			}
-			.tabItem {
-				Label("General", systemImage: "gear")
-			}
-
+		case .textInsertion:
 			TextInsertionSettingsView()
-				.tabItem {
-					Label("Text Insertion", systemImage: "text.cursor")
-				}
-
-			// MARK: - Storage & Downloads Tab
+		case .storage:
 			ScrollView {
 				VStack(spacing: 24) {
 					// Storage Summary
@@ -775,7 +917,7 @@ struct SettingsView: View {
 
 								SettingRow(
 									"Debug Mode",
-									description: "Show the Debug tab with a live log viewer (⇧⌘D)"
+									description: "Show the Debug section with a live log viewer (⇧⌘D)"
 								) {
 									Toggle("", isOn: $debugModeEnabled)
 								}
@@ -786,186 +928,176 @@ struct SettingsView: View {
 				}
 				.padding(20)
 			}
-			.tabItem {
-				Label("Storage & Downloads", systemImage: "internaldrive")
-			}
+		case .liveTranscription:
+			ScrollView {
+				VStack(spacing: 24) {
+					// Header
+					HStack {
+						Text("Live Transcription Settings")
+							.font(.headline)
+						Spacer()
+						GlassBetaElement()
+					}
 
-			// MARK: - Live Transcription Tab (only shows when enabled)
-			if enableStreaming {
-				ScrollView {
-					VStack(spacing: 24) {
-						// Header
+					Text("Customize how the live transcription window appears and behaves")
+						.font(.caption)
+						.foregroundColor(.secondary)
+						.frame(maxWidth: .infinity, alignment: .leading)
+
+					Divider()
+
+					// MARK: - Preview Section
+					SettingsSection("Preview") {
 						HStack {
-							Text("Live Transcription Settings")
-								.font(.headline)
 							Spacer()
-							GlassBetaElement()
-						}
-
-						Text("Customize how the live transcription window appears and behaves")
-							.font(.caption)
-							.foregroundColor(.secondary)
-							.frame(maxWidth: .infinity, alignment: .leading)
-
-						Divider()
-
-						// MARK: - Preview Section
-						SettingsSection("Preview") {
-							HStack {
-								Spacer()
-								LiveTranscriptionPreview(
-									maxWords: liveTranscriptionMaxWords,
-									cornerRadius: liveTranscriptionCornerRadius,
-									showEllipsis: liveTranscriptionShowEllipsis
-								)
-								Spacer()
-							}
-							.padding(.vertical, 20)
-							.background(
-								Color.gray.opacity(0.1),
-								in: RoundedRectangle(cornerRadius: 8)
+							LiveTranscriptionPreview(
+								maxWords: liveTranscriptionMaxWords,
+								cornerRadius: liveTranscriptionCornerRadius,
+								showEllipsis: liveTranscriptionShowEllipsis
 							)
+							Spacer()
+						}
+						.padding(.vertical, 20)
+						.background(
+							Color.gray.opacity(0.1),
+							in: RoundedRectangle(cornerRadius: 8)
+						)
+					}
+
+					Divider()
+
+					// MARK: - Settings Section
+					SettingsSection("Appearance") {
+						VStack(alignment: .leading, spacing: 8) {
+							HStack {
+								Text("Maximum Words to Display")
+									.font(.subheadline)
+								Spacer()
+								Text("\(liveTranscriptionMaxWords)")
+									.font(.system(.body, design: .monospaced))
+									.foregroundColor(.secondary)
+							}
+
+							HStack {
+								Slider(
+									value: Binding(
+										get: { Double(liveTranscriptionMaxWords) },
+										set: {
+											liveTranscriptionMaxWords = Int($0)
+											NSHapticFeedbackManager.defaultPerformer
+												.perform(
+													.generic, performanceTime: .now)
+										}
+									),
+									in: 1...50,
+									step: 1
+								)
+								TextField(
+									"Custom", value: $liveTranscriptionMaxWords, format: .number
+								)
+								.textFieldStyle(.roundedBorder)
+								.frame(width: 60)
+							}
+
+							Text("Number of words to show in the transcription window (1-200+)")
+								.font(.caption)
+								.foregroundColor(.secondary)
 						}
 
 						Divider()
 
-						// MARK: - Settings Section
-						SettingsSection("Appearance") {
-							VStack(alignment: .leading, spacing: 8) {
-								HStack {
-									Text("Maximum Words to Display")
-										.font(.subheadline)
-									Spacer()
-									Text("\(liveTranscriptionMaxWords)")
-										.font(.system(.body, design: .monospaced))
-										.foregroundColor(.secondary)
-								}
-
-								HStack {
-									Slider(
-										value: Binding(
-											get: { Double(liveTranscriptionMaxWords) },
-											set: {
-												liveTranscriptionMaxWords = Int($0)
-												NSHapticFeedbackManager.defaultPerformer
-													.perform(
-														.generic, performanceTime: .now)
-											}
-										),
-										in: 1...50,
-										step: 1
-									)
-									TextField(
-										"Custom", value: $liveTranscriptionMaxWords, format: .number
-									)
-									.textFieldStyle(.roundedBorder)
-									.frame(width: 60)
-								}
-
-								Text("Number of words to show in the transcription window (1-200+)")
-									.font(.caption)
+						VStack(alignment: .leading, spacing: 8) {
+							HStack {
+								Text("Window Corner Radius")
+									.font(.subheadline)
+								Spacer()
+								Text("\(Int(liveTranscriptionCornerRadius))")
+									.font(.system(.body, design: .monospaced))
 									.foregroundColor(.secondary)
 							}
 
-							Divider()
-
-							VStack(alignment: .leading, spacing: 8) {
-								HStack {
-									Text("Window Corner Radius")
-										.font(.subheadline)
-									Spacer()
-									Text("\(Int(liveTranscriptionCornerRadius))")
-										.font(.system(.body, design: .monospaced))
-										.foregroundColor(.secondary)
-								}
-
-								Slider(value: $liveTranscriptionCornerRadius, in: 0...20, step: 1)
-									.onChange(of: liveTranscriptionCornerRadius) {
-										NSHapticFeedbackManager.defaultPerformer.perform(
-											.generic, performanceTime: .now)
-									}
-
-								Text("Roundness of the window corners")
-									.font(.caption)
-									.foregroundColor(.secondary)
-							}
-
-							Divider()
-
-							VStack(alignment: .leading, spacing: 8) {
-								HStack {
-									Text("Window Position Offset")
-										.font(.subheadline)
-									Spacer()
-									Text("\(Int(liveTranscriptionWindowOffset)) px")
-										.font(.system(.body, design: .monospaced))
-										.foregroundColor(.secondary)
-								}
-
-								Slider(value: $liveTranscriptionWindowOffset, in: 10...50, step: 5)
-									.onChange(of: liveTranscriptionWindowOffset) {
-										NSHapticFeedbackManager.defaultPerformer.perform(
-											.generic, performanceTime: .now)
-									}
-
-								Text("Distance from the cursor position")
-									.font(.caption)
-									.foregroundColor(.secondary)
-							}
-
-							Divider()
-
-							VStack(alignment: .leading, spacing: 8) {
-								HStack {
-									Text("Maximum Window Width")
-										.font(.subheadline)
-									Spacer()
-									Text("\(Int(liveTranscriptionMaxWidthPercentage * 100))%")
-										.font(.system(.body, design: .monospaced))
-										.foregroundColor(.secondary)
-								}
-
-								Slider(
-									value: $liveTranscriptionMaxWidthPercentage, in: 0.3...0.8,
-									step: 0.05
-								)
-								.onChange(of: liveTranscriptionMaxWidthPercentage) {
+							Slider(value: $liveTranscriptionCornerRadius, in: 0...20, step: 1)
+								.onChange(of: liveTranscriptionCornerRadius) {
 									NSHapticFeedbackManager.defaultPerformer.perform(
 										.generic, performanceTime: .now)
 								}
 
-								Text("Maximum width as percentage of screen width")
-									.font(.caption)
-									.foregroundColor(.secondary)
-							}
+							Text("Roundness of the window corners")
+								.font(.caption)
+								.foregroundColor(.secondary)
 						}
 
 						Divider()
 
-						SettingsSection("Behavior") {
-							SettingRow(
-								"Show Ellipsis", description: "Display '...' when text is truncated"
-							) {
-								Toggle("", isOn: $liveTranscriptionShowEllipsis)
+						VStack(alignment: .leading, spacing: 8) {
+							HStack {
+								Text("Window Position Offset")
+									.font(.subheadline)
+								Spacer()
+								Text("\(Int(liveTranscriptionWindowOffset)) px")
+									.font(.system(.body, design: .monospaced))
+									.foregroundColor(.secondary)
 							}
 
-							SettingRow(
-								"Follow Caret Position",
-								description: "Window follows cursor position while typing"
-							) {
-								Toggle("", isOn: $liveTranscriptionFollowCaret)
-							}
+							Slider(value: $liveTranscriptionWindowOffset, in: 10...50, step: 5)
+								.onChange(of: liveTranscriptionWindowOffset) {
+									NSHapticFeedbackManager.defaultPerformer.perform(
+										.generic, performanceTime: .now)
+								}
+
+							Text("Distance from the cursor position")
+								.font(.caption)
+								.foregroundColor(.secondary)
 						}
 
-					}
-					.padding(20)
-				}
-				.tabItem {
-					Label("Live Transcription", systemImage: "waveform")
-				}
-			}
+						Divider()
 
-			// MARK: - File Transcription Tab
+						VStack(alignment: .leading, spacing: 8) {
+							HStack {
+								Text("Maximum Window Width")
+									.font(.subheadline)
+								Spacer()
+								Text("\(Int(liveTranscriptionMaxWidthPercentage * 100))%")
+									.font(.system(.body, design: .monospaced))
+									.foregroundColor(.secondary)
+							}
+
+							Slider(
+								value: $liveTranscriptionMaxWidthPercentage, in: 0.3...0.8,
+								step: 0.05
+							)
+							.onChange(of: liveTranscriptionMaxWidthPercentage) {
+								NSHapticFeedbackManager.defaultPerformer.perform(
+									.generic, performanceTime: .now)
+							}
+
+							Text("Maximum width as percentage of screen width")
+								.font(.caption)
+								.foregroundColor(.secondary)
+						}
+					}
+
+					Divider()
+
+					SettingsSection("Behavior") {
+						SettingRow(
+							"Show Ellipsis", description: "Display '...' when text is truncated"
+						) {
+							Toggle("", isOn: $liveTranscriptionShowEllipsis)
+						}
+
+						SettingRow(
+							"Follow Caret Position",
+							description: "Window follows cursor position while typing"
+						) {
+							Toggle("", isOn: $liveTranscriptionFollowCaret)
+						}
+					}
+
+				}
+				.padding(20)
+			}
+		case .fileTranscription:
 			ScrollView {
 				VStack(spacing: 24) {
 					// MARK: - File Selection Section
@@ -1125,153 +1257,16 @@ struct SettingsView: View {
 				}
 				.padding(20)
 			}
-			.tabItem {
-				Label("File Transcription", systemImage: "doc.on.doc")
-			}
-
+		case .history:
 			TranscriptionHistoryView()
-				.tabItem {
-					Label("History", systemImage: "clock.arrow.circlepath")
-				}
-
+		case .automation:
 			AutomationSettingsView()
-				.tabItem {
-					Label("Automation", systemImage: "bolt.horizontal")
-				}
-
+		case .benchmark:
 			BenchmarkView()
-				.tabItem {
-					Label("Benchmark", systemImage: "speedometer")
-				}
-
+		case .postProcessing:
 			PostProcessingSettingsView()
-				.tabItem {
-					Label("Post-Processing", systemImage: "wand.and.stars")
-				}
-
-			if debugModeEnabled {
-				LogViewerView()
-					.tabItem {
-						Label("Debug", systemImage: "ladybug")
-					}
-			}
-		}
-		.background(DebugModeShortcut())
-		// Wide enough for every tab in the current language: SwiftUI disables the toolbar
-		// overflow menu, so a tab pushed into it could not be opened
-		.frame(width: SettingsWindowWidth.required(forTabTitles: tabTitles))
-		.onAppear {
-			loadAvailableModels()
-			checkLaunchAtStartupStatus()
-			updateLogsSize()
-		}
-		.onReceive(
-			NotificationCenter.default
-				.publisher(
-					for: NSNotification.Name("WhisperKitModelStateChanged")
-				)
-		) { _ in
-			// Force UI update when model state changes
-			loadAvailableModels()
-		}
-		.onDisappear {
-			stopRecording()
-			stopRecordingFileShortcut()
-		}
-		.onChange(of: selectedModel) { newModel in
-			// Only auto-switch if auto-download is enabled
-			if autoDownloadModel {
-				Task {
-					await switchToModel(newModel)
-				}
-			}
-		}
-		.onChange(of: launchAtStartup) { newValue in
-			setLaunchAtStartup(newValue)
-		}
-		.alert("Error", isPresented: $showingError) {
-			Button("OK") {
-				showingError = false
-				errorMessage = nil
-			}
-		} message: {
-			Text(errorMessage ?? String(localized: "An unknown error occurred"))
-		}
-		.alert(
-			"Update Error",
-			isPresented: $showingUpdaterError,
-			presenting: softwareUpdater.lastUpdaterError
-		) { _ in
-			Button("OK") { softwareUpdater.lastUpdaterError = nil }
-		} message: { error in
-			Text(error)
-		}
-		.onChange(of: softwareUpdater.lastUpdaterError) {
-			showingUpdaterError = softwareUpdater.lastUpdaterError != nil
-		}
-		.alert("Storage Details", isPresented: $showingStorageDetails) {
-			Button("OK") {}
-		} message: {
-			Text(
-				appLibraryManager
-					.getDetailedStorageInfo()
-					.joined(separator: "\n")
-			)
-		}
-		.alert(
-			"Clear All Models",
-			isPresented: $showingClearAllConfirmation
-		) {
-			if confirmationStep == 0 {
-				Button("Cancel", role: .cancel) {
-					confirmationStep = 0
-				}
-				Button("Continue", role: .destructive) {
-					Task {
-						do {
-							try await appLibraryManager.removeAllModels()
-							confirmationStep = 0
-						} catch {
-							errorMessage = String(
-								localized: "Failed to clear models: \(error.localizedDescription)")
-							showingError = true
-							confirmationStep = 0
-						}
-					}
-				}
-			}
-		} message: {
-			if confirmationStep == 0 {
-				Text(
-					"This will permanently delete all downloaded WhisperKit models. You'll need to re-download them if you want to use them again.\n\nStorage to be freed: \(appLibraryManager.totalStorageFormatted)"
-				)
-			} else {
-				Text(
-					"Are you absolutely certain? This action cannot be undone.\n\nAll \(appLibraryManager.modelsCount) models will be permanently deleted."
-				)
-			}
-		}
-		.alert(
-			"Clear Application Logs",
-			isPresented: $showingClearLogsConfirmation
-		) {
-			Button("Cancel", role: .cancel) {}
-			Button("Clear Logs", role: .destructive) {
-				Task {
-					do {
-						try await appLibraryManager.clearLogs()
-						updateLogsSize()
-					} catch {
-						errorMessage = String(
-							localized: "Failed to clear logs: \(error.localizedDescription)")
-						showingError = true
-					}
-				}
-			}
-		} message: {
-			Text(
-				"This will permanently delete all application logs. This action cannot be undone."
-			)
+		case .debug:
+			LogViewerView()
 		}
 	}
 

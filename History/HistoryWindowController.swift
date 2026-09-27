@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Standalone history window for the URL scheme, App Intents and launchers, which cannot
-/// reach the SwiftUI Settings scene's tab selection.
+/// reach the SwiftUI Settings scene's section selection.
 @MainActor
 final class HistoryWindowController: NSObject, NSWindowDelegate {
 	static let shared = HistoryWindowController()

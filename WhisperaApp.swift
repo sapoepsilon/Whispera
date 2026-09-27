@@ -17,8 +17,7 @@ struct WhisperaApp: App {
 			)
 		}
 		.windowStyle(.hiddenTitleBar)
-		.windowResizability(.automatic)
-		.windowResizability(.automatic)
+		.windowResizability(.contentSize)
 		.windowToolbarStyle(.unified(showsTitle: true))
 		.defaultPosition(.center)
 		.commands {
@@ -57,7 +56,6 @@ struct SettingsWithMaterial: View {
 				appLibraryManager: appLibraryManager,
 				softwareUpdater: softwareUpdater
 			)
-			.frame(minWidth: 450, minHeight: 520)
 			.containerBackground(for: .window) {
 				AdaptiveMaterialBackground(style: materialStyle)
 			}
@@ -67,7 +65,6 @@ struct SettingsWithMaterial: View {
 				appLibraryManager: appLibraryManager,
 				softwareUpdater: softwareUpdater
 			)
-			.frame(minWidth: 450, minHeight: 520)
 		}
 	}
 }
@@ -568,7 +565,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		window.identifier = NSUserInterfaceItemIdentifier(SettingsWindowLocator.retainedIdentifier)
 		window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
 		window.isReleasedWhenClosed = false
-		window.setContentSize(NSSize(width: 640, height: 560))
+		window.setContentSize(
+			NSSize(
+				width: SettingsLayout.idealWindowWidth(sidebarWidth: SettingsLayout.paneSidebarWidth),
+				height: SettingsLayout.idealHeight))
 		window.center()
 		settingsWindow = window
 		window.makeKeyAndOrderFront(nil)
