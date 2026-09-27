@@ -131,7 +131,7 @@ enum WhisperaCLI {
 			base = CLIDecodingSettings.options(
 				language: nil, detectLanguage: true, translate: options.translate, defaults: defaults)
 		}
-		let decoding = transcriber.decodingOptions(base, defaults: defaults)
+		let decoding = await transcriber.decodingOptions(base, defaults: defaults)
 		let pipeline = CLITextPipeline(
 			configuration: TextProcessingSettings.configuration(from: defaults), language: language,
 			translating: options.translate, modelHonorsLanguage: model.honorsLanguage)

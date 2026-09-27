@@ -257,6 +257,32 @@ struct HeadlessTranscriberIntegrationTests {
 		#expect(run.bestMs > 0)
 		#expect(run.text.lowercased().contains("education"), "Transcript: \(run.text.prefix(300))")
 	}
+
+	@Test(
+		.enabled(if: smallestDownloadedModel != nil, "Needs a downloaded tiny or base model"),
+		.timeLimit(.minutes(5))
+	)
+	@MainActor
+	func theFirstFileCarriesTheCustomWordPrompt() async throws {
+		let model = try #require(Self.smallestDownloadedModel)
+		let transcriber = try await HeadlessTranscriber(
+			model: CLIModel(
+				id: model, name: model,
+				engine: .whisperKit(folder: CLIModelCatalog.modelsDirectory().appendingPathComponent(model))),
+			device: CLIComputeDevice.all[0], downloadBase: CLIModelCatalog.defaultDownloadBase,
+			verbose: false)
+		let suite = "CLICustomWordPrompt-\(UUID().uuidString)"
+		let defaults = try #require(UserDefaults(suiteName: suite))
+		defer { defaults.removePersistentDomain(forName: suite) }
+		defaults.set(true, forKey: TextProcessingSettings.Keys.biasDecodingWithCustomWords)
+		TextProcessingSettings.addCustomWords(["Quillmar"], in: defaults)
+		let base = CLIDecodingSettings.options(
+			language: "en", detectLanguage: false, translate: false, defaults: defaults)
+
+		let options = await transcriber.decodingOptions(base, defaults: defaults)
+
+		#expect(options.promptTokens?.isEmpty == false, "The CLI decode went out without the custom-word prompt")
+	}
 }
 
 struct CLIRemoteURLTests {

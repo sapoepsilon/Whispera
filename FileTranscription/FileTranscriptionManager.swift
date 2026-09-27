@@ -20,6 +20,8 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 		subsystem: Bundle.main.bundleIdentifier ?? "Whispera", category: "FileTranscription")
 	private var currentProgress: Progress?
 	private var transcriptionTask: Task<[TranscriptionResult], Error>?
+	/// What the last WhisperKit file decode was given, custom-word prompt included.
+	@ObservationIgnored private(set) var lastSentDecodingOptions: DecodingOptions?
 
 	// MARK: - File Queue Management
 	private var fileQueue: [FileTranscriptionTask] = []
@@ -265,7 +267,8 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 		}
 
 		// Get updated options with timestamp settings
-		let decodingOptions = whisperKit.getCurrentDecodingOptions(enableTranslation: enableTranslation)
+		let decodingOptions = await whisperKit.promptReadyDecodingOptions(enableTranslation: enableTranslation)
+		lastSentDecodingOptions = decodingOptions
 		// Custom words turn word timestamps off, so the options actually sent are logged
 		logger.info(
 			"Decoding file with timestamps: \(!decodingOptions.withoutTimestamps), word timestamps: \(decodingOptions.wordTimestamps)")

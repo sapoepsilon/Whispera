@@ -341,13 +341,17 @@ final class HeadlessTranscriber {
 		try AudioProcessor.loadAudioAsFloatArray(fromPath: path)
 	}
 
-	/// Adds the custom-word decoder prompt the app uses, when that bias is on.
-	func decodingOptions(_ base: DecodingOptions, defaults: UserDefaults) -> DecodingOptions {
+	/// Adds the custom-word decoder prompt the app uses, when that bias is on. The tokenizer is
+	/// loaded first when missing, so the prompt is never dropped silently.
+	func decodingOptions(_ base: DecodingOptions, defaults: UserDefaults) async -> DecodingOptions {
 		guard case .whisperKit(let whisperKit) = backend,
 			TextProcessingSettings.biasDecodingWithCustomWords(from: defaults),
-			let prompt = TextProcessingSettings.decoderPrompt(for: TextProcessingSettings.customWords(from: defaults)),
-			let tokenizer = whisperKit.tokenizer
+			let prompt = TextProcessingSettings.decoderPrompt(for: TextProcessingSettings.customWords(from: defaults))
 		else { return base }
+		if whisperKit.tokenizer == nil {
+			try? await whisperKit.loadTokenizerIfNeeded()
+		}
+		guard let tokenizer = whisperKit.tokenizer else { return base }
 		let tokens = tokenizer.encode(text: prompt).filter { $0 < tokenizer.specialTokens.specialTokenBegin }
 		var options = base
 		options.promptTokens = tokens.isEmpty ? nil : tokens

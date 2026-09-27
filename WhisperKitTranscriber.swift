@@ -1271,6 +1271,15 @@ import WhisperKit
 		return createDecodingOptions(enableTranslation: enableTranslation)
 	}
 
+	/// The options every one-shot transcription sends (dictation, files, the queue, YouTube,
+	/// history re-transcription). A prewarmed model loads its tokenizer only inside transcribe,
+	/// after the options were built, so options built without this left the first transcription
+	/// after a launch or a model switch without the custom-word prompt.
+	func promptReadyDecodingOptions(enableTranslation: Bool) async -> DecodingOptions {
+		await loadTokenizerForCustomWords()
+		return createDecodingOptions(enableTranslation: enableTranslation)
+	}
+
 	// MARK: - Dynamic Settings Management
 	func reloadCurrentModelIfNeeded() async throws {
 		guard let currentModel = currentModel else {
@@ -1369,8 +1378,7 @@ import WhisperKit
 		}
 		let maxRetries = 3
 		var lastError: Error?
-		await loadTokenizerForCustomWords()
-		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
+		decodingOptions = await promptReadyDecodingOptions(enableTranslation: enableTranslation)
 
 		for attempt in 1...maxRetries {
 			do {
@@ -1590,8 +1598,7 @@ import WhisperKit
 		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
-		await loadTokenizerForCustomWords()
-		let decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
+		let decodingOptions = await promptReadyDecodingOptions(enableTranslation: enableTranslation)
 
 		let result = try await Task {
 			if whisperKitInstance.modelState == .loading {
@@ -1657,8 +1664,7 @@ import WhisperKit
 		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
-		await loadTokenizerForCustomWords()
-		var decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
+		var decodingOptions = await promptReadyDecodingOptions(enableTranslation: enableTranslation)
 
 		// Set time range for segment transcription
 		decodingOptions.clipTimestamps = [Float(startTime), Float(endTime)]

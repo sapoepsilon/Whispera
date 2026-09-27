@@ -131,4 +131,71 @@ struct CustomWordPromptTranscriberTests {
 		defaults.set(false, forKey: TextProcessingSettings.Keys.biasDecodingWithCustomWords)
 		#expect(transcriber.decodingOptions?.promptTokens == nil)
 	}
+
+	/// The menu-bar Browse, drag-and-drop, queue and YouTube path, plain and timestamped. Right
+	/// after a launch or a model switch the model is only prewarmed and its tokenizer loads inside
+	/// transcribe, after the options were built, so the first file went out without the prompt.
+	@Test(.timeLimit(.minutes(10)), arguments: [false, true])
+	func theFirstQueuedFileAfterALoadCarriesTheCustomWordPrompt(withTimestamps: Bool) async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		try await waitForWhisperKit(transcriber)
+		let whisperKit = try #require(transcriber.whisperKit)
+		let defaults = UserDefaults.standard
+		let keys = [
+			TextProcessingSettings.Keys.customWords, TextProcessingSettings.Keys.biasDecodingWithCustomWords,
+			"decodingWithoutTimestamps", "decodingWordTimestamps",
+		]
+		let saved = keys.map { defaults.object(forKey: $0) }
+		let directory = FileManager.default.temporaryDirectory
+			.appendingPathComponent("FirstFilePrompt-\(UUID().uuidString)", isDirectory: true)
+		defer {
+			for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) }
+			try? FileManager.default.removeItem(at: directory)
+		}
+		defaults.set(true, forKey: TextProcessingSettings.Keys.biasDecodingWithCustomWords)
+		let word = "Quillmar\(Int.random(in: 1000...9999))"
+		TextProcessingSettings.addCustomWords([word], in: defaults)
+		let audio = try SpeechFixture.make("The meeting notes are ready for review.", in: directory)
+
+		// The state a launch or a model switch leaves: specialized, weights and tokenizer not loaded
+		try await whisperKit.prewarmModels()
+		whisperKit.tokenizer = nil
+		try #require(whisperKit.modelState == .prewarmed)
+		let manager = FileTranscriptionManager(whisperKit: transcriber)
+		_ = try await manager.transcribeFile(at: audio, withTimestamps: withTimestamps)
+
+		let options = try #require(manager.lastSentDecodingOptions)
+		let tokens = try #require(options.promptTokens, "The file went out without the custom-word prompt")
+		let tokenizer = try #require(whisperKit.tokenizer)
+		#expect(tokenizer.decode(tokens: tokens).contains(word))
+	}
+
+	/// History re-transcription and the transcriber's own file methods share this path.
+	@Test(.timeLimit(.minutes(10)))
+	func reTranscribingAFileAfterALoadCarriesTheCustomWordPrompt() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		try await waitForWhisperKit(transcriber)
+		let whisperKit = try #require(transcriber.whisperKit)
+		let defaults = UserDefaults.standard
+		let savedWords = defaults.object(forKey: TextProcessingSettings.Keys.customWords)
+		let savedBias = defaults.object(forKey: TextProcessingSettings.Keys.biasDecodingWithCustomWords)
+		let directory = FileManager.default.temporaryDirectory
+			.appendingPathComponent("RetranscribePrompt-\(UUID().uuidString)", isDirectory: true)
+		defer {
+			defaults.set(savedWords, forKey: TextProcessingSettings.Keys.customWords)
+			defaults.set(savedBias, forKey: TextProcessingSettings.Keys.biasDecodingWithCustomWords)
+			try? FileManager.default.removeItem(at: directory)
+		}
+		defaults.set(true, forKey: TextProcessingSettings.Keys.biasDecodingWithCustomWords)
+		let word = "Zyphora\(Int.random(in: 1000...9999))"
+		TextProcessingSettings.addCustomWords([word], in: defaults)
+		let audio = try SpeechFixture.make("The meeting notes are ready for review.", in: directory)
+
+		try await whisperKit.prewarmModels()
+		whisperKit.tokenizer = nil
+		_ = try await transcriber.transcribe(audioURL: audio, enableTranslation: false)
+
+		let prompt = try #require(decodedPrompt(transcriber), "The re-transcription went out without a prompt")
+		#expect(prompt.contains(word))
+	}
 }
