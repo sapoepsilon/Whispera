@@ -28,22 +28,21 @@ import WhisperKit
 	var currentText: String = ""
 	var dictationWordTracker: DictationWordTracker?
 	@ObservationIgnored private var lastLiveSession: (text: String, samples: [Float]) = (text: "", samples: [])
-	@ObservationIgnored private var liveDetectedLanguage: String?
 	/// Where the text pipeline reads its settings; tests point it at an isolated suite.
 	@ObservationIgnored var textProcessingDefaults: UserDefaults = .standard
 	// Live text management
 	private var isLiveTranscriptionMode = false
-	private var liveConfirmer = LiveSegmentConfirmer(holdBack: WhisperKitTranscriber.liveSegmentsHeldBack)
+	/// The live session's decode loop: confirmation point, pending tail and settled language.
+	@ObservationIgnored private var livePass = LiveDictationPass()
+	/// Stopping decodes the words said after the newest pass before committing the session.
+	@ObservationIgnored private var liveFinishTask: Task<Bool, Never>?
+	@ObservationIgnored private var liveFinish = LiveSessionGate()
 	var confirmedText: String = "" {
 		didSet {
 			onConfirmedTextChange?(confirmedText)
 		}
 	}
 	private var pendingText: String = ""  // Internal working property
-	/// The unconfirmed segments of the newest finished decode. pendingText is also overwritten by
-	/// the decoder's progress callback with the partial text of the whole window, so the stop
-	/// path commits this instead.
-	private var livePendingTail: String = ""
 	var stableDisplayText: String = ""  // UI-facing stable property
 	private var lastDisplayedPendingText: String = ""
 	var shouldShowDebugWindow: Bool = false
@@ -58,8 +57,8 @@ import WhisperKit
 		liveStreamStartupTask = nil
 		isWaitingForModel = false
 		waitingForModelStatusText = ""
+		endLiveFinish()
 		pendingText = ""
-		livePendingTail = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
 		shouldShowLiveTranscriptionWindow = false
@@ -68,8 +67,7 @@ import WhisperKit
 		shouldShowDebugWindow = false
 		transcriptionTask?.cancel()
 		transcriptionTask = nil
-		lastBufferSize = 0
-		liveConfirmer = LiveSegmentConfirmer(holdBack: Self.liveSegmentsHeldBack)
+		livePass = LiveDictationPass()
 	}
 
 	func beginLiveTranscriptionWaitingUI() {
@@ -449,7 +447,6 @@ import WhisperKit
 	private var transcriptionTask: Task<Void, Never>?
 	@MainActor private var liveStreamStartupTask: Task<Void, Error>?
 	@ObservationIgnored private var liveSession = LiveSessionGate()
-	private var lastBufferSize: Int = 0
 	private var realtimeDelayInterval: Float = 0.3
 	@MainActor private var initializationTask: Task<Void, Never>?
 	/// Serializes every model download, load and switch; a running operation also blocks idle unload.
@@ -637,6 +634,8 @@ import WhisperKit
 		AppLogger.shared.transcriber.info("WhisperKit is ready")
 	}
 	func liveStream() async throws {
+		// The previous session's final decode still types into the app and holds the model
+		_ = await liveFinishTask?.value
 		AppLogger.shared.transcriber.info("Starting live stream...")
 		beginLiveTranscriptionWaitingUI()
 		if !liveStreamHoldsModel {
@@ -672,9 +671,7 @@ import WhisperKit
 				shouldShowLiveTranscriptionWindow = true
 				isTranscribing = true
 				isLiveTranscriptionMode = true
-				liveConfirmer = LiveSegmentConfirmer(holdBack: Self.liveSegmentsHeldBack)
-				livePendingTail = ""
-				liveDetectedLanguage = nil
+				livePass = LiveDictationPass()
 
 				await AudioDeviceManager.shared.activateSelectedDevice()
 				guard liveSession.isCurrent(generation), !Task.isCancelled else {
@@ -761,10 +758,20 @@ import WhisperKit
 		}
 	}
 
-	func stopLiveStream() {
+	/// How long stopping waits for the final decode before typing the newest pass's pending tail.
+	nonisolated static let liveFinalDecodeTimeLimit: Duration = .seconds(8)
+
+	/// Stops the microphone at once, then decodes the words said after the newest pass and types
+	/// them. The task's value is false when a cancel or reset threw the session away first.
+	@discardableResult
+	func stopLiveStream() -> Task<Bool, Never> {
 		let wasLive = isLiveTranscriptionMode
-		let finalPendingText = wasLive ? processLiveText(livePendingTail) : ""
-		let fallbackSessionText = Self.liveSessionText(confirmed: confirmedText, pending: finalPendingText)
+		// A second stop while the first one's final decode runs must not throw that decode away
+		if !wasLive, liveFinish.isActive, let liveFinishTask {
+			return liveFinishTask
+		}
+		// The buffer is final once the microphone stops, and the final decode reads it
+		whisperKit?.audioProcessor.stopRecording()
 		// A long session is tens of MB of samples, so they are copied only when history keeps them.
 		let keepsAudio = wasLive && HistorySettings(defaults: .standard).keepsAudio
 		let sessionSamples = keepsAudio ? Array(whisperKit?.audioProcessor.audioSamples ?? []) : []
@@ -776,29 +783,63 @@ import WhisperKit
 		waitingForModelStatusText = ""
 		isTranscribing = false
 		shouldShowLiveTranscriptionWindow = false
-		whisperKit?.audioProcessor.stopRecording()
+		isLiveTranscriptionMode = false
 		AudioDeviceManager.shared.restoreSystemDefault()
+		// The pass in flight is cancelled: its result would be stale, and the final decode covers its audio
+		let inFlight = transcriptionTask
+		inFlight?.cancel()
+		transcriptionTask = nil
 
-		confirmPendingText(finalPendingText)
-		livePendingTail = ""
+		let generation = liveFinish.begin()
+		let pass = livePass
+		let settings = wasLive ? liveSettings() : nil
+		let finishing = Task { @MainActor [weak self] () -> Bool in
+			await inFlight?.value
+			guard let self else { return false }
+			var tail = pass.pendingTail
+			if let settings, let whisperKit = self.whisperKit {
+				tail = await pass.finish(
+					audio: WhisperKitLiveAudio(processor: whisperKit.audioProcessor), settings: settings,
+					decode: self.liveDecoder(), timeLimit: Self.liveFinalDecodeTimeLimit,
+					isCurrent: { [weak self] in self?.liveFinish.isCurrent(generation) ?? false })
+			}
+			guard self.liveFinish.isCurrent(generation) else { return false }
+			self.liveFinish.end()
+			self.commitLiveSession(
+				tail: wasLive ? self.processLiveText(tail, language: pass.language) : "", wasLive: wasLive,
+				samples: sessionSamples)
+			return true
+		}
+		liveFinishTask = finishing
+		return finishing
+	}
+
+	private func commitLiveSession(tail: String, wasLive: Bool, samples: [Float]) {
+		let fallbackSessionText = Self.liveSessionText(confirmed: confirmedText, pending: tail)
+		confirmPendingText(tail)
 		if wasLive {
 			// What the tracker typed is exactly what reached the focused app
 			let typedText = dictationWordTracker?.typedText ?? ""
-			lastLiveSession = (
-				text: typedText.isEmpty ? fallbackSessionText : typedText,
-				samples: sessionSamples
-			)
+			lastLiveSession = (text: typedText.isEmpty ? fallbackSessionText : typedText, samples: samples)
 			if !typedText.isEmpty {
 				TextInserter.shared.submitAfterLiveSession()
 			}
 		}
-		isLiveTranscriptionMode = false
 		dictationWordTracker?.endSession()
-		transcriptionTask?.cancel()
-		transcriptionTask = nil
 		releaseLiveStreamModelUse()
 		AppLogger.shared.transcriber.info("Live streaming stopped")
 	}
+
+	/// Throws away a final decode that has not committed yet, with the model hold it kept.
+	private func endLiveFinish() {
+		guard liveFinish.isActive else { return }
+		liveFinish.end()
+		liveFinishTask?.cancel()
+		liveFinishTask = nil
+		dictationWordTracker?.endSession()
+		releaseLiveStreamModelUse()
+	}
+
 	/// Hands the finished live session to history once, then forgets it so the audio is freed.
 	func takeLastLiveSession() -> (text: String, samples: [Float]) {
 		defer { lastLiveSession = (text: "", samples: []) }
@@ -818,17 +859,13 @@ import WhisperKit
 
 	/// Segments held back as pending because Whisper may still revise them.
 	nonisolated static let liveSegmentsHeldBack = 2
-	/// How much of the newest live audio the VAD looks at before re-running the model.
-	nonisolated static let liveVADWindowSamples = WhisperKit.sampleRate * 3
-
-	/// The options for one live pass. Decoding starts where confirmed audio ends, so confirmed
-	/// sentences are never re-segmented; confirmation needs segment timestamps. The custom-word
-	/// prompt is left out while the window holds no speech, because Whisper echoes it on silence.
-	nonisolated static func liveDecodingOptions(
-		_ base: DecodingOptions, clipStart: Float, windowHasSpeech: Bool
-	) -> DecodingOptions {
+	/// The options for one live pass over a window that starts at the confirmation point, so
+	/// confirmed sentences are never re-segmented; confirmation needs segment timestamps. The
+	/// custom-word prompt is left out while the window holds no speech, because Whisper echoes it
+	/// on silence.
+	nonisolated static func liveDecodingOptions(_ base: DecodingOptions, windowHasSpeech: Bool) -> DecodingOptions {
 		var options = base
-		options.clipTimestamps = [clipStart]
+		options.clipTimestamps = [0]
 		options.withoutTimestamps = false
 		if !windowHasSpeech {
 			options.promptTokens = nil
@@ -836,20 +873,14 @@ import WhisperKit
 		return promptSafeDecodingOptions(options)
 	}
 
-	/// Whether the audio a live pass decodes holds speech, judged at the user's sensitivity even
-	/// when Skip Silence is off: this only decides whether the prompt is sent, never skips audio.
-	nonisolated static func liveWindowHasSpeech(_ samples: [Float], sensitivity: VADSensitivity) -> Bool {
-		if case .speech = VoiceActivityTrimmer(sensitivity: sensitivity).process(samples) {
-			return true
-		}
-		return false
-	}
-
-	/// A live pass's segments as the confirmer takes them.
-	nonisolated static func liveSegments(_ segments: [LiveSegment], promptWords: [String]) -> [LiveSegment] {
+	/// A live pass's segments as the confirmer takes them. Their times are relative to `audio`,
+	/// the window the pass decoded.
+	nonisolated static func liveSegments(
+		_ segments: [LiveSegment], promptWords: [String], audio: [Float], sensitivity: VADSensitivity
+	) -> [LiveSegment] {
 		withoutPromptEchoes(
 			segments.map { LiveSegment(text: withoutStrayQuotes($0.text), start: $0.start, end: $0.end) },
-			promptWords: promptWords)
+			promptWords: promptWords, audio: audio, sensitivity: sensitivity)
 	}
 
 	private nonisolated static let quoteMarks: Set<Character> = ["\"", "\u{201C}", "\u{201D}"]
@@ -879,10 +910,23 @@ import WhisperKit
 		TranscriptTextProcessor.removeNonSpeechMarkers(pendingText)
 	}
 
-	/// Drops the segments that only echo the custom-word prompt.
-	nonisolated static func withoutPromptEchoes(_ segments: [LiveSegment], promptWords: [String]) -> [LiveSegment] {
+	/// Drops the segments that only echo the custom-word prompt over their own silent audio.
+	nonisolated static func withoutPromptEchoes(
+		_ segments: [LiveSegment], promptWords: [String], audio: [Float], sensitivity: VADSensitivity
+	) -> [LiveSegment] {
 		guard !promptWords.isEmpty else { return segments }
-		return segments.filter { !PromptEchoFilter.isEcho($0.text, customWords: promptWords) }
+		return segments.filter { segment in
+			!PromptEchoFilter.isEcho(
+				segment.text, customWords: promptWords, audio: samples(of: segment, in: audio), sensitivity: sensitivity)
+		}
+	}
+
+	/// The samples between a segment's timestamps, empty when they fall outside the audio.
+	nonisolated static func samples(of segment: LiveSegment, in audio: [Float]) -> ArraySlice<Float> {
+		let rate = Float(WhisperKit.sampleRate)
+		let start = min(audio.count, max(0, Int(segment.start * rate)))
+		let end = min(audio.count, max(start, Int(segment.end * rate)))
+		return audio[start..<end]
 	}
 
 	/// What stopping a live session leaves in confirmedText: the processed held-back tail
@@ -896,20 +940,12 @@ import WhisperKit
 		confirmed.isEmpty ? addition : confirmed + " " + addition
 	}
 
-	nonisolated static func liveChunkHasSpeech(_ samples: [Float], settings: VoiceActivitySettings) -> Bool {
-		guard settings.enabled else { return true }
-		if case .speech = VoiceActivityTrimmer(sensitivity: settings.sensitivity).process(samples) {
-			return true
-		}
-		return false
-	}
-
 	/// Runs the text pipeline over live text, dropping the waiting placeholder.
-	private func processLiveText(_ text: String) -> String {
+	func processLiveText(_ text: String, language: String?) -> String {
 		let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 		guard !trimmed.isEmpty, trimmed != Self.liveWaitingPlaceholder else { return "" }
 		return processTranscriptText(
-			trimmed, detectedLanguage: liveDetectedLanguage,
+			trimmed, detectedLanguage: language,
 			enableTranslation: decodingOptions?.task == .translate)
 	}
 
@@ -917,6 +953,7 @@ import WhisperKit
 	/// Stops live dictation without committing the pending (unconfirmed) text.
 	/// Text already confirmed and typed into the focused app stays where it is.
 	func cancelLiveStream() {
+		endLiveFinish()
 		liveSession.end()
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
@@ -930,7 +967,6 @@ import WhisperKit
 		AudioDeviceManager.shared.restoreSystemDefault()
 
 		pendingText = ""
-		livePendingTail = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
 		lastLiveSession = (text: "", samples: [])
@@ -949,8 +985,7 @@ import WhisperKit
 		transcriptionTask = Task {
 			while isTranscribing, liveSession.isCurrent(generation), !Task.isCancelled {
 				do {
-					try await transcribeCurrentBuffer(
-						delayInterval: realtimeDelayInterval, generation: generation)
+					try await transcribeCurrentBuffer(generation: generation)
 				} catch {
 					if liveSession.isCurrent(generation) {
 						AppLogger.shared.liveTranscriber.error(
@@ -963,93 +998,60 @@ import WhisperKit
 		}
 	}
 
-	// TODO: Allow a user to choose between pending text, and the confirmed text. Do not impelment it the og author will do it
-	private func transcribeCurrentBuffer(delayInterval: Float = 0.3, generation: Int) async throws {
+	/// The settings every live pass reads, fresh each pass so Settings changes apply mid-session.
+	private func liveSettings() -> LivePassSettings? {
+		guard let base = decodingOptions else { return nil }
+		return LivePassSettings(
+			base: base, voiceActivity: VoiceActivitySettings(defaults: .standard),
+			promptWords: TextProcessingSettings.customWords(from: .standard),
+			minimumNewAudioSeconds: realtimeDelayInterval)
+	}
+
+	private func liveDecoder() -> LiveDecoder {
+		{ [weak self] samples, options in
+			guard let self else { return nil }
+			guard let result = try await self.transcribeAudioSamples(samples, options: options) else { return nil }
+			return LiveDecodeOutput(
+				segments: result.segments.map { LiveSegment(text: $0.text, start: $0.start, end: $0.end) },
+				language: result.language)
+		}
+	}
+
+	private func transcribeCurrentBuffer(generation: Int) async throws {
 		guard let whisperKit = whisperKit, liveSession.isCurrent(generation) else { return }
-
-		let currentBuffer = whisperKit.audioProcessor.audioSamples
-		let nextBufferSize = currentBuffer.count - lastBufferSize
-		let nextBufferSeconds = Float(nextBufferSize) / Float(WhisperKit.sampleRate)
-
-		guard nextBufferSeconds > delayInterval else {
-			await MainActor.run {
-				if liveSession.isCurrent(generation), pendingText.isEmpty && confirmedText.isEmpty {
-					pendingText = Self.liveWaitingPlaceholder
-					shouldShowLiveTranscriptionWindow = true
-				}
-			}
+		guard let settings = liveSettings() else {
+			AppLogger.shared.transcriber.log("Decoding options not initialized, skipping live pass")
 			try await Task.sleep(nanoseconds: 100_000_000)
 			return
 		}
+		let pass = livePass
+		let step = try await pass.step(
+			audio: WhisperKitLiveAudio(processor: whisperKit.audioProcessor), settings: settings,
+			decode: liveDecoder(), process: { [weak self] in self?.processLiveText($0, language: pass.language) ?? "" },
+			isCurrent: { [weak self] in self?.liveSession.isCurrent(generation) ?? false })
 
-		// Mirrors WhisperKit's own stream VAD: re-transcribing silence only yields hallucinated text
-		let voiceActivity = VoiceActivitySettings(defaults: .standard)
-		let recentSamples = Array(currentBuffer[lastBufferSize...].suffix(Self.liveVADWindowSamples))
-		guard Self.liveChunkHasSpeech(recentSamples, settings: voiceActivity)
-		else {
+		switch step {
+		case .waitingForAudio, .silence:
 			if liveSession.isCurrent(generation), pendingText.isEmpty && confirmedText.isEmpty {
 				pendingText = Self.liveWaitingPlaceholder
 				shouldShowLiveTranscriptionWindow = true
 			}
 			try await Task.sleep(nanoseconds: 100_000_000)
+		case .stale, .noSegments:
 			return
-		}
-
-		lastBufferSize = currentBuffer.count
-		guard let baseOptions = decodingOptions else {
-			AppLogger.shared.transcriber.log("Decoding options not initialized, skipping live pass")
-			return
-		}
-		let clipStart = liveConfirmer.confirmedThroughSeconds
-		let windowStart = min(currentBuffer.count, Int(clipStart * Float(WhisperKit.sampleRate)))
-		let options = Self.liveDecodingOptions(
-			baseOptions, clipStart: clipStart,
-			windowHasSpeech: Self.liveWindowHasSpeech(
-				Array(currentBuffer[windowStart...]), sensitivity: voiceActivity.sensitivity))
-		let promptWords = options.promptTokens == nil ? [] : TextProcessingSettings.customWords(from: .standard)
-		let audioSeconds = Float(currentBuffer.count) / Float(WhisperKit.sampleRate)
-		let transcription = try await transcribeAudioSamples(
-			Array(currentBuffer), options: options, generation: generation)
-
-		await MainActor.run {
+		case .decoded(let confirmation):
 			// A pass that outlived its session must not confirm, and so type, its text into the next one
 			guard liveSession.isCurrent(generation) else { return }
-			guard let segments = transcription?.segments, !segments.isEmpty else {
-				return
-			}
-			if let language = transcription?.language, !language.isEmpty {
-				liveDetectedLanguage = language
-			}
-
-			let fullTranscriptionText =
-				segments
-				.map { $0.text.trimmingCharacters(in: .whitespaces) }
-				.joined(separator: " ")
-
-			AppLogger.shared.transcriber.debug(
-				"Transcription received: \(segments.count) segments, full text: '\(fullTranscriptionText)'"
-			)
-			AppLogger.shared.transcriber.debug(
-				"Current state: confirmedText.count=\(confirmedText.count), pendingText='\(pendingText)'")
-
-			let confirmation = liveConfirmer.apply(
-				Self.liveSegments(
-					segments.map { LiveSegment(text: $0.text, start: $0.start, end: $0.end) },
-					promptWords: promptWords),
-				audioSeconds: audioSeconds,
-				process: { self.processLiveText($0) })
 			if confirmation.confirmedSegmentCount > 0 {
 				AppLogger.shared.transcriber.debug(
-					"Confirmed \(confirmation.confirmedSegmentCount) segment(s) through \(liveConfirmer.confirmedThroughSeconds)s, text: '\(confirmation.confirmedAddition)'"
+					"Confirmed \(confirmation.confirmedSegmentCount) segment(s) through \(pass.confirmer.confirmedThroughSeconds)s, text: '\(confirmation.confirmedAddition)'"
 				)
 			}
 			if !confirmation.confirmedAddition.isEmpty {
 				confirmedText = Self.appendingConfirmed(confirmation.confirmedAddition, to: confirmedText)
 			}
 
-			// Always update internal pendingText for logic
 			pendingText = confirmation.pendingText
-			livePendingTail = confirmation.pendingText
 
 			// Only update UI-facing property if text has changed meaningfully
 			let preview = Self.livePreviewText(confirmation.pendingText)
@@ -1062,27 +1064,11 @@ import WhisperKit
 		}
 	}
 
-	private func transcribeAudioSamples(
-		_ samples: [Float], options: DecodingOptions, generation: Int
-	) async throws -> TranscriptionResult? {
+	private func transcribeAudioSamples(_ samples: [Float], options: DecodingOptions) async throws -> TranscriptionResult? {
 		guard let whisperKit = whisperKit else { return nil }
 
-		let decodingCallback: ((TranscriptionProgress) -> Bool?) = { progress in
-			Task { @MainActor in
-				guard self.liveSession.isCurrent(generation) else { return }
-				self.pendingText = progress.text
-			}
-			return nil
-		}
-
 		do {
-			let transcriptionResults = try await whisperKit.transcribe(
-				audioArray: samples,
-				decodeOptions: options,
-				callback: decodingCallback,
-			)
-
-			return transcriptionResults.first
+			return try await whisperKit.transcribe(audioArray: samples, decodeOptions: options).first
 		} catch {
 			let errorString = error.localizedDescription
 			if errorString.contains("Could not store NSNumber at offset")
@@ -1091,17 +1077,10 @@ import WhisperKit
 				AppLogger.shared.transcriber.log(
 					"Array bounds error detected, retrying with smaller sampleLength")
 
-				// Retry with a smaller sampleLength, keeping the live pass's clip start and prompt
+				// Retry with a smaller sampleLength, keeping the live pass's window and prompt
 				var fallbackOptions = options
 				fallbackOptions.sampleLength = 224
-
-				let transcriptionResults = try await whisperKit.transcribe(
-					audioArray: samples,
-					decodeOptions: fallbackOptions,
-					callback: decodingCallback
-				)
-
-				return transcriptionResults.first
+				return try await whisperKit.transcribe(audioArray: samples, decodeOptions: fallbackOptions).first
 			} else {
 				throw error
 			}

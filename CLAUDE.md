@@ -202,6 +202,7 @@ Whisper models are downloaded to `~/Library/Application Support/Whispera/models/
 - Test files located in `WhisperaUnitTests/` (Swift Testing), `WhisperaTests/` (XCTest; only the five files listed under Testing are built, into the `WhisperaUnitTests` target) and `WhisperaUITests/`
 - Tests that touch `UserDefaults` use `UserDefaults(suiteName:)` with a unique suite name
 - Real-model suites use `WhisperKitTestModel` (`WhisperaUnitTests/WhisperKitTestModel.swift`): `.enabled(if: WhisperKitTestModel.runsSmallModelTests)` plus `.sharedTranscriber`, and `WhisperKitTestModel.small()` for the one model instance the process shares. They skip without the model unless `WHISPERA_REQUIRE_MODEL_TESTS=1` (passed to the test runner as `TEST_RUNNER_WHISPERA_REQUIRE_MODEL_TESTS=1`), which turns a missing model into a failure. CI has no models, so these suites only run locally
+- Live-mode tests replay audio through `LiveDictationPass`, the object the app's realtime loop drives, so they exercise the production pass and final decode rather than a copy
 
 ## Plans Directory
 

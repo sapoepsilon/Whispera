@@ -104,26 +104,15 @@ struct PromptTimestampRulesFilterTests {
 /// sentence 2 in Live mode whenever custom words were set (4 of 4 runs, 0 of 5 without).
 /// Needs the multilingual openai_whisper-small model downloaded by the app.
 @MainActor
-@Suite(.serialized, .enabled(if: WhisperKitTestModel.smallModelFolder != nil))
+@Suite(.serialized, .sharedTranscriber, .enabled(if: WhisperKitTestModel.runsSmallModelTests))
 struct PromptTimestampRulesWhisperKitTests {
 	static let passage =
 		"The quick brown fox jumps over the lazy dog near the riverbank. Latency matters more than raw accuracy for live dictation. [[slnc 4200]] The seventh experiment concluded at four fifteen in the afternoon. Whispera should type every sentence exactly once. Please verify that no phrase appears twice in this transcript."
 	static let markers = ["quick brown", "latency matters", "seventh experiment", "every sentence", "verify that no phrase"]
 	static let customWords = ["Zyphora", "Quillmar"]
 
-	static let turboModelFolder: URL? = {
-		let folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-			"Library/Application Support/Whispera/models/argmaxinc/whisperkit-coreml/openai_whisper-large-v3_turbo_954MB")
-		return FileManager.default.fileExists(atPath: folder.appendingPathComponent("TextDecoder.mlmodelc").path)
-			? folder : nil
-	}()
-
-	func loadWhisperKit(_ modelFolder: URL? = WhisperKitTestModel.smallModelFolder) async throws -> WhisperKit {
-		let folder = try #require(modelFolder)
-		let whisperKit = try await WhisperKitTranscriber.makeWhisperKit(
-			WhisperKitConfig(modelFolder: folder.path, verbose: false, prewarm: false, load: true, download: false))
-		try await whisperKit.loadTokenizerIfNeeded()
-		return whisperKit
+	func loadWhisperKit() async throws -> WhisperKit {
+		try await WhisperKitTestModel.small()
 	}
 
 	func options(_ whisperKit: WhisperKit, prompt: Bool) -> DecodingOptions {
@@ -204,16 +193,18 @@ struct PromptTimestampRulesWhisperKitTests {
 		try await expectEverySentenceOnce(try await loadWhisperKit(), step: step)
 	}
 
-	/// The model QA ran the signed app with.
-	@Test(.timeLimit(.minutes(30)), .enabled(if: Self.turboModelFolder != nil))
+	/// The model QA ran the signed app with. Optional even when model tests are required: it is a
+	/// 954 MB download the small-model tests do not need.
+	@Test(.timeLimit(.minutes(30)), .enabled(if: WhisperKitTestModel.turboModelFolder != nil))
 	func liveModeWithCustomWordsOnLargeV3Turbo() async throws {
-		try await expectEverySentenceOnce(try await loadWhisperKit(Self.turboModelFolder), step: 1.0)
+		try await expectEverySentenceOnce(try await WhisperKitTestModel.turbo(), step: 1.0)
 	}
 
 	func expectEverySentenceOnce(_ whisperKit: WhisperKit, step: Double) async throws {
 		let typed = try await LiveSessionReplay.run(
 			whisperKit, samples: try samples(), base: options(whisperKit, prompt: true), step: step,
-			promptWords: Self.customWords, voiceActivity: VoiceActivitySettings(enabled: false))
+			promptWords: Self.customWords, voiceActivity: VoiceActivitySettings(enabled: false)
+		).typed
 		let lowered = LiveSegmentConfirmer.comparisonKey(typed)
 		for marker in Self.markers {
 			#expect(lowered.components(separatedBy: marker).count == 2, "'\(marker)' once in: \(typed)")

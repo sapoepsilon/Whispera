@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WhisperKit
 
 @testable import Whispera
 
@@ -32,7 +33,10 @@ struct LiveTextCleanupTests {
 			LiveSegment(text: " \"Latency matters.\"", start: 3.9, end: 6.2),
 			LiveSegment(text: " Zyphora, Quillmar", start: 6.2, end: 7),
 		]
-		let cleaned = WhisperKitTranscriber.liveSegments(segments, promptWords: ["Zyphora", "Quillmar"])
+		// Silent audio under both: the echo's own stretch holds no speech
+		let audio = [Float](repeating: 0, count: WhisperKit.sampleRate * 7)
+		let cleaned = WhisperKitTranscriber.liveSegments(
+			segments, promptWords: ["Zyphora", "Quillmar"], audio: audio, sensitivity: .medium)
 		#expect(cleaned == [LiveSegment(text: "Latency matters.", start: 3.9, end: 6.2)])
 	}
 

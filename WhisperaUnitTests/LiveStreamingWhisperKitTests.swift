@@ -4,53 +4,98 @@ import WhisperKit
 
 @testable import Whispera
 
-/// Replays a recorded clip through the live pass the way realtimeLoop runs it: the buffer grows
-/// by `step` seconds, the VAD gate skips silent chunks, each pass decodes from the confirmation
-/// point with the production options, and stopping commits the pending tail.
+/// A recorded clip that a replay reveals a little at a time, like the microphone buffer filling.
+@MainActor
+final class GrowingClip: LiveAudioSource {
+	let samples: [Float]
+	var end = 0
+
+	init(_ samples: [Float]) {
+		self.samples = samples
+	}
+
+	var sampleCount: Int { end }
+
+	func samples(from start: Int) -> [Float] {
+		Array(samples[min(start, end)..<end])
+	}
+
+	func reveal(seconds: Double) {
+		end = min(samples.count, end + Int(seconds * Double(WhisperKit.sampleRate)))
+	}
+}
+
+/// Replays a recorded clip through the production live pass (`LiveDictationPass`, the same object
+/// realtimeLoop drives): the buffer grows by `step` seconds between passes and by `latency`
+/// seconds while each decode runs, the live text goes through the app's live text pipeline, and
+/// stopping runs the production final decode. No pass sees the last `stopGap` seconds of the clip,
+/// so the words said just before the stop are heard only by the final decode.
 @MainActor
 enum LiveSessionReplay {
+	struct Outcome {
+		/// Everything the session typed, the stop included.
+		var typed: String
+		/// What stopping would have typed without the final decode: the newest pass's pending tail.
+		var typedWithoutFinalDecode: String
+		/// The options the next pass would decode with, after the session.
+		var nextOptions: DecodingOptions
+		var languageIsSettled: Bool
+	}
+
+	static func decoder(_ whisperKit: WhisperKit, latency: Double = 0, clip: GrowingClip? = nil) -> LiveDecoder {
+		{ samples, options in
+			let results = try await whisperKit.transcribe(audioArray: samples, decodeOptions: options)
+			clip?.reveal(seconds: latency)
+			return LiveDecodeOutput(
+				segments: results.flatMap(\.segments).map { LiveSegment(text: $0.text, start: $0.start, end: $0.end) },
+				language: results.first?.language)
+		}
+	}
+
 	static func run(
 		_ whisperKit: WhisperKit, samples: [Float], base: DecodingOptions, step: Double, promptWords: [String],
-		voiceActivity: VoiceActivitySettings
-	) async throws -> String {
-		let rate = WhisperKit.sampleRate
-		var confirmer = LiveSegmentConfirmer(holdBack: WhisperKitTranscriber.liveSegmentsHeldBack)
+		voiceActivity: VoiceActivitySettings, latency: Double = 0, stopGap: Double = 0
+	) async throws -> Outcome {
+		let clip = GrowingClip(samples)
+		let pass = LiveDictationPass()
+		let settings = LivePassSettings(
+			base: base, voiceActivity: voiceActivity, promptWords: promptWords, minimumNewAudioSeconds: 0.3)
+		let text = liveText()
+		let decode = decoder(whisperKit, latency: latency, clip: clip)
 		var typed = ""
-		var pending = ""
-		var lastBufferSize = 0
-		var length = Int(step * Double(rate))
-		while true {
-			let end = min(length, samples.count)
-			let buffer = Array(samples[0..<end])
-			let recent = Array(buffer[lastBufferSize...].suffix(WhisperKitTranscriber.liveVADWindowSamples))
-			if WhisperKitTranscriber.liveChunkHasSpeech(recent, settings: voiceActivity) {
-				lastBufferSize = end
-				let clipStart = confirmer.confirmedThroughSeconds
-				let windowStart = min(end, Int(clipStart * Float(rate)))
-				let options = WhisperKitTranscriber.liveDecodingOptions(
-					base, clipStart: clipStart,
-					windowHasSpeech: WhisperKitTranscriber.liveWindowHasSpeech(
-						Array(buffer[windowStart...]), sensitivity: voiceActivity.sensitivity))
-				let results = try await whisperKit.transcribe(audioArray: buffer, decodeOptions: options)
-				let segments = results.flatMap(\.segments)
-				if !segments.isEmpty {
-					let result = confirmer.apply(
-						WhisperKitTranscriber.liveSegments(
-							segments.map { LiveSegment(text: $0.text, start: $0.start, end: $0.end) },
-							promptWords: options.promptTokens == nil ? [] : promptWords),
-						audioSeconds: Float(end) / Float(rate), process: { $0 })
-					if !result.confirmedAddition.isEmpty {
-						let updated = WhisperKitTranscriber.appendingConfirmed(result.confirmedAddition, to: typed)
-						#expect(updated.hasPrefix(typed), "the word tracker can only type appended text")
-						typed = updated
-					}
-					pending = result.pendingText
-				}
+		let stopAt = samples.count - Int(stopGap * Double(WhisperKit.sampleRate))
+		// Every pass sees at most `stopAt` samples, so the rest is heard only by the final decode
+		while clip.end + Int(step * Double(WhisperKit.sampleRate)) <= stopAt {
+			clip.reveal(seconds: step)
+			let result = try await pass.step(
+				audio: clip, settings: settings, decode: decode, process: { text($0, pass.language) })
+			if case .decoded(let confirmation) = result, !confirmation.confirmedAddition.isEmpty {
+				let updated = WhisperKitTranscriber.appendingConfirmed(confirmation.confirmedAddition, to: typed)
+				#expect(updated.hasPrefix(typed), "the word tracker can only type appended text")
+				typed = updated
 			}
-			if end == samples.count { break }
-			length += Int(step * Double(rate))
 		}
-		return WhisperKitTranscriber.committingLiveTail(pending, to: typed)
+		let withoutFinalDecode = WhisperKitTranscriber.committingLiveTail(text(pass.pendingTail, pass.language), to: typed)
+		clip.end = samples.count
+		let tail = await pass.finish(
+			audio: clip, settings: settings, decode: decoder(whisperKit),
+			timeLimit: WhisperKitTranscriber.liveFinalDecodeTimeLimit * 4)
+		return Outcome(
+			typed: WhisperKitTranscriber.committingLiveTail(text(tail, pass.language), to: typed),
+			typedWithoutFinalDecode: withoutFinalDecode, nextOptions: pass.liveOptions(base, windowHasSpeech: true),
+			languageIsSettled: pass.languageIsSettled)
+	}
+
+	/// The app's live text pipeline with default text-processing settings, not the test machine's.
+	static func liveText() -> (String, String?) -> String {
+		let transcriber = WhisperKitTranscriber.shared
+		let defaults = UserDefaults(suiteName: "LiveSessionReplay.\(UUID().uuidString)")!
+		return { text, language in
+			let previous = transcriber.textProcessingDefaults
+			transcriber.textProcessingDefaults = defaults
+			defer { transcriber.textProcessingDefaults = previous }
+			return transcriber.processLiveText(text, language: language)
+		}
 	}
 
 	/// Deterministic low-level hiss, like an idle microphone.
@@ -109,7 +154,8 @@ struct LiveStreamingWhisperKitTests {
 			+ [Float](repeating: 0, count: WhisperKit.sampleRate * 3)
 		let typed = try await LiveSessionReplay.run(
 			whisperKit, samples: samples, base: baseOptions(whisperKit, prompt: prompt), step: step,
-			promptWords: Self.customWords, voiceActivity: VoiceActivitySettings(enabled: false))
+			promptWords: Self.customWords, voiceActivity: VoiceActivitySettings(enabled: false)
+		).typed
 		let lowered = typed.lowercased()
 		for marker in Self.sentenceMarkers {
 			#expect(lowered.components(separatedBy: marker).count == 2, "'\(marker)' once in: \(typed)")
@@ -141,7 +187,8 @@ struct LiveStreamingWhisperKitTests {
 			let samples = lead.samples + (try speech(sentence)) + LiveSessionReplay.hiss(seconds: 1.5)
 			let typed = try await LiveSessionReplay.run(
 				whisperKit, samples: samples, base: baseOptions(whisperKit, prompt: true), step: step,
-				promptWords: Self.customWords, voiceActivity: VoiceActivitySettings(enabled: false))
+				promptWords: Self.customWords, voiceActivity: VoiceActivitySettings(enabled: false)
+			).typed
 			let key = LiveSegmentConfirmer.comparisonKey(typed)
 			let opening = LiveSegmentConfirmer.comparisonKey(sentence).split(separator: " ").prefix(3).joined(separator: " ")
 			#expect(key.hasPrefix(opening), "nothing may be typed before the sentence: \(typed)")
@@ -149,5 +196,78 @@ struct LiveStreamingWhisperKitTests {
 				#expect(!key.contains(String(word.lowercased().prefix(5))), "prompt echo in: \(typed)")
 			}
 		}
+	}
+
+	/// Stopping committed only the newest finished pass's tail: speech after that pass's snapshot
+	/// was never decoded, the pass in flight was thrown away and there was no final decode, so the
+	/// last words before the stop were lost. Here decodes take 1.5 s of audio each and the stop
+	/// comes 2.5 s after the newest pass started.
+	@Test(.timeLimit(.minutes(10)), arguments: [false, true])
+	func stoppingTypesTheWordsSaidAfterTheNewestPass(skipSilence: Bool) async throws {
+		let whisperKit = try await loadWhisperKit()
+		let samples =
+			[Float](repeating: 0, count: WhisperKit.sampleRate / 2)
+			+ (try speech("The weather is nice today. We checked the history window. Please send the final report tonight."))
+			+ [Float](repeating: 0, count: WhisperKit.sampleRate * 3 / 10)
+		let outcome = try await LiveSessionReplay.run(
+			whisperKit, samples: samples, base: baseOptions(whisperKit, prompt: false), step: 1.0,
+			promptWords: [], voiceActivity: VoiceActivitySettings(enabled: skipSilence), latency: 1.5, stopGap: 2.5)
+		let typed = LiveSegmentConfirmer.comparisonKey(outcome.typed)
+		for marker in ["weather is nice", "history window", "final report tonight"] {
+			#expect(typed.components(separatedBy: marker).count == 2, "'\(marker)' once in: \(outcome.typed)")
+		}
+		#expect(
+			!LiveSegmentConfirmer.comparisonKey(outcome.typedWithoutFinalDecode).contains("report tonight"),
+			"the newest pass must not have heard the last words, or this test proves nothing: \(outcome.typedWithoutFinalDecode)")
+	}
+
+	/// With Skip Silence on, the gate looked only at the newest 3 s of new audio. When a decode ran
+	/// longer than that and the speech ended early in it, every later check saw silence and the
+	/// final words were never decoded, even while the session kept running.
+	@Test(.timeLimit(.minutes(10)))
+	func speechEndingEarlyInALongDecodeIsStillDecoded() async throws {
+		let whisperKit = try await loadWhisperKit()
+		let sentence = try speech("Please send the final report tonight.")
+		let clip = GrowingClip(sentence + [Float](repeating: 0, count: WhisperKit.sampleRate * 6))
+		let pass = LiveDictationPass()
+		let settings = LivePassSettings(
+			base: baseOptions(whisperKit, prompt: false), voiceActivity: VoiceActivitySettings(enabled: true),
+			promptWords: [])
+		// The first pass sees the opening of the sentence, then 6 s arrive while it decodes
+		clip.end = WhisperKit.sampleRate
+		let first = try await pass.step(
+			audio: clip, settings: settings, decode: LiveSessionReplay.decoder(whisperKit, latency: 6, clip: clip),
+			process: { $0 })
+		try #require(first != .silence && first != .waitingForAudio, "the opening was not decoded: \(first)")
+		let newAudio = clip.samples(from: WhisperKit.sampleRate)
+		#expect(
+			!VoiceActivityTrimmer().hasSpeech(newAudio.suffix(WhisperKit.sampleRate * 3)),
+			"the newest 3 s, all the old gate looked at, must be silent or this test proves nothing")
+		let next = try await pass.step(
+			audio: clip, settings: settings, decode: LiveSessionReplay.decoder(whisperKit), process: { $0 })
+		guard case .decoded = next else {
+			Issue.record("speech in the new audio was treated as \(next)")
+			return
+		}
+		#expect(LiveSegmentConfirmer.comparisonKey(pass.pendingTail).contains("report tonight"), "\(pass.pendingTail)")
+	}
+
+	/// Automatic detection ran on every pass, over the 1-3 s after the confirmation point, and a
+	/// flip decoded (or translated) that pass in the wrong language. The language is now settled
+	/// by the first confirmation, which is decoded from the session start.
+	@Test(.timeLimit(.minutes(10)))
+	func autoDetectedLanguageIsSettledForTheSession() async throws {
+		let whisperKit = try await loadWhisperKit()
+		var base = baseOptions(whisperKit, prompt: false)
+		base.language = nil
+		base.detectLanguage = true
+		let samples = [Float](repeating: 0, count: WhisperKit.sampleRate / 2) + (try speech(Self.passage))
+		let outcome = try await LiveSessionReplay.run(
+			whisperKit, samples: samples, base: base, step: 1.0, promptWords: [],
+			voiceActivity: VoiceActivitySettings(enabled: false))
+		#expect(outcome.languageIsSettled)
+		#expect(outcome.nextOptions.language == "en")
+		#expect(outcome.nextOptions.detectLanguage == false)
+		#expect(LiveSegmentConfirmer.comparisonKey(outcome.typed).contains("history window"), "\(outcome.typed)")
 	}
 }

@@ -222,75 +222,118 @@ struct LiveSegmentConfirmationTests {
 		#expect(WhisperKitTranscriber.committingLiveTail("", to: "Already typed.") == "Already typed.")
 	}
 
-	@Test func eachPassDecodesFromTheConfirmationPointWithTimestamps() {
-		let base = DecodingOptions(withoutTimestamps: true, clipTimestamps: [0], promptTokens: [1, 2, 3])
-		let speech = WhisperKitTranscriber.liveDecodingOptions(base, clipStart: 7.5, windowHasSpeech: true)
-		#expect(speech.clipTimestamps == [7.5])
+	/// The pass hands WhisperKit only the window after the confirmation point, so the decode
+	/// starts at its first sample.
+	@Test func eachPassDecodesItsWindowWithTimestamps() {
+		let base = DecodingOptions(withoutTimestamps: true, clipTimestamps: [7.5], promptTokens: [1, 2, 3])
+		let speech = WhisperKitTranscriber.liveDecodingOptions(base, windowHasSpeech: true)
+		#expect(speech.clipTimestamps == [0])
 		#expect(!speech.withoutTimestamps)
 		#expect(speech.promptTokens == [1, 2, 3])
-		let silent = WhisperKitTranscriber.liveDecodingOptions(base, clipStart: 0, windowHasSpeech: false)
+		let silent = WhisperKitTranscriber.liveDecodingOptions(base, windowHasSpeech: false)
 		#expect(silent.promptTokens == nil, "Whisper echoes the custom-word prompt on silence")
 	}
 
-	@Test func silentWindowIsNotSpeechEvenWithSkipSilenceOff() {
+	@Test func silentWindowIsNotSpeech() {
 		let noise = (0..<WhisperKit.sampleRate * 2).map { _ in Float.random(in: -0.003...0.003) }
-		#expect(!WhisperKitTranscriber.liveWindowHasSpeech(noise, sensitivity: .medium))
-		#expect(!WhisperKitTranscriber.liveWindowHasSpeech([], sensitivity: .high))
+		#expect(!VoiceActivityTrimmer(sensitivity: .medium).hasSpeech(noise[...]))
+		#expect(!VoiceActivityTrimmer(sensitivity: .high).hasSpeech([]))
 	}
+}
+
+private func spoken(_ sentence: String) throws -> [Float] {
+	let directory = FileManager.default.temporaryDirectory
+		.appendingPathComponent("PromptEcho-\(UUID().uuidString)", isDirectory: true)
+	defer { try? FileManager.default.removeItem(at: directory) }
+	return try AudioProcessor.loadAudioAsFloatArray(fromPath: try SpeechFixture.make(sentence, in: directory).path)
 }
 
 struct PromptEchoFilterTests {
 	let words = ["Zyphora", "Quillmar"]
+	let silence = [Float](repeating: 0, count: WhisperKit.sampleRate * 2)
 
-	@Test func promptEchoesAreDropped() {
-		#expect(PromptEchoFilter.isEcho("The Quills of the Quillmar", customWords: words))
-		#expect(PromptEchoFilter.isEcho(" [Zyphora]", customWords: words))
-		#expect(PromptEchoFilter.isEcho("Zyphora, Quillmar.", customWords: words))
+	@Test func promptEchoesOverSilenceAreDropped() {
+		for echo in ["The Quills of the Quillmar", " [Zyphora]", "Zyphora, Quillmar."] {
+			#expect(PromptEchoFilter.isEcho(echo, customWords: words, audio: silence[...], sensitivity: .medium), "\(echo)")
+		}
+		let hiss = LiveSessionReplay.hiss(seconds: 2)
+		#expect(PromptEchoFilter.isEcho("Zyphora, Quillmar.", customWords: words, audio: hiss[...], sensitivity: .high))
 	}
 
-	@Test func speechUsingCustomWordsIsKept() {
-		#expect(!PromptEchoFilter.isEcho("Please schedule the demo with Zyphora and Quillmar tomorrow.", customWords: words))
-		#expect(!PromptEchoFilter.isEcho("Quillmar.", customWords: words))
-		#expect(!PromptEchoFilter.isEcho("The quick brown fox.", customWords: words))
-		#expect(!PromptEchoFilter.isEcho("[BLANK_AUDIO]", customWords: words))
-		#expect(!PromptEchoFilter.isEcho("The Quills of the Quillmar", customWords: []))
+	@Test func speechUsingCustomWordsIsNotPromptLike() {
+		#expect(!PromptEchoFilter.looksLikePrompt("Please schedule the demo with Zyphora and Quillmar tomorrow.", customWords: words))
+		#expect(!PromptEchoFilter.looksLikePrompt("Quillmar.", customWords: words))
+		#expect(!PromptEchoFilter.looksLikePrompt("The quick brown fox.", customWords: words))
+		#expect(!PromptEchoFilter.looksLikePrompt("[BLANK_AUDIO]", customWords: words))
+		#expect(!PromptEchoFilter.looksLikePrompt("The Quills of the Quillmar", customWords: []))
 	}
 
-	@Test func liveSegmentsDropOnlyTheEcho() {
-		let segments = [seg(" The Quills of the Quillmar", 0, 1.5), seg(" The quick brown fox.", 2, 4)]
+	/// Words are found with the system tokenizer, so a Japanese sentence is not one long "word"
+	/// that starts with a custom word.
+	@Test func sentencesWithoutSpacesAreSplitIntoWords() {
+		let customWords = ["東京タワー", "スカイツリー"]
+		#expect(!PromptEchoFilter.looksLikePrompt("東京タワーに行って、スカイツリーも見ました。", customWords: customWords))
+		#expect(PromptEchoFilter.looksLikePrompt("東京タワー、スカイツリー", customWords: customWords))
+	}
+
+	/// These read like the prompt, and before the audio check they were dropped from live
+	/// dictation although the user said them.
+	@Test(arguments: [
+		("Deploy to production.", ["Deployment", "Production"]),
+		("Acme Corporation.", ["Acme Corp"]),
+		("Kentra Health.", ["Kentra Health"]),
+		("Alex Hamilton.", ["Alexander", "Hamilton"]),
+	])
+	func spokenCustomWordsAreKept(sentence: String, customWords: [String]) throws {
+		#expect(PromptEchoFilter.looksLikePrompt(sentence, customWords: customWords), "the text alone is ambiguous")
+		let speech = try spoken(sentence)
+		#expect(!PromptEchoFilter.isEcho(sentence, customWords: customWords, audio: speech[...], sensitivity: .medium))
+		let segments = [seg(sentence, 0, Float(speech.count) / Float(WhisperKit.sampleRate))]
 		#expect(
-			WhisperKitTranscriber.withoutPromptEchoes(segments, promptWords: words).map(\.text) == [
-				" The quick brown fox."
-			])
-		#expect(WhisperKitTranscriber.withoutPromptEchoes(segments, promptWords: []).count == 2)
+			WhisperKitTranscriber.liveSegments(segments, promptWords: customWords, audio: speech, sensitivity: .medium)
+				.map(\.text) == [sentence])
+	}
+
+	@Test func liveSegmentsDropOnlyTheEcho() throws {
+		let speech = try spoken("The quick brown fox.")
+		let audio = [Float](repeating: 0, count: WhisperKit.sampleRate * 2) + speech
+		let end = Float(audio.count) / Float(WhisperKit.sampleRate)
+		let segments = [seg(" The Quills of the Quillmar", 0, 1.5), seg(" The quick brown fox.", 2, end)]
+		#expect(
+			WhisperKitTranscriber.withoutPromptEchoes(segments, promptWords: words, audio: audio, sensitivity: .medium)
+				.map(\.text) == [" The quick brown fox."])
+		#expect(
+			WhisperKitTranscriber.withoutPromptEchoes(segments, promptWords: [], audio: audio, sensitivity: .medium).count == 2)
 	}
 }
 
 struct LiveVoiceActivityTests {
 	@Test func silenceIsNotSpeech() {
 		let silence = [Float](repeating: 0, count: WhisperKit.sampleRate)
-		#expect(!WhisperKitTranscriber.liveChunkHasSpeech(silence, settings: VoiceActivitySettings()))
+		#expect(!VoiceActivityTrimmer().hasSpeech(silence[...]))
 	}
 
 	@Test func quietNoiseIsNotSpeech() {
 		let noise = (0..<WhisperKit.sampleRate).map { _ in Float.random(in: -0.001...0.001) }
-		#expect(!WhisperKitTranscriber.liveChunkHasSpeech(noise, settings: VoiceActivitySettings()))
+		#expect(!VoiceActivityTrimmer().hasSpeech(noise[...]))
 	}
 
-	@Test func disabledVADAlwaysTranscribes() {
-		let silence = [Float](repeating: 0, count: WhisperKit.sampleRate)
-		#expect(
-			WhisperKitTranscriber.liveChunkHasSpeech(silence, settings: VoiceActivitySettings(enabled: false)))
-	}
-
-	@Test func spokenAudioIsSpeech() throws {
-		let directory = FileManager.default.temporaryDirectory
-			.appendingPathComponent("LiveVAD-\(UUID().uuidString)", isDirectory: true)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let audio = try SpeechFixture.make("Testing the live voice activity check.", in: directory)
-		let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: audio.path)
-		let recent = Array(samples.suffix(WhisperKitTranscriber.liveVADWindowSamples))
-		#expect(WhisperKitTranscriber.liveChunkHasSpeech(recent, settings: VoiceActivitySettings()))
+	/// hasSpeech reads the samples in place; it must decide exactly as the trimmer does.
+	@Test func hasSpeechAgreesWithTheTrimmer() throws {
+		let speech = try spoken("Testing the live voice activity check.")
+		let clips: [[Float]] = [
+			speech, [Float](repeating: 0, count: 8000) + speech, LiveSessionReplay.hiss(seconds: 1), [], [0.5],
+			Array(speech.prefix(3000)),
+		]
+		for sensitivity in VADSensitivity.allCases {
+			let trimmer = VoiceActivityTrimmer(sensitivity: sensitivity)
+			for clip in clips {
+				let processed: Bool
+				if case .speech = trimmer.process(clip) { processed = true } else { processed = false }
+				#expect(trimmer.hasSpeech(clip[...]) == processed, "\(sensitivity) \(clip.count) samples")
+			}
+		}
+		#expect(VoiceActivityTrimmer().hasSpeech(speech[...]))
 	}
 }
 

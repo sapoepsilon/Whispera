@@ -1245,23 +1245,26 @@ extension AudioManager {
 
 		activeCapturePath = nil
 		ledger.dropCapture()
-		whisperKitTranscriber.stopLiveStream()
+		let finishing = whisperKitTranscriber.stopLiveStream()
 		deviceManager.endRecordingSession()
 		levelMonitor.reset()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
-
-		let session = whisperKitTranscriber.takeLastLiveSession()
-		if session.text.isEmpty, VoiceActivitySettings(defaults: .standard).enabled {
-			postNotice(VoiceActivitySettings.noSpeechNotice)
-		}
-		if !session.text.isEmpty {
-			recordHistory(
-				text: session.text,
-				audio: session.samples.isEmpty ? nil : .samples(session.samples, sampleRate: 16000),
-				source: .liveDictation)
-		}
-
 		scheduleTimerReset()
+
+		// The words said after the newest live pass are decoded before the session is complete
+		Task { @MainActor [weak self] in
+			guard await finishing.value, let self else { return }
+			let session = self.whisperKitTranscriber.takeLastLiveSession()
+			if session.text.isEmpty, VoiceActivitySettings(defaults: .standard).enabled {
+				self.postNotice(VoiceActivitySettings.noSpeechNotice)
+			}
+			if !session.text.isEmpty {
+				self.recordHistory(
+					text: session.text,
+					audio: session.samples.isEmpty ? nil : .samples(session.samples, sampleRate: 16000),
+					source: .liveDictation)
+			}
+		}
 	}
 }
 

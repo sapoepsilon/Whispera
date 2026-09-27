@@ -1,3 +1,4 @@
+import Accelerate
 import Foundation
 import WhisperKit
 
@@ -93,13 +94,21 @@ struct VoiceActivityTrimmer: Sendable {
 	var frameLength: Int { max(1, Int(Double(sampleRate) * frameDuration)) }
 
 	func frameEnergies(_ samples: [Float]) -> [Float] {
+		samples.withUnsafeBufferPointer(frameEnergies)
+	}
+
+	/// The RMS energy of each frame, read in place so a long window costs no copies.
+	func frameEnergies(_ samples: UnsafeBufferPointer<Float>) -> [Float] {
 		let length = frameLength
 		var energies: [Float] = []
+		guard let base = samples.baseAddress else { return energies }
 		energies.reserveCapacity(samples.count / length + 1)
 		var start = 0
 		while start < samples.count {
 			let end = min(start + length, samples.count)
-			energies.append(AudioProcessor.calculateAverageEnergy(of: Array(samples[start..<end])))
+			var energy: Float = 0
+			vDSP_rmsqv(base + start, 1, &energy, vDSP_Length(end - start))
+			energies.append(energy)
 			start = end
 		}
 		return energies
@@ -111,6 +120,17 @@ struct VoiceActivityTrimmer: Sendable {
 		let noiseFloor = sorted[Int(Double(sorted.count - 1) * 0.1)]
 		let adaptive = min(noiseFloor * noiseFloorMultiplier, energyFloor * maximumFloorMultiple)
 		return max(energyFloor, adaptive)
+	}
+
+	/// The same decision as `process`, without copying the speech out.
+	func hasSpeech(_ samples: ArraySlice<Float>) -> Bool {
+		samples.withUnsafeBufferPointer { pointer in
+			let energies = frameEnergies(pointer)
+			guard !energies.isEmpty else { return false }
+			let cutoff = threshold(for: energies)
+			let activeFrames = energies.lazy.filter { $0 > cutoff }.count
+			return activeFrames > 0 && Double(activeFrames) * frameDuration >= minimumSpeechDuration
+		}
 	}
 
 	func process(_ samples: [Float]) -> VoiceActivityResult {
