@@ -16,80 +16,134 @@ private func fillerProcessor(_ words: [String]) -> (String) -> String {
 	return { processor.process($0, language: .userSelected("en")) }
 }
 
+private func seg(_ text: String, _ start: Float, _ end: Float) -> LiveSegment {
+	LiveSegment(text: text, start: start, end: end)
+}
+
 struct LiveSegmentConfirmationTests {
+	/// Runs one pass twice, the way consecutive live passes agree on stable segments.
+	private func confirmTwice(
+		_ confirmer: inout LiveSegmentConfirmer, _ segments: [LiveSegment], audio: Float = 60,
+		process: (String) -> String = { $0 }
+	) -> LiveSegmentConfirmer.Result {
+		_ = confirmer.apply(segments, audioSeconds: audio, process: process)
+		return confirmer.apply(segments, audioSeconds: audio, process: process)
+	}
+
 	@Test func holdsBackTheLastTwoSegmentsAndProcessesTheRest() {
-		let result = WhisperKitTranscriber.confirmLiveSegments(
-			[" Um, hello there.", " How are you?", " I am fine.", " Thanks."], alreadyConfirmed: 0,
+		var confirmer = LiveSegmentConfirmer()
+		let result = confirmTwice(
+			&confirmer,
+			[seg(" Um, hello there.", 0, 1.5), seg(" How are you?", 2, 3), seg(" I am fine.", 3.5, 4.5), seg(" Thanks.", 5, 5.5)],
 			process: fillerProcessor([]))
 		#expect(result.confirmedAddition == "hello there. How are you?")
 		#expect(result.confirmedSegmentCount == 2)
 		#expect(result.pendingText == "I am fine. Thanks.")
+		#expect(confirmer.confirmedThroughSeconds == 3)
 	}
 
-	@Test func onlyNewSegmentsAreProcessedAndConfirmed() {
-		let segments = [" One.", " Two.", " Three.", " Four.", " Five."]
-		let result = WhisperKitTranscriber.confirmLiveSegments(
-			segments, alreadyConfirmed: 2, process: { "[" + $0 + "]" })
-		#expect(result.confirmedAddition == "[Three.]")
-		#expect(result.confirmedSegmentCount == 3)
+	@Test func aSegmentIsConfirmedOnlyOnceTwoPassesAgree() {
+		var confirmer = LiveSegmentConfirmer()
+		let first = confirmer.apply(
+			[seg("One.", 0, 1), seg("Two.", 1.5, 2), seg("Three.", 2.5, 3)], audioSeconds: 3.2, process: { $0 })
+		#expect(first.confirmedAddition.isEmpty)
+		#expect(first.pendingText == "One. Two. Three.")
+		let changed = confirmer.apply(
+			[seg("Won.", 0, 1), seg("Two.", 1.5, 2), seg("Three.", 2.5, 3)], audioSeconds: 3.4, process: { $0 })
+		#expect(changed.confirmedAddition.isEmpty)
+		let agreed = confirmer.apply(
+			[seg("won", 0, 1), seg("Two.", 1.5, 2), seg("Three.", 2.5, 3), seg("Four.", 3.3, 3.6)],
+			audioSeconds: 3.8, process: { $0 })
+		#expect(agreed.confirmedAddition == "won Two.")
+		#expect(agreed.pendingText == "Three. Four.")
 	}
 
-	@Test func nothingNewKeepsTheCountAndTypesNothing() {
-		let result = WhisperKitTranscriber.confirmLiveSegments(
-			[" One.", " Two.", " Three."], alreadyConfirmed: 1, process: { _ in
-				Issue.record("Nothing should be processed")
-				return ""
-			})
+	/// The old index-based confirmation retyped or dropped a sentence when Whisper merged or
+	/// split segments of the re-decoded window. Confirmed audio is now never decoded again, and
+	/// segments the decoder still reports inside it are ignored.
+	@Test func resegmentationNeitherDropsNorRepeatsASentence() {
+		var confirmer = LiveSegmentConfirmer()
+		var typed = ""
+		func pass(_ segments: [LiveSegment], _ audio: Float) {
+			let result = confirmer.apply(segments, audioSeconds: audio, process: { $0 })
+			guard !result.confirmedAddition.isEmpty else { return }
+			let updated = WhisperKitTranscriber.appendingConfirmed(result.confirmedAddition, to: typed)
+			#expect(updated.hasPrefix(typed))
+			typed = updated
+		}
+		let a = seg("This is a long dictation.", 0.3, 3.7)
+		let b = seg("It keeps talking for a while.", 4.5, 8.9)
+		let c = seg("The weather is nice today.", 9.8, 12.5)
+		pass([a, b, c], 12.6)
+		pass([a, b, c], 13.0)
+		#expect(typed == "This is a long dictation.")
+		// The next pass starts at 3.7 s, and Whisper merges b and c into one segment
+		#expect(confirmer.confirmedThroughSeconds == 3.7)
+		let bc = seg("It keeps talking for a while. The weather is nice today.", 4.5, 12.5)
+		let d = seg("We checked the history window.", 13.4, 17.3)
+		pass([bc, d], 17.5)
+		pass([bc, d], 18.0)
+		#expect(typed == "This is a long dictation.")
+		// A stale segment inside confirmed audio, then the window split again
+		let e = seg("Now we are testing.", 18.3, 23.4)
+		pass([seg("This is a long dictation.", 0.3, 3.7), b, c, d, e], 23.6)
+		pass([b, c, d, e], 24.0)
+		#expect(typed == "This is a long dictation. It keeps talking for a while. The weather is nice today.")
+		let final = WhisperKitTranscriber.committingLiveTail(
+			confirmer.apply([d, e], audioSeconds: 24.2, process: { $0 }).pendingText, to: typed)
+		#expect(
+			final
+				== "This is a long dictation. It keeps talking for a while. The weather is nice today. We checked the history window. Now we are testing."
+		)
+	}
+
+	@Test func confirmationPointStaysInsideTheAudioAndNeverMovesBack() {
+		var confirmer = LiveSegmentConfirmer(holdBack: 1)
+		// Short windows come back with timestamps past the end of the audio
+		let result = confirmTwice(&confirmer, [seg("Hello.", 0.2, 19.8), seg("there", 19.9, 25)], audio: 1.4)
+		#expect(result.confirmedAddition == "Hello.")
+		#expect(confirmer.confirmedThroughSeconds == 1.4)
+		let later = confirmTwice(&confirmer, [seg("there", 0.5, 1.0), seg("friend", 1.2, 1.5)], audio: 1.6)
+		#expect(later.confirmedAddition.isEmpty, "a segment ending before 1.4 s is already typed")
+		#expect(confirmer.confirmedThroughSeconds == 1.4)
+	}
+
+	@Test func stopCommitsEveryUnconfirmedSegmentOnce() {
+		var confirmer = LiveSegmentConfirmer()
+		let result = confirmer.apply(
+			[seg("One.", 0, 1), seg("Two.", 1.5, 2), seg("Three.", 2.5, 3), seg("Four.", 3.5, 4)],
+			audioSeconds: 4.2, process: { $0 })
 		#expect(result.confirmedAddition.isEmpty)
-		#expect(result.confirmedSegmentCount == 1)
-		#expect(result.pendingText == "Two. Three.")
+		let final = WhisperKitTranscriber.committingLiveTail(result.pendingText, to: "")
+		#expect(final == "One. Two. Three. Four.")
 	}
 
 	@Test func fillerOnlyChunkIsConsumedWithoutTypingAnything() {
-		let result = WhisperKitTranscriber.confirmLiveSegments(
-			[" Um.", " Hello.", " World."], alreadyConfirmed: 0, process: fillerProcessor([]))
+		var confirmer = LiveSegmentConfirmer()
+		let result = confirmTwice(
+			&confirmer, [seg(" Um.", 0, 0.5), seg(" Hello.", 1, 1.5), seg(" World.", 2, 2.5)],
+			process: fillerProcessor([]))
 		#expect(result.confirmedAddition.isEmpty)
 		#expect(result.confirmedSegmentCount == 1)
+		#expect(confirmer.confirmedThroughSeconds == 0.5)
 	}
 
 	@Test func shortSessionsStayPending() {
-		let result = WhisperKitTranscriber.confirmLiveSegments(
-			[" Hello.", " World."], alreadyConfirmed: 0, process: fillerProcessor([]))
+		var confirmer = LiveSegmentConfirmer()
+		let result = confirmTwice(&confirmer, [seg(" Hello.", 0, 1), seg(" World.", 1.2, 2)])
 		#expect(result.confirmedAddition.isEmpty)
 		#expect(result.confirmedSegmentCount == 0)
 		#expect(result.pendingText == "Hello. World.")
 	}
 
-	/// DictationWordTracker types only the suffix past what it already typed, so confirmed
-	/// text must only ever grow by appending, even when processing drops words.
-	@Test func confirmedTextOnlyGrowsByAppending() {
-		let process = fillerProcessor(["basically"])
-		var segments: [String] = []
-		var confirmed = ""
-		var count = 0
-		for text in [" Basically we start.", " Um, then we build.", " Then we test.", " Basically done.", " Bye."] {
-			segments.append(text)
-			let result = WhisperKitTranscriber.confirmLiveSegments(
-				segments, alreadyConfirmed: count, process: process)
-			count = result.confirmedSegmentCount
-			guard !result.confirmedAddition.isEmpty else { continue }
-			let updated = WhisperKitTranscriber.appendingConfirmed(result.confirmedAddition, to: confirmed)
-			#expect(updated.hasPrefix(confirmed))
-			confirmed = updated
-		}
-		#expect(confirmed == "we start. then we build. Then we test.")
-		#expect(!confirmed.lowercased().contains("basically"))
-		#expect(!confirmed.lowercased().contains("um"))
-	}
-
 	/// Stopping commits the held-back tail after the confirmed text, so the tracker types only
-	/// the tail. A long session keeps each sentence once.
+	/// the tail.
 	@Test func stopAppendsTheHeldBackTailOnce() {
-		let process = fillerProcessor([])
-		let segments = [" One.", " Two.", " Three.", " Four.", " Five."]
-		let result = WhisperKitTranscriber.confirmLiveSegments(segments, alreadyConfirmed: 0, process: process)
+		var confirmer = LiveSegmentConfirmer()
+		let segments = [seg("One.", 0, 1), seg("Two.", 1, 2), seg("Three.", 2, 3), seg("Four.", 3, 4), seg("Five.", 4, 5)]
+		let result = confirmTwice(&confirmer, segments)
 		let confirmed = WhisperKitTranscriber.appendingConfirmed(result.confirmedAddition, to: "")
-		let final = WhisperKitTranscriber.committingLiveTail(process(result.pendingText), to: confirmed)
+		let final = WhisperKitTranscriber.committingLiveTail(result.pendingText, to: confirmed)
 		#expect(final.hasPrefix(confirmed))
 		#expect(final == "One. Two. Three. Four. Five.")
 	}
@@ -97,15 +151,57 @@ struct LiveSegmentConfirmationTests {
 	/// A single-segment session is all tail: stopping commits the whole sentence, not the
 	/// partial text the decoder reported mid-decode.
 	@Test func stopCommitsASingleSegmentSessionWhole() {
-		let process = fillerProcessor([])
-		let result = WhisperKitTranscriber.confirmLiveSegments(
-			[" The quick brown fox jumps over the lazy dog."], alreadyConfirmed: 0, process: process)
-		let final = WhisperKitTranscriber.committingLiveTail(process(result.pendingText), to: "")
+		var confirmer = LiveSegmentConfirmer()
+		let result = confirmTwice(&confirmer, [seg(" The quick brown fox jumps over the lazy dog.", 0, 3)])
+		let final = WhisperKitTranscriber.committingLiveTail(fillerProcessor([])(result.pendingText), to: "")
 		#expect(final == "The quick brown fox jumps over the lazy dog.")
 	}
 
 	@Test func stopWithNothingPendingKeepsConfirmedText() {
 		#expect(WhisperKitTranscriber.committingLiveTail("", to: "Already typed.") == "Already typed.")
+	}
+
+	@Test func eachPassDecodesFromTheConfirmationPointWithTimestamps() {
+		let base = DecodingOptions(withoutTimestamps: true, clipTimestamps: [0], promptTokens: [1, 2, 3])
+		let speech = WhisperKitTranscriber.liveDecodingOptions(base, clipStart: 7.5, windowHasSpeech: true)
+		#expect(speech.clipTimestamps == [7.5])
+		#expect(!speech.withoutTimestamps)
+		#expect(speech.promptTokens == [1, 2, 3])
+		let silent = WhisperKitTranscriber.liveDecodingOptions(base, clipStart: 0, windowHasSpeech: false)
+		#expect(silent.promptTokens == nil, "Whisper echoes the custom-word prompt on silence")
+	}
+
+	@Test func silentWindowIsNotSpeechEvenWithSkipSilenceOff() {
+		let noise = (0..<WhisperKit.sampleRate * 2).map { _ in Float.random(in: -0.003...0.003) }
+		#expect(!WhisperKitTranscriber.liveWindowHasSpeech(noise, sensitivity: .medium))
+		#expect(!WhisperKitTranscriber.liveWindowHasSpeech([], sensitivity: .high))
+	}
+}
+
+struct PromptEchoFilterTests {
+	let words = ["Zyphora", "Quillmar"]
+
+	@Test func promptEchoesAreDropped() {
+		#expect(PromptEchoFilter.isEcho("The Quills of the Quillmar", customWords: words))
+		#expect(PromptEchoFilter.isEcho(" [Zyphora]", customWords: words))
+		#expect(PromptEchoFilter.isEcho("Zyphora, Quillmar.", customWords: words))
+	}
+
+	@Test func speechUsingCustomWordsIsKept() {
+		#expect(!PromptEchoFilter.isEcho("Please schedule the demo with Zyphora and Quillmar tomorrow.", customWords: words))
+		#expect(!PromptEchoFilter.isEcho("Quillmar.", customWords: words))
+		#expect(!PromptEchoFilter.isEcho("The quick brown fox.", customWords: words))
+		#expect(!PromptEchoFilter.isEcho("[BLANK_AUDIO]", customWords: words))
+		#expect(!PromptEchoFilter.isEcho("The Quills of the Quillmar", customWords: []))
+	}
+
+	@Test func liveSegmentsDropOnlyTheEcho() {
+		let segments = [seg(" The Quills of the Quillmar", 0, 1.5), seg(" The quick brown fox.", 2, 4)]
+		#expect(
+			WhisperKitTranscriber.withoutPromptEchoes(segments, promptWords: words).map(\.text) == [
+				" The quick brown fox."
+			])
+		#expect(WhisperKitTranscriber.withoutPromptEchoes(segments, promptWords: []).count == 2)
 	}
 }
 
@@ -189,11 +285,13 @@ struct LiveTextPipelineWhisperKitTests {
 			decodeOptions: DecodingOptions(
 				task: .transcribe, language: "en", temperature: 0, skipSpecialTokens: true,
 				withoutTimestamps: false))
-		let segments = results.flatMap(\.segments).map(\.text)
-		try #require(segments.joined().lowercased().contains("fox"), "WhisperKit heard: \(segments)")
+		let segments = results.flatMap(\.segments).map { LiveSegment(text: $0.text, start: $0.start, end: $0.end) }
+		try #require(segments.map(\.text).joined().lowercased().contains("fox"), "WhisperKit heard: \(segments)")
 
-		let result = WhisperKitTranscriber.confirmLiveSegments(
-			segments, alreadyConfirmed: 0, holdBack: 0, process: fillerProcessor(["fox"]))
+		var confirmer = LiveSegmentConfirmer(holdBack: 0)
+		let seconds = Float(samples.count) / Float(WhisperKit.sampleRate)
+		_ = confirmer.apply(segments, audioSeconds: seconds, process: fillerProcessor(["fox"]))
+		let result = confirmer.apply(segments, audioSeconds: seconds, process: fillerProcessor(["fox"]))
 		#expect(result.confirmedSegmentCount == segments.count)
 		#expect(result.confirmedAddition.lowercased().contains("forest"))
 		#expect(!result.confirmedAddition.lowercased().contains("fox"), "got \(result.confirmedAddition)")
