@@ -35,7 +35,7 @@ enum LiveSessionReplay {
 				let segments = results.flatMap(\.segments)
 				if !segments.isEmpty {
 					let result = confirmer.apply(
-						WhisperKitTranscriber.withoutPromptEchoes(
+						WhisperKitTranscriber.liveSegments(
 							segments.map { LiveSegment(text: $0.text, start: $0.start, end: $0.end) },
 							promptWords: options.promptTokens == nil ? [] : promptWords),
 						audioSeconds: Float(end) / Float(rate), process: { $0 })

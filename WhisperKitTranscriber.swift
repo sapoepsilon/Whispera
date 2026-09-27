@@ -845,6 +845,40 @@ import WhisperKit
 		return false
 	}
 
+	/// A live pass's segments as the confirmer takes them.
+	nonisolated static func liveSegments(_ segments: [LiveSegment], promptWords: [String]) -> [LiveSegment] {
+		withoutPromptEchoes(
+			segments.map { LiveSegment(text: withoutStrayQuotes($0.text), start: $0.start, end: $0.end) },
+			promptWords: promptWords)
+	}
+
+	private nonisolated static let quoteMarks: Set<Character> = ["\"", "\u{201C}", "\u{201D}"]
+
+	/// Whisper wraps a sentence it decodes on its own, from a live clip point, in quote marks: one
+	/// came back fully quoted, another opened and never closed. Only quotes wrapping the whole
+	/// segment are removed, so a quotation inside a sentence stays.
+	nonisolated static func withoutStrayQuotes(_ text: String) -> String {
+		let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+		let quoteCount = trimmed.filter { quoteMarks.contains($0) }.count
+		guard quoteCount > 0, quoteCount <= 2, let first = trimmed.first, let last = trimmed.last else { return text }
+		let opens = quoteMarks.contains(first)
+		let closes = quoteMarks.contains(last) && trimmed.count > 1
+		var result = Substring(trimmed)
+		switch (quoteCount, opens, closes) {
+		case (1, true, _): result = result.dropFirst()
+		case (1, false, true): result = result.dropLast()
+		case (2, true, true): result = result.dropFirst().dropLast()
+		default: return text
+		}
+		return result.trimmingCharacters(in: .whitespaces)
+	}
+
+	/// The live preview shows what will be typed, and bracketed non-speech markers such as
+	/// [BLANK_AUDIO] are never typed.
+	nonisolated static func livePreviewText(_ pendingText: String) -> String {
+		TranscriptTextProcessor.removeNonSpeechMarkers(pendingText)
+	}
+
 	/// Drops the segments that only echo the custom-word prompt.
 	nonisolated static func withoutPromptEchoes(_ segments: [LiveSegment], promptWords: [String]) -> [LiveSegment] {
 		guard !promptWords.isEmpty else { return segments }
@@ -999,7 +1033,7 @@ import WhisperKit
 				"Current state: confirmedText.count=\(confirmedText.count), pendingText='\(pendingText)'")
 
 			let confirmation = liveConfirmer.apply(
-				Self.withoutPromptEchoes(
+				Self.liveSegments(
 					segments.map { LiveSegment(text: $0.text, start: $0.start, end: $0.end) },
 					promptWords: promptWords),
 				audioSeconds: audioSeconds,
@@ -1018,9 +1052,10 @@ import WhisperKit
 			livePendingTail = confirmation.pendingText
 
 			// Only update UI-facing property if text has changed meaningfully
-			if shouldUpdatePendingText(newText: confirmation.pendingText) {
-				stableDisplayText = confirmation.pendingText
-				lastDisplayedPendingText = confirmation.pendingText
+			let preview = Self.livePreviewText(confirmation.pendingText)
+			if shouldUpdatePendingText(newText: preview) {
+				stableDisplayText = preview
+				lastDisplayedPendingText = preview
 			}
 
 			shouldShowLiveTranscriptionWindow = !stableDisplayText.isEmpty || !confirmedText.isEmpty
