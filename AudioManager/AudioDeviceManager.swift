@@ -62,6 +62,29 @@ struct AudioInputDevice: Identifiable, Equatable, Hashable, Sendable {
 	}
 }
 
+extension AudioInputDevice {
+	/// Aggregates Core Audio or Apple frameworks create for their own use, never ones a person made.
+	/// AVAudioEngine builds "CADefaultDeviceAggregate-<pid>-<n>" for Whispera's own process while it
+	/// records, and voice-processing I/O builds "VPAUAggregateAudioDevice-...".
+	static let internalAggregatePrefixes = ["CADefaultDeviceAggregate", "VPAUAggregateAudioDevice"]
+
+	/// Whether a device is plumbing that must not be offered as a microphone: an aggregate with one of
+	/// the internal name/UID prefixes above (whatever transport it reports), or any aggregate marked
+	/// private, which exists only inside the process that made it. Virtual devices (BlackHole,
+	/// Loopback) and the public aggregates people build in Audio MIDI Setup stay listed.
+	static func isInternal(
+		uid: String, name: String, transportType: UInt32, isPrivateAggregate: Bool
+	) -> Bool {
+		if internalAggregatePrefixes.contains(where: { uid.hasPrefix($0) || name.hasPrefix($0) }) {
+			return true
+		}
+		let isAggregate =
+			transportType == kAudioDeviceTransportTypeAggregate
+			|| transportType == kAudioDeviceTransportTypeAutoAggregate
+		return isAggregate && isPrivateAggregate
+	}
+}
+
 extension Notification.Name {
 	static let audioDevicesChanged = Notification.Name("AudioDevicesChanged")
 	static let audioInputDeviceChanged = Notification.Name("AudioInputDeviceChanged")
@@ -363,6 +386,12 @@ final class AudioDeviceManager {
 				let uid = getDeviceUID(for: deviceID),
 				let name = getDeviceName(for: deviceID)
 			else { continue }
+			let transportType = getDeviceTransportType(for: deviceID)
+			guard
+				!AudioInputDevice.isInternal(
+					uid: uid, name: name, transportType: transportType,
+					isPrivateAggregate: isPrivateAggregate(deviceID))
+			else { continue }
 
 			devices.append(
 				AudioInputDevice(
@@ -370,7 +399,7 @@ final class AudioDeviceManager {
 					uid: uid,
 					name: name,
 					isDefault: deviceID == defaultDeviceID,
-					transportType: getDeviceTransportType(for: deviceID)
+					transportType: transportType
 				))
 		}
 
@@ -436,6 +465,22 @@ final class AudioDeviceManager {
 		)
 
 		return status == noErr ? name as String : nil
+	}
+
+	/// Reads kAudioAggregateDeviceIsPrivateKey from the composition; false for anything that is not an aggregate.
+	private func isPrivateAggregate(_ deviceID: AudioDeviceID) -> Bool {
+		var composition: Unmanaged<CFDictionary>?
+		var size = UInt32(MemoryLayout<Unmanaged<CFDictionary>?>.size)
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioAggregateDevicePropertyComposition,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		guard AudioObjectHasProperty(deviceID, &address),
+			AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &composition) == noErr,
+			let dictionary = composition?.takeRetainedValue() as? [String: Any]
+		else { return false }
+		return (dictionary[kAudioAggregateDeviceIsPrivateKey] as? NSNumber)?.boolValue ?? false
 	}
 
 	private func getDeviceTransportType(for deviceID: AudioDeviceID) -> UInt32 {
