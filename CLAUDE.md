@@ -20,6 +20,11 @@ xcodebuild -scheme Whispera -project Whispera.xcodeproj build
 # Unit tests (what CI runs on pull requests; model-dependent tests skip themselves)
 xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:WhisperaUnitTests
 
+# On a machine with openai_whisper-small downloaded by the app: model tests must run, and a
+# missing model fails them instead of skipping (use this before merging live-mode changes)
+TEST_RUNNER_WHISPERA_REQUIRE_MODEL_TESTS=1 xcodebuild test -scheme Whispera -project Whispera.xcodeproj \
+  -only-testing:WhisperaUnitTests -parallel-testing-enabled NO
+
 # UI tests
 xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:WhisperaUITests
 ```
@@ -195,7 +200,8 @@ Whisper models are downloaded to `~/Library/Application Support/Whispera/models/
 - Mock only external dependencies (network, file system)
 - Use `@MainActor` for SwiftUI-related test operations
 - Test files located in `WhisperaUnitTests/` (Swift Testing), `WhisperaTests/` (XCTest; only the five files listed under Testing are built, into the `WhisperaUnitTests` target) and `WhisperaUITests/`
-- Tests that touch `UserDefaults` use `UserDefaults(suiteName:)` with a unique suite name; tests that need a downloaded model gate themselves with `.enabled(if:)`
+- Tests that touch `UserDefaults` use `UserDefaults(suiteName:)` with a unique suite name
+- Real-model suites use `WhisperKitTestModel` (`WhisperaUnitTests/WhisperKitTestModel.swift`): `.enabled(if: WhisperKitTestModel.runsSmallModelTests)` plus `.sharedTranscriber`, and `WhisperKitTestModel.small()` for the one model instance the process shares. They skip without the model unless `WHISPERA_REQUIRE_MODEL_TESTS=1` (passed to the test runner as `TEST_RUNNER_WHISPERA_REQUIRE_MODEL_TESTS=1`), which turns a missing model into a failure. CI has no models, so these suites only run locally
 
 ## Plans Directory
 

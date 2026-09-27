@@ -65,7 +65,7 @@ enum LiveSessionReplay {
 
 /// Real WhisperKit runs of the live pass. Needs the openai_whisper-small model downloaded by the app.
 @MainActor
-@Suite(.serialized, .enabled(if: WhisperKitTestModel.smallModelFolder != nil))
+@Suite(.serialized, .sharedTranscriber, .enabled(if: WhisperKitTestModel.runsSmallModelTests))
 struct LiveStreamingWhisperKitTests {
 	static let passage =
 		"This is a long dictation used to test the Cancel Transcription button. It keeps talking for a while so that the transcription takes long enough to press cancel. The weather is nice today, and the release is almost ready. We checked the history window, the settings tabs, and the menu bar popover. Now we are testing whether the transcription can be cancelled from the popover while it is still running. One more sentence to make it longer. And another sentence to be safe."
@@ -76,11 +76,7 @@ struct LiveStreamingWhisperKitTests {
 	static let customWords = ["Zyphora", "Quillmar", "Kubernetes"]
 
 	func loadWhisperKit() async throws -> WhisperKit {
-		let folder = try #require(WhisperKitTestModel.smallModelFolder)
-		let whisperKit = try await WhisperKitTranscriber.makeWhisperKit(
-			WhisperKitConfig(modelFolder: folder.path, verbose: false, prewarm: false, load: true, download: false))
-		try await whisperKit.loadTokenizerIfNeeded()
-		return whisperKit
+		try await WhisperKitTestModel.small()
 	}
 
 	func baseOptions(_ whisperKit: WhisperKit, prompt: Bool) -> DecodingOptions {

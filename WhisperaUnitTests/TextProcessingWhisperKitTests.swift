@@ -4,26 +4,13 @@ import WhisperKit
 
 @testable import Whispera
 
-enum WhisperKitTestModel {
-	static var smallModelFolder: URL? {
-		let folder = FileManager.default.homeDirectoryForCurrentUser
-			.appendingPathComponent(
-				"Library/Application Support/Whispera/models/argmaxinc/whisperkit-coreml/openai_whisper-small")
-		return FileManager.default.fileExists(atPath: folder.appendingPathComponent("TextDecoder.mlmodelc").path)
-			? folder : nil
-	}
-}
-
 /// Runs the text pipeline against real WhisperKit output. Needs the multilingual
 /// openai_whisper-small model already downloaded by the app and the system `say` voices.
 @MainActor
-@Suite(.serialized, .enabled(if: WhisperKitTestModel.smallModelFolder != nil))
+@Suite(.serialized, .sharedTranscriber, .enabled(if: WhisperKitTestModel.runsSmallModelTests))
 struct TextProcessingWhisperKitTests {
 	func loadWhisperKit() async throws -> WhisperKit {
-		let folder = try #require(WhisperKitTestModel.smallModelFolder)
-		let config = WhisperKitConfig(
-			modelFolder: folder.path, verbose: false, prewarm: false, load: true, download: false)
-		return try await WhisperKit(config)
+		try await WhisperKitTestModel.small()
 	}
 
 	func speak(_ text: String, voice: String) throws -> URL {

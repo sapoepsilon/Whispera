@@ -326,13 +326,11 @@ struct PrewarmKeyTests {
 /// Feeds real WhisperKit segments through the live confirmation step, the way
 /// realtimeLoop does, to prove the text pipeline reaches live dictation.
 @MainActor
-@Suite(.serialized, .enabled(if: WhisperKitTestModel.smallModelFolder != nil))
+@Suite(.serialized, .sharedTranscriber, .enabled(if: WhisperKitTestModel.runsSmallModelTests))
 struct LiveTextPipelineWhisperKitTests {
 	@Test(.timeLimit(.minutes(10)))
 	func confirmedLiveTextIsProcessed() async throws {
-		let folder = try #require(WhisperKitTestModel.smallModelFolder)
-		let whisperKit = try await WhisperKit(
-			WhisperKitConfig(modelFolder: folder.path, verbose: false, prewarm: false, load: true, download: false))
+		let whisperKit = try await WhisperKitTestModel.small()
 		let directory = FileManager.default.temporaryDirectory
 			.appendingPathComponent("LiveTP-\(UUID().uuidString)", isDirectory: true)
 		defer { try? FileManager.default.removeItem(at: directory) }

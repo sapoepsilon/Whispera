@@ -122,6 +122,9 @@ jobs:
       # Tests that need a downloaded Whisper or Parakeet model, the bundled test recording,
       # Apple Intelligence or an unlocked keychain skip themselves via .enabled(if:), so this
       # runs the logic suites only. XCTest targets and UI tests need models or a GUI session.
+      # A runner with openai_whisper-small in the app's model folder should set
+      # TEST_RUNNER_WHISPERA_REQUIRE_MODEL_TESTS=1 so the real-model live suites fail instead of
+      # skipping if the model goes missing.
       - name: Run WhisperaUnitTests
         run: |
           set -o pipefail
