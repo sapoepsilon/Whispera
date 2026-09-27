@@ -113,6 +113,7 @@ enum UpgradeDefaults {
 	/// onboarding before this ever ran predates these features.
 	static func apply(to defaults: UserDefaults) {
 		ShortcutMigration.migrate(in: defaults)
+		RecordingOverlayStyle.dropUnknownStoredValue(in: defaults)
 		guard !defaults.bool(forKey: appliedKey) else { return }
 		defaults.set(true, forKey: appliedKey)
 		let isUpgrade = defaults.bool(forKey: WhatsNewTracker.onboardingKey)

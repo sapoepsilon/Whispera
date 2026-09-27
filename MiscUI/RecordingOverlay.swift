@@ -3,7 +3,6 @@ import SwiftUI
 
 enum RecordingOverlayStyle: String, CaseIterable, Identifiable {
 	case pill
-	case minimal
 	case none
 
 	static let defaultsKey = "recordingOverlayStyle"
@@ -13,13 +12,21 @@ enum RecordingOverlayStyle: String, CaseIterable, Identifiable {
 	var displayName: LocalizedStringKey {
 		switch self {
 		case .pill: return "Pill"
-		case .minimal: return "Minimal"
 		case .none: return "None"
 		}
 	}
 
 	static func stored(in defaults: UserDefaults = .standard) -> RecordingOverlayStyle {
 		defaults.string(forKey: defaultsKey).flatMap(RecordingOverlayStyle.init(rawValue:)) ?? .pill
+	}
+
+	/// Settings binds the raw string, so a style that no longer exists (the removed "minimal")
+	/// would leave the picker with nothing selected even though the pill shows.
+	static func dropUnknownStoredValue(in defaults: UserDefaults) {
+		guard let raw = defaults.string(forKey: defaultsKey), RecordingOverlayStyle(rawValue: raw) == nil
+		else { return }
+		defaults.removeObject(forKey: defaultsKey)
+		AppLogger.shared.general.info("Recording overlay style \(raw) is no longer offered; using the pill")
 	}
 }
 
@@ -51,12 +58,6 @@ enum RecordingOverlayPolicy {
 		style == .pill && RecordingWindowPolicy.shouldShowListeningWindow(state: state, mode: mode)
 	}
 
-	static func shouldShowMinimalIndicator(
-		state: AudioState, mode: RecordingMode, style: RecordingOverlayStyle
-	) -> Bool {
-		style == .minimal && RecordingWindowPolicy.shouldShowListeningWindow(state: state, mode: mode)
-	}
-
 	// The bottom inset matches the pill's historical placement at 10% of the visible height.
 	static func origin(
 		for windowSize: NSSize, in visibleFrame: NSRect, position: RecordingOverlayPosition
@@ -68,50 +69,6 @@ enum RecordingOverlayPolicy {
 			return NSPoint(x: x, y: visibleFrame.minY + inset)
 		case .top:
 			return NSPoint(x: x, y: visibleFrame.maxY - inset - windowSize.height)
-		}
-	}
-}
-
-@MainActor
-final class MinimalRecordingIndicatorController {
-	private let audioManager: AudioManager
-	private let defaults: UserDefaults
-	private let indicatorManager = RecordingIndicatorManager()
-	private var stateObserver: NSObjectProtocol?
-	private var isShowing = false
-
-	init(audioManager: AudioManager, defaults: UserDefaults = .standard) {
-		self.audioManager = audioManager
-		self.defaults = defaults
-		stateObserver = NotificationCenter.default.addObserver(
-			forName: NSNotification.Name("RecordingStateChanged"),
-			object: nil,
-			queue: .main
-		) { [weak self] _ in
-			Task { @MainActor in
-				self?.update()
-			}
-		}
-	}
-
-	deinit {
-		if let stateObserver {
-			NotificationCenter.default.removeObserver(stateObserver)
-		}
-	}
-
-	func update() {
-		let shouldShow = RecordingOverlayPolicy.shouldShowMinimalIndicator(
-			state: audioManager.currentState,
-			mode: audioManager.currentRecordingMode,
-			style: RecordingOverlayStyle.stored(in: defaults)
-		)
-		guard shouldShow != isShowing else { return }
-		isShowing = shouldShow
-		if shouldShow {
-			indicatorManager.showIndicator(position: RecordingOverlayPosition.stored(in: defaults))
-		} else {
-			indicatorManager.hideIndicator()
 		}
 	}
 }

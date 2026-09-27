@@ -57,7 +57,6 @@
 		D698B91D2E18F3DD008FE0CF /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D698B91C2E18F3DD008FE0CF /* PermissionManager.swift */; };
 		D69B300D2DFA0E020024A2DA /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D69B300C2DFA0E020024A2DA /* MarkdownUI */; };
 		D6B81FB42DEFF5CC00D32F2A /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6B81FB32DEFF5CC00D32F2A /* WhisperKit */; };
-		D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */; };
 		D6C10A012F20000000000002 /* RecordingGlowWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C10A012F20000000000001 /* RecordingGlowWindow.swift */; };
 		D6C10A022F20000000000002 /* RecordingGlow.metal in Sources */ = {isa = PBXBuildFile; fileRef = D6C10A022F20000000000001 /* RecordingGlow.metal */; };
 		D6BENCH012F0000000000001 /* BenchmarkResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6BENCH022F0000000000001 /* BenchmarkResult.swift */; };
@@ -167,7 +166,6 @@
 		D698B9042E18EC70008FE0CF /* SingleInstanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleInstanceTests.swift; sourceTree = "<group>"; };
 		D698B9062E18EC70008FE0CF /* VersionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionTests.swift; sourceTree = "<group>"; };
 		D698B91C2E18F3DD008FE0CF /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
-		D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
 		D6C10A012F20000000000001 /* RecordingGlowWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingGlowWindow.swift; sourceTree = "<group>"; };
 		D6C10A022F20000000000001 /* RecordingGlow.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = RecordingGlow.metal; sourceTree = "<group>"; };
 		D6BENCH022F0000000000001 /* BenchmarkResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkResult.swift; sourceTree = "<group>"; };
@@ -267,7 +265,6 @@
 				D63850DF2E1791AF000FD465 /* WhisperaUnitTests */,
 				8A8A8A8A8A8A8A8A8A8A8A8A /* Products */,
 				2A2A2A2A2A2A2A2A2A2A2A2A /* WhisperaApp.swift */,
-				D6B81FB52DEFFE4000D32F2A /* RecordingIndicator.swift */,
 				D6C10A012F20000000000001 /* RecordingGlowWindow.swift */,
 				D6AUDIN202F0000000000001 /* AudioInputSettingsView.swift */,
 				D6C10A022F20000000000001 /* RecordingGlow.metal */,
@@ -637,7 +634,6 @@
 				1A1A1A1A1A1A1A1A1A1A1A1C /* SettingsView.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1D /* AudioManager.swift in Sources */,
 				FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */,
-				D6B81FB62DEFFE4000D32F2A /* RecordingIndicator.swift in Sources */,
 				D6C10A012F20000000000002 /* RecordingGlowWindow.swift in Sources */,
 				D6C10A022F20000000000002 /* RecordingGlow.metal in Sources */,
 				D698B91D2E18F3DD008FE0CF /* PermissionManager.swift in Sources */,

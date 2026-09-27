@@ -21,32 +21,50 @@ struct RecordingOverlayTests {
 
 	@Test func storedValuesRoundTrip() {
 		let defaults = isolatedDefaults()
-		defaults.set(RecordingOverlayStyle.minimal.rawValue, forKey: RecordingOverlayStyle.defaultsKey)
+		defaults.set(RecordingOverlayStyle.none.rawValue, forKey: RecordingOverlayStyle.defaultsKey)
 		defaults.set(RecordingOverlayPosition.top.rawValue, forKey: RecordingOverlayPosition.defaultsKey)
-		#expect(RecordingOverlayStyle.stored(in: defaults) == .minimal)
+		#expect(RecordingOverlayStyle.stored(in: defaults) == .none)
 		#expect(RecordingOverlayPosition.stored(in: defaults) == .top)
 	}
 
+	@Test func onlyPillAndNoneAreOffered() {
+		#expect(RecordingOverlayStyle.allCases == [.pill, .none])
+	}
+
+	/// The Minimal style was removed; anyone who had picked it gets the default pill back.
+	@Test func storedMinimalStyleFallsBackToThePill() {
+		let defaults = isolatedDefaults()
+		defaults.set("minimal", forKey: RecordingOverlayStyle.defaultsKey)
+		#expect(RecordingOverlayStyle(rawValue: "minimal") == nil)
+		#expect(RecordingOverlayStyle.stored(in: defaults) == .pill)
+		#expect(RecordingOverlayPolicy.shouldShowPill(state: .recording, mode: .text, style: .stored(in: defaults)))
+	}
+
+	@Test func launchClearsTheRemovedMinimalStyleSoSettingsSelectsThePill() {
+		let defaults = isolatedDefaults()
+		defaults.set("minimal", forKey: RecordingOverlayStyle.defaultsKey)
+		UpgradeDefaults.apply(to: defaults)
+		#expect(defaults.object(forKey: RecordingOverlayStyle.defaultsKey) == nil)
+		#expect(RecordingOverlayStyle.stored(in: defaults) == .pill)
+	}
+
+	@Test func launchKeepsAStillOfferedStyle() {
+		let defaults = isolatedDefaults()
+		defaults.set(RecordingOverlayStyle.none.rawValue, forKey: RecordingOverlayStyle.defaultsKey)
+		UpgradeDefaults.apply(to: defaults)
+		#expect(RecordingOverlayStyle.stored(in: defaults) == .none)
+	}
+
 	@Test(arguments: [AudioState.initializing, .recording, .transcribing])
-	func exactlyOneSurfacePerStyleWhileActiveInTextMode(state: AudioState) {
+	func onlyThePillStyleShowsThePillWhileActiveInTextMode(state: AudioState) {
 		#expect(RecordingOverlayPolicy.shouldShowPill(state: state, mode: .text, style: .pill))
-		#expect(!RecordingOverlayPolicy.shouldShowMinimalIndicator(state: state, mode: .text, style: .pill))
-
-		#expect(!RecordingOverlayPolicy.shouldShowPill(state: state, mode: .text, style: .minimal))
-		#expect(RecordingOverlayPolicy.shouldShowMinimalIndicator(state: state, mode: .text, style: .minimal))
-
 		#expect(!RecordingOverlayPolicy.shouldShowPill(state: state, mode: .text, style: .none))
-		#expect(!RecordingOverlayPolicy.shouldShowMinimalIndicator(state: state, mode: .text, style: .none))
 	}
 
 	@Test(arguments: RecordingOverlayStyle.allCases)
 	func nothingShowsWhenIdleOrInLiveMode(style: RecordingOverlayStyle) {
 		#expect(!RecordingOverlayPolicy.shouldShowPill(state: .idle, mode: .text, style: style))
-		#expect(!RecordingOverlayPolicy.shouldShowMinimalIndicator(state: .idle, mode: .text, style: style))
 		#expect(!RecordingOverlayPolicy.shouldShowPill(state: .recording, mode: .liveTranscription, style: style))
-		#expect(
-			!RecordingOverlayPolicy.shouldShowMinimalIndicator(
-				state: .recording, mode: .liveTranscription, style: style))
 	}
 
 	@Test func bottomOriginMatchesLegacyPlacement() {

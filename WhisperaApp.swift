@@ -113,7 +113,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	let popoverPresenter = PopoverPresenter()
 	private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
-	private var minimalIndicatorController: MinimalRecordingIndicatorController?
 	private static let alphaPulseKey = "whispera.statusItem.alphaPulse"
 	private let statusIconConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium, scale: .medium)
 	private var recordingGlowController: RecordingGlowController?
@@ -179,7 +178,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
-			minimalIndicatorController = MinimalRecordingIndicatorController(audioManager: audioManager)
 			recordingGlowController = RecordingGlowController(audioManager: audioManager)
 			if !hasCompletedOnboarding {
 				showOnboarding()
