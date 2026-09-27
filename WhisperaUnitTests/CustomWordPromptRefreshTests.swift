@@ -198,4 +198,39 @@ struct CustomWordPromptTranscriberTests {
 		let prompt = try #require(decodedPrompt(transcriber), "The re-transcription went out without a prompt")
 		#expect(prompt.contains(word))
 	}
+
+	/// The launch load ran the model list fetch (network, 10 s timeout) inside the model
+	/// operation and before isInitialized, and live startup waits for initialization before it
+	/// opens the microphone: a dictation started then lost its first words to the fetch.
+	@Test(.timeLimit(.minutes(10)))
+	func theLaunchLoadDoesNotWaitForTheModelList() async throws {
+		let transcriber = WhisperKitTranscriber.shared
+		try await waitForWhisperKit(transcriber)
+		let lastModel = try #require(transcriber.lastUsedModel)
+		try #require(transcriber.downloadedModels.contains(lastModel))
+		// The host app's own launch refresh must not land in the middle of this test
+		await transcriber.modelCatalogRefreshTask?.value
+		let savedFetch = transcriber.fetchModelCatalog
+		let savedModels = transcriber.availableModels
+		let release = AsyncStream<Void>.makeStream()
+		transcriber.fetchModelCatalog = {
+			for await _ in release.stream { break }
+			return ["catalog-sentinel"]
+		}
+		defer {
+			transcriber.fetchModelCatalog = savedFetch
+			transcriber.availableModels = savedModels
+		}
+		transcriber.availableModels = ["before-launch-load"]
+
+		try await transcriber.autoLoadLastModel()
+
+		#expect(
+			transcriber.availableModels == ["before-launch-load"],
+			"The launch load waited for the model list: \(transcriber.availableModels)")
+		#expect(transcriber.isCurrentModelLoaded())
+		release.continuation.yield()
+		await transcriber.modelCatalogRefreshTask?.value
+		#expect(transcriber.availableModels.contains("catalog-sentinel"))
+	}
 }

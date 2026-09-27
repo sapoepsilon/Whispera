@@ -366,7 +366,7 @@ import WhisperKit
 		}
 	}
 
-	private var lastUsedModel: String? {
+	var lastUsedModel: String? {
 		get {
 			UserDefaults.standard.string(forKey: "lastUsedModel")
 		}
@@ -586,7 +586,7 @@ import WhisperKit
 		}
 	}
 
-	private func autoLoadLastModel() async throws {
+	func autoLoadLastModel() async throws {
 		guard let lastModel = lastUsedModel else {
 			AppLogger.shared.transcriber.log("No last used model found, will use default when needed")
 			return
@@ -602,8 +602,11 @@ import WhisperKit
 		do {
 			AppLogger.shared.transcriber.log("Auto-loading last used model: \(lastModel)")
 			try await loadModelInOperation(lastModel)
-			try await refreshAvailableModels()
 			AppLogger.shared.transcriber.log("Successfully auto-loaded last used model: \(lastModel)")
+			// The model list is a network fetch with a 10 s timeout. Awaited here it held the
+			// launch model operation and isInitialized, which every dictation waits for before
+			// opening the microphone, although nothing it returns is needed to transcribe.
+			refreshModelCatalogInBackground()
 		} catch {
 			AppLogger.shared.transcriber.log(
 				"Failed to auto-load last used model '\(lastModel)': \(error)")
@@ -1718,11 +1721,6 @@ import WhisperKit
 			AppLogger.shared.transcriber.log("Model \(model) is already loaded")
 			return
 		}
-		// Refresh available models first to ensure we have the latest list
-		if availableModels.isEmpty {
-			try await refreshAvailableModels()
-		}
-
 		if ParakeetModel.isParakeetID(model) {
 			if !downloadedModels.contains(model) {
 				try await performDownloadModel(model)
@@ -1743,6 +1741,11 @@ import WhisperKit
 		// Check if model is already downloaded
 		let currentlyDownloadedModels = try await getDownloadedModels()
 		downloadedModels = currentlyDownloadedModels
+		// Only a download needs the model list; it is a network fetch that held this operation
+		// (and every load queued behind it) for up to 10 s even for a model already on disk
+		if !currentlyDownloadedModels.contains(model), availableModels.isEmpty {
+			try await refreshAvailableModels()
+		}
 
 		guard availableModels.contains(model) || currentlyDownloadedModels.contains(model) else {
 			throw WhisperKitError.modelNotFound(model)
@@ -1813,11 +1816,24 @@ import WhisperKit
 		}
 	}
 
+	@ObservationIgnored var fetchModelCatalog: @Sendable () async throws -> [String] = {
+		try await WhisperKit.fetchAvailableModels()
+	}
+	@ObservationIgnored private(set) var modelCatalogRefreshTask: Task<Void, Never>?
+
+	func refreshModelCatalogInBackground() {
+		modelCatalogRefreshTask?.cancel()
+		modelCatalogRefreshTask = Task { @MainActor [weak self] in
+			try? await self?.refreshAvailableModels()
+		}
+	}
+
 	func refreshAvailableModels() async throws {
 		do {
 			// Add timeout to prevent hanging
+			let fetch = fetchModelCatalog
 			let fetchedModels = try await withTimeout(seconds: 10) {
-				try await WhisperKit.fetchAvailableModels()
+				try await fetch()
 			}
 
 			// Remove duplicates using Set
