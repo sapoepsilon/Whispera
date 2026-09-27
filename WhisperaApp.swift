@@ -491,6 +491,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	// retained window hosting the same settings view.
 	@MainActor
 	private func showSettingsWindow() {
+		// The semitransient popover stays up when another window of this app takes key
+		if popover.isShown {
+			popover.performClose(nil)
+		}
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
 		let step = SettingsWindowOpening.firstStep(
