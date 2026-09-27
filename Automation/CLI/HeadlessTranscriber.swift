@@ -320,7 +320,7 @@ final class HeadlessTranscriber {
 				load: true,
 				download: false
 			)
-			backend = .whisperKit(try await WhisperKit(config))
+			backend = .whisperKit(try await WhisperKitTranscriber.makeWhisperKit(config))
 		case .parakeet(let parakeet):
 			// Device 0 keeps the app's own Parakeet placement; the others pin the encoder's units
 			let units = device.index == 0 ? ComputeUnitPreference.load().parakeetComputeUnits : device.encoder
@@ -351,7 +351,7 @@ final class HeadlessTranscriber {
 		let tokens = tokenizer.encode(text: prompt).filter { $0 < tokenizer.specialTokens.specialTokenBegin }
 		var options = base
 		options.promptTokens = tokens.isEmpty ? nil : tokens
-		return options
+		return WhisperKitTranscriber.promptSafeDecodingOptions(options)
 	}
 
 	/// The language is nil when the engine does not report one.

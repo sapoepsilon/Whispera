@@ -77,7 +77,7 @@ struct LiveStreamingWhisperKitTests {
 
 	func loadWhisperKit() async throws -> WhisperKit {
 		let folder = try #require(WhisperKitTestModel.smallModelFolder)
-		let whisperKit = try await WhisperKit(
+		let whisperKit = try await WhisperKitTranscriber.makeWhisperKit(
 			WhisperKitConfig(modelFolder: folder.path, verbose: false, prewarm: false, load: true, download: false))
 		try await whisperKit.loadTokenizerIfNeeded()
 		return whisperKit

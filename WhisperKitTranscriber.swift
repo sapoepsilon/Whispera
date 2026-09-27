@@ -570,7 +570,7 @@ import WhisperKit
 						computeOptions: getOptimizedComputeOptions(),
 						prewarm: true
 					)
-					let whisperKitInstance = try await WhisperKit(config)
+					let whisperKitInstance = try await Self.makeWhisperKit(config)
 					self.setupModelStateCallback(for: whisperKitInstance)
 					return whisperKitInstance
 				}.value
@@ -833,7 +833,7 @@ import WhisperKit
 		if !windowHasSpeech {
 			options.promptTokens = nil
 		}
-		return options
+		return promptSafeDecodingOptions(options)
 	}
 
 	/// Whether the audio a live pass decodes holds speech, judged at the user's sensitivity even
@@ -1112,7 +1112,7 @@ import WhisperKit
 	private func createDefaultDecodingOptions() -> DecodingOptions {
 		let languageParameters = Self.languageDecodingParameters(
 			selectedLanguage: selectedLanguage, enableTranslation: false)
-		return DecodingOptions(
+		return Self.promptSafeDecodingOptions(DecodingOptions(
 			verbose: false,
 			task: .transcribe,
 			language: languageParameters.language,
@@ -1127,7 +1127,7 @@ import WhisperKit
 			wordTimestamps: savedWordTimestamps,
 			clipTimestamps: [0],
 			promptTokens: customWordPromptTokens()
-		)
+		))
 	}
 
 	func createDecodingOptions(enableTranslation: Bool) -> DecodingOptions {
@@ -1140,7 +1140,7 @@ import WhisperKit
 		AppLogger.shared.transcriber.log(
 			"Creating decoding options - mode: \(task.description) language: \(languageCode ?? "auto") promptTokens: \(promptTokens?.count ?? 0)"
 		)
-		return DecodingOptions(
+		return Self.promptSafeDecodingOptions(DecodingOptions(
 			verbose: false,
 			task: task,
 			language: languageCode,
@@ -1155,7 +1155,7 @@ import WhisperKit
 			wordTimestamps: savedWordTimestamps,
 			clipTimestamps: [0],
 			promptTokens: promptTokens
-		)
+		))
 	}
 
 	/// "auto" leaves the language unset so WhisperKit detects it from the audio.
@@ -1436,7 +1436,7 @@ import WhisperKit
 					AppLogger.shared.transcriber.log(
 						"Array bounds error detected, retrying with smaller sampleLength")
 
-					let fallbackOptions = DecodingOptions(
+					let fallbackOptions = Self.promptSafeDecodingOptions(DecodingOptions(
 						verbose: false,
 						task: decodingOptions?.task ?? .transcribe,
 						language: decodingOptions?.language,
@@ -1451,7 +1451,7 @@ import WhisperKit
 						wordTimestamps: savedWordTimestamps,
 						clipTimestamps: [0],
 						promptTokens: decodingOptions?.promptTokens
-					)
+					))
 
 					do {
 						let fallbackResult = try await Task { @MainActor in
@@ -2049,7 +2049,7 @@ import WhisperKit
 					config.prewarm = false
 					config.load = true
 				}
-				let whisperKitInstance = try await WhisperKit(config)
+				let whisperKitInstance = try await Self.makeWhisperKit(config)
 				prewarmedModelKeys.insert(prewarmKey)
 				self.setupModelStateCallback(for: whisperKitInstance)
 				return whisperKitInstance
