@@ -660,37 +660,41 @@ import WhisperKit
 				guard let whisperKit = whisperKit, isWhisperKitReady() else {
 					throw WhisperKitError.notReady
 				}
-				// The live loop reuses these options for every pass
-				await loadTokenizerForCustomWords()
-				try checkLiveStartupIsCurrent(generation)
-				refreshDecodingOptions()
+				try await LiveStartupSequence.run(
+					openMicrophone: {
+						dictationWordTracker = DictationWordTracker()
+						dictationWordTracker?.startNewSession()
 
-				dictationWordTracker = DictationWordTracker()
-				dictationWordTracker?.startNewSession()
+						shouldShowLiveTranscriptionWindow = true
+						isTranscribing = true
+						isLiveTranscriptionMode = true
+						livePass = LiveDictationPass()
 
-				shouldShowLiveTranscriptionWindow = true
-				isTranscribing = true
-				isLiveTranscriptionMode = true
-				livePass = LiveDictationPass()
-
-				await AudioDeviceManager.shared.activateSelectedDevice()
-				guard liveSession.isCurrent(generation), !Task.isCancelled else {
-					// Stop already restored the input before this activation finished
-					if !liveSession.isActive {
-						AudioDeviceManager.shared.restoreSystemDefault()
-					}
-					throw CancellationError()
-				}
-				let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
-				try whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) {
-					[weak self] samples in
-					Task { @MainActor in
-						guard let self, self.liveSession.isCurrent(generation) else { return }
-						self.shouldShowLiveTranscriptionWindow = true
-						self.onLiveAudioSamples?(samples)
-					}
-				}
-				realtimeLoop(generation: generation)
+						await AudioDeviceManager.shared.activateSelectedDevice()
+						guard liveSession.isCurrent(generation), !Task.isCancelled else {
+							// Stop already restored the input before this activation finished
+							if !liveSession.isActive {
+								AudioDeviceManager.shared.restoreSystemDefault()
+							}
+							throw CancellationError()
+						}
+						let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
+						try whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) {
+							[weak self] samples in
+							Task { @MainActor in
+								guard let self, self.liveSession.isCurrent(generation) else { return }
+								self.shouldShowLiveTranscriptionWindow = true
+								self.onLiveAudioSamples?(samples)
+							}
+						}
+					},
+					preparePrompt: {
+						// The live loop reuses these options for every pass
+						await loadTokenizerForCustomWords()
+						refreshDecodingOptions()
+					},
+					isCurrent: { liveSession.isCurrent(generation) && !Task.isCancelled },
+					startDecoding: { realtimeLoop(generation: generation) })
 			} catch {
 				guard liveSession.isCurrent(generation), !Task.isCancelled, !(error is CancellationError) else {
 					throw CancellationError()
@@ -777,6 +781,7 @@ import WhisperKit
 		let sessionSamples = keepsAudio ? Array(whisperKit?.audioProcessor.audioSamples ?? []) : []
 
 		liveSession.end()
+		let startup = liveStreamStartupTask
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
 		isWaitingForModel = false
@@ -792,10 +797,13 @@ import WhisperKit
 
 		let generation = liveFinish.begin()
 		let pass = livePass
-		let settings = wasLive ? liveSettings() : nil
 		let finishing = Task { @MainActor [weak self] () -> Bool in
 			await inFlight?.value
+			// Stopped while startup still prepared the prompt: the microphone was already
+			// capturing, and the final decode needs the loaded model and the prompt
+			if wasLive { _ = await startup?.result }
 			guard let self else { return false }
+			let settings = wasLive ? self.liveSettings() : nil
 			var tail = pass.pendingTail
 			if let settings, let whisperKit = self.whisperKit {
 				tail = await pass.finish(
