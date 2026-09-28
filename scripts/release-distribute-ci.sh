@@ -223,8 +223,9 @@ fi
 if [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
     echo "🔐 Generating Sparkle EdDSA signature..."
 
-    # Write private key to temp file
+    # Write private key to temp file, removed on every exit path
     SPARKLE_KEY_FILE=$(mktemp)
+    trap 'rm -f "$SPARKLE_KEY_FILE"' EXIT
     echo "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_KEY_FILE"
 
     # Find Sparkle sign_update tool
@@ -241,10 +242,20 @@ if [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
 		if [ -n "$SIGN_UPDATE" ]; then
 			# Sign the versioned DMG
 			SIGNATURE=$("$SIGN_UPDATE" "${DIST_PATH}/${DMG_VERSIONED}" -f "$SPARKLE_KEY_FILE" | tr -d '\r\n')
-			if [ -z "$SIGNATURE" ]; then
-				echo "⚠️ Sparkle sign_update produced empty output"
+			# Every Sparkle client rejects an enclosure without an EdDSA signature, so an
+			# unsigned appcast must never be written, let alone published
+			if ! printf '%s' "$SIGNATURE" | grep -Eq '^sparkle:edSignature="[A-Za-z0-9+/=]+" length="[0-9]+"$'; then
+				echo "❌ Sparkle sign_update did not produce a signature: '${SIGNATURE}'"
+				exit 1
 			fi
 			echo "✅ Sparkle signature generated"
+
+        # Sparkle must not offer the update to a macOS the app cannot launch on
+        MINIMUM_SYSTEM=$(/usr/libexec/PlistBuddy -c "Print LSMinimumSystemVersion" "${DIST_PATH}/${APP_NAME}.app/Contents/Info.plist")
+        if [ -z "$MINIMUM_SYSTEM" ]; then
+            echo "❌ LSMinimumSystemVersion missing from the built app"
+            exit 1
+        fi
 
         # Get file size
         FILE_SIZE=$(stat -f%z "${DIST_PATH}/${DMG_VERSIONED}")
@@ -266,7 +277,7 @@ if [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
       <pubDate>${DATE}</pubDate>
       <sparkle:version>${BUILD}</sparkle:version>
       <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>${MINIMUM_SYSTEM}</sparkle:minimumSystemVersion>
       <enclosure url="${DOWNLOAD_URL}"
                  ${SIGNATURE}
                  type="application/octet-stream"/>
@@ -277,11 +288,13 @@ EOF
         echo "✅ Appcast generated: appcast.xml"
         cat appcast.xml
     else
-        echo "⚠️ Sparkle sign_update tool not found, skipping signature"
+        echo "❌ Sparkle sign_update tool not found; the appcast cannot be signed"
+        exit 1
     fi
 
     # Clean up key file
     rm -f "$SPARKLE_KEY_FILE"
+    trap - EXIT
 else
     echo "⚠️ SPARKLE_PRIVATE_KEY not set, skipping Sparkle signing"
 fi

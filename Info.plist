@@ -14,16 +14,29 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.macwhisper.app.remote-control</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>whispera</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.16</string>
+	<string>1.4.0</string>
 	<key>CFBundleVersion</key>
-	<string>16</string>
+	<string>37</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Whispera needs accessibility access to monitor global keyboard shortcuts.</string>
+	<string>Whispera uses Apple Events to read the Finder selection and to run insertion scripts you approve.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Whispera needs access to your microphone to transcribe audio.</string>
 	<key>SUFeedURL</key>

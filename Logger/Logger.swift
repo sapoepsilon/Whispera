@@ -36,6 +36,34 @@ struct ExtendedLogger {
 		logger.fault("\(message)")
 		LogManager.shared.writeLog(category: category, level: .fault, message: message)
 	}
+
+	/// For transcripts and other text the user produced. The shareable log file only gets the
+	/// length at the default levels; the text itself is written only when Debug is selected.
+	func userText(_ prefix: String, _ text: String) {
+		info("\(prefix) (\(Self.redactedSummary(text)))")
+		debug("\(prefix): \(text)")
+	}
+
+	static func redactedSummary(_ text: String) -> String {
+		"\(text.count) chars"
+	}
+
+	/// Query strings, fragments and credentials often carry signed tokens, so default-level logs
+	/// get only the scheme, host and file name.
+	static func redactedURL(_ url: URL) -> String {
+		guard !url.isFileURL, let host = url.host, !host.isEmpty else {
+			return url.isFileURL ? url.lastPathComponent : "<url>"
+		}
+		let scheme = url.scheme.map { "\($0)://" } ?? ""
+		let name = url.lastPathComponent
+		return name.isEmpty || name == "/" ? "\(scheme)\(host)" : "\(scheme)\(host)/.../\(name)"
+	}
+
+	/// A URL the user supplied: redacted at the default levels, in full only at Debug.
+	func userURL(_ prefix: String, _ url: URL) {
+		info("\(prefix): \(Self.redactedURL(url))")
+		debug("\(prefix): \(url.absoluteString)")
+	}
 }
 
 class AppLogger {

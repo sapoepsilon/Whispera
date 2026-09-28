@@ -3,7 +3,12 @@ import Testing
 
 @testable import Whispera
 
+/// YouTube refuses video info to CI runner addresses, so the workflow sets
+/// TEST_RUNNER_WHISPERA_SKIP_YOUTUBE_TESTS=1 and these suites skip there.
+private let youTubeReachable = ProcessInfo.processInfo.environment["WHISPERA_SKIP_YOUTUBE_TESTS"] != "1"
+
 @MainActor
+@Suite(.enabled(if: youTubeReachable, "YouTube is not reachable from this machine"))
 struct YouTubeVideoInfoTests {
 
 	private let testVideoURL = URL(string: "https://www.youtube.com/watch?v=jNQXAC9IVRw")!
@@ -92,6 +97,9 @@ struct YouTubeVideoInfoTests {
 }
 
 @MainActor
+@Suite(
+	.enabled(if: youTubeReachable, "YouTube is not reachable from this machine"),
+	.enabled(if: WhisperKitTestModel.runsAppModelTests, "Needs a downloaded Whisper model"))
 struct YouTubeDownloadTranscriptionTests {
 
 	private let testVideoURL = URL(string: "https://www.youtube.com/watch?v=jNQXAC9IVRw")!

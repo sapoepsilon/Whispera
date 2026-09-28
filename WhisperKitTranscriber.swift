@@ -16,7 +16,7 @@ import WhisperKit
 	var waitingForModelStatusText: String = ""
 	var isStreamingAudio: Bool = false
 	var initializationProgress: Double = 0.0
-	var initializationStatus = "Starting..."
+	var initializationStatus = String(localized: "Starting...")
 	var availableModels: [String] = []
 	var currentModel: String?
 	var downloadedModels: Set<String> = []
@@ -27,9 +27,16 @@ import WhisperKit
 	var decodingOptions: DecodingOptions?
 	var currentText: String = ""
 	var dictationWordTracker: DictationWordTracker?
+	@ObservationIgnored private var lastLiveSession: (text: String, samples: [Float]) = (text: "", samples: [])
+	/// Where the text pipeline reads its settings; tests point it at an isolated suite.
+	@ObservationIgnored var textProcessingDefaults: UserDefaults = .standard
 	// Live text management
 	private var isLiveTranscriptionMode = false
-	private var lastConfirmedSegmentCount: Int = 0
+	/// The live session's decode loop: confirmation point, pending tail and settled language.
+	@ObservationIgnored private var livePass = LiveDictationPass()
+	/// Stopping decodes the words said after the newest pass before committing the session.
+	@ObservationIgnored private var liveFinishTask: Task<Bool, Never>?
+	@ObservationIgnored private var liveFinish = LiveSessionGate()
 	var confirmedText: String = "" {
 		didSet {
 			onConfirmedTextChange?(confirmedText)
@@ -45,10 +52,12 @@ import WhisperKit
 	}
 
 	func clearLiveTranscriptionState() {
+		liveSession.end()
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
 		isWaitingForModel = false
 		waitingForModelStatusText = ""
+		endLiveFinish()
 		pendingText = ""
 		stableDisplayText = ""
 		lastDisplayedPendingText = ""
@@ -58,8 +67,7 @@ import WhisperKit
 		shouldShowDebugWindow = false
 		transcriptionTask?.cancel()
 		transcriptionTask = nil
-		lastBufferSize = 0
-		lastConfirmedSegmentCount = 0
+		livePass = LiveDictationPass()
 	}
 
 	func beginLiveTranscriptionWaitingUI() {
@@ -69,16 +77,16 @@ import WhisperKit
 		confirmedText = ""
 		shouldShowLiveTranscriptionWindow = true
 		isWaitingForModel = true
-		waitingForModelStatusText = "Waiting for model..."
+		waitingForModelStatusText = String(localized: "Waiting for model...")
 	}
 
 	private func updateWaitingStatusText() {
 		guard isWaitingForModel else { return }
 
 		if isDownloadingModel {
-			let name = downloadingModelName ?? "model"
+			let name = downloadingModelName ?? String(localized: "model")
 			let pct = Int((downloadProgress * 100.0).rounded())
-			waitingForModelStatusText = "Downloading \(name)... \(pct)%"
+			waitingForModelStatusText = String(localized: "Downloading \(name)... \(pct)%")
 			return
 		}
 
@@ -88,13 +96,13 @@ import WhisperKit
 		}
 
 		if isModelLoading {
-			let modelName = currentModel ?? selectedModel ?? "model"
+			let modelName = loadingModelName ?? currentModel ?? selectedModel ?? String(localized: "model")
 			let pct = Int((loadProgress * 100.0).rounded())
-			waitingForModelStatusText = "Loading \(modelName)... \(pct)%"
+			waitingForModelStatusText = String(localized: "Loading \(modelName)... \(pct)%")
 			return
 		}
 
-		waitingForModelStatusText = "Waiting for model..."
+		waitingForModelStatusText = String(localized: "Waiting for model...")
 	}
 
 	private func ensureInitializedIfNeeded() async {
@@ -121,16 +129,18 @@ import WhisperKit
 		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
 		downloadedModels = refreshedDownloaded
 
-		if whisperKit == nil {
+		try await waitForInFlightLoadIfNoEngine(timeoutSeconds: timeoutSeconds)
+
+		if whisperKit == nil && parakeetEngine == nil {
 			guard !refreshedDownloaded.isEmpty else {
 				isWaitingForModel = true
-				waitingForModelStatusText = "No model downloaded. Download one in Settings."
+				waitingForModelStatusText = String(localized: "No model downloaded. Download one in Settings.")
 				throw WhisperKitError.noModelLoaded
 			}
 
 			if let modelToLoad = chooseDownloadedModelToLoad(downloaded: refreshedDownloaded) {
 				updateWaitingStatusText()
-				try await loadModel(modelToLoad)
+				try await loadModelCoalesced(modelToLoad)
 			}
 		}
 
@@ -151,6 +161,36 @@ import WhisperKit
 		}
 	}
 
+	/// With no engine loaded, a load already in flight is the model the user just picked, so
+	/// wait for it instead of loading the previously used model next to it. Bounded by the same
+	/// readiness timeout as the rest of the wait, so a hung load fails the dictation with a
+	/// message instead of holding it until the user cancels.
+	private func waitForInFlightLoadIfNoEngine(timeoutSeconds: TimeInterval) async throws {
+		let pending = loadingModelName.map(Self.shortModelName(for:))
+		try await Self.waitWhileLoading(timeoutSeconds: timeoutSeconds, modelName: pending) { [weak self] in
+			guard let self else { return false }
+			self.updateWaitingStatusText()
+			return self.whisperKit == nil && self.parakeetEngine == nil && self.loadingModelName != nil
+		}
+	}
+
+	static func waitWhileLoading(
+		timeoutSeconds: TimeInterval, pollNanoseconds: UInt64 = 200_000_000, modelName: String?,
+		isLoading: @MainActor () -> Bool
+	) async throws {
+		let start = Date()
+		while isLoading() {
+			try Task.checkCancellation()
+			if Date().timeIntervalSince(start) > timeoutSeconds {
+				AppLogger.shared.transcriber.error(
+					"Model load still running after \(Int(timeoutSeconds)) s with no engine loaded; failing dictation"
+				)
+				throw WhisperKitError.modelLoadTimedOut(modelName)
+			}
+			try await Task.sleep(nanoseconds: pollNanoseconds)
+		}
+	}
+
 	func waitForReadyForTranscription(timeoutSeconds: TimeInterval = 30) async throws {
 		try Task.checkCancellation()
 		await ensureInitializedIfNeeded()
@@ -159,13 +199,15 @@ import WhisperKit
 		let refreshedDownloaded = (try? await getDownloadedModels()) ?? downloadedModels
 		downloadedModels = refreshedDownloaded
 
-		if whisperKit == nil {
+		try await waitForInFlightLoadIfNoEngine(timeoutSeconds: timeoutSeconds)
+
+		if whisperKit == nil && parakeetEngine == nil {
 			guard !refreshedDownloaded.isEmpty else {
 				throw WhisperKitError.noModelLoaded
 			}
 
 			if let modelToLoad = chooseDownloadedModelToLoad(downloaded: refreshedDownloaded) {
-				try await loadModel(modelToLoad)
+				try await loadModelCoalesced(modelToLoad)
 			}
 		}
 
@@ -224,28 +266,19 @@ import WhisperKit
 	}
 
 	private func simulateKeyPressWithModifier(keyCode: CGKeyCode, modifier: CGEventFlags) {
-		let source = CGEventSource(stateID: .combinedSessionState)
-		let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
-		let keyUpEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-
-		keyDownEvent?.flags = modifier
-		keyUpEvent?.flags = modifier
-
-		keyDownEvent?.post(tap: .cghidEventTap)
-		keyUpEvent?.post(tap: .cghidEventTap)
+		CGKeyEventPoster().postKey(keyCode, flags: modifier)
 	}
 
-	private func confirmPendingText() {
-		guard !pendingText.isEmpty else { return }
+	private func confirmPendingText(_ text: String) {
+		pendingText = ""
+		guard !text.isEmpty else { return }
 
 		// Sync all display properties before confirming to prevent double transcription
-		stableDisplayText = pendingText
-		lastDisplayedPendingText = pendingText
+		stableDisplayText = text
+		lastDisplayedPendingText = text
 
-		// Since WhisperKit provides complete transcription history in pendingText,
-		// we replace confirmedText entirely rather than appending
-		confirmedText = pendingText
-		pendingText = ""
+		// DictationWordTracker types only what extends the text it already typed
+		confirmedText = Self.committingLiveTail(text, to: confirmedText)
 	}
 
 	private var selectedLanguage: String {
@@ -333,7 +366,7 @@ import WhisperKit
 		}
 	}
 
-	private var lastUsedModel: String? {
+	var lastUsedModel: String? {
 		get {
 			UserDefaults.standard.string(forKey: "lastUsedModel")
 		}
@@ -397,17 +430,46 @@ import WhisperKit
 	}
 	var downloadProgress: Double = 0.0
 	var downloadingModelName: String?
+	/// True only while bytes are still coming over the network; the load that follows cannot be
+	/// interrupted, so Cancel is offered only in this phase.
+	private(set) var isModelDownloadCancellable = false
+	/// A download only blocks dictation when there is no model to fall back on: the loaded model
+	/// (or an idle-unloaded one that reloads on demand) keeps serving until the new one is ready.
+	var downloadBlocksDictation: Bool {
+		isDownloadingModel && !hasLoadedEngine && !isIdleUnloaded
+	}
 	var loadProgress: Double = 0.0
+	/// The model a load is currently bringing up; the engine already loaded keeps serving until it finishes.
+	private(set) var loadingModelName: String?
 
 	@MainActor var whisperKit: WhisperKit?
+	@MainActor private(set) var parakeetEngine: ParakeetEngine?
 	private var transcriptionTask: Task<Void, Never>?
-	@MainActor private var liveStreamStartupTask: Task<Void, Never>?
-	private var lastBufferSize: Int = 0
+	@MainActor private var liveStreamStartupTask: Task<Void, Error>?
+	@ObservationIgnored private var liveSession = LiveSessionGate()
 	private var realtimeDelayInterval: Float = 0.3
 	@MainActor private var initializationTask: Task<Void, Never>?
-	@MainActor private var modelOperationTask: Task<Void, Error>?
+	/// Serializes every model download, load and switch; a running operation also blocks idle unload.
+	@ObservationIgnored private let modelOperations = ModelOperationQueue()
 
 	private var currentChunks: [Int: (chunkText: [String], fallbacks: Int)] = [:]
+
+	// MARK: - Idle Model Unload State
+	@ObservationIgnored private let idleUnloadTimer = DeferredAction()
+	@ObservationIgnored private var activeModelUses = 0
+	@ObservationIgnored private var liveStreamHoldsModel = false
+	@ObservationIgnored private var retiredParakeetEngines = DeferredEngineRelease<ParakeetEngine>()
+	@ObservationIgnored private var idleUnloadRetry = IdleUnloadRetryPolicy()
+	@ObservationIgnored private var pendingLoadTask: Task<Void, Error>?
+	@ObservationIgnored private var lastObservedUnloadTimeout: ModelUnloadTimeout?
+	@ObservationIgnored private var settingsObserver: DefaultsKeyObserver?
+	@ObservationIgnored private var customWordsObserver: CustomWordPromptObserver?
+	private(set) var isIdleUnloaded = false
+	/// Model and compute-unit combinations already prewarmed in this process. CoreML keeps the
+	/// specialized model cached, so a reload after idle unload can skip the prewarm pass.
+	@ObservationIgnored private var prewarmedModelKeys: Set<String> = []
+
+	var hasLoadedEngine: Bool { whisperKit != nil || parakeetEngine != nil }
 
 	// Swift 6 compliant singleton pattern
 	static let shared: WhisperKitTranscriber = {
@@ -432,6 +494,7 @@ import WhisperKit
 	}
 
 	func startInitialization() {
+		guard !isInitialized else { return }
 		guard initializationTask == nil else {
 			AppLogger.shared.transcriber.log("WhisperKit initialization already in progress...")
 			return
@@ -439,7 +502,7 @@ import WhisperKit
 
 		isInitializing = true
 		initializationProgress = 0.0
-		initializationStatus = "Preparing to load Whisper models..."
+		initializationStatus = String(localized: "Preparing to load Whisper models...")
 
 		initializationTask = Task { @MainActor in
 			await initialize()
@@ -450,19 +513,53 @@ import WhisperKit
 		guard !isInitialized else {
 			AppLogger.shared.transcriber.log("WhisperKit already initialized")
 			isInitializing = false
+			// A leftover task would block idle unload forever
+			initializationTask = nil
 			return
 		}
-		await updateProgress(0.1, "Loading WhisperKit framework...")
+		await updateProgress(0.1, String(localized: "Loading WhisperKit framework..."))
 		try? await Task.sleep(nanoseconds: 500_000_000)  // Small delay for UI feedback
 
 		AppLogger.shared.transcriber.log("Initializing WhisperKit framework...")
-		await updateProgress(0.3, "Setting up AI framework...")
+		await updateProgress(0.3, String(localized: "Setting up AI framework..."))
 
 		// Sync our cache with what's actually on disk
-		await updateProgress(0.6, "Checking for existing models...")
+		await updateProgress(0.6, String(localized: "Checking for existing models..."))
 
-		if !downloadedModels.isEmpty {
-			await updateProgress(0.8, "Loading existing model...")
+		// Queued like every other load, so a model the user picks while the app is still starting
+		// (onboarding) is not overwritten by this one finishing later
+		try? await runModelOperation { transcriber in
+			await transcriber.loadModelAtLaunch()
+		}
+
+		await updateProgress(1.0, String(localized: "Ready for model selection!"))
+		decodingOptions = createDecodingOptions(
+			enableTranslation: enableTranslation ?? false
+		)
+
+		isInitialized = true
+		isInitializing = false
+		AppLogger.shared.transcriber.log("WhisperKit framework initialized - ready for transcription")
+		initializationTask = nil
+		scheduleIdleUnload()
+	}
+
+	private func loadModelAtLaunch() async {
+		guard !hasLoadedEngine else {
+			AppLogger.shared.transcriber.log("A model was loaded before launch loading ran; keeping it")
+			return
+		}
+		if let last = lastUsedModel, downloadedModels.contains(last),
+			!Self.isStandardWhisperKitModel(last)
+		{
+			await updateProgress(0.9, String(localized: "Loading last used model..."))
+			do {
+				try await autoLoadLastModel()
+			} catch {
+				AppLogger.shared.transcriber.log("Failed to load last used model \(last): \(error)")
+			}
+		} else if !downloadedModels.isEmpty {
+			await updateProgress(0.8, String(localized: "Loading existing model..."))
 			do {
 				whisperKit = try await Task { @MainActor in
 					let config = WhisperKitConfig(
@@ -470,12 +567,12 @@ import WhisperKit
 						computeOptions: getOptimizedComputeOptions(),
 						prewarm: true
 					)
-					let whisperKitInstance = try await WhisperKit(config)
+					let whisperKitInstance = try await Self.makeWhisperKit(config)
 					self.setupModelStateCallback(for: whisperKitInstance)
 					return whisperKitInstance
 				}.value
 				AppLogger.shared.transcriber.log("WhisperKit initialized with existing models")
-				await updateProgress(0.9, "Loading last used model...")
+				await updateProgress(0.9, String(localized: "Loading last used model..."))
 				try await autoLoadLastModel()
 
 			} catch {
@@ -487,19 +584,9 @@ import WhisperKit
 			AppLogger.shared.transcriber.log(
 				"No models downloaded yet - WhisperKit will be initialized with first model download")
 		}
-
-		await updateProgress(1.0, "Ready for model selection!")
-		decodingOptions = createDecodingOptions(
-			enableTranslation: enableTranslation ?? false
-		)
-
-		isInitialized = true
-		isInitializing = false
-		AppLogger.shared.transcriber.log("WhisperKit framework initialized - ready for transcription")
-		initializationTask = nil
 	}
 
-	private func autoLoadLastModel() async throws {
+	func autoLoadLastModel() async throws {
 		guard let lastModel = lastUsedModel else {
 			AppLogger.shared.transcriber.log("No last used model found, will use default when needed")
 			return
@@ -514,9 +601,12 @@ import WhisperKit
 
 		do {
 			AppLogger.shared.transcriber.log("Auto-loading last used model: \(lastModel)")
-			try await loadModel(lastModel)
-			try await refreshAvailableModels()
+			try await loadModelInOperation(lastModel)
 			AppLogger.shared.transcriber.log("Successfully auto-loaded last used model: \(lastModel)")
+			// The model list is a network fetch with a 10 s timeout. Awaited here it held the
+			// launch model operation and isInitialized, which every dictation waits for before
+			// opening the microphone, although nothing it returns is needed to transcribe.
+			refreshModelCatalogInBackground()
 		} catch {
 			AppLogger.shared.transcriber.log(
 				"Failed to auto-load last used model '\(lastModel)': \(error)")
@@ -547,64 +637,123 @@ import WhisperKit
 		AppLogger.shared.transcriber.info("WhisperKit is ready")
 	}
 	func liveStream() async throws {
+		// The previous session's final decode still types into the app and holds the model
+		_ = await liveFinishTask?.value
 		AppLogger.shared.transcriber.info("Starting live stream...")
 		beginLiveTranscriptionWaitingUI()
+		if !liveStreamHoldsModel {
+			liveStreamHoldsModel = true
+			beginModelUse()
+		}
 
 		liveStreamStartupTask?.cancel()
-		liveStreamStartupTask = Task { @MainActor in
+		let generation = liveSession.begin()
+		let startup = Task { @MainActor in
 			do {
 				try await ensureModelReadyForLiveTranscription()
-				try Task.checkCancellation()
+				try checkLiveStartupIsCurrent(generation)
+				if parakeetEngine != nil {
+					waitingForModelStatusText = String(
+						localized: "Live Transcription Mode needs a Whisper model.")
+					throw WhisperKitError.liveModeUnsupported
+				}
 				isWaitingForModel = false
 				waitingForModelStatusText = ""
 
 				guard let whisperKit = whisperKit, isWhisperKitReady() else {
 					throw WhisperKitError.notReady
 				}
+				try await LiveStartupSequence.run(
+					openMicrophone: {
+						dictationWordTracker = DictationWordTracker()
+						dictationWordTracker?.startNewSession()
 
-				dictationWordTracker = DictationWordTracker()
-				dictationWordTracker?.startNewSession()
+						shouldShowLiveTranscriptionWindow = true
+						isTranscribing = true
+						isLiveTranscriptionMode = true
+						livePass = LiveDictationPass()
 
-				shouldShowLiveTranscriptionWindow = true
-				isTranscribing = true
-				isLiveTranscriptionMode = true
-				lastConfirmedSegmentCount = 0
-
-				await AudioDeviceManager.shared.activateSelectedDevice()
-				let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
-				try? whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) { [weak self] samples in
-					Task { @MainActor in
-						self?.shouldShowLiveTranscriptionWindow = true
-						self?.onLiveAudioSamples?(samples)
-					}
-				}
-				realtimeLoop()
+						await AudioDeviceManager.shared.activateSelectedDevice()
+						guard liveSession.isCurrent(generation), !Task.isCancelled else {
+							// Stop already restored the input before this activation finished
+							if !liveSession.isActive {
+								AudioDeviceManager.shared.restoreSystemDefault()
+							}
+							throw CancellationError()
+						}
+						let selectedDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
+						try whisperKit.audioProcessor.startRecordingLive(inputDeviceID: selectedDeviceID) {
+							[weak self] samples in
+							Task { @MainActor in
+								guard let self, self.liveSession.isCurrent(generation) else { return }
+								self.shouldShowLiveTranscriptionWindow = true
+								self.onLiveAudioSamples?(samples)
+							}
+						}
+					},
+					preparePrompt: {
+						// The live loop reuses these options for every pass
+						await loadTokenizerForCustomWords()
+						refreshDecodingOptions()
+					},
+					isCurrent: { liveSession.isCurrent(generation) && !Task.isCancelled },
+					startDecoding: { realtimeLoop(generation: generation) })
 			} catch {
-				if Task.isCancelled { return }
-				isWaitingForModel = false
-				isTranscribing = false
-				if waitingForModelStatusText.isEmpty {
-					waitingForModelStatusText = "Unable to start dictation."
+				guard liveSession.isCurrent(generation), !Task.isCancelled, !(error is CancellationError) else {
+					throw CancellationError()
 				}
-				shouldShowLiveTranscriptionWindow = true
-				AppLogger.shared.transcriber.error("Failed to start live stream: \(error)")
+				failLiveStartup(error)
+				throw error
 			}
 		}
+		liveStreamStartupTask = startup
+		defer {
+			// A stopped session's continuation must not clear the handle of the session after it
+			if liveStreamStartupTask == startup {
+				liveStreamStartupTask = nil
+			}
+		}
+		try await startup.value
+	}
 
-		try await liveStreamStartupTask?.value
-		liveStreamStartupTask = nil
+	private func checkLiveStartupIsCurrent(_ generation: Int) throws {
+		guard liveSession.isCurrent(generation), !Task.isCancelled else { throw CancellationError() }
+	}
+
+	/// Undoes a live startup that failed on its own, so the caller can reset the recording.
+	/// The waiting text stays up to tell the user why dictation did not start.
+	private func failLiveStartup(_ error: Error) {
+		liveSession.end()
+		transcriptionTask?.cancel()
+		transcriptionTask = nil
+		whisperKit?.audioProcessor.stopRecording()
+		AudioDeviceManager.shared.restoreSystemDefault()
+		isWaitingForModel = false
+		isTranscribing = false
+		isLiveTranscriptionMode = false
+		dictationWordTracker?.endSession()
+		if waitingForModelStatusText.isEmpty {
+			waitingForModelStatusText = String(localized: "Unable to start dictation.")
+		}
+		shouldShowLiveTranscriptionWindow = true
+		releaseLiveStreamModelUse()
+		AppLogger.shared.transcriber.error("Failed to start live stream: \(error)")
 	}
 	func switchLiveStreamDevice() async {
 		guard isLiveTranscriptionMode, let whisperKit else { return }
+		let generation = liveSession.generation
 
 		await AudioDeviceManager.shared.activateSelectedDevice()
+		// The session may have stopped while the device switched; resuming would reopen the mic
+		guard liveSession.isCurrent(generation) else { return }
 		let newDeviceID = AudioDeviceManager.shared.resolveActiveDeviceID()
 		whisperKit.audioProcessor.pauseRecording()
 
 		do {
 			try whisperKit.audioProcessor.resumeRecordingLive(inputDeviceID: newDeviceID) { [weak self] samples in
 				Task { @MainActor in
-					self?.onLiveAudioSamples?(samples)
+					guard let self, self.liveSession.isCurrent(generation) else { return }
+					self.onLiveAudioSamples?(samples)
 				}
 			}
 			let deviceName = newDeviceID.flatMap { id -> String? in
@@ -616,9 +765,211 @@ import WhisperKit
 		}
 	}
 
-	func stopLiveStream() {
+	/// How long stopping waits for the final decode before typing the newest pass's pending tail.
+	nonisolated static let liveFinalDecodeTimeLimit: Duration = .seconds(8)
+
+	/// Stops the microphone at once, then decodes the words said after the newest pass and types
+	/// them. The task's value is false when a cancel or reset threw the session away first.
+	@discardableResult
+	func stopLiveStream() -> Task<Bool, Never> {
+		let wasLive = isLiveTranscriptionMode
+		// A second stop while the first one's final decode runs must not throw that decode away
+		if !wasLive, liveFinish.isActive, let liveFinishTask {
+			return liveFinishTask
+		}
+		// The buffer is final once the microphone stops, and the final decode reads it
+		whisperKit?.audioProcessor.stopRecording()
+		// A long session is tens of MB of samples, so they are copied only when history keeps them.
+		let keepsAudio = wasLive && HistorySettings(defaults: .standard).keepsAudio
+		let sessionSamples = keepsAudio ? Array(whisperKit?.audioProcessor.audioSamples ?? []) : []
+
+		liveSession.end()
+		let startup = liveStreamStartupTask
 		liveStreamStartupTask?.cancel()
 		liveStreamStartupTask = nil
+		isWaitingForModel = false
+		waitingForModelStatusText = ""
+		isTranscribing = false
+		shouldShowLiveTranscriptionWindow = false
+		isLiveTranscriptionMode = false
+		AudioDeviceManager.shared.restoreSystemDefault()
+		// The pass in flight is cancelled: its result would be stale, and the final decode covers its audio
+		let inFlight = transcriptionTask
+		inFlight?.cancel()
+		transcriptionTask = nil
+
+		let generation = liveFinish.begin()
+		let pass = livePass
+		let finishing = Task { @MainActor [weak self] () -> Bool in
+			await inFlight?.value
+			// Stopped while startup still prepared the prompt: the microphone was already
+			// capturing, and the final decode needs the loaded model and the prompt
+			if wasLive { _ = await startup?.result }
+			guard let self else { return false }
+			let settings = wasLive ? self.liveSettings() : nil
+			var tail = pass.pendingTail
+			if let settings, let whisperKit = self.whisperKit {
+				tail = await pass.finish(
+					audio: WhisperKitLiveAudio(processor: whisperKit.audioProcessor), settings: settings,
+					decode: self.liveDecoder(), timeLimit: Self.liveFinalDecodeTimeLimit,
+					isCurrent: { [weak self] in self?.liveFinish.isCurrent(generation) ?? false })
+			}
+			guard self.liveFinish.isCurrent(generation) else { return false }
+			self.liveFinish.end()
+			self.commitLiveSession(
+				tail: wasLive ? self.processLiveText(tail, language: pass.language) : "", wasLive: wasLive,
+				samples: sessionSamples)
+			return true
+		}
+		liveFinishTask = finishing
+		return finishing
+	}
+
+	private func commitLiveSession(tail: String, wasLive: Bool, samples: [Float]) {
+		let fallbackSessionText = Self.liveSessionText(confirmed: confirmedText, pending: tail)
+		confirmPendingText(tail)
+		if wasLive {
+			// What the tracker typed is exactly what reached the focused app
+			let typedText = dictationWordTracker?.typedText ?? ""
+			lastLiveSession = (text: typedText.isEmpty ? fallbackSessionText : typedText, samples: samples)
+			if !typedText.isEmpty {
+				TextInserter.shared.submitAfterLiveSession()
+			}
+		}
+		dictationWordTracker?.endSession()
+		releaseLiveStreamModelUse()
+		AppLogger.shared.transcriber.info("Live streaming stopped")
+	}
+
+	/// Throws away a final decode that has not committed yet, with the model hold it kept.
+	private func endLiveFinish() {
+		guard liveFinish.isActive else { return }
+		liveFinish.end()
+		liveFinishTask?.cancel()
+		liveFinishTask = nil
+		dictationWordTracker?.endSession()
+		releaseLiveStreamModelUse()
+	}
+
+	/// Hands the finished live session to history once, then forgets it so the audio is freed.
+	func takeLastLiveSession() -> (text: String, samples: [Float]) {
+		defer { lastLiveSession = (text: "", samples: []) }
+		return lastLiveSession
+	}
+
+	/// confirmedText holds the segments already confirmed and pendingText the trailing
+	/// unconfirmed ones, so the whole session is the two joined.
+	nonisolated static func liveSessionText(confirmed: String, pending: String) -> String {
+		[confirmed, pending]
+			.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+			.filter { !$0.isEmpty && $0 != liveWaitingPlaceholder }
+			.joined(separator: " ")
+	}
+
+	nonisolated static let liveWaitingPlaceholder = "Waiting for speech..."
+
+	/// Segments held back as pending because Whisper may still revise them.
+	nonisolated static let liveSegmentsHeldBack = 2
+	/// The options for one live pass over a window that starts at the confirmation point, so
+	/// confirmed sentences are never re-segmented; confirmation needs segment timestamps. The
+	/// custom-word prompt is left out while the window holds no speech, because Whisper echoes it
+	/// on silence.
+	nonisolated static func liveDecodingOptions(_ base: DecodingOptions, windowHasSpeech: Bool) -> DecodingOptions {
+		var options = base
+		options.clipTimestamps = [0]
+		options.withoutTimestamps = false
+		if !windowHasSpeech {
+			options.promptTokens = nil
+		}
+		return promptSafeDecodingOptions(options)
+	}
+
+	/// A live pass's segments as the confirmer takes them. Their times are relative to `audio`,
+	/// the window the pass decoded.
+	nonisolated static func liveSegments(
+		_ segments: [LiveSegment], promptWords: [String], audio: [Float], sensitivity: VADSensitivity
+	) -> [LiveSegment] {
+		withoutPromptEchoes(
+			segments.map { LiveSegment(text: withoutStrayQuotes($0.text), start: $0.start, end: $0.end) },
+			promptWords: promptWords, audio: audio, sensitivity: sensitivity)
+	}
+
+	private nonisolated static let quoteMarks: Set<Character> = ["\"", "\u{201C}", "\u{201D}"]
+
+	/// Whisper wraps a sentence it decodes on its own, from a live clip point, in quote marks: one
+	/// came back fully quoted, another opened and never closed. Only quotes wrapping the whole
+	/// segment are removed, so a quotation inside a sentence stays.
+	nonisolated static func withoutStrayQuotes(_ text: String) -> String {
+		let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+		let quoteCount = trimmed.filter { quoteMarks.contains($0) }.count
+		guard quoteCount > 0, quoteCount <= 2, let first = trimmed.first, let last = trimmed.last else { return text }
+		let opens = quoteMarks.contains(first)
+		let closes = quoteMarks.contains(last) && trimmed.count > 1
+		var result = Substring(trimmed)
+		switch (quoteCount, opens, closes) {
+		case (1, true, _): result = result.dropFirst()
+		case (1, false, true): result = result.dropLast()
+		case (2, true, true): result = result.dropFirst().dropLast()
+		default: return text
+		}
+		return result.trimmingCharacters(in: .whitespaces)
+	}
+
+	/// The live preview shows what will be typed, and bracketed non-speech markers such as
+	/// [BLANK_AUDIO] are never typed.
+	nonisolated static func livePreviewText(_ pendingText: String) -> String {
+		TranscriptTextProcessor.removeNonSpeechMarkers(pendingText)
+	}
+
+	/// Drops the segments that only echo the custom-word prompt over their own silent audio.
+	nonisolated static func withoutPromptEchoes(
+		_ segments: [LiveSegment], promptWords: [String], audio: [Float], sensitivity: VADSensitivity
+	) -> [LiveSegment] {
+		guard !promptWords.isEmpty else { return segments }
+		return segments.filter { segment in
+			!PromptEchoFilter.isEcho(
+				segment.text, customWords: promptWords, audio: samples(of: segment, in: audio), sensitivity: sensitivity)
+		}
+	}
+
+	/// The samples between a segment's timestamps, empty when they fall outside the audio.
+	nonisolated static func samples(of segment: LiveSegment, in audio: [Float]) -> ArraySlice<Float> {
+		let rate = Float(WhisperKit.sampleRate)
+		let start = min(audio.count, max(0, Int(segment.start * rate)))
+		let end = min(audio.count, max(start, Int(segment.end * rate)))
+		return audio[start..<end]
+	}
+
+	/// What stopping a live session leaves in confirmedText: the processed held-back tail
+	/// appended to what was already typed. The decoder's progress text (a partial decode of the
+	/// whole window) is never committed, or the tracker would retype or truncate the session.
+	nonisolated static func committingLiveTail(_ processedTail: String, to confirmed: String) -> String {
+		processedTail.isEmpty ? confirmed : appendingConfirmed(processedTail, to: confirmed)
+	}
+
+	nonisolated static func appendingConfirmed(_ addition: String, to confirmed: String) -> String {
+		confirmed.isEmpty ? addition : confirmed + " " + addition
+	}
+
+	/// Runs the text pipeline over live text, dropping the waiting placeholder.
+	func processLiveText(_ text: String, language: String?) -> String {
+		let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !trimmed.isEmpty, trimmed != Self.liveWaitingPlaceholder else { return "" }
+		return processTranscriptText(
+			trimmed, detectedLanguage: language,
+			enableTranslation: decodingOptions?.task == .translate)
+	}
+
+
+	/// Stops live dictation without committing the pending (unconfirmed) text.
+	/// Text already confirmed and typed into the focused app stays where it is.
+	func cancelLiveStream() {
+		endLiveFinish()
+		liveSession.end()
+		liveStreamStartupTask?.cancel()
+		liveStreamStartupTask = nil
+		transcriptionTask?.cancel()
+		transcriptionTask = nil
 		isWaitingForModel = false
 		waitingForModelStatusText = ""
 		isTranscribing = false
@@ -626,159 +977,109 @@ import WhisperKit
 		whisperKit?.audioProcessor.stopRecording()
 		AudioDeviceManager.shared.restoreSystemDefault()
 
-		confirmPendingText()
+		pendingText = ""
+		stableDisplayText = ""
+		lastDisplayedPendingText = ""
+		lastLiveSession = (text: "", samples: [])
 		isLiveTranscriptionMode = false
 		dictationWordTracker?.endSession()
-		transcriptionTask?.cancel()
-		AppLogger.shared.transcriber.info("Live streaming stopped")
+		releaseLiveStreamModelUse()
+		AppLogger.shared.transcriber.info("Live streaming cancelled")
 	}
-	private func realtimeLoop() {
+
+	private func releaseLiveStreamModelUse() {
+		guard liveStreamHoldsModel else { return }
+		liveStreamHoldsModel = false
+		endModelUse()
+	}
+	private func realtimeLoop(generation: Int) {
 		transcriptionTask = Task {
-			while isTranscribing {
+			while isTranscribing, liveSession.isCurrent(generation), !Task.isCancelled {
 				do {
-					try await transcribeCurrentBuffer(delayInterval: realtimeDelayInterval)
+					try await transcribeCurrentBuffer(generation: generation)
 				} catch {
-					AppLogger.shared.liveTranscriber.error(
-						"Transcription error: \(error.localizedDescription)"
-					)
+					if liveSession.isCurrent(generation) {
+						AppLogger.shared.liveTranscriber.error(
+							"Transcription error: \(error.localizedDescription)"
+						)
+					}
 					break
 				}
 			}
 		}
 	}
 
-	// TODO: Allow a user to choose between pending text, and the confirmed text. Do not impelment it the og author will do it
-	private func transcribeCurrentBuffer(delayInterval: Float = 0.3) async throws {
-		guard let whisperKit = whisperKit else { return }
+	/// The settings every live pass reads, fresh each pass so Settings changes apply mid-session.
+	private func liveSettings() -> LivePassSettings? {
+		guard let base = decodingOptions else { return nil }
+		return LivePassSettings(
+			base: base, voiceActivity: VoiceActivitySettings(defaults: .standard),
+			promptWords: TextProcessingSettings.customWords(from: .standard),
+			minimumNewAudioSeconds: realtimeDelayInterval)
+	}
 
-		let currentBuffer = whisperKit.audioProcessor.audioSamples
-		let nextBufferSize = currentBuffer.count - lastBufferSize
-		let nextBufferSeconds = Float(nextBufferSize) / Float(WhisperKit.sampleRate)
+	private func liveDecoder() -> LiveDecoder {
+		{ [weak self] samples, options in
+			guard let self else { return nil }
+			guard let result = try await self.transcribeAudioSamples(samples, options: options) else { return nil }
+			return LiveDecodeOutput(
+				segments: result.segments.map { LiveSegment(text: $0.text, start: $0.start, end: $0.end) },
+				language: result.language)
+		}
+	}
 
-		guard nextBufferSeconds > delayInterval else {
-			await MainActor.run {
-				if pendingText.isEmpty && confirmedText.isEmpty {
-					pendingText = "Waiting for speech..."
-					shouldShowLiveTranscriptionWindow = true
-				}
-			}
+	private func transcribeCurrentBuffer(generation: Int) async throws {
+		guard let whisperKit = whisperKit, liveSession.isCurrent(generation) else { return }
+		guard let settings = liveSettings() else {
+			AppLogger.shared.transcriber.log("Decoding options not initialized, skipping live pass")
 			try await Task.sleep(nanoseconds: 100_000_000)
 			return
 		}
+		let pass = livePass
+		let step = try await pass.step(
+			audio: WhisperKitLiveAudio(processor: whisperKit.audioProcessor), settings: settings,
+			decode: liveDecoder(), process: { [weak self] in self?.processLiveText($0, language: pass.language) ?? "" },
+			isCurrent: { [weak self] in self?.liveSession.isCurrent(generation) ?? false })
 
-		lastBufferSize = currentBuffer.count
-		let transcription = try await transcribeAudioSamples(Array(currentBuffer))
-
-		await MainActor.run {
-			guard let segments = transcription?.segments, !segments.isEmpty else {
-				return
+		switch step {
+		case .waitingForAudio, .silence:
+			if liveSession.isCurrent(generation), pendingText.isEmpty && confirmedText.isEmpty {
+				pendingText = Self.liveWaitingPlaceholder
+				shouldShowLiveTranscriptionWindow = true
+			}
+			try await Task.sleep(nanoseconds: 100_000_000)
+		case .stale, .noSegments:
+			return
+		case .decoded(let confirmation):
+			// A pass that outlived its session must not confirm, and so type, its text into the next one
+			guard liveSession.isCurrent(generation) else { return }
+			if confirmation.confirmedSegmentCount > 0 {
+				AppLogger.shared.transcriber.debug(
+					"Confirmed \(confirmation.confirmedSegmentCount) segment(s) through \(pass.confirmer.confirmedThroughSeconds)s, text: '\(confirmation.confirmedAddition)'"
+				)
+			}
+			if !confirmation.confirmedAddition.isEmpty {
+				confirmedText = Self.appendingConfirmed(confirmation.confirmedAddition, to: confirmedText)
 			}
 
-			let fullTranscriptionText =
-				segments
-				.map { $0.text.trimmingCharacters(in: .whitespaces) }
-				.joined(separator: " ")
+			pendingText = confirmation.pendingText
 
-			AppLogger.shared.transcriber.debug(
-				"Transcription received: \(segments.count) segments, full text: '\(fullTranscriptionText)'"
-			)
-			AppLogger.shared.transcriber.debug(
-				"Current state: confirmedText.count=\(confirmedText.count), pendingText='\(pendingText)'")
-
-			let requiredSegmentsForConfirmation = 2
-
-			if segments.count > requiredSegmentsForConfirmation {
-				let numberOfSegmentsToConfirm = segments.count - requiredSegmentsForConfirmation
-
-				// Only confirm new segments that haven't been confirmed before
-				if numberOfSegmentsToConfirm > lastConfirmedSegmentCount {
-					let newSegmentsToConfirm = numberOfSegmentsToConfirm - lastConfirmedSegmentCount
-					let startIndex = lastConfirmedSegmentCount
-					let endIndex = lastConfirmedSegmentCount + newSegmentsToConfirm
-
-					let newConfirmedSegments = Array(segments[startIndex..<endIndex])
-
-					let newConfirmedText =
-						newConfirmedSegments
-						.map { $0.text.trimmingCharacters(in: .whitespaces) }
-						.joined(separator: " ")
-
-					AppLogger.shared.transcriber.debug("New segments to confirm: \(newSegmentsToConfirm), text: '\(newConfirmedText)'")
-
-					if !newConfirmedText.isEmpty {
-						let updatedConfirmedText: String
-						if !confirmedText.isEmpty {
-							updatedConfirmedText = confirmedText + " " + newConfirmedText
-						} else {
-							updatedConfirmedText = newConfirmedText
-						}
-						confirmedText = updatedConfirmedText
-						lastConfirmedSegmentCount = numberOfSegmentsToConfirm
-					}
-				} else {
-					AppLogger.shared.transcriber.debug(
-						"No new segments to confirm (already confirmed \(lastConfirmedSegmentCount) segments)"
-					)
-				}
-				let remainingSegments = Array(segments.suffix(requiredSegmentsForConfirmation))
-
-				let newPendingText =
-					remainingSegments
-					.map { $0.text.trimmingCharacters(in: .whitespaces) }
-					.joined(separator: " ")
-
-				// Always update internal pendingText for logic
-				pendingText = newPendingText
-
-				// Only update UI-facing property if text has changed meaningfully
-				if shouldUpdatePendingText(newText: newPendingText) {
-					stableDisplayText = newPendingText
-					lastDisplayedPendingText = newPendingText
-				}
-			} else {
-				let newPendingText =
-					segments
-					.map { $0.text.trimmingCharacters(in: .whitespaces) }
-					.joined(separator: " ")
-
-				// Always update internal pendingText for logic
-				pendingText = newPendingText
-
-				// Only update UI-facing property if text has changed meaningfully
-				if shouldUpdatePendingText(newText: newPendingText) {
-					stableDisplayText = newPendingText
-					lastDisplayedPendingText = newPendingText
-				}
+			// Only update UI-facing property if text has changed meaningfully
+			let preview = Self.livePreviewText(confirmation.pendingText)
+			if shouldUpdatePendingText(newText: preview) {
+				stableDisplayText = preview
+				lastDisplayedPendingText = preview
 			}
 
 			shouldShowLiveTranscriptionWindow = !stableDisplayText.isEmpty || !confirmedText.isEmpty
 		}
 	}
 
-	private func transcribeAudioSamples(_ samples: [Float]) async throws -> TranscriptionResult? {
+	private func transcribeAudioSamples(_ samples: [Float], options: DecodingOptions) async throws -> TranscriptionResult? {
 		guard let whisperKit = whisperKit else { return nil }
 
-		guard let options = decodingOptions else {
-			AppLogger.shared.transcriber.log(
-				"Decoding options not initialized, creating default options")
-			return nil
-		}
-
-		let decodingCallback: ((TranscriptionProgress) -> Bool?) = { progress in
-			Task { @MainActor in
-				self.pendingText = progress.text
-			}
-			return nil
-		}
-
 		do {
-			let transcriptionResults = try await whisperKit.transcribe(
-				audioArray: samples,
-				decodeOptions: options,
-				callback: decodingCallback,
-			)
-
-			return transcriptionResults.first
+			return try await whisperKit.transcribe(audioArray: samples, decodeOptions: options).first
 		} catch {
 			let errorString = error.localizedDescription
 			if errorString.contains("Could not store NSNumber at offset")
@@ -787,29 +1088,10 @@ import WhisperKit
 				AppLogger.shared.transcriber.log(
 					"Array bounds error detected, retrying with smaller sampleLength")
 
-				// Retry with a smaller sampleLength
-				let fallbackOptions = DecodingOptions(
-					verbose: false,
-					task: options.task,
-					language: options.language,
-					temperature: savedTemperature,
-					temperatureFallbackCount: savedTemperatureFallbackCount,
-					sampleLength: 224,  // Use safe fallback
-					usePrefillPrompt: savedUsePrefillPrompt,
-					usePrefillCache: savedUsePrefillCache,
-					skipSpecialTokens: savedSkipSpecialTokens,
-					withoutTimestamps: savedWithoutTimestamps,
-					wordTimestamps: savedWordTimestamps,
-					clipTimestamps: [0]
-				)
-
-				let transcriptionResults = try await whisperKit.transcribe(
-					audioArray: samples,
-					decodeOptions: fallbackOptions,
-					callback: decodingCallback
-				)
-
-				return transcriptionResults.first
+				// Retry with a smaller sampleLength, keeping the live pass's window and prompt
+				var fallbackOptions = options
+				fallbackOptions.sampleLength = 224
+				return try await whisperKit.transcribe(audioArray: samples, decodeOptions: fallbackOptions).first
 			} else {
 				throw error
 			}
@@ -818,30 +1100,37 @@ import WhisperKit
 
 	// MARK: - Decoding Options Management
 	private func createDefaultDecodingOptions() -> DecodingOptions {
-		return DecodingOptions(
+		let languageParameters = Self.languageDecodingParameters(
+			selectedLanguage: selectedLanguage, enableTranslation: false)
+		return Self.promptSafeDecodingOptions(DecodingOptions(
 			verbose: false,
 			task: .transcribe,
-			language: Constants.languageCode(for: selectedLanguage),
+			language: languageParameters.language,
 			temperature: savedTemperature,
 			temperatureFallbackCount: savedTemperatureFallbackCount,
 			sampleLength: savedSampleLength,
 			usePrefillPrompt: savedUsePrefillPrompt,
 			usePrefillCache: savedUsePrefillCache,
-			detectLanguage: false,
+			detectLanguage: languageParameters.detectLanguage,
 			skipSpecialTokens: savedSkipSpecialTokens,
 			withoutTimestamps: savedWithoutTimestamps,
 			wordTimestamps: savedWordTimestamps,
-			clipTimestamps: [0]
-		)
+			clipTimestamps: [0],
+			promptTokens: customWordPromptTokens()
+		))
 	}
 
 	func createDecodingOptions(enableTranslation: Bool) -> DecodingOptions {
 		let task: DecodingTask = enableTranslation ? .translate : .transcribe
-		let languageCode = Constants.languageCode(for: selectedLanguage)
+		let languageParameters = Self.languageDecodingParameters(
+			selectedLanguage: selectedLanguage, enableTranslation: enableTranslation)
+		let languageCode = languageParameters.language
+		let promptTokens = customWordPromptTokens()
 
 		AppLogger.shared.transcriber.log(
-			"Creating decoding options - mode: \(task.description) language: \(languageCode)")
-		return DecodingOptions(
+			"Creating decoding options - mode: \(task.description) language: \(languageCode ?? "auto") promptTokens: \(promptTokens?.count ?? 0)"
+		)
+		return Self.promptSafeDecodingOptions(DecodingOptions(
 			verbose: false,
 			task: task,
 			language: languageCode,
@@ -850,12 +1139,88 @@ import WhisperKit
 			sampleLength: savedSampleLength,
 			usePrefillPrompt: savedUsePrefillPrompt,
 			usePrefillCache: savedUsePrefillCache,
-			detectLanguage: enableTranslation,
+			detectLanguage: languageParameters.detectLanguage,
 			skipSpecialTokens: savedSkipSpecialTokens,
 			withoutTimestamps: savedWithoutTimestamps,
 			wordTimestamps: savedWordTimestamps,
-			clipTimestamps: [0]
+			clipTimestamps: [0],
+			promptTokens: promptTokens
+		))
+	}
+
+	/// "auto" leaves the language unset so WhisperKit detects it from the audio.
+	nonisolated static func languageDecodingParameters(selectedLanguage: String, enableTranslation: Bool)
+		-> (language: String?, detectLanguage: Bool)
+	{
+		let language = Constants.decodingLanguageCode(for: selectedLanguage)
+		return (language, enableTranslation || language == nil)
+	}
+
+	func refreshDecodingOptions() {
+		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation ?? false)
+	}
+
+	/// A prewarmed model only loads its weights and tokenizer inside the first transcribe call,
+	/// after the options were built, so without this the first dictation after every model load
+	/// (and every live session) went out without the custom-word prompt. transcribe() would do
+	/// the same load a moment later, so nothing extra is loaded.
+	func loadTokenizerForCustomWords() async {
+		guard let whisperKit, whisperKit.tokenizer == nil,
+			CustomWordPromptObserver.effectivePrompt(in: .standard) != nil
+		else { return }
+		do {
+			if whisperKit.modelState == .loaded {
+				try await whisperKit.loadTokenizerIfNeeded()
+			} else {
+				try await whisperKit.loadModels()
+			}
+		} catch {
+			AppLogger.shared.transcriber.error("Could not load the tokenizer for custom words: \(error)")
+		}
+	}
+
+	private func customWordPromptTokens() -> [Int]? {
+		Self.promptTokens(
+			for: CustomWordPromptObserver.effectivePrompt(in: .standard), tokenizer: whisperKit?.tokenizer)
+	}
+
+	/// Nil without a tokenizer: options built before a model loads carry no prompt, so every
+	/// load refreshes them.
+	nonisolated static func promptTokens(for prompt: String?, tokenizer: (any WhisperTokenizer)?) -> [Int]? {
+		guard let prompt, let tokenizer else { return nil }
+		let tokens = tokenizer.encode(text: prompt).filter {
+			$0 < tokenizer.specialTokens.specialTokenBegin
+		}
+		return tokens.isEmpty ? nil : tokens
+	}
+
+	func processTranscriptText(
+		_ text: String, detectedLanguage: String?, enableTranslation: Bool, preservingLineBreaks: Bool = false,
+		engineHonorsLanguage: Bool = true
+	) -> String {
+		guard !text.isEmpty else { return text }
+		var configuration = TextProcessingSettings.configuration(from: textProcessingDefaults)
+		configuration.preservesLineBreaks = preservingLineBreaks
+		let evidence = TranscriptTextProcessor.languageEvidence(
+			selectedLanguageCode: Self.pipelineLanguageCode(
+				selectedLanguage: selectedLanguage, engineHonorsLanguage: engineHonorsLanguage),
+			translating: enableTranslation,
+			modelDetectedLanguage: detectedLanguage,
+			text: text
 		)
+		let processed = TranscriptTextProcessor(configuration: configuration).process(text, language: evidence)
+		if processed != text {
+			AppLogger.shared.transcriber.log(
+				"Text processing changed transcript (language evidence: \(evidence))")
+		}
+		return processed
+	}
+
+	/// Parakeet ignores the Source Language picker, so the picker says nothing about what was
+	/// spoken; passing it on would strip English fillers such as "um" from Portuguese speech.
+	/// Mirrors `CLITextPipeline`.
+	static func pipelineLanguageCode(selectedLanguage: String, engineHonorsLanguage: Bool) -> String? {
+		engineHonorsLanguage ? Constants.decodingLanguageCode(for: selectedLanguage) : nil
 	}
 
 	func updateDecodingOptions(
@@ -899,13 +1264,20 @@ import WhisperKit
 
 		// Recreate decoding options with updated values
 		if let currentOptions = decodingOptions {
-			// Preserve the current translation setting
-			let isTranslating = currentOptions.task == .translate
-			decodingOptions = createDecodingOptions(enableTranslation: !isTranslating)
+			decodingOptions = createDecodingOptions(enableTranslation: currentOptions.task == .translate)
 		}
 	}
 
 	func getCurrentDecodingOptions(enableTranslation: Bool) -> DecodingOptions {
+		return createDecodingOptions(enableTranslation: enableTranslation)
+	}
+
+	/// The options every one-shot transcription sends (dictation, files, the queue, YouTube,
+	/// history re-transcription). A prewarmed model loads its tokenizer only inside transcribe,
+	/// after the options were built, so options built without this left the first transcription
+	/// after a launch or a model switch without the custom-word prompt.
+	func promptReadyDecodingOptions(enableTranslation: Bool) async -> DecodingOptions {
+		await loadTokenizerForCustomWords()
 		return createDecodingOptions(enableTranslation: enableTranslation)
 	}
 
@@ -916,7 +1288,9 @@ import WhisperKit
 			return
 		}
 		AppLogger.shared.transcriber.log("Reloading current model: \(currentModel)")
-		try await loadModel(currentModel)
+		try await runModelOperation { transcriber in
+			try await transcriber.loadModelInOperation(currentModel)
+		}
 	}
 
 	func updateLanguageSettings(_ newLanguage: String) {
@@ -990,11 +1364,22 @@ import WhisperKit
 	private func performTranscription(
 		input: TranscriptionInput, enableTranslation: Bool, logPrefix: String
 	) async throws -> String {
+		beginModelUse()
+		defer { endModelUse() }
 		try await waitForReadyForTranscription()
 		guard isWhisperKitReady() else { throw WhisperKitError.notReady }
+		if let notice = modelSwitchNotice, let activeModel = notice.activeModel {
+			AppLogger.shared.transcriber.info(
+				"Transcribing with \(activeModel) while \(notice.pendingModel) is still \(notice.phase == .loading ? "loading" : "downloading")"
+			)
+		}
+		if let engine = parakeetEngine {
+			return try await transcribe(
+				with: engine, input: input, enableTranslation: enableTranslation, logPrefix: logPrefix)
+		}
 		let maxRetries = 3
 		var lastError: Error?
-		decodingOptions = createDecodingOptions(enableTranslation: enableTranslation)
+		decodingOptions = await promptReadyDecodingOptions(enableTranslation: enableTranslation)
 
 		for attempt in 1...maxRetries {
 			do {
@@ -1018,20 +1403,23 @@ import WhisperKit
 				}.value
 
 				if !result.isEmpty {
-					let transcription = result.compactMap { $0.text }.joined(separator: " ")
+					let rawTranscription = result.compactMap { $0.text }.joined(separator: " ")
 						.trimmingCharacters(in: .whitespacesAndNewlines)
+					let transcription = processTranscriptText(
+						rawTranscription, detectedLanguage: result.first?.language,
+						enableTranslation: enableTranslation)
 
 					if !transcription.isEmpty {
-						AppLogger.shared.transcriber.log(
-							"WhisperKit \(logPrefix) transcription completed: \(transcription)")
+						AppLogger.shared.transcriber.userText(
+							"WhisperKit \(logPrefix) transcription completed", transcription)
 						return transcription
 					} else {
 						AppLogger.shared.transcriber.log("Transcription returned empty text")
-						return "No speech detected"
+						return ""
 					}
 				} else {
 					AppLogger.shared.transcriber.log("No transcription segments returned")
-					return "No speech detected"
+					return ""
 				}
 
 			} catch {
@@ -1044,7 +1432,7 @@ import WhisperKit
 					AppLogger.shared.transcriber.log(
 						"Array bounds error detected, retrying with smaller sampleLength")
 
-					let fallbackOptions = DecodingOptions(
+					let fallbackOptions = Self.promptSafeDecodingOptions(DecodingOptions(
 						verbose: false,
 						task: decodingOptions?.task ?? .transcribe,
 						language: decodingOptions?.language,
@@ -1053,11 +1441,13 @@ import WhisperKit
 						sampleLength: 224,
 						usePrefillPrompt: savedUsePrefillPrompt,
 						usePrefillCache: savedUsePrefillCache,
+						detectLanguage: decodingOptions?.detectLanguage,
 						skipSpecialTokens: savedSkipSpecialTokens,
 						withoutTimestamps: savedWithoutTimestamps,
 						wordTimestamps: savedWordTimestamps,
-						clipTimestamps: [0]
-					)
+						clipTimestamps: [0],
+						promptTokens: decodingOptions?.promptTokens
+					))
 
 					do {
 						let fallbackResult = try await Task { @MainActor in
@@ -1075,15 +1465,19 @@ import WhisperKit
 						}.value
 
 						if !fallbackResult.isEmpty {
-							let transcription = fallbackResult.compactMap { $0.text }.joined(separator: " ")
+							let rawTranscription = fallbackResult.compactMap { $0.text }
+								.joined(separator: " ")
 								.trimmingCharacters(in: .whitespacesAndNewlines)
+							let transcription = processTranscriptText(
+								rawTranscription, detectedLanguage: fallbackResult.first?.language,
+								enableTranslation: enableTranslation)
 							if !transcription.isEmpty {
-								AppLogger.shared.transcriber.log(
-									"WhisperKit \(logPrefix) transcription completed with fallback: \(transcription)")
+								AppLogger.shared.transcriber.userText(
+									"WhisperKit \(logPrefix) transcription completed with fallback", transcription)
 								return transcription
 							}
 						}
-						return "No speech detected"
+						return ""
 					} catch {
 						AppLogger.shared.transcriber.log(
 							"Fallback transcription also failed: \(error)")
@@ -1157,7 +1551,7 @@ import WhisperKit
 	func transcribeAudioArray(_ audioArray: [Float], enableTranslation: Bool) async throws -> String {
 		guard !audioArray.isEmpty else {
 			AppLogger.shared.transcriber.log("Empty audio array provided")
-			return "No audio data provided"
+			return ""
 		}
 
 		AppLogger.shared.transcriber.log(
@@ -1187,10 +1581,25 @@ import WhisperKit
 	{
 		AppLogger.shared.transcriber.log(
 			"Starting timestamped file transcription for: \(url.lastPathComponent)")
+		beginModelUse()
+		defer { endModelUse() }
 		try await waitForReadyForTranscription()
+		if let engine = parakeetEngine {
+			let transcript = try await engine.transcribe(fileURL: url)
+			AppLogger.shared.transcriber.log(
+				"Parakeet file transcription completed with \(transcript.segments.count) segments")
+			return transcript.segments.compactMap { segment in
+				let text = processTranscriptText(
+					segment.text.trimmingCharacters(in: .whitespacesAndNewlines),
+					detectedLanguage: nil, enableTranslation: false, preservingLineBreaks: true,
+					engineHonorsLanguage: false)
+				guard !text.isEmpty else { return nil }
+				return TranscriptionSegment(text: text, startTime: segment.startTime, endTime: segment.endTime)
+			}
+		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
-		let decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
+		let decodingOptions = await promptReadyDecodingOptions(enableTranslation: enableTranslation)
 
 		let result = try await Task {
 			if whisperKitInstance.modelState == .loading {
@@ -1205,7 +1614,10 @@ import WhisperKit
 			// WhisperKit returns [TranscriptionResult], we need to extract segments from each result
 			let allSegments = result.flatMap { transcriptionResult in
 				transcriptionResult.segments.compactMap { whisperSegment -> TranscriptionSegment? in
-					let text = whisperSegment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+					let text = processTranscriptText(
+						whisperSegment.text.trimmingCharacters(in: .whitespacesAndNewlines),
+						detectedLanguage: transcriptionResult.language,
+						enableTranslation: enableTranslation, preservingLineBreaks: true)
 					guard !text.isEmpty else {
 						return nil
 					}
@@ -1240,10 +1652,20 @@ import WhisperKit
 				userInfo: [NSLocalizedDescriptionKey: "Invalid time range"])
 		}
 
+		beginModelUse()
+		defer { endModelUse() }
 		try await waitForReadyForTranscription()
+		if let engine = parakeetEngine {
+			let samples = try AudioProcessor.loadAudioAsFloatArray(
+				fromPath: url.path, startTime: startTime, endTime: endTime)
+			let text = processTranscriptText(
+				try await engine.transcribe(samples: samples).text, detectedLanguage: nil,
+				enableTranslation: false, preservingLineBreaks: true, engineHonorsLanguage: false)
+			return text.isEmpty ? "No speech detected in segment" : text
+		}
 		guard let whisperKitInstance = whisperKit else { throw WhisperKitError.notInitialized }
 
-		var decodingOptions = getCurrentDecodingOptions(enableTranslation: enableTranslation)
+		var decodingOptions = await promptReadyDecodingOptions(enableTranslation: enableTranslation)
 
 		// Set time range for segment transcription
 		decodingOptions.clipTimestamps = [Float(startTime), Float(endTime)]
@@ -1258,12 +1680,15 @@ import WhisperKit
 		}.value
 
 		if !result.isEmpty {
-			let transcription = result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(
-				in: .whitespacesAndNewlines)
+			let transcription = processTranscriptText(
+				result.compactMap { $0.text }.joined(separator: " ").trimmingCharacters(
+					in: .whitespacesAndNewlines),
+				detectedLanguage: result.first?.language,
+				enableTranslation: enableTranslation, preservingLineBreaks: true)
 
 			if !transcription.isEmpty {
-				AppLogger.shared.transcriber.log(
-					"WhisperKit segment transcription completed: \(transcription)")
+				AppLogger.shared.transcriber.userText(
+					"WhisperKit segment transcription completed", transcription)
 				return transcription
 			} else {
 				AppLogger.shared.transcriber.log("Segment transcription returned empty text")
@@ -1276,41 +1701,55 @@ import WhisperKit
 	}
 
 	func switchModel(to model: String) async throws {
-		if let existingTask = modelOperationTask {
-			AppLogger.shared.transcriber.log("Waiting for existing model operation to complete...")
-			try await existingTask.value
+		try await runModelOperation { transcriber in
+			try await transcriber.performSwitchModel(to: model)
 		}
+	}
 
-		// Create new operation task
-		modelOperationTask = Task { @MainActor in
-			try await performSwitchModel(to: model)
+	private func runModelOperation(
+		_ body: @escaping @MainActor (WhisperKitTranscriber) async throws -> Void
+	) async throws {
+		try await modelOperations.run { [self] in
+			try await body(self)
 		}
-
-		do {
-			try await modelOperationTask!.value
-		} catch {
-			modelOperationTask = nil
-			throw error
-		}
-
-		modelOperationTask = nil
 	}
 
 	private func performSwitchModel(to model: String) async throws {
-		// Refresh available models first to ensure we have the latest list
-		if availableModels.isEmpty {
-			try await refreshAvailableModels()
+		if model == currentModel, hasLoadedEngine {
+			AppLogger.shared.transcriber.log("Model \(model) is already loaded")
+			return
+		}
+		if ParakeetModel.isParakeetID(model) {
+			if !downloadedModels.contains(model) {
+				try await performDownloadModel(model)
+			} else {
+				try await loadModelInOperation(model)
+			}
+			return
 		}
 
-		guard availableModels.contains(model) else {
-			throw WhisperKitError.modelNotFound(model)
+		if CustomWhisperModel.isCustomID(model) {
+			guard CustomModelStore.shared.isAvailable(id: model) else {
+				throw WhisperKitError.modelNotFound(model)
+			}
+			try await loadModelInOperation(model)
+			return
 		}
-
-		AppLogger.shared.transcriber.log("Switching to model: \(model)")
 
 		// Check if model is already downloaded
 		let currentlyDownloadedModels = try await getDownloadedModels()
 		downloadedModels = currentlyDownloadedModels
+		// Only a download needs the model list; it is a network fetch that held this operation
+		// (and every load queued behind it) for up to 10 s even for a model already on disk
+		if !currentlyDownloadedModels.contains(model), availableModels.isEmpty {
+			try await refreshAvailableModels()
+		}
+
+		guard availableModels.contains(model) || currentlyDownloadedModels.contains(model) else {
+			throw WhisperKitError.modelNotFound(model)
+		}
+
+		AppLogger.shared.transcriber.log("Switching to model: \(model)")
 
 		if !currentlyDownloadedModels.contains(model) {
 			AppLogger.shared.transcriber.log("Model \(model) not found locally, downloading first...")
@@ -1319,11 +1758,13 @@ import WhisperKit
 		}
 
 		// Model is downloaded, just need to load it
-		try await loadModel(model)
+		try await loadModelInOperation(model)
 	}
 
 	private func updateDownloadProgress(_ progress: Double, _ status: String) async {
 		await MainActor.run {
+			// Late callbacks from a download that already ended would otherwise show a stale percentage
+			guard self.isDownloadingModel else { return }
 			self.downloadProgress = progress
 		}
 	}
@@ -1349,7 +1790,7 @@ import WhisperKit
 		// Check if the models directory exists
 		guard FileManager.default.fileExists(atPath: baseDir.path) else {
 			AppLogger.shared.transcriber.log("WhisperKit models directory doesn't exist yet")
-			return Set<String>()
+			return additionalDownloadedModelIDs()
 		}
 
 		do {
@@ -1365,7 +1806,7 @@ import WhisperKit
 			}
 
 			let modelNames = Set(modelDirectories.map { $0.lastPathComponent })
-			return modelNames
+			return modelNames.union(additionalDownloadedModelIDs())
 
 		} catch {
 			AppLogger.shared.transcriber.log("Error reading WhisperKit models directory: \(error)")
@@ -1373,16 +1814,29 @@ import WhisperKit
 		}
 	}
 
+	@ObservationIgnored var fetchModelCatalog: @Sendable () async throws -> [String] = {
+		try await WhisperKit.fetchAvailableModels()
+	}
+	@ObservationIgnored private(set) var modelCatalogRefreshTask: Task<Void, Never>?
+
+	func refreshModelCatalogInBackground() {
+		modelCatalogRefreshTask?.cancel()
+		modelCatalogRefreshTask = Task { @MainActor [weak self] in
+			try? await self?.refreshAvailableModels()
+		}
+	}
+
 	func refreshAvailableModels() async throws {
 		do {
 			// Add timeout to prevent hanging
+			let fetch = fetchModelCatalog
 			let fetchedModels = try await withTimeout(seconds: 10) {
-				try await WhisperKit.fetchAvailableModels()
+				try await fetch()
 			}
 
 			// Remove duplicates using Set
 			let uniqueModels = Array(Set(fetchedModels)).sorted()
-			availableModels = uniqueModels
+			availableModels = uniqueModels + additionalAvailableModelIDs()
 
 			AppLogger.shared.transcriber.log(
 				"Refreshed available models: \(self.availableModels.count) unique models")
@@ -1390,32 +1844,60 @@ import WhisperKit
 			AppLogger.shared.transcriber.log(
 				"Failed to refresh available models, using defaults: \(error)")
 			// Fallback to defaults instead of throwing
-			availableModels = [
-				"openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small",
-				"openai_whisper-small.en",
-			]
+			let downloaded = (try? await getDownloadedModels()) ?? downloadedModels
+			availableModels = Self.offlineModelList(downloaded: downloaded, additional: additionalAvailableModelIDs())
 		}
 	}
 
+	nonisolated static let fallbackModelIDs = [
+		"openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small", "openai_whisper-small.en",
+	]
+
+	/// Used when the model list cannot be fetched (offline, or the request times out). Models
+	/// already on disk stay selectable; without them a downloaded model outside the short
+	/// default list could not be switched to until the list fetch succeeded.
+	nonisolated static func offlineModelList(downloaded: Set<String>, additional: [String]) -> [String] {
+		let local = downloaded.filter { !CustomWhisperModel.isCustomID($0) && !ParakeetModel.isParakeetID($0) }.sorted()
+		var seen = Set<String>()
+		return (fallbackModelIDs + local + additional).filter { seen.insert($0).inserted }
+	}
+
+	/// Races `operation` against a deadline. Unlike a task group, this returns at the
+	/// deadline even if the operation ignores cancellation (the model list fetch can),
+	/// which otherwise leaves initialization waiting forever.
 	private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T)
 		async throws -> T
 	{
-		try await withThrowingTaskGroup(of: T.self) { group in
-			group.addTask {
-				try await operation()
+		let gate = ResumeGate()
+		return try await withCheckedThrowingContinuation { continuation in
+			let work = Task {
+				do {
+					let value = try await operation()
+					if gate.claim() { continuation.resume(returning: value) }
+				} catch {
+					if gate.claim() { continuation.resume(throwing: error) }
+				}
 			}
-
-			group.addTask {
-				try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-				throw TimeoutError()
+			Task {
+				try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+				if gate.claim() {
+					work.cancel()
+					continuation.resume(throwing: TimeoutError())
+				}
 			}
+		}
+	}
 
-			guard let result = try await group.next() else {
-				throw TimeoutError()
-			}
+	private final class ResumeGate: @unchecked Sendable {
+		private let lock = NSLock()
+		private var claimed = false
 
-			group.cancelAll()
-			return result
+		func claim() -> Bool {
+			lock.lock()
+			defer { lock.unlock() }
+			if claimed { return false }
+			claimed = true
+			return true
 		}
 	}
 
@@ -1433,47 +1915,44 @@ import WhisperKit
 	}
 
 	func downloadModel(_ modelName: String) async throws {
-		// Check if there's already a model operation in progress
-		if let existingTask = modelOperationTask {
-			AppLogger.shared.transcriber.log("Waiting for existing model operation to complete...")
-			try await existingTask.value
+		try await runModelOperation { transcriber in
+			try await transcriber.performDownloadModel(modelName)
 		}
-
-		// Create new operation task
-		modelOperationTask = Task { @MainActor in
-			try await performDownloadModel(modelName)
-		}
-
-		do {
-			try await modelOperationTask!.value
-		} catch {
-			modelOperationTask = nil
-			throw error
-		}
-
-		modelOperationTask = nil
 	}
 
-	// Aborts an in-flight model download (network, cancellable). Loading/prewarming
-	// is deliberately not cancellable, so the FixItStack only surfaces Cancel here.
+	/// Aborts the network phase of the running model download. The operation keeps holding the
+	/// model-operation lock until its task has unwound, so a model picked right after this waits
+	/// for it instead of loading alongside it.
 	@MainActor
 	func cancelModelDownload() {
-		guard isDownloadingModel else { return }
-		modelOperationTask?.cancel()
-		modelOperationTask = nil
-		isDownloadingModel = false
-		downloadingModelName = nil
-		downloadProgress = 0.0
+		guard isDownloadingModel, isModelDownloadCancellable, modelOperations.cancelCurrent() else { return }
+		endDownloadState()
 		AppLogger.shared.transcriber.log("Model download cancelled by user")
 	}
 
 	private func performDownloadModel(_ modelName: String) async throws {
-		isDownloadingModel = true
-		downloadingModelName = modelName
-		downloadProgress = 0.0
+		// The cache can still be empty here (onboarding calls this before it is filled), and deleting
+		// on a cancel must never remove a model that was already installed
+		let wasOnDisk = Self.modelWasOnDisk(
+			cached: downloadedModels.contains(modelName), folder: whisperKitModelDirectory(for: modelName))
+		beginDownloadState(modelName)
+		// A failed download or load must not leave the app looking busy: that blocked idle unload,
+		// custom model import and the onboarding button until relaunch.
+		defer { endDownloadState() }
 
 		do {
 			await updateDownloadProgress(0, "Starting download...")
+
+			if let parakeet = ParakeetModel(rawValue: modelName) {
+				guard let base = baseModelCacheDirectory else { throw WhisperKitError.notInitialized }
+				try await ParakeetEngine.download(parakeet, modelsBase: base)
+				try finishCancellableDownload()
+				AppLogger.shared.transcriber.log("Parakeet model downloaded: \(modelName)")
+				downloadedModels.insert(modelName)
+				endDownloadState()
+				try await loadModelInOperation(modelName)
+				return
+			}
 
 			// Use WhisperKit's download method with default location
 			let downloadedFolder = try await WhisperKit.download(
@@ -1484,25 +1963,82 @@ import WhisperKit
 						progress.fractionCompleted, "Downloading \(modelName)...")
 				}
 			}
+			try finishCancellableDownload()
 			AppLogger.shared.transcriber.log("Model downloaded to: \(downloadedFolder)")
 
 			downloadedModels.insert(modelName)
-			try await loadModel(modelName)
+			try await loadModelInOperation(modelName)
 			AppLogger.shared.transcriber.log("Successfully downloaded and loaded model: \(modelName)")
 
 		} catch {
+			if Task.isCancelled, !wasOnDisk, !downloadedModels.contains(modelName) {
+				discardCancelledDownload(of: modelName)
+			}
 			AppLogger.shared.transcriber.log("Failed to download model \(modelName): \(error)")
 			throw error
 		}
+	}
 
+	nonisolated static func modelWasOnDisk(cached: Bool, folder: URL?) -> Bool {
+		if cached { return true }
+		guard let folder else { return false }
+		var isDirectory: ObjCBool = false
+		return FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory) && isDirectory.boolValue
+	}
+
+	/// Ends the cancellable network phase; a Cancel that landed while the last bytes arrived still
+	/// wins over the load that would follow.
+	private func finishCancellableDownload() throws {
+		isModelDownloadCancellable = false
+		try Task.checkCancellation()
+	}
+
+	/// A cancelled WhisperKit download leaves a partial folder that would otherwise be listed as
+	/// downloaded. Parakeet checks its files before listing a model, so its folder is left alone.
+	private func discardCancelledDownload(of modelName: String) {
+		guard !modelName.isEmpty, ParakeetModel(rawValue: modelName) == nil,
+			!CustomWhisperModel.isCustomID(modelName),
+			let folder = whisperKitModelDirectory(for: modelName),
+			FileManager.default.fileExists(atPath: folder.path)
+		else { return }
+		do {
+			try FileManager.default.removeItem(at: folder)
+			AppLogger.shared.transcriber.log("Removed the partial download of \(modelName)")
+		} catch {
+			AppLogger.shared.transcriber.error("Could not remove the partial download of \(modelName): \(error)")
+		}
+	}
+
+	func beginDownloadState(_ modelName: String) {
+		isDownloadingModel = true
+		isModelDownloadCancellable = true
+		downloadingModelName = modelName
+		downloadProgress = 0.0
+	}
+
+	func endDownloadState() {
 		isDownloadingModel = false
+		isModelDownloadCancellable = false
 		downloadingModelName = nil
 		downloadProgress = 0.0
 	}
 
-	private func loadModel(_ modelName: String) async throws {
+	func loadModel(_ modelName: String) async throws {
+		if let parakeet = ParakeetModel(rawValue: modelName) {
+			try await loadParakeetModel(parakeet)
+			scheduleIdleUnload()
+			return
+		}
 		isModelLoading = true
 		loadProgress = 0.0
+		loadingModelName = modelName
+		defer {
+			// WhisperKit's state callback never fires when the config or init throws first
+			isModelLoading = false
+			loadProgress = 0.0
+			if loadingModelName == modelName { loadingModelName = nil }
+			scheduleIdleUnload()
+		}
 
 		do {
 			await updateLoadProgress(0.2, "Preparing to load \(modelName)...")
@@ -1511,22 +2047,31 @@ import WhisperKit
 			AppLogger.shared.transcriber.debug("Recommended models: \(recommendedModels)")
 
 			await updateLoadProgress(0.6, "Loading \(modelName)...")
-			whisperKit = try await Task { @MainActor in
-				let config = WhisperKitConfig(
-					model: modelName,
-					downloadBase: baseModelCacheDirectory,
-					computeOptions: getOptimizedComputeOptions(),
-					prewarm: true
-				)
-				let whisperKitInstance = try await WhisperKit(config)
+			let loaded = try await Task { @MainActor in
+				let config = try whisperKitConfig(forModel: modelName)
+				let prewarmKey = Self.prewarmKey(model: modelName, computeOptions: config.computeOptions)
+				if prewarmedModelKeys.contains(prewarmKey) {
+					// Without prewarm WhisperKit only loads when told to (modelFolder is nil here),
+					// and an unloaded model never reports ready
+					config.prewarm = false
+					config.load = true
+				}
+				let whisperKitInstance = try await Self.makeWhisperKit(config)
+				prewarmedModelKeys.insert(prewarmKey)
 				self.setupModelStateCallback(for: whisperKitInstance)
 				return whisperKitInstance
 			}.value
+			// Only now, so a failed load keeps the Parakeet engine that was working
+			unloadParakeetEngine()
+			whisperKit = loaded
+			// Options built while no tokenizer was loaded (launch, idle unload) have no prompt
+			refreshDecodingOptions()
 
 			await updateLoadProgress(0.9, "Finalizing model setup...")
 			currentModel = modelName
 			selectedModel = modelName
 			lastUsedModel = modelName
+			isIdleUnloaded = false
 
 			if UserDefaults.standard.object(forKey: "decodingSampleLength") == nil {
 				UserDefaults.standard.removeObject(forKey: "decodingSampleLength")
@@ -1543,9 +2088,148 @@ import WhisperKit
 			throw WhisperKitError.transcriptionFailed(
 				"Failed to load model: \(error.localizedDescription)")
 		}
+	}
 
-		isModelLoading = false
-		loadProgress = 0.0
+	nonisolated static func prewarmKey(model: String, computeOptions: ModelComputeOptions?) -> String {
+		guard let options = computeOptions else { return "\(model)|default" }
+		let units = [
+			options.melCompute, options.audioEncoderCompute, options.textDecoderCompute, options.prefillCompute,
+		]
+		return "\(model)|" + units.map { String($0.rawValue) }.joined(separator: ",")
+	}
+
+	/// Loads a model from inside a model operation, after any dictation reload running beside it.
+	private func loadModelInOperation(_ modelName: String) async throws {
+		await modelOperations.waitForRestore()
+		try await loadModel(modelName)
+	}
+
+	/// The reload a dictation triggers when no engine is loaded. It never runs next to another
+	/// load: see `ModelOperationQueue.restore`.
+	private func loadModelCoalesced(_ modelName: String) async throws {
+		if let pendingLoadTask {
+			try await pendingLoadTask.value
+			return
+		}
+		let task = Task { @MainActor in
+			try await self.modelOperations.restore(
+				canRunBesideCurrent: { [weak self] in self?.isModelDownloadCancellable ?? false },
+				isNeeded: { [weak self] in self.map { !$0.hasLoadedEngine } ?? false },
+				load: { [weak self] in try await self?.loadModel(modelName) }
+			)
+		}
+		pendingLoadTask = task
+		defer { pendingLoadTask = nil }
+		try await task.value
+	}
+
+	// MARK: - Idle Model Unload
+
+	/// Marks the model as in use so the idle timer cannot unload it mid-transcription.
+	/// Every call must be balanced by `endModelUse()`.
+	func beginModelUse() {
+		activeModelUses += 1
+		idleUnloadTimer.cancel()
+	}
+
+	func endModelUse() {
+		activeModelUses = max(0, activeModelUses - 1)
+		for engine in retiredParakeetEngines.drain(activeUses: activeModelUses) {
+			engine.unload()
+			AppLogger.shared.transcriber.log(
+				"Unloaded replaced Parakeet model \(engine.modelID) after its last use")
+		}
+		scheduleIdleUnload()
+	}
+
+	/// Starts loading a model that was released by the idle timer, so it is ready by the
+	/// time a recording stops.
+	func preloadModelIfIdleUnloaded() {
+		guard isIdleUnloaded, !hasLoadedEngine, pendingLoadTask == nil else { return }
+		AppLogger.shared.transcriber.info("Reloading model released by the idle timer")
+		Task { @MainActor in
+			do {
+				try await waitForReadyForTranscription()
+			} catch {
+				AppLogger.shared.transcriber.error("Failed to reload idle-unloaded model: \(error)")
+			}
+		}
+	}
+
+	var canUnloadModel: Bool {
+		idleUnloadBlockers.isEmpty
+	}
+
+	/// Names every condition currently keeping the model from being unloaded.
+	var idleUnloadBlockers: [String] {
+		var blockers: [String] = []
+		if !hasLoadedEngine { blockers.append("no model loaded") }
+		if activeModelUses > 0 { blockers.append("\(activeModelUses) active model uses") }
+		if isLiveTranscriptionMode { blockers.append("live transcription") }
+		if modelOperations.isBusy { blockers.append("model operation running") }
+		if pendingLoadTask != nil { blockers.append("model load pending") }
+		if initializationTask != nil { blockers.append("initialization running") }
+		if isModelLoading { blockers.append("model loading") }
+		if isDownloadingModel { blockers.append("model downloading") }
+		return blockers
+	}
+
+	func scheduleIdleUnload() {
+		guard let interval = RecordingControlSettings().modelUnloadTimeout.interval else {
+			idleUnloadTimer.cancel()
+			return
+		}
+		guard activeModelUses == 0, hasLoadedEngine else { return }
+		idleUnloadRetry.reset()
+		idleUnloadTimer.schedule(after: interval) { [weak self] in
+			await self?.unloadModelIfIdle()
+		}
+	}
+
+	private func unloadModelIfIdle() async {
+		guard hasLoadedEngine, activeModelUses == 0, !isLiveTranscriptionMode else { return }
+		guard canUnloadModel else {
+			// A model operation or load is still settling; try again once it has.
+			guard idleUnloadRetry.shouldRetry() else {
+				AppLogger.shared.transcriber.info(
+					"Idle unload gave up while blocked by \(self.idleUnloadBlockers.joined(separator: ", "))")
+				return
+			}
+			idleUnloadTimer.schedule(after: IdleUnloadRetryPolicy.interval) { [weak self] in
+				await self?.unloadModelIfIdle()
+			}
+			return
+		}
+		AppLogger.shared.transcriber.info("Unloading model after idle timeout")
+		await unloadModel()
+	}
+
+	/// Releases the loaded model's memory. The next transcription reloads it on demand.
+	func unloadModel() async {
+		guard canUnloadModel else {
+			AppLogger.shared.transcriber.info("Model unload skipped: model busy or not loaded")
+			return
+		}
+		idleUnloadTimer.cancel()
+		if parakeetEngine != nil {
+			unloadParakeetEngine()
+			isIdleUnloaded = true
+			isModelLoaded = false
+			publishEngineState(from: modelState, to: "unloaded")
+			AppLogger.shared.transcriber.info(
+				"Unloaded model \(currentModel ?? "unknown"); it will reload on next use")
+			return
+		}
+		guard let instance = whisperKit else { return }
+		// Detach first so a transcription that starts during the unload loads a fresh
+		// instance instead of reusing one whose models are being torn down.
+		instance.modelStateCallback = nil
+		whisperKit = nil
+		isIdleUnloaded = true
+		handleModelStateChange(from: instance.modelState, to: .unloaded)
+		await instance.unloadModels()
+		AppLogger.shared.transcriber.info(
+			"Unloaded model \(currentModel ?? "unknown"); it will reload on next use")
 	}
 
 	private func createSilentAudioFile() -> URL {
@@ -1582,15 +2266,15 @@ import WhisperKit
 		if !isInitialized {
 			return false
 		}
-		return whisperKit != nil && isInitialized
+		return (whisperKit != nil || parakeetEngine != nil) && isInitialized
 	}
 
 	func isReadyForTranscription() -> Bool {
-		return isInitialized && whisperKit != nil
+		return isInitialized && (whisperKit != nil || parakeetEngine != nil)
 	}
 
 	func hasAnyModel() -> Bool {
-		return whisperKit != nil
+		return whisperKit != nil || parakeetEngine != nil || isIdleUnloaded
 	}
 
 	private func getApplicationSupportDirectory() -> URL {
@@ -1606,6 +2290,13 @@ import WhisperKit
 	// MARK: - Model Helpers
 
 	static func getModelDisplayName(for modelName: String) -> String {
+		if let parakeet = ParakeetModel(rawValue: modelName) { return parakeet.displayName }
+		if CustomWhisperModel.isCustomID(modelName) {
+			let name =
+				CustomModelStore.shared.model(id: modelName)?.displayName
+				?? String(modelName.dropFirst(CustomWhisperModel.idPrefix.count))
+			return "Custom: \(name)"
+		}
 		let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
 
 		switch cleanName {
@@ -1627,6 +2318,8 @@ import WhisperKit
 	}
 
 	static func getModelPriority(for modelName: String) -> Int {
+		if CustomWhisperModel.isCustomID(modelName) { return 10 }
+		if ParakeetModel.isParakeetID(modelName) { return 8 }
 		let cleanName = modelName.replacingOccurrences(of: "openai_whisper-", with: "")
 
 		switch cleanName {
@@ -1640,6 +2333,213 @@ import WhisperKit
 		case "distil-large-v2", "distil-large-v3": return 8
 		default: return 9
 		}
+	}
+
+	// MARK: - Model Sources
+
+	static func isStandardWhisperKitModel(_ id: String) -> Bool {
+		!CustomWhisperModel.isCustomID(id) && !ParakeetModel.isParakeetID(id)
+	}
+
+	/// Parakeet streams nothing back while recording, so dictation falls back to record-then-transcribe.
+	var supportsLiveTranscription: Bool {
+		guard let model = currentModel ?? lastUsedModel ?? selectedModel else { return true }
+		return !ParakeetModel.isParakeetID(model)
+	}
+
+	private func additionalDownloadedModelIDs() -> Set<String> {
+		var ids = Set(CustomModelStore.shared.availableModels.map(\.id))
+		if let base = baseModelCacheDirectory {
+			for model in ParakeetModel.allCases where ParakeetEngine.isDownloaded(model, modelsBase: base) {
+				ids.insert(model.rawValue)
+			}
+		}
+		return ids
+	}
+
+	private func additionalAvailableModelIDs() -> [String] {
+		ParakeetModel.allCases.map(\.rawValue) + CustomModelStore.shared.availableModels.map(\.id)
+	}
+
+	private func loadParakeetModel(_ model: ParakeetModel) async throws {
+		guard let base = baseModelCacheDirectory else { throw WhisperKitError.notInitialized }
+		isModelLoading = true
+		loadProgress = 0.3
+		loadingModelName = model.rawValue
+		publishEngineState(from: modelState, to: "loading")
+		defer {
+			isModelLoading = false
+			loadProgress = 0.0
+			if loadingModelName == model.rawValue { loadingModelName = nil }
+		}
+
+		do {
+			let engine = try await ParakeetEngine.load(
+				model, modelsBase: base,
+				computeUnits: ComputeUnitPreference.load().parakeetComputeUnits)
+			unloadParakeetEngine()
+			whisperKit = nil
+			parakeetEngine = engine
+			currentModel = model.rawValue
+			selectedModel = model.rawValue
+			lastUsedModel = model.rawValue
+			isModelLoaded = true
+			isIdleUnloaded = false
+			publishEngineState(from: "loading", to: "loaded")
+			AppLogger.shared.transcriber.log("Loaded Parakeet model \(model.rawValue) via FluidAudio")
+		} catch {
+			isModelLoaded = whisperKit != nil
+			publishEngineState(from: "loading", to: whisperKit == nil ? "unloaded" : "loaded")
+			AppLogger.shared.transcriber.error("Failed to load Parakeet model \(model.rawValue): \(error)")
+			throw WhisperKitError.transcriptionFailed(
+				"Failed to load model: \(error.localizedDescription)")
+		}
+	}
+
+	/// A transcription that already captured the engine keeps using it, so while any model hold
+	/// is active the engine is only detached and torn down when the last hold ends.
+	private func unloadParakeetEngine() {
+		guard let engine = parakeetEngine else { return }
+		parakeetEngine = nil
+		guard let idle = retiredParakeetEngines.release(engine, activeUses: activeModelUses) else {
+			AppLogger.shared.transcriber.log(
+				"Detached Parakeet model \(engine.modelID); unloading once its transcriptions finish")
+			return
+		}
+		idle.unload()
+		AppLogger.shared.transcriber.log("Unloaded Parakeet model \(idle.modelID)")
+	}
+
+	private func publishEngineState(from oldState: String, to newState: String) {
+		modelState = newState
+		NotificationCenter.default.post(
+			name: NSNotification.Name("WhisperKitModelStateChanged"),
+			object: nil,
+			userInfo: [
+				"oldState": oldState,
+				"newState": newState,
+				"isLoading": newState == "loading",
+				"isLoaded": newState == "loaded",
+			]
+		)
+	}
+
+	private func transcribe(
+		with engine: any TranscriptionEngine, input: TranscriptionInput, enableTranslation: Bool,
+		logPrefix: String
+	) async throws -> String {
+		if enableTranslation {
+			AppLogger.shared.transcriber.log("\(engine.modelID) cannot translate; transcribing instead")
+		}
+		do {
+			let transcript: EngineTranscript
+			switch input {
+			case .audioPath(let path):
+				transcript = try await engine.transcribe(fileURL: URL(fileURLWithPath: path))
+			case .audioArray(let samples):
+				transcript = try await engine.transcribe(samples: samples)
+			}
+			// Parakeet reports no language, so the pipeline relies on the selected language or text detection
+			let text = processTranscriptText(
+				transcript.text, detectedLanguage: nil, enableTranslation: false, engineHonorsLanguage: false)
+			guard !text.isEmpty else {
+				AppLogger.shared.transcriber.log("\(engine.modelID) returned empty text")
+				return ""
+			}
+			AppLogger.shared.transcriber.info(
+				"\(engine.modelID) \(logPrefix) transcription completed (\(ExtendedLogger.redactedSummary(text)))")
+			return text
+		} catch {
+			AppLogger.shared.transcriber.error("\(engine.modelID) transcription failed: \(error)")
+			throw WhisperKitError.transcriptionFailed(error.localizedDescription)
+		}
+	}
+
+	private func whisperKitConfig(forModel modelName: String) throws -> WhisperKitConfig {
+		if CustomWhisperModel.isCustomID(modelName) {
+			guard let custom = CustomModelStore.shared.model(id: modelName),
+				CustomModelStore.shared.isAvailable(id: modelName)
+			else {
+				throw WhisperKitError.modelNotFound(modelName)
+			}
+			return custom.whisperKitConfig(
+				downloadBase: baseModelCacheDirectory, computeOptions: getOptimizedComputeOptions())
+		}
+		return WhisperKitConfig(
+			model: modelName,
+			downloadBase: baseModelCacheDirectory,
+			computeOptions: getOptimizedComputeOptions(),
+			prewarm: true
+		)
+	}
+
+	func addCustomModel(fromHuggingFace repoInput: String, variant: String) async throws
+		-> CustomWhisperModel
+	{
+		guard let reference = HuggingFaceModelReference.parse(repoInput: repoInput, variant: variant)
+		else {
+			throw CustomModelError.invalidReference
+		}
+		guard !reference.isBuiltInRepository else { throw CustomModelError.builtInRepository }
+		guard !CustomModelStore.shared.containsHuggingFace(reference) else {
+			throw CustomModelError.alreadyAdded("\(reference.repo)/\(reference.variant)")
+		}
+		var added: CustomWhisperModel?
+		try await runModelOperation { transcriber in
+			added = try await transcriber.performAddCustomModel(reference)
+		}
+		guard let added else { throw CancellationError() }
+		return added
+	}
+
+	private func performAddCustomModel(_ reference: HuggingFaceModelReference) async throws
+		-> CustomWhisperModel
+	{
+		beginDownloadState(reference.variant)
+		defer { endDownloadState() }
+
+		AppLogger.shared.transcriber.log(
+			"Downloading custom model \(reference.variant) from \(reference.repo)")
+		let folder = try await WhisperKit.download(
+			variant: reference.variant,
+			downloadBase: baseModelCacheDirectory,
+			from: reference.repo
+		) { progress in
+			Task {
+				await self.updateDownloadProgress(
+					progress.fractionCompleted, "Downloading \(reference.variant)...")
+			}
+		}
+
+		let model: CustomWhisperModel
+		do {
+			try finishCancellableDownload()
+			model = try CustomModelStore.shared.registerHuggingFaceModel(reference, folder: folder)
+		} catch {
+			CustomModelStore.shared.discardFailedDownload(folder)
+			throw error
+		}
+		downloadedModels.insert(model.id)
+		try? await refreshAvailableModels()
+		return model
+	}
+
+	func importCustomModel(from folder: URL) async throws -> CustomWhisperModel {
+		let model = try await CustomModelStore.shared.importLocalFolder(folder)
+		downloadedModels.insert(model.id)
+		try? await refreshAvailableModels()
+		return model
+	}
+
+	func removeCustomModel(id: String) async throws {
+		if currentModel == id {
+			throw CustomModelError.inUse(Self.getModelDisplayName(for: id))
+		}
+		try CustomModelStore.shared.remove(id: id)
+		downloadedModels.remove(id)
+		availableModels.removeAll { $0 == id }
+		if selectedModel == id { selectedModel = nil }
+		if lastUsedModel == id { lastUsedModel = nil }
 	}
 
 	// MARK: - Model Management
@@ -1686,18 +2586,23 @@ import WhisperKit
 	}
 
 	func getCurrentModelState() -> String {
+		if parakeetEngine != nil { return "loaded" }
 		guard let whisperKit = whisperKit else { return "unloaded" }
 		return String(describing: whisperKit.modelState)
 	}
 
 	private func setupUserDefaultsObservation() {
-		// Observe language changes
-		NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-			.receive(on: DispatchQueue.main)
-			.sink { [weak self] _ in
-				self?.checkForSettingsChanges()
-			}
-			.store(in: &cancellables)
+		settingsObserver = DefaultsKeyObserver(
+			keys: [
+				"selectedLanguage", "enableTranslation", RecordingControlSettings.Key.modelUnloadTimeout,
+			]
+		) { [weak self] in
+			self?.checkForSettingsChanges()
+		}
+		customWordsObserver = CustomWordPromptObserver { [weak self] in
+			AppLogger.shared.transcriber.log("Custom words changed; rebuilding the decoder prompt")
+			self?.refreshDecodingOptions()
+		}
 	}
 
 	private var lastObservedLanguage: String?
@@ -1717,6 +2622,12 @@ import WhisperKit
 		if lastObservedTranslation != currentTranslation {
 			lastObservedTranslation = currentTranslation
 			handleTranslationSettingsChanged()
+		}
+
+		let currentUnloadTimeout = RecordingControlSettings().modelUnloadTimeout
+		if lastObservedUnloadTimeout != currentUnloadTimeout {
+			lastObservedUnloadTimeout = currentUnloadTimeout
+			scheduleIdleUnload()
 		}
 	}
 
@@ -1748,30 +2659,39 @@ import WhisperKit
 	}
 
 	func isCurrentModelLoaded() -> Bool {
+		if parakeetEngine != nil { return true }
 		guard let whisperKit = whisperKit else { return false }
 		return whisperKit.modelState == .loaded || whisperKit.modelState == .prewarmed
 	}
 
 	func loadCurrentModel() async throws {
-		guard whisperKit != nil else {
+		guard whisperKit != nil || parakeetEngine != nil else {
 			throw WhisperKitError.notInitialized
 		}
 
-		if let currentModel = currentModel {
-			try await loadModel(currentModel)
-		} else {
-			let recommended = getRecommendedModels()
-			try await loadModel(recommended.default)
+		let model = currentModel ?? getRecommendedModels().default
+		try await runModelOperation { transcriber in
+			try await transcriber.loadModelInOperation(model)
 		}
 	}
 
 	private func getOptimizedComputeOptions() -> ModelComputeOptions {
-		return ModelComputeOptions(
-			melCompute: .cpuAndGPU,
-			audioEncoderCompute: .cpuAndGPU,
-			textDecoderCompute: .cpuAndNeuralEngine,
-			prefillCompute: .cpuAndGPU
-		)
+		return ComputeUnitPreference.load().whisperKitComputeOptions
+	}
+
+	var computeUnitPreference: ComputeUnitPreference {
+		ComputeUnitPreference.load()
+	}
+
+	func applyComputeUnitPreference(_ preference: ComputeUnitPreference) async throws {
+		guard preference != ComputeUnitPreference.load() else { return }
+		preference.save()
+		AppLogger.shared.transcriber.log("Compute units changed to \(preference.rawValue)")
+
+		guard let model = currentModel else { return }
+		try await runModelOperation { transcriber in
+			try await transcriber.loadModelInOperation(model)
+		}
 	}
 
 	func getComputeOptionsStatus() -> [String: String] {
@@ -1802,6 +2722,9 @@ enum WhisperKitError: LocalizedError {
 	case modelNotFound(String)
 	case audioConversionFailed
 	case transcriptionFailed(String)
+	case liveModeUnsupported
+	/// Carries the display name, resolved when thrown.
+	case modelLoadTimedOut(String?)
 
 	var errorDescription: String? {
 		let description: String
@@ -1818,9 +2741,116 @@ enum WhisperKitError: LocalizedError {
 			description = "Failed to convert audio to required format."
 		case .transcriptionFailed(let error):
 			description = "Transcription failed: \(error)"
+		case .liveModeUnsupported:
+			description =
+				"Live Transcription Mode needs a Whisper model. Parakeet transcribes after you stop recording."
+		case .modelLoadTimedOut(let modelName):
+			if let modelName {
+				description = String(
+					localized:
+						"\(modelName) is still loading, so this dictation could not be transcribed. Try again once it is ready, or pick another model in Settings."
+				)
+			} else {
+				description = String(
+					localized:
+						"The model is still loading, so this dictation could not be transcribed. Try again once it is ready, or pick another model in Settings."
+				)
+			}
 		}
 
 		AppLogger.shared.transcriber.error("WhisperKitError: \(description)")
 		return description
+	}
+}
+
+/// Runs model operations one at a time. Only the operation that took the slot releases it, and only
+/// once its task has finished, so a cancelled download keeps later loads waiting until it unwinds
+/// instead of letting two loads race and one's cleanup clear the other's state.
+@MainActor
+final class ModelOperationQueue {
+	private var current: Task<Void, Error>?
+	private var currentID: UUID?
+
+	var isBusy: Bool { current != nil }
+
+	func run(_ body: @escaping @MainActor () async throws -> Void) async throws {
+		while let existing = current {
+			AppLogger.shared.transcriber.log("Waiting for existing model operation to complete...")
+			_ = await existing.result
+		}
+		try Task.checkCancellation()
+		let id = UUID()
+		let task = Task { @MainActor [weak self] in
+			defer {
+				if let self, self.currentID == id {
+					self.current = nil
+					self.currentID = nil
+				}
+			}
+			try await body()
+		}
+		current = task
+		currentID = id
+		try await task.value
+	}
+
+	/// Returns false when nothing is running.
+	@discardableResult
+	func cancelCurrent() -> Bool {
+		guard let current else { return false }
+		current.cancel()
+		return true
+	}
+
+	/// A reload of the previous model for a dictation, running beside an operation that is
+	/// still downloading. Operations call `waitForRestore()` before they load a model, so the
+	/// reload always finishes first and cannot overwrite the model the user just picked.
+	private var restoreTask: Task<Void, Error>?
+
+	var isRestoring: Bool { restoreTask != nil }
+
+	/// Brings back the model a dictation needs. With nothing running, the reload takes the slot
+	/// like any operation. While an operation is only downloading (`canRunBesideCurrent`), it runs
+	/// beside it, since waiting could mean minutes. Otherwise it waits for the operation and then
+	/// loads only if `isNeeded` still holds, because that operation usually leaves a model loaded.
+	func restore(
+		canRunBesideCurrent: @MainActor () -> Bool,
+		isNeeded: @escaping @MainActor () -> Bool,
+		load: @escaping @MainActor () async throws -> Void
+	) async throws {
+		if let restoreTask {
+			try await restoreTask.value
+			return
+		}
+		guard current != nil, canRunBesideCurrent() else {
+			try await run {
+				guard isNeeded() else { return }
+				try await load()
+			}
+			return
+		}
+		guard isNeeded() else { return }
+		let id = UUID()
+		let task = Task { @MainActor [weak self] in
+			defer {
+				if let self, self.restoreID == id {
+					self.restoreTask = nil
+					self.restoreID = nil
+				}
+			}
+			try await load()
+		}
+		restoreTask = task
+		restoreID = id
+		try await task.value
+	}
+
+	private var restoreID: UUID?
+
+	/// Called by an operation right before it loads a model.
+	func waitForRestore() async {
+		while let restoreTask {
+			_ = await restoreTask.result
+		}
 	}
 }

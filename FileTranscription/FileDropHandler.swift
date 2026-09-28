@@ -441,7 +441,7 @@ class FileDropHandler: DragDropHandler {
 						}
 					}
 					let text = stringObject as String
-					logger.info("Found text content via NSString: \(text)")
+					logger.userText("Found text content via NSString", text)
 					foundText = true
 
 					let extractedURLs = extractURLsFromText(text)
@@ -487,7 +487,7 @@ class FileDropHandler: DragDropHandler {
 							}
 
 							if let text = text {
-								logger.info("Successfully extracted text (\(textType)): \(text)")
+								logger.userText("Successfully extracted text (\(textType))", text)
 								foundText = true
 
 								// Process the text for URLs
@@ -524,10 +524,10 @@ class FileDropHandler: DragDropHandler {
 			if let url = URL(string: trimmedLine),
 				url.scheme == "http" || url.scheme == "https"
 			{
-				logger.info("Found valid URL: \(url.absoluteString)")
+				logger.userURL("Found valid URL", url)
 				urls.append(url)
 			} else if !trimmedLine.isEmpty {
-				logger.info("Invalid URL format: '\(trimmedLine)'")
+				logger.userText("Dropped text is not a URL", trimmedLine)
 			}
 		}
 
@@ -572,7 +572,7 @@ class FileDropHandler: DragDropHandler {
 
 		for (index, url) in urls.enumerated() {
 			do {
-				logger.info("Processing URL \(index + 1)/\(urls.count): \(url.absoluteString)")
+				logger.userURL("Processing URL \(index + 1)/\(urls.count)", url)
 
 				// Check if it's a YouTube URL
 				if isYouTubeURL(url) {
@@ -598,14 +598,12 @@ class FileDropHandler: DragDropHandler {
 					await copyToClipboard(result, filename: filename)
 				}
 
-				logger.info("Network file transcription completed for: \(url.absoluteString)")
+				logger.userURL("Network file transcription completed", url)
 
 			} catch {
-				logger.error(
-					"Network file transcription failed for \(url.absoluteString): \(error.localizedDescription)"
-				)
-				await showError(
-					"Network transcription failed for \(url.absoluteString): \(error.localizedDescription)")
+				let shown = ExtendedLogger.redactedURL(url)
+				logger.error("Network file transcription failed for \(shown): \(error.localizedDescription)")
+				await showError("Network transcription failed for \(shown): \(error.localizedDescription)")
 			}
 		}
 	}
@@ -692,12 +690,12 @@ extension FileDropHandler {
 			// Always show optimistic message during drag
 			// We can't validate file types until drop actually happens
 			if draggedItemsCount == 1 {
-				return "Drop to transcribe"
+				return String(localized: "Drop to transcribe")
 			} else {
-				return "Drop \(draggedItemsCount) items to transcribe"
+				return String(localized: "Drop \(draggedItemsCount) items to transcribe")
 			}
 		} else {
-			return "Drop audio/video files or URLs here"
+			return String(localized: "Drop audio/video files or URLs here")
 		}
 	}
 

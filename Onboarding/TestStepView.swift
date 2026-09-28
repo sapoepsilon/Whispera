@@ -23,8 +23,9 @@ struct TestStepView: View {
 					.foregroundColor(.secondary)
 				Spacer()
 				Picker("Language", selection: $selectedLanguage) {
-					ForEach(Constants.sortedLanguageNames, id: \.self) { language in
-						Text(language.capitalized).tag(language)
+					Text("Auto-detect").tag(Constants.autoDetectLanguageName)
+					ForEach(Constants.localizedSortedLanguageNames(), id: \.self) { language in
+						Text(Constants.localizedLanguageName(for: language)).tag(language)
 					}
 				}
 				.frame(minWidth: 140)
@@ -79,7 +80,7 @@ struct TestStepView: View {
 					}
 				}
 
-				Text(audioManager.isRecording ? "Tap to stop" : "Tap to record")
+				Text(audioManager.isRecording ? String(localized: "Tap to stop") : String(localized: "Tap to record"))
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}

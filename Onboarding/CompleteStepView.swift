@@ -1,14 +1,20 @@
 import SwiftUI
 
 struct CompleteStepView: View {
-	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
+	@AppStorage(ShortcutDefaults.dictationKey) private var globalShortcut = ShortcutDefaults.dictation
 	@State private var floatOffset: CGFloat = 0
 
 	private var tips: [(icon: String, title: String, description: String)] {
 		[
-			("keyboard", "Press \(globalShortcut) anywhere", "Start recording from any app"),
-			("menubar.arrow.up.rectangle", "Menu bar access", "Find Whispera in your menu bar"),
-			("lock.shield", "Private by design", "All processing stays on your Mac"),
+			(
+				"keyboard", String(localized: "Press \(ShortcutDisplay.text(for: globalShortcut)) anywhere"),
+				String(localized: "Start recording from any app")
+			),
+			(
+				"menubar.arrow.up.rectangle", String(localized: "Menu bar access"),
+				String(localized: "Find Whispera in your menu bar")
+			),
+			("lock.shield", String(localized: "Private by design"), String(localized: "All processing stays on your Mac")),
 		]
 	}
 

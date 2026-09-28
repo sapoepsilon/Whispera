@@ -20,6 +20,8 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 		subsystem: Bundle.main.bundleIdentifier ?? "Whispera", category: "FileTranscription")
 	private var currentProgress: Progress?
 	private var transcriptionTask: Task<[TranscriptionResult], Error>?
+	/// What the last WhisperKit file decode was given, custom-word prompt included.
+	@ObservationIgnored private(set) var lastSentDecodingOptions: DecodingOptions?
 
 	// MARK: - File Queue Management
 	private var fileQueue: [FileTranscriptionTask] = []
@@ -236,7 +238,14 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 	private func transcribeWithProgress(url: URL, enableTranslation: Bool, withTimestamps: Bool)
 		async throws -> Any
 	{
+		whisperKit.beginModelUse()
+		defer { whisperKit.endModelUse() }
 		try await whisperKit.waitForReadyForTranscription()
+
+		if whisperKit.parakeetEngine != nil {
+			return try await transcribeWithLoadedEngine(
+				url: url, enableTranslation: enableTranslation, withTimestamps: withTimestamps)
+		}
 
 		// Access WhisperKit's internal transcribe method with progress callback
 		guard let whisperKitInstance = whisperKit.whisperKit else {
@@ -245,14 +254,12 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 
 		// Configure decoding options based on timestamp requirements
 		if withTimestamps {
-			logger.info("Configuring for timestamps - withoutTimestamps: false, wordTimestamps: true")
 			// Configure for timestamp output
 			whisperKit.updateAdvancedSettings(
 				withoutTimestamps: false,
 				wordTimestamps: true
 			)
 		} else {
-			logger.info("Configuring for plain text - withoutTimestamps: true, wordTimestamps: false")
 			whisperKit.updateAdvancedSettings(
 				withoutTimestamps: true,
 				wordTimestamps: false
@@ -260,7 +267,11 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 		}
 
 		// Get updated options with timestamp settings
-		let decodingOptions = whisperKit.getCurrentDecodingOptions(enableTranslation: enableTranslation)
+		let decodingOptions = await whisperKit.promptReadyDecodingOptions(enableTranslation: enableTranslation)
+		lastSentDecodingOptions = decodingOptions
+		// Custom words turn word timestamps off, so the options actually sent are logged
+		logger.info(
+			"Decoding file with timestamps: \(!decodingOptions.withoutTimestamps), word timestamps: \(decodingOptions.wordTimestamps)")
 
 		// Store the progress object for cancellation
 		currentProgress = whisperKitInstance.progress
@@ -291,7 +302,10 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 			// Convert WhisperKit results to TranscriptionSegment array
 			let allSegments = transcriptionResults.flatMap { transcriptionResult in
 				transcriptionResult.segments.compactMap { whisperSegment -> TranscriptionSegment? in
-					let text = whisperSegment.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+					let text = whisperKit.processTranscriptText(
+						whisperSegment.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+						detectedLanguage: transcriptionResult.language, enableTranslation: enableTranslation,
+						preservingLineBreaks: true)
 					guard !text.isEmpty else {
 						return nil
 					}
@@ -311,10 +325,32 @@ class FileTranscriptionManager: FileTranscriptionCapable {
 			return allSegments
 		} else {
 			// Return plain text
-			let transcription = transcriptionResults.compactMap { $0.text }.joined(separator: " ")
-				.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-			return transcription.isEmpty ? "No speech detected" : transcription
+			let transcription = whisperKit.processTranscriptText(
+				transcriptionResults.compactMap { $0.text }.joined(separator: " ")
+					.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+				detectedLanguage: transcriptionResults.first?.language, enableTranslation: enableTranslation,
+				preservingLineBreaks: true)
+			return transcription.isEmpty ? Self.noSpeechMessage : transcription
 		}
+	}
+
+	static let noSpeechMessage = "No speech detected"
+
+	/// Engines other than WhisperKit (Parakeet) report no incremental progress, so this goes
+	/// through the transcriber's engine-aware paths, which also run the text pipeline.
+	private func transcribeWithLoadedEngine(url: URL, enableTranslation: Bool, withTimestamps: Bool)
+		async throws -> Any
+	{
+		progress = 0.1
+		defer { progress = 1.0 }
+		if withTimestamps {
+			let segments = try await whisperKit.transcribeFileWithTimestamps(
+				at: url, enableTranslation: enableTranslation)
+			logger.info("Generated \(segments.count) timestamped segments with \(self.whisperKit.currentModel ?? "engine")")
+			return segments
+		}
+		let text = try await whisperKit.transcribeFile(at: url, enableTranslation: enableTranslation)
+		return text.isEmpty ? Self.noSpeechMessage : text
 	}
 
 	private func transcribeWithTimestamps(url: URL, enableTranslation: Bool) async throws

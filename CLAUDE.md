@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Whispera is a native macOS app that replaces built-in dictation with OpenAI's Whisper AI for superior transcription accuracy. The app uses WhisperKit for on-device transcription, supporting both real-time audio recording and file transcription with YouTube support.
+Whispera is a native macOS app (macOS 14+, Apple Silicon) that replaces built-in dictation with on-device speech recognition. Whisper models run through WhisperKit and NVIDIA Parakeet models through FluidAudio. It covers dictation into any text field, live transcription, file/URL/YouTube transcription, optional LLM post-processing, transcription history, and automation through a CLI, `whispera://` links, App Intents and Raycast.
 
 ## Build & Development Commands
+
+Requires Xcode 26: `OTHER_LDFLAGS` weak-links FoundationModels (Apple Intelligence post-processing), which only the macOS 26 SDK provides.
 
 ### Building
 ```bash
@@ -15,30 +17,45 @@ xcodebuild -scheme Whispera -project Whispera.xcodeproj build
 
 ### Testing
 ```bash
-# Run all tests
-xcodebuild test -scheme Whispera -project Whispera.xcodeproj
+# Unit tests (what CI runs on pull requests; model-dependent tests skip themselves)
+xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:WhisperaUnitTests
 
-# Run specific test target
-xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:WhisperaTests
+# On a machine with openai_whisper-small downloaded by the app: model tests must run, and a
+# missing model fails them instead of skipping (use this before merging live-mode changes)
+TEST_RUNNER_WHISPERA_REQUIRE_MODEL_TESTS=1 xcodebuild test -scheme Whispera -project Whispera.xcodeproj \
+  -only-testing:WhisperaUnitTests -parallel-testing-enabled NO
+
+# UI tests
 xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:WhisperaUITests
 ```
 
+The `WhisperaUnitTests` target compiles the Swift Testing suites in `WhisperaUnitTests/` plus five of the XCTest files in `WhisperaTests/` (`AppLibraryManagerTests`, `AudioDeviceManagerTests`, `LargeModelTranscriptionTests`, `SingleInstanceTests`, `VersionTests`); there is no separate `WhisperaTests` target. The other files in `WhisperaTests/` (`AudioManagerTests`, `FileDropHandlerIntegrationTests`, `ModelSynchronizationTests`, `PermissionManagerTests`, `SimpleTest`, `StreamingTranscriptionIntegrationTests`, `WhisperKitTranscriberTests`) are not in any target's Sources phase and do not build.
+
 ### Version Management
 ```bash
-# Bump version (updates both project.pbxproj and Info.plist)
+# Bump MARKETING_VERSION / CURRENT_PROJECT_VERSION in project.pbxproj and Info.plist
 ./scripts/bump-version.sh 1.0.5
 
 # Bump and commit
 ./scripts/bump-version.sh 1.0.5 --commit
+
+# Set the build number explicitly, e.g. to match a release
+BUILD_NUMBER=36 ./scripts/bump-version.sh 1.3.2 --commit
 ```
+
+Without `BUILD_NUMBER` the script uses `GITHUB_RUN_NUMBER` on CI and the current build + 1 locally. Keep the tree at the latest released version and build (the appcast's `sparkle:version`, which is the release workflow's run number), or Sparkle offers local builds the release they already are.
 
 ### Release Distribution
-```bash
-# Create release build and distribute
-./scripts/release-distribute.sh
-```
+Releases are cut by pushing a `vX.Y.Z` tag, which runs `.github/workflows/release.yml`: validate the version and bump it on the runner, archive and export with `xcodebuild`, then sign, notarize and package with `scripts/release-distribute-ci.sh` (which also writes the Sparkle-signed `appcast.xml`), write the release body with `scripts/release-notes.sh` (from `release-notes/vX.Y.Z.md` when present; the app shows this body in What's New), publish the GitHub release and commit `appcast.xml` to `main`; a separate `homebrew-cask` job then bumps `Casks/whispera.rb`. See `scripts/README.md`. There is no complete local release script in the repository: `scripts/release-distribute.template.sh` only holds the credential variables of a private, gitignored `release-distribute.sh`; `scripts/README.md` lists the steps to release by hand.
 
 ## Architecture
+
+### Entry Point
+- `Automation/CLI/WhisperaMain.swift` holds `@main`. It runs the headless CLI (`WhisperaCLI`) when the arguments ask for it and otherwise calls `WhisperaApp.main()`. `WhisperaApp` is not `@main`.
+
+### Project Layout
+- `Automation`, `History`, `MiscUI`, `PostProcessing`, `RecordingControl`, `SecureInput`, `TextInsertion`, `TextProcessing`, `WhisperaUnitTests` and `WhisperaUITests` are file-system synchronized groups: new files there join the target automatically.
+- Other folders (`AudioManager/`, `ModelEngines/`, `FileTranscription/`, `Onboarding/`, root files, ...) use explicit file references, so new files must be added to `project.pbxproj`.
 
 ### Core Transcription System
 - **WhisperKitTranscriber** (`WhisperKitTranscriber.swift`): Singleton managing WhisperKit integration
@@ -48,11 +65,13 @@ xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:Whisp
   - Decoding options persistence in UserDefaults
   - Real WhisperKit transcription (never simulated)
 
-- **AudioManager** (`AudioManager.swift`): Handles audio recording
-  - File-based recording (AVAudioRecorder)
-  - Streaming recording (AVAudioEngine with 16kHz float buffers)
+- **ModelEngines/**: `TranscriptionEngine` abstraction over WhisperKit and `ParakeetEngine` (FluidAudio, Parakeet TDT v2/v3), custom Whisper model import, compute unit preference.
+
+- **AudioManager/**: `AudioManager` handles recording
+  - File-based recording (AVAudioRecorder) and streaming recording (AVAudioEngine with 16kHz float buffers)
   - Live transcription mode vs text mode
-  - Recording duration tracking
+  - Dictation sessions tracked by `DictationSessionLedger` (RecordingControl) so overlapping capture and transcription stay consistent
+  - Device selection and fallback (`AudioDeviceManager`), input channels, feedback sounds, output muting, voice activity trimming
 
 - **FileTranscriptionManager** (`FileTranscription/FileTranscriptionManager.swift`): File transcription
   - Supports audio/video formats (MP3, WAV, MP4, MOV, etc.)
@@ -67,6 +86,16 @@ xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:Whisp
   - YouTube downloads via YouTubeTranscriptionManager
   - Auto-deletion of downloaded files (configurable)
 
+### Dictation Pipeline Modules
+- **RecordingControl/**: activation modes (toggle, push-to-talk, hold-or-toggle), cancel shortcut, extra recording buffer, mic stream policy, model idle unload, neural (Silero) voice activity detection, shortcut key codes
+- **TextProcessing/**: custom word correction, filler-word removal, Chinese script conversion
+- **PostProcessing/**: optional LLM rewrite through Apple Intelligence (FoundationModels, macOS 26) or OpenAI-compatible providers; API keys in the Keychain
+- **TextInsertion/**: paste, type, copy-only or user script insertion, clipboard restore
+- **SecureInput/**: detects Secure Input, keeps a fallback shortcut working, and keeps secure-field text out of the clipboard and history
+- **History/**: SwiftData transcription history with optional audio and retention
+- **Automation/**: CLI (`CLI/`), `whispera://` URL scheme with a per-install token and App Intents (`RemoteControl/`), Carbon hotkeys (`Hotkeys/`), Raycast script export (`Launchers/`, scripts committed in `integrations/raycast/`)
+- **MiscUI/**: theme, app language, notices, What's New, log viewer, recording overlay, `Localizable.xcstrings` and `InfoPlist.xcstrings`
+
 ### Global Shortcuts
 - **GlobalShortcutManager** (`GlobalShortcutManager.swift`): System-wide hotkey handling
   - Text transcription shortcut (default: ⌥⌘R)
@@ -76,15 +105,21 @@ xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:Whisp
 
 ### UI Components
 - **WhisperaApp** (`WhisperaApp.swift`): Main app with AppDelegate
-  - Status bar menu integration (accessory mode)
+  - Status bar item: left click opens the popover, right click the status menu (accessory mode)
   - Onboarding flow for first launch
   - Single instance enforcement
   - Animated status icons for different states
 
-- **MenuBarView** (`MenuBarView.swift`): Status bar popover UI
+- **MenuBarView** (`MenuBarView.swift`): Status bar popover UI (dictate lane, file lane, Fix-It rows, toasts, Activity window); height is measured and applied by `PopoverPresenter`
 - **SettingsView** (`SettingsView.swift`): Comprehensive settings panel
-- **OnboardingView** (`Onboarding/`): Multi-step onboarding wizard
+- **OnboardingView** (`Onboarding/`): Five-step onboarding (Welcome, Permissions, Setup, Try It, Complete)
 - **LiveTranscriptionView** (`LiveTranscription/`): Real-time transcription display
+
+### Updates
+- **SoftwareUpdater** (`SoftwareUpdater.swift`): Sparkle is the only updater (appcast `appcast.xml` on `main`). What's New (`MiscUI/WhatsNew.swift`) shows the GitHub release body after an update and fetches it at launch only while Sparkle's automatic checks are on.
+
+### Localization
+- UI strings live in `MiscUI/Localizable.xcstrings`, Info.plist strings in `MiscUI/InfoPlist.xcstrings`, shipped in English, Spanish, German and French. Command-line builds do not add new keys to the catalog, so add every new user-facing string with its translations by hand. `LocalizationCatalogTests` fails on a missing translation and `NewStringsLocalizationTests` lists keys that must exist.
 
 ### Logging
 - **AppLogger** (`Logger/`): Centralized logging system
@@ -128,16 +163,21 @@ xcodebuild test -scheme Whispera -project Whispera.xcodeproj -only-testing:Whisp
 ## Key Dependencies
 
 - **WhisperKit**: Main transcription engine (argmaxinc/WhisperKit @ main)
-- **swift-transformers**: Hugging Face transformers (0.1.15)
-- **YouTubeKit**: YouTube video downloading (0.2.8)
+- **FluidAudio**: Parakeet ASR and Silero VAD on Core ML (Apache-2.0)
+- **Sparkle**: Software updates
+- **swift-transformers**: Hugging Face transformers (1.1.9)
+- **YouTubeKit**: YouTube video downloading (0.4.7)
 - **swift-markdown-ui**: Markdown rendering for UI (2.4.1)
-- **swift-collections**: Advanced collection types (1.2.1)
+- **swift-collections**: Advanced collection types (1.4.0)
+
+Versions are the ones pinned in `Whispera.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` (FluidAudio 0.9.1, Sparkle 2.9.0; WhisperKit tracks `main`).
 
 ## Common Patterns
 
 ### Model Operations
-Models are downloaded to `~/Library/Application Support/Whispera/models/argmaxinc/whisperkit-coreml/{model-name}/`
-- Operations are serialized via `modelOperationTask`
+Whisper models are downloaded to `~/Library/Application Support/Whispera/models/argmaxinc/whisperkit-coreml/{model-name}/`. FluidAudio models live under `~/Library/Application Support/Whispera/models/FluidInference/`: `parakeet-tdt-0.6b-v3-coreml/` and `parakeet-tdt-0.6b-v2-coreml/` (`ParakeetEngine`) and `silero-vad-coreml/` (`NeuralVoiceActivityDetector`).
+- Downloads, loads and switches are serialized through `ModelOperationQueue` (`modelOperations` in WhisperKitTranscriber); call `runModelOperation` and load with `loadModelInOperation`, never `loadModel` directly
+- A dictation that finds the model idle-unloaded reloads it with `ModelOperationQueue.restore`: beside a download that is still in its network phase, otherwise in the queue; operations wait for that reload before loading, so the model the user picked always wins
 - Download progress tracked via callback
 - Models persist across app launches
 
@@ -159,7 +199,10 @@ Models are downloaded to `~/Library/Application Support/Whispera/models/argmaxin
 - Tests should use real WhisperKit when testing transcription
 - Mock only external dependencies (network, file system)
 - Use `@MainActor` for SwiftUI-related test operations
-- Test files located in `WhisperaTests/`, `WhisperaUITests/`
+- Test files located in `WhisperaUnitTests/` (Swift Testing), `WhisperaTests/` (XCTest; only the five files listed under Testing are built, into the `WhisperaUnitTests` target) and `WhisperaUITests/`
+- Tests that touch `UserDefaults` use `UserDefaults(suiteName:)` with a unique suite name
+- Real-model suites use `WhisperKitTestModel` (`WhisperaUnitTests/WhisperKitTestModel.swift`): `.enabled(if: WhisperKitTestModel.runsSmallModelTests)` plus `.sharedTranscriber`, and `WhisperKitTestModel.small()` for the one model instance the process shares. They skip without the model unless `WHISPERA_REQUIRE_MODEL_TESTS=1` (passed to the test runner as `TEST_RUNNER_WHISPERA_REQUIRE_MODEL_TESTS=1`), which turns a missing model into a failure. CI has no models, so these suites only run locally
+- Live-mode tests replay audio through `LiveDictationPass`, the object the app's realtime loop drives, so they exercise the production pass and final decode rather than a copy
 
 ## Plans Directory
 

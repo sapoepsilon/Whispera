@@ -4,7 +4,6 @@ import SwiftUI
 @MainActor
 class ListeningWindow: NSWindow {
 	private let audioManager: AudioManager
-	private var observationTimer: Timer?
 	private var frameObserver: Timer?
 	private var stateObserver: NSObjectProtocol?
 	private var pickerWindow: NSWindow?
@@ -33,12 +32,10 @@ class ListeningWindow: NSWindow {
 		self.contentView = hostingView
 
 		setupObservation()
-		setupFrameObserver()
 		setupPickerObservers()
 	}
 
 	deinit {
-		observationTimer?.invalidate()
 		frameObserver?.invalidate()
 		if let observer = stateObserver {
 			NotificationCenter.default.removeObserver(observer)
@@ -52,17 +49,24 @@ class ListeningWindow: NSWindow {
 	}
 
 	private func updateVisibility() {
-		let shouldShow = RecordingWindowPolicy.shouldShowListeningWindow(
+		let shouldShow = RecordingOverlayPolicy.shouldShowPill(
 			state: audioManager.currentState,
-			mode: audioManager.currentRecordingMode
+			mode: audioManager.currentRecordingMode,
+			style: RecordingOverlayStyle.stored()
 		)
 
-		if shouldShow && !isVisible {
-			positionAtBottomCenter()
-			orderFront(nil)
-		} else if !shouldShow && isVisible {
-			hidePickerWindow()
-			orderOut(nil)
+		if shouldShow {
+			if !isVisible {
+				positionOnScreen()
+				orderFront(nil)
+			}
+			startFrameObserver()
+		} else {
+			stopFrameObserver()
+			if isVisible {
+				hidePickerWindow()
+				orderOut(nil)
+			}
 		}
 	}
 
@@ -76,15 +80,12 @@ class ListeningWindow: NSWindow {
 				self?.updateVisibility()
 			}
 		}
-
-		observationTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-			Task { @MainActor in
-				self?.updateVisibility()
-			}
-		}
 	}
 
-	private func setupFrameObserver() {
+	// Every recording state change posts RecordingStateChanged, so visibility needs no polling;
+	// the resize timer only runs while the pill is on screen, keeping the idle app timer-free.
+	private func startFrameObserver() {
+		guard frameObserver == nil else { return }
 		frameObserver = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
 			Task { @MainActor in
 				guard let self = self, self.isVisible,
@@ -110,6 +111,11 @@ class ListeningWindow: NSWindow {
 				self.repositionPickerWindow()
 			}
 		}
+	}
+
+	private func stopFrameObserver() {
+		frameObserver?.invalidate()
+		frameObserver = nil
 	}
 
 	// MARK: - Picker Window
@@ -184,11 +190,10 @@ class ListeningWindow: NSWindow {
 		)
 	}
 
-	private func positionAtBottomCenter() {
+	private func positionOnScreen() {
 		guard let screen = NSScreen.main else { return }
-		let screenFrame = screen.visibleFrame
-		let windowX = screenFrame.origin.x + (screenFrame.width - frame.width) / 2
-		let windowY = screenFrame.origin.y + (screenFrame.height * 0.1)
-		setFrameOrigin(NSPoint(x: windowX, y: windowY))
+		let origin = RecordingOverlayPolicy.origin(
+			for: frame.size, in: screen.visibleFrame, position: RecordingOverlayPosition.stored())
+		setFrameOrigin(origin)
 	}
 }

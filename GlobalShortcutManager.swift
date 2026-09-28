@@ -8,15 +8,28 @@ class GlobalShortcutManager: ObservableObject {
 	private var localMonitor: Any?
 	private var fileSelectionGlobalMonitor: Any?
 	private var fileSelectionLocalMonitor: Any?
+	private var modifierGlobalMonitor: Any?
+	private var modifierLocalMonitor: Any?
+	private var modifierMachine: ModifierOnlyShortcutMachine?
+	/// The capture the current single-key press started, the only one its cancel may discard.
+	@MainActor private var modifierPressSession: Int?
 	private var audioManager: AudioManager?
 	private var fileTranscriptionManager: FileTranscriptionManager?
 	private var networkDownloader: NetworkFileDownloader?
 	private var queueManager: TranscriptionQueueManager?
 	private var isProcessingFileOperation = false
+	private let postProcessShortcutMonitor = PostProcessShortcutMonitor()
+	private var requestedBackend = HotkeyBackend.preferred()
+	private var activeBackend = HotkeyBackend.eventMonitor
 	private let logger = AppLogger.shared.general
-	var currentShortcut: String = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
-	var fileSelectionShortcut: String =
-		UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
+	@MainActor private var cancelMonitor: CancelShortcutMonitor?
+	@MainActor private var activation = ActivationStateMachine(
+		mode: .toggle, holdThreshold: TimeInterval(RecordingControlSettings.defaultHoldThresholdMs) / 1000)
+	private var recordingStateObserver: NSObjectProtocol?
+	private var defaultsObserver: DefaultsKeyObserver?
+	private var monitorsKeyRelease = false
+	var currentShortcut: String = ShortcutDefaults.dictation(in: .standard)
+	var fileSelectionShortcut: String = ShortcutDefaults.fileSelection(in: .standard)
 
 	// MARK: - Settings
 	private var autoDeleteDownloadedFiles: Bool {
@@ -25,35 +38,81 @@ class GlobalShortcutManager: ObservableObject {
 
 	init() {
 		setupShortcut()
-		NotificationCenter.default.addObserver(
-			forName: UserDefaults.didChangeNotification,
-			object: nil,
-			queue: .main
-		) { [weak self] _ in
-			let newShortcut = UserDefaults.standard.string(forKey: "globalShortcut") ?? "⌃A"
-			let newFileShortcut = UserDefaults.standard.string(forKey: "fileSelectionShortcut") ?? "⌃F"
-
-			if newShortcut != self?.currentShortcut {
-				self?.logger.info(
-					"Text shortcut changed: \(self?.currentShortcut ?? "nil") → \(newShortcut)")
-				self?.currentShortcut = newShortcut
-				self?.setupShortcut()
-			}
-
-			if newFileShortcut != self?.fileSelectionShortcut {
-				self?.logger.info(
-					"File selection shortcut changed: \(self?.fileSelectionShortcut ?? "nil") → \(newFileShortcut)"
-				)
-				self?.fileSelectionShortcut = newFileShortcut
-				self?.setupShortcut()
-			}
+		defaultsObserver = DefaultsKeyObserver(
+			keys: [
+				"globalShortcut", "fileSelectionShortcut", HotkeyBackend.defaultsKey,
+				RecordingControlSettings.Key.activationMode,
+			]
+		) { [weak self] in
+			self?.shortcutSettingsChanged()
 		}
+	}
+
+	private func shortcutSettingsChanged() {
+		let newShortcut = ShortcutDefaults.dictation(in: .standard)
+		let newFileShortcut = ShortcutDefaults.fileSelection(in: .standard)
+		let newBackend = HotkeyBackend.preferred()
+		var needsSetup = false
+
+		if newBackend != requestedBackend {
+			logger.info("Hotkey backend changed to \(newBackend.rawValue)")
+			requestedBackend = newBackend
+			needsSetup = true
+		}
+
+		if newShortcut != currentShortcut {
+			logger.info("Text shortcut changed: \(currentShortcut) → \(newShortcut)")
+			currentShortcut = newShortcut
+			needsSetup = true
+		}
+
+		if newFileShortcut != fileSelectionShortcut {
+			logger.info(
+				"File selection shortcut changed: \(fileSelectionShortcut) → \(newFileShortcut)")
+			fileSelectionShortcut = newFileShortcut
+			needsSetup = true
+		}
+
+		if RecordingControlSettings().activationMode.needsKeyRelease != monitorsKeyRelease {
+			logger.info("Activation mode changed; reinstalling shortcut monitors")
+			needsSetup = true
+		}
+
+		if needsSetup { setupShortcut() }
 	}
 
 	func setAudioManager(_ manager: AudioManager) {
 		self.audioManager = manager
 		logger.info("AudioManager set, checking accessibility status...")
+		postProcessShortcutMonitor.attach(audioManager: manager)
 		checkAccessibilityStatus()
+		observeRecordingStateForCancel()
+	}
+
+	private func observeRecordingStateForCancel() {
+		guard recordingStateObserver == nil else { return }
+		recordingStateObserver = NotificationCenter.default.addObserver(
+			forName: NSNotification.Name("RecordingStateChanged"),
+			object: nil,
+			queue: .main
+		) { [weak self] _ in
+			Task { @MainActor in self?.updateCancelMonitor() }
+		}
+	}
+
+	@MainActor
+	private func updateCancelMonitor() {
+		guard let audioManager else { return }
+		let shouldListen = CancelShortcutPolicy.shouldListen(
+			isRecording: audioManager.isRecording, isStarting: audioManager.isMicrophoneInitializing,
+			enabled: RecordingControlSettings().cancelShortcutEnabled)
+		if shouldListen && cancelMonitor == nil {
+			cancelMonitor = CancelShortcutMonitor { [weak self] in
+				self?.logger.info("Cancel shortcut pressed")
+				self?.audioManager?.cancelRecording()
+			}
+		}
+		cancelMonitor?.setActive(shouldListen)
 	}
 
 	func setFileTranscriptionManager(_ manager: FileTranscriptionManager) {
@@ -84,7 +143,9 @@ class GlobalShortcutManager: ObservableObject {
 			logger.error("PROBLEM: No accessibility permissions - shortcuts will NOT work")
 			logger.error("Go to System Settings > Privacy & Security > Accessibility")
 			logger.error("Add Whispera to the list and enable it")
-		} else if globalMonitor == nil || fileSelectionGlobalMonitor == nil {
+		} else if activeBackend == .eventMonitor
+			&& ((globalMonitor == nil && modifierGlobalMonitor == nil) || fileSelectionGlobalMonitor == nil)
+		{
 			logger.error("PROBLEM: Some global monitors not set up despite having permissions")
 			setupShortcut()
 		}
@@ -111,24 +172,89 @@ class GlobalShortcutManager: ObservableObject {
 			self.fileSelectionLocalMonitor = nil
 			logger.info("Removed old file selection local monitor")
 		}
+		removeModifierMonitors()
+		CarbonHotKeyCenter.shared.unregisterAll()
+		// A release in flight is lost when the monitors or hotkeys are replaced
+		Task { @MainActor [weak self] in
+			self?.activation.reset()
+			self?.modifierMachine?.reset()
+			self?.modifierPressSession = nil
+		}
+		postProcessShortcutMonitor.reinstall()
+		monitorsKeyRelease = RecordingControlSettings().activationMode.needsKeyRelease
 
-		let (textModifiers, textKeyCode) = parseShortcut(currentShortcut)
+		if let modifierKey = ModifierOnlyShortcut(stored: currentShortcut) {
+			installModifierOnlyShortcut(modifierKey)
+			return
+		}
+
+		let (textModifiers, textKeyCode) = parseShortcut(
+			currentShortcut, fallback: ShortcutDefaults.dictation, defaultsKey: ShortcutDefaults.dictationKey)
 		logger.info(
 			"Setting up text shortcut for \(currentShortcut) (keyCode: \(textKeyCode), modifiers: \(textModifiers.rawValue))"
 		)
 
-		let (fileModifiers, fileKeyCode) = parseShortcut(fileSelectionShortcut)
+		let (fileModifiers, fileKeyCode) = parseShortcut(
+			fileSelectionShortcut, fallback: ShortcutDefaults.fileSelection,
+			defaultsKey: ShortcutDefaults.fileSelectionKey)
 		logger.info(
 			"Setting up file selection shortcut for \(fileSelectionShortcut) (keyCode: \(fileKeyCode), modifiers: \(fileModifiers.rawValue))"
 		)
 
-		logger.info("Installing global monitors...")
-		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+		if requestedBackend == .carbon {
+			// The secure input fallback may already hold this combination on its own Carbon center,
+			// which would make this registration fail with eventHotKeyExistsErr
+			stopSecureInputFallback()
+			do {
+				try CarbonHotKeyCenter.shared.register(
+					keyCode: textKeyCode, modifiers: textModifiers,
+					onRelease: { [weak self] in self?.handleTextHotKeyRelease() }
+				) { [weak self] in
+					self?.handleTextHotKey(isRepeat: false, source: .systemHotKey)
+				}
+				publishBackend(active: .carbon, message: nil)
+				// A fallback start queued by an earlier setup must not bring the monitor back
+				Task { @MainActor in SecureInputMonitor.shared.stop() }
+				// The file shortcut (default Control-F) stays observed rather than registered: a
+				// system hotkey would swallow it in every app, breaking forward-char in text fields
+				installFileSelectionMonitors(modifiers: fileModifiers, keyCode: fileKeyCode)
+				logger.info("Registered the text shortcut as a system hotkey; file selection stays on event monitors")
+				return
+			} catch {
+				CarbonHotKeyCenter.shared.unregisterAll()
+				logger.error("System hotkey registration failed, using event monitors: \(error.localizedDescription)")
+				publishBackend(
+					active: .eventMonitor,
+					message: String(
+						localized:
+							"System hotkey unavailable (\(error.localizedDescription)); using the event monitor."
+					))
+			}
+		} else {
+			publishBackend(active: .eventMonitor, message: nil)
+		}
+
+		// A global key-up monitor wakes the app on every key release in every app, so it is
+		// only installed for the activation modes that act on release.
+		let globalMask: NSEvent.EventTypeMask = monitorsKeyRelease ? [.keyDown, .keyUp] : .keyDown
+		logger.info("Installing global monitors (key release: \(monitorsKeyRelease))...")
+		globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: globalMask) {
+			[weak self] event in
+			// Whispera's own Cmd-V key-up would otherwise end a held shortcut that uses V
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return }
+			if event.type == .keyUp {
+				if event.keyCode == textKeyCode {
+					self?.handleTextHotKeyRelease()
+				}
+				return
+			}
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: textModifiers, expectedKeyCode: textKeyCode) == true
 			{
-				self?.logger.info("Global text shortcut detected!")
-				self?.handleTextHotKey()
+				if !event.isARepeat {
+					self?.logger.info("Global text shortcut detected!")
+				}
+				self?.handleTextHotKey(isRepeat: event.isARepeat)
 			} else if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
 			{
@@ -137,24 +263,24 @@ class GlobalShortcutManager: ObservableObject {
 			}
 		}
 
-		fileSelectionGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
-			[weak self] event in
-			if self?.matchesShortcut(
-				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
-			{
-				self?.logger.info("Global file selection shortcut detected (dedicated monitor)!")
-				self?.handleFileSelectionHotKey()
-			}
-		}
-
 		// Also set up local monitors as fallback (works when app is focused)
 		logger.info("Installing local monitors as fallback...")
-		localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+		localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) {
+			[weak self] event in
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return event }
+			if event.type == .keyUp {
+				if event.keyCode == textKeyCode {
+					self?.handleTextHotKeyRelease()
+				}
+				return event
+			}
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: textModifiers, expectedKeyCode: textKeyCode) == true
 			{
-				self?.logger.info("Local text shortcut detected!")
-				self?.handleTextHotKey()
+				if !event.isARepeat {
+					self?.logger.info("Local text shortcut detected!")
+				}
+				self?.handleTextHotKey(isRepeat: event.isARepeat)
 				return nil  // Consume the event
 			} else if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
@@ -166,8 +292,125 @@ class GlobalShortcutManager: ObservableObject {
 			return event
 		}
 
+		installFileSelectionMonitors(modifiers: fileModifiers, keyCode: fileKeyCode)
+
+		logger.info(
+			"Monitors installed - Text Global: \(globalMonitor != nil), Text Local: \(localMonitor != nil)"
+		)
+		configureSecureInputFallback(modifiers: textModifiers, keyCode: textKeyCode)
+	}
+
+	/// A modifier on its own reaches apps only as flagsChanged, which neither Carbon hotkeys nor
+	/// the secure input fallback can bind, so it always runs on the event monitors.
+	private func installModifierOnlyShortcut(_ key: ModifierOnlyShortcut) {
+		stopSecureInputFallback()
+		// Secure Input blinds this monitor too, and there is no hotkey to fall back on, so the
+		// monitor only warns: without it dictation would stop working with nothing saying why
+		Task { @MainActor in
+			SecureInputMonitor.shared.configureWarningOnly()
+			SecureInputMonitor.shared.start()
+		}
+		publishBackend(
+			active: .eventMonitor,
+			message: requestedBackend == .carbon
+				? String(
+					localized:
+						"System hotkeys cannot bind \(key.displayName) on its own, so the event monitor is used.")
+				: nil)
+		modifierMachine = ModifierOnlyShortcutMachine(key: key)
+		logger.info("Installing modifier-only dictation shortcut for \(key.rawValue)")
+		// keyDown is watched too: a key typed while the modifier is held makes it a combination
+		modifierGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown]) {
+			[weak self] event in
+			self?.handleModifierEvent(event)
+		}
+		modifierLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) {
+			[weak self] event in
+			self?.handleModifierEvent(event)
+			return event
+		}
+		let (fileModifiers, fileKeyCode) = parseShortcut(
+			fileSelectionShortcut, fallback: ShortcutDefaults.fileSelection,
+			defaultsKey: ShortcutDefaults.fileSelectionKey)
+		installFileSelectionMonitors(modifiers: fileModifiers, keyCode: fileKeyCode)
+		logger.info(
+			"Modifier monitors installed - Global: \(modifierGlobalMonitor != nil), Local: \(modifierLocalMonitor != nil)")
+	}
+
+	private func removeModifierMonitors() {
+		if let monitor = modifierGlobalMonitor {
+			NSEvent.removeMonitor(monitor)
+			modifierGlobalMonitor = nil
+		}
+		if let monitor = modifierLocalMonitor {
+			NSEvent.removeMonitor(monitor)
+			modifierLocalMonitor = nil
+		}
+		modifierMachine = nil
+	}
+
+	/// Monitors deliver on the main thread.
+	private func handleModifierEvent(_ event: NSEvent) {
+		guard let input = ModifierOnlyInput(event: event) else { return }
+		MainActor.assumeIsolated { handleModifierInput(input, at: Date()) }
+	}
+
+	@MainActor
+	private func handleModifierInput(_ input: ModifierOnlyInput, at: Date) {
+		guard var machine = modifierMachine, let audioManager else { return }
+		let steps = machine.handle(
+			input, recorderListening: ShortcutRecorderGate.shared.isRecording,
+			mode: RecordingControlSettings().activationMode, isSessionActive: audioManager.isSessionActive)
+		modifierMachine = machine
+		runModifierSteps(steps, at: at, on: audioManager)
+	}
+
+	@MainActor
+	private func runModifierSteps(_ steps: [ModifierOnlyPressRouter.Step], at: Date, on audioManager: AudioManager) {
+		for step in steps {
+			switch step {
+			case .keyDown:
+				textKeyDown(isRepeat: false, source: .eventMonitor, at: at)
+				modifierPressSession = audioManager.captureSessionID
+			case .keyUp:
+				textKeyUp(at: at)
+				modifierPressSession = nil
+			case .cancelSession:
+				logger.info("Dictation key was part of a key combination; cancelling the recording it started")
+				activation.reset()
+				// Only this press's own capture: an earlier dictation still transcribing is kept
+				if let session = modifierPressSession {
+					audioManager.cancelCapture(sessionID: session)
+				}
+				modifierPressSession = nil
+			case .scheduleStart(let press, let delay):
+				Task { @MainActor [weak self] in
+					try? await Task.sleep(for: .seconds(delay))
+					guard let self, let audioManager = self.audioManager else { return }
+					guard var machine = self.modifierMachine else { return }
+					let steps = machine.startDelayElapsed(press: press, isSessionActive: audioManager.isSessionActive)
+					self.modifierMachine = machine
+					self.runModifierSteps(steps, at: at, on: audioManager)
+				}
+			}
+		}
+	}
+
+	private func installFileSelectionMonitors(modifiers fileModifiers: NSEvent.ModifierFlags, keyCode fileKeyCode: UInt16) {
+		fileSelectionGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
+			[weak self] event in
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return }
+			if self?.matchesShortcut(
+				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
+			{
+				self?.logger.info("Global file selection shortcut detected (dedicated monitor)!")
+				self?.handleFileSelectionHotKey()
+			}
+		}
+
 		fileSelectionLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
 			[weak self] event in
+			guard !SyntheticKeyEvent.isSelfPosted(event) else { return event }
 			if self?.matchesShortcut(
 				event: event, expectedModifiers: fileModifiers, expectedKeyCode: fileKeyCode) == true
 			{
@@ -177,143 +420,64 @@ class GlobalShortcutManager: ObservableObject {
 			}
 			return event
 		}
-
-		logger.info(
-			"Monitors installed - Text Global: \(globalMonitor != nil), Text Local: \(localMonitor != nil)"
-		)
 		logger.info(
 			"File monitors installed - File Global: \(fileSelectionGlobalMonitor != nil), File Local: \(fileSelectionLocalMonitor != nil)"
 		)
 	}
 
-	private func parseShortcut(_ shortcut: String) -> (NSEvent.ModifierFlags, UInt16) {
-		var modifiers: NSEvent.ModifierFlags = []
-		var keyChar = ""
-
-		logger.debug("Parsing shortcut: '\(shortcut)'")
-
-		if shortcut.contains("⌘") { modifiers.insert(.command) }
-		if shortcut.contains("⌥") { modifiers.insert(.option) }
-		if shortcut.contains("⌃") { modifiers.insert(.control) }
-		if shortcut.contains("⇧") { modifiers.insert(.shift) }
-
-		// Extract the key character (everything after modifiers)
-		let modifierSymbols = "⌘⌥⌃⇧"
-		var remainingShortcut = shortcut
-
-		// Remove all modifier symbols from the beginning
-		for symbol in modifierSymbols {
-			remainingShortcut = remainingShortcut.replacingOccurrences(of: String(symbol), with: "")
+	private func stopSecureInputFallback() {
+		if Thread.isMainThread {
+			MainActor.assumeIsolated { SecureInputMonitor.shared.stop() }
+		} else {
+			DispatchQueue.main.sync { MainActor.assumeIsolated { SecureInputMonitor.shared.stop() } }
 		}
-
-		keyChar = remainingShortcut.trimmingCharacters(in: .whitespaces)
-
-		let keyCode = keyCodeForCharacter(keyChar.lowercased())
-		logger.debug(
-			"Parsed: keyChar='\(keyChar)', keyCode=\(keyCode), modifiers=\(modifiers.rawValue)")
-		return (modifiers, keyCode)
 	}
 
-	private func keyCodeForCharacter(_ char: String) -> UInt16 {
-		// Map common characters and special keys to key codes
-		switch char.lowercased() {
-		// Letters
-		case "a": return 0
-		case "b": return 11
-		case "c": return 8
-		case "d": return 2
-		case "e": return 14
-		case "f": return 3
-		case "g": return 5
-		case "h": return 4
-		case "i": return 34
-		case "j": return 38
-		case "k": return 40
-		case "l": return 37
-		case "m": return 46
-		case "n": return 45
-		case "o": return 31
-		case "p": return 35
-		case "q": return 12
-		case "r": return 15
-		case "s": return 1
-		case "t": return 17
-		case "u": return 32
-		case "v": return 9
-		case "w": return 13
-		case "x": return 7
-		case "y": return 16
-		case "z": return 6
-
-		// Numbers
-		case "0": return 29
-		case "1": return 18
-		case "2": return 19
-		case "3": return 20
-		case "4": return 21
-		case "5": return 23
-		case "6": return 22
-		case "7": return 26
-		case "8": return 28
-		case "9": return 25
-
-		// Function keys
-		case "f1": return 122
-		case "f2": return 120
-		case "f3": return 99
-		case "f4": return 118
-		case "f5": return 96
-		case "f6": return 97
-		case "f7": return 98
-		case "f8": return 100
-		case "f9": return 101
-		case "f10": return 109
-		case "f11": return 103
-		case "f12": return 111
-		case "f13": return 105
-		case "f14": return 107
-		case "f15": return 113
-		case "f16": return 106
-		case "f17": return 64
-		case "f18": return 79
-		case "f19": return 80
-		case "f20": return 90
-
-		// Special keys
-		case "space", " ": return 49
-		case "return", "enter", "↩": return 36
-		case "tab", "⇥": return 48
-		case "delete", "⌫": return 51
-		case "escape", "esc", "⎋": return 53
-		case "home", "↖": return 115
-		case "end", "↘": return 119
-		case "pageup", "⇞": return 116
-		case "pagedown", "⇟": return 121
-		case "up", "↑": return 126
-		case "down", "↓": return 125
-		case "left", "←": return 123
-		case "right", "→": return 124
-		case "clear", "⌧": return 71
-		case "help", "?⃝": return 114
-
-		// Punctuation
-		case "-": return 27
-		case "=": return 24
-		case "[": return 33
-		case "]": return 30
-		case "\\": return 42
-		case ";": return 41
-		case "'": return 39
-		case ",": return 43
-		case ".": return 47
-		case "/": return 44
-		case "`": return 50
-
-		// Globe/Fn key (on newer Macs)
-		case "globe", "fn", "🌐": return 63
-
-		default: return 15  // Default to 'R' key
+	private func configureSecureInputFallback(modifiers: NSEvent.ModifierFlags, keyCode: UInt16) {
+		let spec = CarbonHotKeyMapping.spec(keyCode: keyCode, modifiers: modifiers)
+		Task { @MainActor [weak self] in
+			let monitor = SecureInputMonitor.shared
+			monitor.configure(
+				hotKeySpec: { spec },
+				action: { [weak self] in
+					self?.logger.info("Text shortcut detected through the secure input fallback")
+					self?.handleTextHotKey(isRepeat: false, source: .secureInputFallback)
+				},
+				release: { [weak self] in
+					self?.handleTextHotKeyRelease()
+				})
+			monitor.start()
 		}
+	}
+
+	private func publishBackend(active: HotkeyBackend, message: String?) {
+		activeBackend = active
+		let requested = requestedBackend
+		Task { @MainActor in
+			KeyboardDiagnostics.shared.updateBackend(requested: requested, active: active, message: message)
+		}
+	}
+
+	/// Resolves a stored shortcut, falling back to `fallback` when its key is unknown so a
+	/// corrupt value never binds some unrelated key. The fallback is written back so every
+	/// place that shows the shortcut shows the key that actually works, and the user is told.
+	private func parseShortcut(
+		_ shortcut: String, fallback: String, defaultsKey: String
+	) -> (NSEvent.ModifierFlags, UInt16) {
+		if let combo = ShortcutCombo(shortcut) {
+			logger.debug("Parsed shortcut '\(shortcut)': keyCode=\(combo.keyCode), modifiers=\(combo.modifiers.rawValue)")
+			return (combo.modifiers, combo.keyCode)
+		}
+		logger.error("Shortcut '\(shortcut)' names an unknown key, using \(fallback)")
+		let combo = ShortcutCombo(fallback) ?? ShortcutCombo(modifiers: [.option, .command], keyCode: 15)
+		// Deferred: the defaults observer would re-enter setup while it is still running
+		DispatchQueue.main.async {
+			UserDefaults.standard.set(fallback, forKey: defaultsKey)
+			MainActor.assumeIsolated {
+				AppNoticeCenter.shared.post(.shortcutReset(unreadable: shortcut, boundTo: fallback))
+			}
+		}
+		return (combo.modifiers, combo.keyCode)
 	}
 
 	private func matchesShortcut(
@@ -368,19 +532,69 @@ class GlobalShortcutManager: ObservableObject {
 		}
 	}
 
-	private func handleTextHotKey() {
+	private func handleTextHotKey(isRepeat: Bool, source: ShortcutSource = .eventMonitor) {
+		let pressedAt = Date()
 		Task { @MainActor in
-			// Check if haptic feedback is enabled
-			if UserDefaults.standard.bool(forKey: "shortcutHapticFeedback") {
-				NSHapticFeedbackManager.defaultPerformer
-					.perform(.levelChange, performanceTime: .now)
-			}
-			audioManager?.toggleRecording()
+			textKeyDown(isRepeat: isRepeat, source: source, at: pressedAt)
+		}
+	}
+
+	private func handleTextHotKeyRelease() {
+		let releasedAt = Date()
+		Task { @MainActor in
+			textKeyUp(at: releasedAt)
+		}
+	}
+
+	@MainActor
+	private func textKeyDown(isRepeat: Bool, source: ShortcutSource, at pressedAt: Date) {
+		// The key press is being recorded as a new shortcut, not used as one
+		guard !ShortcutRecorderGate.shared.isRecording else { return }
+		if !isRepeat {
+			KeyboardDiagnostics.shared.recordShortcut(.dictation, backend: activeBackend)
+		}
+		guard let audioManager else { return }
+		let settings = RecordingControlSettings()
+		activation.mode = settings.activationMode
+		activation.holdThreshold = settings.holdThreshold
+		let action = activation.keyDown(
+			at: pressedAt, isRepeat: isRepeat, isSessionActive: audioManager.isSessionActive,
+			source: source)
+		perform(action, on: audioManager)
+	}
+
+	@MainActor
+	private func textKeyUp(at releasedAt: Date) {
+		guard let audioManager else { return }
+		let action = activation.keyUp(
+			at: releasedAt, isSessionActive: audioManager.isSessionActive)
+		if action != .none {
+			logger.info("Text shortcut released after hold; stopping recording")
+		}
+		perform(action, on: audioManager)
+	}
+
+	@MainActor
+	private func perform(_ action: ActivationAction, on audioManager: AudioManager) {
+		guard action != .none else { return }
+		if UserDefaults.standard.bool(forKey: "shortcutHapticFeedback") {
+			NSHapticFeedbackManager.defaultPerformer
+				.perform(.levelChange, performanceTime: .now)
+		}
+		switch action {
+		case .start:
+			audioManager.startRecordingSession()
+		case .stop:
+			audioManager.requestStop()
+		case .none:
+			break
 		}
 	}
 
 	private func handleFileSelectionHotKey() {
+		let backend = activeBackend
 		Task { @MainActor in
+			KeyboardDiagnostics.shared.recordShortcut(.fileSelection, backend: backend)
 			logger.info("File selection shortcut activated")
 
 			// Prevent duplicate processing
@@ -509,7 +723,7 @@ class GlobalShortcutManager: ObservableObject {
 
 		// Show a notification that files were added to queue
 		let notification = NSUserNotification()
-		notification.title = "Files Added to Queue"
+		notification.title = String(localized: "Files Added to Queue")
 		notification.subtitle = "\(urls.count) file(s) queued for transcription"
 		notification.informativeText = urls.map { $0.lastPathComponent }.joined(separator: ", ")
 		NSUserNotificationCenter.default.deliver(notification)
@@ -545,7 +759,7 @@ class GlobalShortcutManager: ObservableObject {
 	private func showTranscriptionResult(for filename: String, result: String) async {
 		// Create a simple notification for now
 		let notification = NSUserNotification()
-		notification.title = "Transcription Complete"
+		notification.title = String(localized: "Transcription Complete")
 		notification.subtitle = filename
 		notification.informativeText = String(result.prefix(100)) + (result.count > 100 ? "..." : "")
 
@@ -588,7 +802,7 @@ class GlobalShortcutManager: ObservableObject {
 	@MainActor
 	private func showTranscriptionError(_ error: Error) {
 		let notification = NSUserNotification()
-		notification.title = "Transcription Failed"
+		notification.title = String(localized: "Transcription Failed")
 		notification.informativeText = error.localizedDescription
 
 		NSUserNotificationCenter.default.deliver(notification)
@@ -598,8 +812,8 @@ class GlobalShortcutManager: ObservableObject {
 	private func openFileSelectionDialog() async {
 		logger.info("Opening file selection dialog")
 		let openPanel = NSOpenPanel()
-		openPanel.title = "Select Audio or Video Files to Transcribe"
-		openPanel.message = "Choose audio or video files for transcription"
+		openPanel.title = String(localized: "Select Audio or Video Files to Transcribe")
+		openPanel.message = String(localized: "Choose audio or video files for transcription")
 		openPanel.allowsMultipleSelection = true
 		openPanel.canChooseDirectories = false
 		openPanel.canChooseFiles = true
@@ -635,7 +849,7 @@ class GlobalShortcutManager: ObservableObject {
 
 			// Show notification
 			let notification = NSUserNotification()
-			notification.title = "Files Added to Queue"
+			notification.title = String(localized: "Files Added to Queue")
 			notification.subtitle = "\(selectedURLs.count) file(s) queued for transcription"
 			notification.informativeText = selectedURLs.map { $0.lastPathComponent }.joined(
 				separator: ", ")
@@ -656,7 +870,7 @@ class GlobalShortcutManager: ObservableObject {
 		do {
 			if urls.count == 1 {
 				let result = try await fileManager.transcribeFile(at: urls[0])
-				logger.info("Transcription completed: \(result.prefix(100))...")
+				logger.userText("Transcription completed", result)
 
 				// Copy result to clipboard
 				let pasteboard = NSPasteboard.general
@@ -698,7 +912,7 @@ class GlobalShortcutManager: ObservableObject {
 
 		// Show notification
 		let notification = NSUserNotification()
-		notification.title = "URL Added to Queue"
+		notification.title = String(localized: "URL Added to Queue")
 		notification.subtitle = "Network file queued for transcription"
 		notification.informativeText = url.absoluteString
 		NSUserNotificationCenter.default.deliver(notification)
@@ -756,6 +970,10 @@ class GlobalShortcutManager: ObservableObject {
 	}
 
 	deinit {
+		if let recordingStateObserver {
+			NotificationCenter.default.removeObserver(recordingStateObserver)
+		}
+		CarbonHotKeyCenter.shared.unregisterAll()
 		if let monitor = globalMonitor {
 			NSEvent.removeMonitor(monitor)
 		}
@@ -766,6 +984,12 @@ class GlobalShortcutManager: ObservableObject {
 			NSEvent.removeMonitor(monitor)
 		}
 		if let monitor = fileSelectionLocalMonitor {
+			NSEvent.removeMonitor(monitor)
+		}
+		if let monitor = modifierGlobalMonitor {
+			NSEvent.removeMonitor(monitor)
+		}
+		if let monitor = modifierLocalMonitor {
 			NSEvent.removeMonitor(monitor)
 		}
 	}

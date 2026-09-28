@@ -479,4 +479,41 @@ final class SettingsViewUITests: XCTestCase {
 			)
 		}
 	}
+
+	func testSidebarListsEverySectionAndSwitchesContent() throws {
+		let app = XCUIApplication()
+		app.launchArguments += ["-debugModeEnabled", "NO"]
+		app.launch()
+		app.typeKey(",", modifierFlags: .command)
+
+		let sidebar = app.descendants(matching: .any).matching(identifier: "settingsSidebar").firstMatch
+		XCTAssertTrue(sidebar.waitForExistence(timeout: 10), "Settings should show a sidebar instead of a tab bar")
+
+		let alwaysVisible = [
+			"general", "textInsertion", "storage", "fileTranscription", "history", "benchmark", "postProcessing",
+		]
+		for pane in alwaysVisible {
+			let row = app.descendants(matching: .any).matching(identifier: "settingsSidebar.\(pane)").firstMatch
+			XCTAssertTrue(row.waitForExistence(timeout: 5), "Sidebar row \(pane) should exist")
+			XCTAssertTrue(row.isHittable, "Sidebar row \(pane) should be reachable without an overflow menu")
+		}
+		for pane in ["automation", "liveTranscription", "debug"] {
+			XCTAssertFalse(
+				app.descendants(matching: .any).matching(identifier: "settingsSidebar.\(pane)").firstMatch.exists,
+				"Sidebar row \(pane) should only appear in Debug Mode")
+		}
+
+		let expectations: [(pane: String, text: String)] = [
+			("fileTranscription", "Supported Formats"),
+			("storage", "Application Logs"),
+			("general", "Global Shortcut"),
+		]
+		for (pane, text) in expectations {
+			app.descendants(matching: .any).matching(identifier: "settingsSidebar.\(pane)").firstMatch.click()
+			XCTAssertTrue(
+				app.staticTexts[text].waitForExistence(timeout: 5), "Selecting \(pane) should show \"\(text)\"")
+		}
+		XCTAssertFalse(
+			app.staticTexts["Supported Formats"].exists, "Panes kept mounted behind the selected one must stay hidden")
+	}
 }

@@ -301,10 +301,10 @@ class AppLibraryManager {
 	private func showFinderError(_ message: String) {
 		DispatchQueue.main.async {
 			let alert = NSAlert()
-			alert.messageText = "Finder Error"
+			alert.messageText = String(localized: "Finder Error")
 			alert.informativeText = message
 			alert.alertStyle = .warning
-			alert.addButton(withTitle: "OK")
+			alert.addButton(withTitle: String(localized: "OK"))
 			alert.runModal()
 		}
 	}
@@ -317,11 +317,14 @@ extension AppLibraryManager {
 	/// Gets a summary of storage usage for display
 	func getStorageSummary() -> String {
 		if downloadedModels.isEmpty {
-			return "No models downloaded"
+			return String(localized: "No models downloaded")
 		}
 
-		let modelWord = downloadedModels.count == 1 ? "model" : "models"
-		return "\(downloadedModels.count) \(modelWord) • \(totalStorageFormatted)"
+		let total = totalStorageFormatted
+		if downloadedModels.count == 1 {
+			return String(localized: "1 model • \(total)")
+		}
+		return String(localized: "\(downloadedModels.count) models • \(total)")
 	}
 
 	/// Gets detailed breakdown of storage usage
@@ -329,12 +332,12 @@ extension AppLibraryManager {
 		var info: [String] = []
 
 		if !downloadedModels.isEmpty {
-			info.append("Downloaded Models:")
+			info.append(String(localized: "Downloaded Models:"))
 			for model in downloadedModels {
 				info.append("  • \(model.displayName): \(model.sizeFormatted)")
 			}
 			info.append("")
-			info.append("Total: \(totalStorageFormatted)")
+			info.append(String(localized: "Total: \(totalStorageFormatted)"))
 		}
 
 		return info

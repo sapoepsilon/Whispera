@@ -331,10 +331,10 @@ enum TranscriptionStatus {
 
 	var displayName: String {
 		switch self {
-		case .pending: return "Pending"
-		case .inProgress: return "In Progress"
-		case .completed: return "Completed"
-		case .failed: return "Failed"
+		case .pending: return String(localized: "Pending")
+		case .inProgress: return String(localized: "In Progress")
+		case .completed: return String(localized: "Completed")
+		case .failed: return String(localized: "Failed")
 		}
 	}
 

@@ -2,6 +2,9 @@
 
 # Whispera Version Bumping Script
 # Updates version numbers in Xcode project files
+# Usage: [BUILD_NUMBER=<n>] ./scripts/bump-version.sh <version> [--commit]
+#   The build number is BUILD_NUMBER when set, else GITHUB_RUN_NUMBER on CI, else the
+#   current CFBundleVersion + 1.
 
 set -e
 
@@ -33,7 +36,12 @@ fi
 
 IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-if [ -n "$GITHUB_RUN_NUMBER" ]; then
+if [ -n "${BUILD_NUMBER:-}" ]; then
+    if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+        echo "❌ Error: BUILD_NUMBER must be a whole number"
+        exit 1
+    fi
+elif [ -n "$GITHUB_RUN_NUMBER" ]; then
     BUILD_NUMBER="$GITHUB_RUN_NUMBER"
 else
     CURRENT_BUILD=$(grep -A1 "CFBundleVersion" "$INFO_PLIST" | grep "<string>" | sed 's/.*<string>\(.*\)<\/string>/\1/' | tr -d '\t' | tr -d ' ')
@@ -90,6 +98,6 @@ git diff "$INFO_PLIST" | grep -E "(CFBundleShortVersionString|CFBundleVersion)" 
 if [ "${2:-}" == "--commit" ]; then
     echo "📝 Committing version bump..."
     git add "$PROJECT_FILE" "$INFO_PLIST"
-    git commit -m "bump: version $VERSION (build $BUILD_NUMBER)"
+    git commit -m "chore(release): bump version to $VERSION (build $BUILD_NUMBER)"
     echo "✅ Version bump committed"
 fi

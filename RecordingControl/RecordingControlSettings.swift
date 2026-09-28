@@ -1,0 +1,175 @@
+import Foundation
+
+enum ActivationMode: String, CaseIterable, Identifiable {
+	case toggle
+	case pushToTalk
+	case holdOrToggle
+
+	var id: String { rawValue }
+
+	var displayName: String {
+		switch self {
+		case .toggle: return String(localized: "Toggle")
+		case .pushToTalk: return String(localized: "Push to Talk")
+		case .holdOrToggle: return String(localized: "Hold or Toggle")
+		}
+	}
+
+	/// Only modes that act on release need the shortcut's key-up events, so toggle mode can
+	/// skip a global key-up monitor that would otherwise wake the app on every key release.
+	var needsKeyRelease: Bool {
+		self != .toggle
+	}
+
+	var summary: String {
+		switch self {
+		case .toggle: return String(localized: "Press once to start, press again to stop")
+		case .pushToTalk: return String(localized: "Record while the shortcut is held down")
+		case .holdOrToggle:
+			return String(
+				localized: "A short tap toggles recording; holding past the threshold records until release")
+		}
+	}
+}
+
+enum MicStreamPolicy: String, CaseIterable, Identifiable {
+	case onDemand
+	case lazyClose
+	case alwaysOn
+
+	var id: String { rawValue }
+
+	var displayName: String {
+		switch self {
+		case .onDemand: return String(localized: "Open per recording")
+		case .lazyClose: return String(localized: "Keep open briefly")
+		case .alwaysOn: return String(localized: "Always on")
+		}
+	}
+
+	var summary: String {
+		switch self {
+		case .onDemand: return String(localized: "The microphone opens when you start and closes when you stop")
+		case .lazyClose:
+			return
+				String(
+					localized:
+						"The microphone stays open for a few seconds after stopping so a quick follow-up starts instantly; the mic indicator stays on until it closes"
+				)
+		case .alwaysOn:
+			return
+				String(
+					localized:
+						"The microphone stays open while Whispera runs for the fastest start. The mic indicator stays on, it uses more battery and keeps the Mac from idle sleeping. It closes during sleep, screen lock and Low Power Mode"
+				)
+		}
+	}
+}
+
+enum ModelUnloadTimeout: String, CaseIterable, Identifiable {
+	case never
+	case immediately
+	case seconds15
+	case minutes1
+	case minutes2
+	case minutes5
+	case minutes10
+	case minutes15
+	case hour1
+
+	var id: String { rawValue }
+
+	var displayName: String {
+		switch self {
+		case .never: return String(localized: "Never")
+		case .immediately: return String(localized: "Immediately")
+		case .seconds15: return String(localized: "After 15 seconds")
+		case .minutes1: return String(localized: "After 1 minute")
+		case .minutes2: return String(localized: "After 2 minutes")
+		case .minutes5: return String(localized: "After 5 minutes")
+		case .minutes10: return String(localized: "After 10 minutes")
+		case .minutes15: return String(localized: "After 15 minutes")
+		case .hour1: return String(localized: "After 1 hour")
+		}
+	}
+
+	/// `nil` means the model is never unloaded automatically.
+	var interval: TimeInterval? {
+		switch self {
+		case .never: return nil
+		case .immediately: return 0
+		case .seconds15: return 15
+		case .minutes1: return 60
+		case .minutes2: return 120
+		case .minutes5: return 300
+		case .minutes10: return 600
+		case .minutes15: return 900
+		case .hour1: return 3600
+		}
+	}
+}
+
+struct RecordingControlSettings {
+	enum Key {
+		static let activationMode = "activationMode"
+		static let holdThresholdMs = "holdThresholdMs"
+		static let cancelShortcutEnabled = "cancelShortcutEnabled"
+		static let extraRecordingBufferMs = "extraRecordingBufferMs"
+		static let micStreamPolicy = "micStreamPolicy"
+		static let lazyStreamCloseSeconds = "lazyStreamCloseSeconds"
+		static let modelUnloadTimeout = "modelUnloadTimeout"
+	}
+
+	static let defaultHoldThresholdMs = 300
+	static let holdThresholdRange = 100...1000
+	static let extraRecordingBufferRange = 0...500
+	static let defaultLazyStreamCloseSeconds = 10
+	static let lazyStreamCloseOptions = [3, 5, 10, 30, 60]
+
+	let defaults: UserDefaults
+
+	init(defaults: UserDefaults = .standard) {
+		self.defaults = defaults
+	}
+
+	var activationMode: ActivationMode {
+		defaults.string(forKey: Key.activationMode).flatMap(ActivationMode.init(rawValue:)) ?? .toggle
+	}
+
+	var holdThreshold: TimeInterval {
+		let stored = defaults.object(forKey: Key.holdThresholdMs) as? Int ?? Self.defaultHoldThresholdMs
+		return TimeInterval(stored.clamped(to: Self.holdThresholdRange)) / 1000
+	}
+
+	var cancelShortcutEnabled: Bool {
+		defaults.object(forKey: Key.cancelShortcutEnabled) as? Bool ?? true
+	}
+
+	var extraRecordingBuffer: TimeInterval {
+		let stored = defaults.object(forKey: Key.extraRecordingBufferMs) as? Int ?? 0
+		return TimeInterval(stored.clamped(to: Self.extraRecordingBufferRange)) / 1000
+	}
+
+	var micStreamPolicy: MicStreamPolicy {
+		defaults.string(forKey: Key.micStreamPolicy).flatMap(MicStreamPolicy.init(rawValue:))
+			?? .onDemand
+	}
+
+	var lazyStreamCloseDelay: TimeInterval {
+		let stored =
+			defaults.object(forKey: Key.lazyStreamCloseSeconds) as? Int
+			?? Self.defaultLazyStreamCloseSeconds
+		return TimeInterval(stored.clamped(to: 1...300))
+	}
+
+	var modelUnloadTimeout: ModelUnloadTimeout {
+		defaults.string(forKey: Key.modelUnloadTimeout).flatMap(ModelUnloadTimeout.init(rawValue:))
+			?? .never
+	}
+}
+
+extension Comparable {
+	fileprivate func clamped(to range: ClosedRange<Self>) -> Self {
+		min(max(self, range.lowerBound), range.upperBound)
+	}
+}

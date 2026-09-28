@@ -34,6 +34,7 @@ class BenchmarkRunner: ObservableObject {
 		audioFiles: [URL],
 		modelName: String? = nil
 	) async -> BenchmarkSummary? {
+		guard !isRunning else { return nil }
 		guard !audioFiles.isEmpty else {
 			error = "No audio files provided"
 			return nil
@@ -46,7 +47,7 @@ class BenchmarkRunner: ObservableObject {
 			return nil
 		}
 
-		guard transcriber.isCurrentModelLoaded() else {
+		guard transcriber.isCurrentModelLoaded() || transcriber.isIdleUnloaded else {
 			error = "No model loaded"
 			return nil
 		}

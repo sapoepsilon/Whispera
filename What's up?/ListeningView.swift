@@ -13,7 +13,7 @@ struct ListeningView: View {
 	}
 
 	private var activeDeviceIcon: String {
-		if selectedUID == AudioDeviceManager.systemDefaultUID {
+		if selectedUID == AudioDeviceManager.systemDefaultUID || deviceManager.isUsingFallbackInput {
 			return deviceManager.availableDevices.first(where: \.isDefault)?.iconName ?? "mic.fill"
 		}
 		return deviceManager.availableDevices.first(where: { $0.uid == selectedUID })?.iconName ?? "mic.fill"
@@ -37,9 +37,9 @@ struct ListeningView: View {
 					.foregroundColor(.secondary)
 			}
 		case .transcribing:
+			// A load in progress only blocks transcription when no other engine is loaded
 			if whisperKit.isWaitingForModel
 				|| whisperKit.isInitializing
-				|| whisperKit.isModelLoading
 				|| !whisperKit.isCurrentModelLoaded()
 			{
 				HStack(spacing: 8) {
@@ -51,16 +51,24 @@ struct ListeningView: View {
 					Text(
 						whisperKit.isWaitingForModel
 							? whisperKit.waitingForModelStatusText
-							: (whisperKit.isInitializing ? whisperKit.initializationStatus : "Loading model...")
+							: (whisperKit.isInitializing
+								? whisperKit.initializationStatus
+								: (whisperKit.modelSwitchNotice?.title(name: WhisperKitTranscriber.shortModelName)
+									?? String(localized: "Loading model...")))
 					)
 						.font(.system(.caption, design: .rounded))
 						.foregroundColor(.secondary)
 						.lineLimit(1)
+					cancelButton
 				}
 			} else {
-				Text("Transcribing...")
-					.font(.system(.caption, design: .rounded))
-					.foregroundColor(.secondary)
+				HStack(spacing: 8) {
+					Text(transcribingText)
+						.font(.system(.caption, design: .rounded))
+						.foregroundColor(.secondary)
+						.lineLimit(1)
+					cancelButton
+				}
 			}
 		case .recording:
 			HStack(spacing: 8) {
@@ -73,8 +81,9 @@ struct ListeningView: View {
 					)
 				} label: {
 					HStack(spacing: 3) {
-						Image(systemName: activeDeviceIcon)
+						Image(systemName: audioManager.inputNotice == nil ? activeDeviceIcon : "exclamationmark.triangle.fill")
 							.font(.system(size: 11))
+							.foregroundColor(audioManager.inputNotice == nil ? nil : .orange)
 						Image(systemName: showDevicePicker ? "chevron.up" : "chevron.down")
 							.font(.system(size: 8, weight: .semibold))
 					}
@@ -87,8 +96,21 @@ struct ListeningView: View {
 					.foregroundColor(.secondary)
 				}
 				.buttonStyle(.plain)
+				.help(audioManager.inputNotice ?? String(localized: "Choose microphone"))
 
 				AudioMeterView(levels: audioManager.audioLevels)
+
+				if let notice = whisperKit.modelSwitchNotice,
+					let pillText = notice.pillText(name: WhisperKitTranscriber.shortModelName)
+				{
+					Text(pillText)
+						.font(.system(.caption2, design: .rounded))
+						.foregroundColor(.secondary)
+						.lineLimit(1)
+						.help(notice.detail(name: WhisperKitTranscriber.mediumModelName))
+				}
+
+				cancelButton
 
 				Button(action: {
 					audioManager.toggleRecording()
@@ -103,6 +125,30 @@ struct ListeningView: View {
 		}
 	}
 
+	private var transcribingText: String {
+		guard let activeModel = whisperKit.modelSwitchNotice?.activeModel else {
+			return String(localized: "Transcribing...")
+		}
+		return String(localized: "Transcribing with \(WhisperKitTranscriber.shortModelName(for: activeModel))...")
+	}
+
+	private var cancelButton: some View {
+		Button(action: {
+			audioManager.cancelRecording()
+		}) {
+			Image(systemName: "xmark.circle.fill")
+				.font(.system(size: 16))
+				.foregroundColor(.secondary)
+		}
+		.buttonStyle(.plain)
+		.help(
+			audioManager.isRecording
+				? String(localized: "Cancel and discard (Esc)")
+				: String(localized: "Cancel and discard")
+		)
+		.accessibilityIdentifier("cancelRecordingButton")
+	}
+
 	private var pillContent: some View {
 		contentView
 			.padding(.horizontal, 14)
@@ -115,13 +161,13 @@ struct ListeningView: View {
 			if #available(macOS 26.0, *) {
 				pillContent
 					.frame(height: 30)
-					.glassEffect()
+					.modifier(AdaptiveGlassModifier())
 			} else {
 				pillContent
 					.frame(height: 50)
 					.background(
-						RoundedRectangle(cornerRadius: cornerRadius)
-							.fill(.ultraThinMaterial)
+						AdaptiveMaterialBackground(
+							style: .ultraThin, shape: RoundedRectangle(cornerRadius: cornerRadius))
 					)
 					.overlay(
 						RoundedRectangle(cornerRadius: cornerRadius)

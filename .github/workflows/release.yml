@@ -16,39 +16,57 @@ env:
   SCHEME_NAME: "Whispera"
   BUILD_CONFIGURATION: "Release"
 
+# Third-party actions are pinned to full commit SHAs; the comment names the release.
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: macos-15
     permissions:
-      contents: write # Required to create releases
+      contents: write # Creates the release and pushes the appcast to main
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Setup Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: latest-stable
+          # The FoundationModels weak link needs the macOS 26 SDK
+          xcode-version: "^26.0"
 
+      # Free-text input and tag names reach later steps only through env and only after this
+      # check, so they are never pasted into a script
       - name: Get version from tag or input
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
           else
-            VERSION=${GITHUB_REF#refs/tags/v}
+            VERSION="${GITHUB_REF#refs/tags/v}"
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version (expected MAJOR.MINOR.PATCH)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Release version: $VERSION"
 
       - name: Bump version in project
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           chmod +x scripts/bump-version.sh
-          ./scripts/bump-version.sh "${{ steps.version.outputs.version }}"
+          ./scripts/bump-version.sh "$VERSION"
 
       - name: Setup signing keychain
         env:
@@ -96,40 +114,14 @@ jobs:
 
       - name: Create release notes
         id: release_notes
-        run: |
-          # Get commits since last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$LAST_TAG" ]; then
-            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline --pretty=format:"- %s")
-          else
-            COMMITS=$(git log --oneline --pretty=format:"- %s" -10)
-          fi
-
-          cat > release_notes.md << EOF
-          ## What's Changed
-
-          ${COMMITS}
-
-          ## Download
-
-          Download the \`Whispera.dmg\` file below and drag the app to your Applications folder.
-
-          ## System Requirements
-
-          - macOS 13.0 or later
-          - Apple Silicon or Intel Mac
-          - Microphone access permission
-
-          ## Installation Notes
-
-          1. Download and mount the DMG file
-          2. Drag Whispera to Applications folder
-          3. First launch: Right-click → Open (to bypass Gatekeeper)
-          4. Grant microphone and accessibility permissions when prompted
-          EOF
+        # The release body is what the app shows in What's New. Curate it in
+        # release-notes/vX.Y.Z.md; without that file the feat/fix/perf subjects are used.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./scripts/release-notes.sh "$VERSION" release_notes.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "Whispera ${{ steps.version.outputs.version }}"
@@ -140,17 +132,20 @@ jobs:
             dist/Whispera.app.zip
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish appcast.xml to main
         if: success()
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -e
 
-          if [ ! -f appcast.xml ]; then
-            echo "⚠️ appcast.xml not found, skipping publish"
-            exit 0
+          # The checkout's own appcast.xml is the previous release's; only one written for this
+          # version and signed by release-distribute-ci.sh may reach the update feed
+          if ! grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" appcast.xml \
+            || ! grep -q 'sparkle:edSignature="' appcast.xml; then
+            echo "::error::appcast.xml was not generated and signed for $VERSION; the update feed was not published"
+            exit 1
           fi
 
           git config user.name "github-actions[bot]"
@@ -172,7 +167,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "chore(release): update appcast for v${{ steps.version.outputs.version }}"
+          git commit -m "chore(release): update appcast for v$VERSION"
           git push origin HEAD:main
 
           echo "✅ Appcast committed and pushed"
@@ -187,10 +182,71 @@ jobs:
 
       - name: Upload build artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-logs
           path: |
             build/
             *.log
           retention-days: 7
+
+  # A job of its own so a cask problem never holds back the release or Sparkle updates, yet
+  # still fails visibly instead of hiding behind continue-on-error. The hash comes from the
+  # published asset, so the cask matches what users download.
+  homebrew-cask:
+    needs: release
+    runs-on: macos-15
+    permissions:
+      contents: write # Pushes the cask bump to main
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Bump Homebrew cask on main
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main
+          git worktree add --detach main-worktree origin/main
+
+          if [ ! -f main-worktree/Casks/whispera.rb ]; then
+            echo "::warning::Casks/whispera.rb is not on main, skipping the cask bump"
+            exit 0
+          fi
+
+          CASK_PATH="main-worktree/Casks/whispera.rb" CASK_SKIP_STYLE=1 \
+            ./scripts/update-cask.sh "$VERSION"
+
+          cd main-worktree
+
+          git add Casks/whispera.rb
+          if git diff --staged --quiet; then
+            echo "No changes to the cask"
+            exit 0
+          fi
+
+          git commit -m "chore(release): bump Homebrew cask to v$VERSION"
+          git push origin HEAD:main
+
+          echo "✅ Cask committed and pushed"
+
+      - name: Report a failed cask bump
+        if: failure()
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          echo "::warning::The Homebrew cask was not bumped to $VERSION. The release and appcast are published; run ./scripts/update-cask.sh $VERSION and push Casks/whispera.rb."
+          {
+            echo "### Homebrew cask not bumped"
+            echo
+            echo "The release and appcast for $VERSION are published, but Casks/whispera.rb still points at the previous version."
+            echo "Run \`./scripts/update-cask.sh $VERSION\` and push the change."
+          } >> "$GITHUB_STEP_SUMMARY"

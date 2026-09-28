@@ -425,3 +425,30 @@ struct OnboardingStateSavingTests {
 		defaults.removePersistentDomain(forName: suite)
 	}
 }
+
+struct OnboardingReviewTests {
+	/// QA: reopening onboarding from Settings and closing it partway left the app marked as never
+	/// onboarded, so the next launch started the wizard over. Settings now only calls
+	/// `OnboardingReview.open`, and this checks that the request posts the notification the app
+	/// delegate observes and writes nothing. The Settings button and the delegate's observer are
+	/// not exercised here.
+	@Test func reviewRequestOnlyPostsTheShowNotification() {
+		let before = UserDefaults.standard.object(forKey: OnboardingReview.completedKey) as? Bool
+		let center = NotificationCenter()
+		var shown = 0
+		let token = center.addObserver(forName: OnboardingReview.showNotification, object: nil, queue: nil) { _ in
+			shown += 1
+		}
+		defer { center.removeObserver(token) }
+
+		OnboardingReview.open(center: center)
+
+		#expect(shown == 1)
+		#expect(UserDefaults.standard.object(forKey: OnboardingReview.completedKey) as? Bool == before)
+	}
+
+	@Test func reviewUsesTheKeysTheAppObserves() {
+		#expect(OnboardingReview.completedKey == WhatsNewTracker.onboardingKey)
+		#expect(OnboardingReview.showNotification.rawValue == "ShowOnboarding")
+	}
+}

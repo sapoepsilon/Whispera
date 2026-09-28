@@ -1,0 +1,64 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSAppleEventsUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera verwendet Apple Events, um die Auswahl im Finder zu lesen und von dir genehmigte Einfügeskripte auszuführen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera uses Apple Events to read the Finder selection and to run insertion scripts you approve."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera usa Apple Events para leer la selección del Finder y ejecutar los scripts de inserción que apruebes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera utilise les Apple Events pour lire la sélection du Finder et exécuter les scripts d'insertion que vous approuvez."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera benötigt Zugriff auf dein Mikrofon, um Audio zu transkribieren."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera needs access to your microphone to transcribe audio."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera necesita acceso al micrófono para transcribir audio."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera a besoin d'accéder à votre microphone pour transcrire l'audio."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

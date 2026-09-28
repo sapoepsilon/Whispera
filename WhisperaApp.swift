@@ -3,7 +3,7 @@ import Observation
 import Sparkle
 import SwiftUI
 
-@main
+// Launched from WhisperaMain, which diverts CLI invocations before NSApplication starts.
 struct WhisperaApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	private let softwareUpdater = SoftwareUpdater.shared
@@ -17,8 +17,7 @@ struct WhisperaApp: App {
 			)
 		}
 		.windowStyle(.hiddenTitleBar)
-		.windowResizability(.automatic)
-		.windowResizability(.automatic)
+		.windowResizability(.contentSize)
 		.windowToolbarStyle(.unified(showsTitle: true))
 		.defaultPosition(.center)
 		.commands {
@@ -57,15 +56,15 @@ struct SettingsWithMaterial: View {
 				appLibraryManager: appLibraryManager,
 				softwareUpdater: softwareUpdater
 			)
-			.frame(minWidth: 450, minHeight: 520)
-			.containerBackground(materialStyle.material, for: .window)
+			.containerBackground(for: .window) {
+				AdaptiveMaterialBackground(style: materialStyle)
+			}
 		} else {
 			SettingsView(
 				permissionManager: permissionManager,
 				appLibraryManager: appLibraryManager,
 				softwareUpdater: softwareUpdater
 			)
-			.frame(minWidth: 450, minHeight: 520)
 		}
 	}
 }
@@ -87,7 +86,7 @@ struct StatusMenuEntry {
 	static let separator = StatusMenuEntry(action: nil, title: "", isEnabled: false)
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate {
 	var statusItem: NSStatusItem?
 	var popover = NSPopover()
 	let toastCenter = ToastCenter()
@@ -99,7 +98,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	var fileDropHandler: FileDropHandler!
 	var permissionManager: PermissionManager?
 	var appLibraryManager: AppLibraryManager?
-	@AppStorage("globalShortcut") var globalShortcut = "⌥⌘R"
+	@AppStorage(ShortcutDefaults.dictationKey) var globalShortcut = ShortcutDefaults.dictation
 	@AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
 	private var recordingObserver: NSObjectProtocol?
 	private var downloadObserver: NSObjectProtocol?
@@ -107,6 +106,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private var sleepObserver: NSObjectProtocol?
 	private var wakeObserver: NSObjectProtocol?
 	private var onboardingWindow: NSWindow?
+	private var onboardingCompletedObserver: NSObjectProtocol?
 	private var activityWindow: ActivityWindow?
 	private var settingsWindow: NSWindow?
 	private var swiftUIOpenSettings: (@MainActor () -> Void)?
@@ -116,6 +116,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	private static let alphaPulseKey = "whispera.statusItem.alphaPulse"
 	private let statusIconConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium, scale: .medium)
 	private var recordingGlowController: RecordingGlowController?
+	private var themeObserver: NSObjectProtocol?
+	private var menuBarIcon = MenuBarIconVisibility(defaults: .standard)
+	private var menuBarIconObserver: DefaultsKeyObserver?
+
+	func applicationWillFinishLaunching(_ notification: Notification) {
+		// A cold launch from whispera:// delivers the URL before didFinishLaunching.
+		RemoteControlCenter.shared.installURLHandler()
+	}
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		if shouldTerminateDuplicateInstances() {
@@ -128,6 +136,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		}
 
 		AppDelegate.registerInitialDefaults(in: .standard)
+		UpgradeDefaults.apply(to: .standard)
+		MicStreamPolicyMigration.apply(
+			to: .standard,
+			stored: UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:])
+		ThemeController.shared.start()
+		DispatchQueue.global(qos: .utility).async {
+			VerifiedScriptCopy.removeLeftovers()
+			ScriptApproval.upgradeStoredApproval(in: .standard)
+		}
 
 		Task { @MainActor in
 			audioManager = AudioManager()
@@ -146,11 +163,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			permissionManager = PermissionManager()
 			appLibraryManager = AppLibraryManager()
 			setupMenuBar()
+			AppNoticeCenter.shared.postLaunchNotices()
 			NSApp.setActivationPolicy(.accessory)
 			shortcutManager.setAudioManager(audioManager)
 			shortcutManager.setFileTranscriptionManager(fileTranscriptionManager)
 			shortcutManager.setNetworkDownloader(networkDownloader)
 			shortcutManager.setQueueManager(queueManager)
+			RemoteControlCenter.shared.installURLHandler()
+			RemoteControlCenter.shared.register(
+				controller: audioManager, modelSwitcher: audioManager.whisperKitTranscriber)
 			observeRecordingState()
 			observeWindowState()
 			observeSleepWakeNotifications()
@@ -161,10 +182,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
+			WhatsNewController.shared.checkOnLaunch(suppress: !hasCompletedOnboarding)
 
 			// Listen for show onboarding requests from settings
 			NotificationCenter.default.addObserver(
-				forName: NSNotification.Name("ShowOnboarding"),
+				forName: OnboardingReview.showNotification,
 				object: nil,
 				queue: .main
 			) { [weak self] _ in
@@ -185,13 +207,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	nonisolated static func registerInitialDefaults(in defaults: UserDefaults) {
 		defaults.register(defaults: [
 			"selectedModel": "openai_whisper-small.en",
-			"globalShortcut": "⌥⌘R",
+			ShortcutDefaults.dictationKey: ShortcutDefaults.dictation,
 			"startSound": "Tink",
 			"stopSound": "Pop",
 			"launchAtStartup": false,
 			"soundFeedback": true,
 			"enableRecordingGlow": true,
 			"enableStreaming": Constants.enableStreamingDefault,
+			"autoDetectLanguageFromKeyboard": Constants.autoDetectLanguageFromKeyboardDefault,
 			"defaultTranscriptionMode": "timestamps",
 			"showTimestamps": true,
 			"timestampFormat": "MM:SS",
@@ -234,7 +257,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		popover.contentViewController = hostingController
 		popover.contentSize = NSSize(width: PopoverMetrics.width, height: 380)
 		toastCenter.isPopoverVisible = { [weak self] in self?.popover.isShown ?? false }
+		// A menu bar popover takes the menu bar's appearance, not NSApp.appearance
+		popover.appearance = NSApp.appearance
+		themeObserver = NotificationCenter.default.addObserver(
+			forName: AppTheme.didChangeNotification, object: nil, queue: .main
+		) { [weak self] _ in
+			MainActor.assumeIsolated {
+				self?.popover.appearance = NSApp.appearance
+			}
+		}
 		popover.behavior = .semitransient
+		popover.delegate = self
+		TextInserter.shared.prepareForKeystrokes = { [weak self] in
+			await self?.closePopoverBeforeInsertion()
+		}
+		applyMenuBarIconVisibility()
+		menuBarIconObserver = DefaultsKeyObserver(keys: [MenuBarIconVisibility.defaultsKey]) { [weak self] in
+			guard let self else { return }
+			self.menuBarIcon.updateSetting(MenuBarIconVisibility.isShown(in: .standard))
+			self.applyMenuBarIconVisibility()
+		}
 
 		// Arm the height observation BEFORE the pre-warm layout: the pre-warm
 		// runs the first measurement, and a change landing before observation
@@ -251,6 +293,63 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			hostingView.layoutSubtreeIfNeeded()
 		}
 
+	}
+
+	private func applyMenuBarIconVisibility() {
+		guard let statusItem, statusItem.isVisible != menuBarIcon.isVisible else { return }
+		if !menuBarIcon.isVisible, popover.isShown {
+			popover.performClose(nil)
+		}
+		statusItem.isVisible = menuBarIcon.isVisible
+		AppLogger.shared.general.info("Menu bar icon \(menuBarIcon.isVisible ? "shown" : "hidden")")
+	}
+
+	/// Shows the menu, first bringing back a hidden icon so the popover has somewhere to anchor.
+	private func showPopoverFromReopen() {
+		let revealed = menuBarIcon.revealForReopen()
+		if revealed {
+			applyMenuBarIconVisibility()
+		}
+		// The revealed button gets its window on the next pass of the run loop, and only reaches
+		// its menu bar slot after the status bar lays it out
+		DispatchQueue.main.async { [weak self] in
+			self?.showPopoverOnceStatusItemSettles(poll: revealed ? 0 : StatusItemPlacement.maxPolls, previousFrame: nil)
+		}
+	}
+
+	private func showPopoverOnceStatusItemSettles(poll: Int, previousFrame: NSRect?) {
+		guard let button = statusItem?.button, !popover.isShown else { return }
+		let frame = button.window?.frame
+		if poll < StatusItemPlacement.maxPolls, let frame,
+			!StatusItemPlacement.isSettled(
+				windowFrame: frame, previousFrame: previousFrame, screenFrames: NSScreen.screens.map(\.frame))
+		{
+			DispatchQueue.main.asyncAfter(deadline: .now() + StatusItemPlacement.pollInterval) { [weak self] in
+				self?.showPopoverOnceStatusItemSettles(poll: poll + 1, previousFrame: frame)
+			}
+			return
+		}
+		togglePopover()
+	}
+
+	func popoverDidClose(_ notification: Notification) {
+		menuBarIcon.menuClosed()
+		applyMenuBarIconVisibility()
+	}
+
+	/// Keystrokes go to the active app, which is Whispera while its menu is open.
+	private func closePopoverBeforeInsertion() async {
+		guard popover.isShown else { return }
+		popover.performClose(nil)
+		guard NSApp.isActive else { return }
+		NSApp.deactivate()
+		let me = NSRunningApplication.current
+		for _ in 0..<40 where NSApp.isActive || NSWorkspace.shared.frontmostApplication == me {
+			try? await Task.sleep(for: .milliseconds(25))
+		}
+		// The next app is frontmost before its key window takes keyboard focus
+		try? await Task.sleep(for: .milliseconds(200))
+		AppLogger.shared.general.info("Closed the menu before inserting the transcript")
 	}
 
 	@objc func togglePopover() {
@@ -321,14 +420,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	// Menu can be built from the same descriptors and stay in sync.
 	private func menuItems() -> [StatusMenuEntry] {
 		[
-			StatusMenuEntry(action: .settings, title: "Settings…", isEnabled: true),
-			StatusMenuEntry(action: .activity, title: "Transcription Activity…", isEnabled: true),
-			StatusMenuEntry(action: .checkForUpdates, title: "Check for Updates…", isEnabled: true),
-			StatusMenuEntry(action: .about, title: "About Whispera", isEnabled: true),
+			StatusMenuEntry(action: .settings, title: String(localized: "Settings…"), isEnabled: true),
+			StatusMenuEntry(action: .activity, title: String(localized: "Transcription Activity…"), isEnabled: true),
+			StatusMenuEntry(action: .checkForUpdates, title: String(localized: "Check for Updates…"), isEnabled: true),
+			StatusMenuEntry(action: .about, title: String(localized: "About Whispera"), isEnabled: true),
 			.separator,
-			StatusMenuEntry(action: .lastMessage, title: "Last Message", isEnabled: true),
+			StatusMenuEntry(action: .lastMessage, title: String(localized: "Last Message"), isEnabled: true),
 			.separator,
-			StatusMenuEntry(action: .quit, title: "Quit Whispera", isEnabled: true),
+			StatusMenuEntry(action: .quit, title: String(localized: "Quit Whispera"), isEnabled: true),
 		]
 	}
 
@@ -390,36 +489,71 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 	// retained window hosting the same settings view.
 	@MainActor
 	private func showSettingsWindow() {
+		// The semitransient popover stays up when another window of this app takes key
+		if popover.isShown {
+			popover.performClose(nil)
+		}
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
-		if let action = swiftUIOpenSettings {
-			action()
-			DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-				guard let self else { return }
-				if let scene = self.settingsSceneWindow() {
-					AppLogger.shared.general.info("Settings opened via native scene")
-					scene.makeKeyAndOrderFront(nil)
-				} else {
-					AppLogger.shared.general.info("openSettings no-oped, using retained settings window")
-					self.showRetainedSettingsWindow()
-				}
-			}
-		} else {
+		let step = SettingsWindowOpening.firstStep(
+			scene: settingsSceneWindow().map(Self.windowState),
+			retained: settingsWindow.map(Self.windowState),
+			canRequestScene: swiftUIOpenSettings != nil)
+		switch step {
+		case .revealScene:
+			if let scene = settingsSceneWindow() { reveal(scene) }
+		case .revealRetained:
+			if let window = settingsWindow { reveal(window) }
+		case .requestScene:
+			swiftUIOpenSettings?()
+			awaitSettingsScene(check: 1)
+		case .openRetained, .wait:
 			showRetainedSettingsWindow()
 		}
+	}
+
+	/// A heavy first render or a minimized scene window can take longer than one check, and
+	/// opening the fallback too early left two Settings windows on screen.
+	@MainActor
+	private func awaitSettingsScene(check: Int) {
+		DispatchQueue.main.asyncAfter(deadline: .now() + SettingsWindowOpening.checkInterval) { [weak self] in
+			guard let self else { return }
+			let scene = self.settingsSceneWindow()
+			switch SettingsWindowOpening.stepAfterRequest(scene: scene.map(Self.windowState), check: check) {
+			case .revealScene, .revealRetained:
+				AppLogger.shared.general.info("Settings opened via native scene")
+				if let scene { self.reveal(scene) }
+			case .wait, .requestScene:
+				self.awaitSettingsScene(check: check + 1)
+			case .openRetained:
+				AppLogger.shared.general.info("openSettings no-oped, using retained settings window")
+				self.showRetainedSettingsWindow()
+			}
+		}
+	}
+
+	@MainActor
+	private func reveal(_ window: NSWindow) {
+		if window.isMiniaturized { window.deminiaturize(nil) }
+		window.makeKeyAndOrderFront(nil)
+	}
+
+	@MainActor
+	private static func windowState(_ window: NSWindow) -> SettingsWindowOpening.WindowState {
+		SettingsWindowOpening.WindowState(isVisible: window.isVisible, isMiniaturized: window.isMiniaturized)
 	}
 
 	@MainActor
 	private func settingsSceneWindow() -> NSWindow? {
 		NSApp.windows.first {
-			$0.isVisible && $0.identifier?.rawValue.hasPrefix("com_apple_SwiftUI_Settings") == true
+			$0.identifier?.rawValue.hasPrefix("com_apple_SwiftUI_Settings") == true
 		}
 	}
 
 	@MainActor
 	private func showRetainedSettingsWindow() {
 		if let window = settingsWindow {
-			window.makeKeyAndOrderFront(nil)
+			reveal(window)
 			return
 		}
 		let hosting = NSHostingController(
@@ -429,10 +563,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 				softwareUpdater: SoftwareUpdater.shared
 			))
 		let window = NSWindow(contentViewController: hosting)
-		window.title = "Whispera Settings"
+		window.title = String(localized: "Whispera Settings")
+		window.identifier = NSUserInterfaceItemIdentifier(SettingsWindowLocator.retainedIdentifier)
 		window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
 		window.isReleasedWhenClosed = false
-		window.setContentSize(NSSize(width: 640, height: 560))
+		window.setContentSize(
+			NSSize(
+				width: SettingsLayout.idealWindowWidth(
+					sidebarWidth: SettingsLayout.paneSidebarWidth(
+						sizeMode: SettingsLayout.currentSizeMode,
+						panes: SettingsPane.visible(debugModeEnabled: DebugMode.isEnabled()))),
+				height: SettingsLayout.idealHeight))
 		window.center()
 		settingsWindow = window
 		window.makeKeyAndOrderFront(nil)
@@ -457,39 +598,61 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		])
 	}
 	private func showOnboarding() {
+		// Showing it again while it is open brings that window back rather than stacking another
+		if let window = onboardingWindow, window.isVisible || window.isMiniaturized {
+			if window.isMiniaturized { window.deminiaturize(nil) }
+			NSApp.setActivationPolicy(.regular)
+			NSApp.activate(ignoringOtherApps: true)
+			window.makeKeyAndOrderFront(nil)
+			return
+		}
 		let onboardingView = OnboardingView(
 			audioManager: audioManager,
 			shortcutManager: shortcutManager
 		)
 
 		let hostingController = NSHostingController(rootView: onboardingView)
+		// The window is sized to the screen below; the view must not push its ideal height back
+		hostingController.sizingOptions = []
 
 		onboardingWindow = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
+			contentRect: NSRect(
+				x: 0, y: 0, width: OnboardingWindowSize.width, height: OnboardingWindowSize.preferredHeight),
 			styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
 			backing: .buffered,
 			defer: false
 		)
 
-		onboardingWindow?.title = "Welcome to Whispera"
+		onboardingWindow?.isReleasedWhenClosed = false
+		onboardingWindow?.title = String(localized: "Welcome to Whispera")
 		onboardingWindow?.titlebarAppearsTransparent = true
 		onboardingWindow?.isOpaque = false
 		onboardingWindow?.backgroundColor = .clear
 		onboardingWindow?.contentViewController = hostingController
 		onboardingWindow?.center()
+		if let window = onboardingWindow, let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+			let chrome = window.frame.height - window.contentRect(forFrameRect: window.frame).height
+			let height = OnboardingWindowSize.contentHeight(availableHeight: visible.height - chrome)
+			window.setContentSize(NSSize(width: OnboardingWindowSize.width, height: height))
+			window.setFrameOrigin(OnboardingWindowSize.origin(for: window.frame.size, in: visible))
+		}
 		onboardingWindow?.makeKeyAndOrderFront(nil)
 
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
-		NotificationCenter.default.addObserver(
+		guard onboardingCompletedObserver == nil else { return }
+		onboardingCompletedObserver = NotificationCenter.default.addObserver(
 			forName: NSNotification.Name("OnboardingCompleted"),
 			object: nil,
 			queue: .main
 		) { [weak self] _ in
 			NSApp.setActivationPolicy(.accessory)
-			self?.onboardingWindow?.close()
 			Task { @MainActor in
-				self?.applyStoredModel()
+				guard let self else { return }
+				self.onboardingWindow?.close()
+				// Releasing the window also stops its animations from running in the background
+				self.onboardingWindow = nil
+				self.applyStoredModel()
 			}
 		}
 	}
@@ -569,10 +732,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 			queue: .main
 		) { notification in
 			if let window = notification.object as? NSWindow {
-				let title = window.title.lowercased()
-				if title.contains("settings") || title.contains("preferences")
-					|| title.contains("activity")
-				{
+				if SettingsWindowLocator.isSettingsWindow(window) || window is ActivityWindow {
 					// Settings or Activity window is closing, revert to accessory mode
 					DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
 						NSApp.setActivationPolicy(.accessory)
@@ -590,30 +750,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 		stopAlphaPulse(on: button)
 
 		if permissionManager?.needsPermissions == true {
-			setStatusImage("exclamationmark.triangle.fill", description: "Permissions Required", on: button)
+			setStatusImage(
+				"exclamationmark.triangle.fill", description: String(localized: "Whispera - Permissions Required"),
+				on: button)
 			startAlphaPulse(on: button, fadeTo: 0.5, duration: 0.6)
 
 		} else if whisperKit.isDownloadingModel || networkDownloader?.isDownloading == true {
-			setStatusImage("arrow.down.circle", description: "Downloading", on: button)
+			setStatusImage("arrow.down.circle", description: String(localized: "Whispera - Downloading"), on: button)
 			startAlphaPulse(on: button, fadeTo: 0.3, duration: 0.8)
 
 		} else if audioManager.isTranscribing || fileTranscriptionManager?.isTranscribing == true
 			|| queueManager?.isProcessing == true
 		{
-			setStatusImage("waveform", description: "Transcribing", on: button)
+			setStatusImage("waveform", description: String(localized: "Whispera - Transcribing"), on: button)
 			startAlphaPulse(on: button, fadeTo: 0.7, duration: 1.5)
 
 		} else if audioManager.isRecording {
-			setStatusImage("mic.circle.fill", description: "Recording", on: button)
+			setStatusImage("mic.circle.fill", description: String(localized: "Whispera - Recording"), on: button)
 			startAlphaPulse(on: button, fadeTo: 0.4, duration: 0.8)
 
 		} else {
-			setStatusImage("microphone", description: "Ready", on: button)
+			setStatusImage("microphone", description: "Whispera", on: button)
 		}
 	}
 
 	private func setStatusImage(_ symbolName: String, description: String, on button: NSStatusBarButton) {
-		let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Whispera - \(description)")
+		let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: description)
 		image?.isTemplate = true
 		button.image = image?.withSymbolConfiguration(statusIconConfig)
 	}
@@ -683,24 +845,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 	private func activateApp() {
 		NSApp.activate(ignoringOtherApps: true)
-		if let button = statusItem?.button {
-			if !popover.isShown {
-				popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-			}
-		}
+		showPopoverFromReopen()
 	}
 
 	// MARK: - Single Instance Management
 	func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-		if let button = statusItem?.button {
-			if !popover.isShown {
-				popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-			}
-		}
+		showPopoverFromReopen()
 		return true
 	}
 
+	static var isRunningAsTestHost: Bool {
+		let environment = ProcessInfo.processInfo.environment
+		let testHostKeys = ["XCTestConfigurationFilePath", "XCTestBundlePath", "XCTestSessionIdentifier"]
+		return testHostKeys.contains { environment[$0] != nil }
+	}
+
 	private func shouldTerminateDuplicateInstances() -> Bool {
+		// A test host shares the bundle id with the installed app and would quit before the runner connects
+		guard !Self.isRunningAsTestHost else { return false }
 		let existingInstances = checkForExistingInstances()
 		return !existingInstances.isEmpty
 	}

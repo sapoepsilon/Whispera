@@ -112,6 +112,10 @@ Thumbs.db
 *.tmp
 *.temp
 *.stack.js
+*.log
+*.profraw
+*.gif
+.ispera-remote/
 
 # Distribution and release scripts with credentials
 scripts/release-distribute.sh
@@ -130,3 +134,4 @@ dist/
 # Claude
 .mcp.json
 plans/
+plan.md

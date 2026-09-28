@@ -4,15 +4,7 @@ import Foundation
 private let logger = AppLogger.shared.liveTranscriber
 
 func simulateKeyPressWithModifier(keyCode: CGKeyCode, modifier: CGEventFlags) async {
-	let source = CGEventSource(stateID: .combinedSessionState)
-	let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
-	let keyUpEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-
-	keyDownEvent?.flags = modifier
-	keyUpEvent?.flags = modifier
-
-	keyDownEvent?.post(tap: .cghidEventTap)
-	keyUpEvent?.post(tap: .cghidEventTap)
+	CGKeyEventPoster().postKey(keyCode, flags: modifier)
 }
 
 struct TrackedWord: Equatable {
@@ -51,9 +43,8 @@ enum CorrectionCommand {
 		let newContent = extractNewContent(from: fullText)
 		if !newContent.isEmpty {
 			trackWords(from: newContent)
-			Task {
-				await pasteText(newContent)
-			}
+			// Queued synchronously so anything inserted after it, like the auto-submit key, lands after it
+			TextInserter.shared.insert(" " + newContent, context: .liveSegment)
 		} else {
 			logger.debug("No new content to paste")
 		}
@@ -94,6 +85,11 @@ enum CorrectionCommand {
 		)
 		// TODO: Examine more, this is more of a fallback if the above logic fails. Do not remove the todo, and don't impelement it the original author will work on it on their own pace
 		return fullText
+	}
+
+	/// Every word typed into the focused app during this session.
+	var typedText: String {
+		trackedWords.map(\.text).joined(separator: " ")
 	}
 
 	func startNewSession() {
@@ -327,16 +323,7 @@ enum CorrectionCommand {
 	}
 
 	private func pasteText(_ text: String) async {
-		let addSpaceToText = " " + text
-		let pasteboard = NSPasteboard.general
-		pasteboard.clearContents()
-		pasteboard.setString(addSpaceToText, forType: .string)
-
-		await simulateKeyPressWithModifier(
-			keyCode: 0x09,
-			modifier: .maskCommand
-		)
-
+		await TextInserter.shared.insert(" " + text, context: .liveSegment).value
 	}
 
 	func printTrackingState() {

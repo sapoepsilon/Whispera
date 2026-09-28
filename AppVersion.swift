@@ -74,7 +74,10 @@ extension AppVersion {
 	/// Centralized constants for app configuration
 	struct Constants {
 		/// Minimum supported macOS version
-		static let minimumMacOS = "13.0"
+		static let minimumMacOS = "14.0"
+
+		/// GitHub repository that hosts releases and their notes
+		static let githubRepo = "sapoepsilon/Whispera"
 
 		/// Current app version string (dynamically retrieved)
 		static var currentVersionString: String {

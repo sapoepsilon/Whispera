@@ -13,7 +13,7 @@ struct OnboardingView: View {
 	@State private var launchAtLogin = false
 
 	@AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-	@AppStorage("globalShortcut") private var globalShortcut = "⌥⌘R"
+	@AppStorage(ShortcutDefaults.dictationKey) private var globalShortcut = ShortcutDefaults.dictation
 	@AppStorage("selectedModel") private var storedModel = ""
 	@AppStorage("launchAtStartup") private var storedLaunchAtLogin = false
 	@AppStorage("enableStreaming") private var enableStreaming = Constants.enableStreamingDefault
@@ -24,7 +24,10 @@ struct OnboardingView: View {
 		MaterialStyle(rawValue: materialStyleRaw)
 	}
 
-	private let steps = ["Welcome", "Permissions", "Setup", "Try It", "Complete"]
+	private let steps = [
+		String(localized: "Welcome"), String(localized: "Permissions"), String(localized: "Setup"),
+		String(localized: "Try It"), String(localized: "Complete"),
+	]
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -60,7 +63,7 @@ struct OnboardingView: View {
 
 				Spacer()
 
-				Button(nextButtonText) {
+				Button(LocalizedStringKey(nextButtonText)) {
 					handleNextStep()
 				}
 				.buttonStyle(PrimaryButtonStyle(isRecording: false))
@@ -81,11 +84,16 @@ struct OnboardingView: View {
 			)
 			.allowsHitTesting(false)
 		)
-		.frame(width: 600, height: 750)
+		.frame(width: OnboardingWindowSize.width)
+		.frame(minHeight: OnboardingWindowSize.minimumHeight, maxHeight: .infinity)
 		.onAppear {
 			checkPermissions()
 			customShortcut = globalShortcut
 			launchAtLogin = storedLaunchAtLogin
+			if selectedModel.isEmpty {
+				selectedModel = OnboardingModelChoice.initial(
+					current: audioManager.whisperKitTranscriber.currentModel, stored: storedModel)
+			}
 		}
 	}
 
@@ -192,5 +200,17 @@ struct OnboardingView: View {
 		storedModel = selectedModel
 		NotificationCenter.default.post(
 			name: NSNotification.Name("OnboardingCompleted"), object: nil)
+	}
+}
+
+/// "Review onboarding" in Settings reopens the wizard for someone who already finished it.
+/// It leaves the completion flag alone: closing the window partway used to leave it false, so
+/// the next launch started onboarding over. Finishing the review still runs completeOnboarding.
+enum OnboardingReview {
+	static let completedKey = "hasCompletedOnboarding"
+	static let showNotification = NSNotification.Name("ShowOnboarding")
+
+	static func open(center: NotificationCenter = .default) {
+		center.post(name: showNotification, object: nil)
 	}
 }
