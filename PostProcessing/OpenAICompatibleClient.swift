@@ -139,11 +139,10 @@ struct OpenAICompatibleClient: TextPostProcessor {
 		return url
 	}
 
-	/// An API key may travel over plain http only to this Mac (Ollama, LM Studio), where nothing
-	/// on the network can read it.
+	/// An API key follows the same rule as the transcript: plain http only to this Mac or the local
+	/// network (a LAN Ollama box or proxy), never across the internet.
 	static func canSendKey(to url: URL) -> Bool {
-		guard url.scheme?.lowercased() == "http" else { return true }
-		return isLoopback(host: url.host ?? "")
+		canSendTranscript(to: url)
 	}
 
 	/// Transcripts may travel over plain http only to this Mac or the local network (a LAN Ollama box);

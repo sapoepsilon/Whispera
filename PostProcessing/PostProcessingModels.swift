@@ -33,6 +33,8 @@ struct PostProcessingProvider: Identifiable, Hashable, Sendable {
 			id: appleIntelligenceID, label: String(localized: "Apple Intelligence (on-device)"),
 			kind: .appleIntelligence,
 			defaultBaseURL: "", allowsBaseURLEdit: false, requiresAPIKey: false),
+		local("lmstudio", "LM Studio", "http://localhost:1234/v1"),
+		local("ollama", "Ollama", "http://localhost:11434/v1"),
 		PostProcessingProvider(
 			id: customID, label: String(localized: "Custom (Ollama, LM Studio, ...)"), kind: .openAICompatible,
 			defaultBaseURL: "http://localhost:11434/v1", allowsBaseURLEdit: true, requiresAPIKey: false),
@@ -71,6 +73,13 @@ struct PostProcessingProvider: Identifiable, Hashable, Sendable {
 		PostProcessingProvider(
 			id: id, label: label, kind: .openAICompatible, defaultBaseURL: baseURL,
 			allowsBaseURLEdit: false, requiresAPIKey: true, supportsStructuredOutput: structuredOutput)
+	}
+
+	/// Servers on this Mac at their standard port; a key is optional since they usually run without one.
+	private static func local(_ id: String, _ label: String, _ baseURL: String) -> PostProcessingProvider {
+		PostProcessingProvider(
+			id: id, label: label, kind: .openAICompatible, defaultBaseURL: baseURL,
+			allowsBaseURLEdit: false, requiresAPIKey: false)
 	}
 }
 
