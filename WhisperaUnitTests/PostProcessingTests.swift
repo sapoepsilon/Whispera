@@ -891,6 +891,23 @@ struct LocalProviderTests {
 		}
 		#expect(RecordingURLProtocol.requests(to: "203.0.113.77:8080").isEmpty)
 	}
+
+	/// The refusal only fires for internet hosts, so it points at https or a local server rather
+	/// than telling the user to drop the key.
+	@Test func keyRefusalOffersHttpsOrALocalServer() throws {
+		let message = try #require(PostProcessingError.insecureKeyTransport(host: "203.0.113.77").errorDescription)
+		#expect(message.contains("203.0.113.77"))
+		#expect(message.contains("https://"))
+		#expect(message.contains("local network"))
+		#expect(!message.contains("remove the key"))
+	}
+
+	@Test func customProviderNoLongerNamesThePresetServers() throws {
+		let custom = try #require(PostProcessingProvider.provider(withID: PostProcessingProvider.customID))
+		#expect(!custom.label.contains("Ollama"))
+		#expect(!custom.label.contains("LM Studio"))
+		#expect(custom.label.hasPrefix("Custom"))
+	}
 }
 
 struct KeychainPresenceTests {

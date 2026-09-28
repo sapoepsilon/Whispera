@@ -36,7 +36,7 @@ enum PostProcessingError: LocalizedError, Equatable {
 		case .insecureKeyTransport(let host):
 			return String(
 				localized:
-					"Refusing to send your API key to \(host) over plain http. Use an https:// base URL, or remove the key for a local server."
+					"Refusing to send your API key to \(host) over plain http. Use an https:// base URL, or a server on this Mac or your local network."
 			)
 		case .insecureTranscriptTransport(let host):
 			return String(

@@ -36,7 +36,7 @@ struct PostProcessingProvider: Identifiable, Hashable, Sendable {
 		local("lmstudio", "LM Studio", "http://localhost:1234/v1"),
 		local("ollama", "Ollama", "http://localhost:11434/v1"),
 		PostProcessingProvider(
-			id: customID, label: String(localized: "Custom (Ollama, LM Studio, ...)"), kind: .openAICompatible,
+			id: customID, label: String(localized: "Custom (OpenAI-compatible)"), kind: .openAICompatible,
 			defaultBaseURL: "http://localhost:11434/v1", allowsBaseURLEdit: true, requiresAPIKey: false),
 	]
 
