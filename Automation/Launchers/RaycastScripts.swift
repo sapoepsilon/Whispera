@@ -45,7 +45,8 @@ struct RaycastScriptCommand: Equatable {
 enum RaycastScripts {
 	static let defaultCLIPath = "/Applications/Whispera.app/Contents/MacOS/Whispera"
 	static let defaultBundleIdentifier = "com.macwhisper.app"
-	static let linksOffHint = "Turn on \"Allow whispera:// links\" in Whispera Settings > Automation, then try again."
+	static let linksOffHint =
+		"In Whispera Settings, press Shift-Command-D to show Automation, turn on \"Allow whispera:// links\", then try again."
 
 	/// Read at run time so the token never lands in a committed or shared script.
 	static let tokenLine =

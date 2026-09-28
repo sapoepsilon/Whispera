@@ -181,7 +181,8 @@ struct CLIOptions: Equatable {
 		  --list-devices                List compute devices and exit (honors --json)
 
 		Control the running app (sent through whispera:// links; all but --stop and --cancel
-		fail until "Allow whispera:// links" is on in Settings > Automation):
+		fail until "Allow whispera:// links" is on in Settings > Automation; press Shift-Command-D in
+		Settings to show Automation):
 		  --toggle, --toggle-transcription   Start or stop dictation
 		  --toggle-post-process              Start or stop dictation with LLM post-processing
 		  --start | --stop | --cancel        Start, stop, or discard the recording

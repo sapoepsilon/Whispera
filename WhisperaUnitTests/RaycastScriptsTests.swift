@@ -55,6 +55,16 @@ struct RaycastScriptsTests {
 		}
 	}
 
+	/// Automation is hidden unless Debug Mode is on, so "go to Settings > Automation" alone
+	/// would send users to a pane they cannot see.
+	@Test func linksOffMessagesSayHowToRevealAutomation() {
+		let messages = [RaycastScripts.linksOffHint, CLIRemoteError.urlControlDisabled.errorDescription ?? ""]
+		for message in messages {
+			#expect(message.contains("Shift-Command-D"), "\(message)")
+			#expect(message.contains("Allow whispera:// links"), "\(message)")
+		}
+	}
+
 	@Test func tokenLineReadsTheTokenFileInBash() throws {
 		let home = FileManager.default.temporaryDirectory.appendingPathComponent("raycast-home-\(UUID().uuidString)")
 		defer { try? FileManager.default.removeItem(at: home) }

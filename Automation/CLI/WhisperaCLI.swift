@@ -217,7 +217,8 @@ enum CLIRemoteError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .urlControlDisabled:
-			return "Remote control is off. Enable \"Allow whispera:// links\" in Whispera Settings > Automation."
+			return
+				"Remote control is off. In Whispera Settings, press Shift-Command-D to show Automation, then turn on \"Allow whispera:// links\"."
 		case .tokenUnavailable:
 			return "Could not read or create the remote control token in ~/Library/Application Support/Whispera."
 		}

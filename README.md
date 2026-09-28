@@ -61,6 +61,8 @@ Transcription runs on your Mac. The internet is only needed to download models, 
 
 ## Automation
 
+The Automation settings are hidden unless Debug Mode is on: open Settings and press **Shift-Command-D** (or turn on **Debug Mode** under Settings > Storage & Downloads) to show them.
+
 ### Command line
 
 The app binary doubles as a CLI. Headless transcription uses models already downloaded in the app:
