@@ -570,7 +570,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		window.setContentSize(
 			NSSize(
 				width: SettingsLayout.idealWindowWidth(
-					sidebarWidth: SettingsLayout.paneSidebarWidth(sizeMode: SettingsLayout.currentSizeMode)),
+					sidebarWidth: SettingsLayout.paneSidebarWidth(
+						sizeMode: SettingsLayout.currentSizeMode,
+						panes: SettingsPane.visible(debugModeEnabled: DebugMode.isEnabled()))),
 				height: SettingsLayout.idealHeight))
 		window.center()
 		settingsWindow = window

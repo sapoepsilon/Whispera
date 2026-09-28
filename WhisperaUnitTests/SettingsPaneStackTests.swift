@@ -60,7 +60,7 @@ struct SettingsPaneStackTests {
 
 	private let log = Log()
 	private let selection = Selection(
-		current: .benchmark, visible: SettingsPane.visible(debugModeEnabled: true, liveTranscriptionEnabled: true))
+		current: .benchmark, visible: SettingsPane.visible(debugModeEnabled: true))
 	private let window = NSWindow(
 		contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled], backing: .buffered,
 		defer: false)
@@ -109,9 +109,9 @@ struct SettingsPaneStackTests {
 	@Test func aHiddenPaneIsDroppedAndStartsFreshWhenShownAgain() {
 		show(.debug)
 		show(.general)
-		selection.visible = SettingsPane.visible(debugModeEnabled: false, liveTranscriptionEnabled: true)
+		selection.visible = SettingsPane.visible(debugModeEnabled: false)
 		settle()
-		selection.visible = SettingsPane.visible(debugModeEnabled: true, liveTranscriptionEnabled: true)
+		selection.visible = SettingsPane.visible(debugModeEnabled: true)
 		settle()
 		#expect(log.created[.debug] == 1, "a re-shown pane should not be rebuilt until it is opened")
 		show(.debug)

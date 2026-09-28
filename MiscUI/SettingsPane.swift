@@ -46,19 +46,19 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
 	var accessibilityIdentifier: String { "settingsSidebar.\(rawValue)" }
 
-	/// Live Transcription only appears while streaming is on and Debug only in Debug Mode,
-	/// matching the tabs these rows replaced.
-	static func visible(debugModeEnabled: Bool, liveTranscriptionEnabled: Bool) -> [SettingsPane] {
+	/// Live Transcription and Automation are not supported for regular users yet, so they sit
+	/// behind Debug Mode with the Debug pane. The features themselves keep working (URL scheme,
+	/// App Intents, CLI); only their settings are hidden.
+	static func visible(debugModeEnabled: Bool) -> [SettingsPane] {
 		allCases.filter { pane in
 			switch pane {
-			case .liveTranscription: return liveTranscriptionEnabled
-			case .debug: return debugModeEnabled
+			case .liveTranscription, .automation, .debug: return debugModeEnabled
 			default: return true
 			}
 		}
 	}
 
-	/// A pane that was hidden while selected (Debug Mode or streaming turned off) falls back to
+	/// A pane that was hidden while selected (Debug Mode turned off) falls back to
 	/// General instead of leaving the detail column empty.
 	static func resolve(_ selection: SettingsPane?, visible: [SettingsPane]) -> SettingsPane {
 		guard let selection, visible.contains(selection) else { return .general }
@@ -73,7 +73,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	}
 }
 
-/// The sidebar has a fixed width that fits the longest row label in the current language, so
+/// The sidebar has a fixed width that fits the longest visible row label in the current language, so
 /// French and Spanish rows are never truncated; the detail column keeps the room the panes had.
 enum SettingsLayout {
 	static let minimumSidebarWidth: CGFloat = 200
@@ -105,9 +105,10 @@ enum SettingsLayout {
 		return max(minimumSidebarWidth, widest + sidebarRowChrome)
 	}
 
-	static func paneSidebarWidth(sizeMode: Int, bundle: Bundle = .main) -> CGFloat {
-		sidebarWidth(
-			forTitles: SettingsPane.allCases.map { $0.title(bundle: bundle) }, font: sidebarFont(sizeMode: sizeMode))
+	/// Only the visible rows are measured, so a hidden pane's long label does not widen the window
+	/// for everyone.
+	static func paneSidebarWidth(sizeMode: Int, panes: [SettingsPane], bundle: Bundle = .main) -> CGFloat {
+		sidebarWidth(forTitles: panes.map { $0.title(bundle: bundle) }, font: sidebarFont(sizeMode: sizeMode))
 	}
 
 	static var currentSizeMode: Int {
