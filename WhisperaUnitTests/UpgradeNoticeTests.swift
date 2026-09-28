@@ -115,3 +115,63 @@ struct UpgradeDefaultsTests {
 		#expect(!Constants.autoDetectLanguageFromKeyboardDefault)
 	}
 }
+
+struct LiveTranscriptionHiddenMigrationTests {
+	@Test func turnsLiveModeOffWhenDebugModeIsOff() {
+		let (defaults, cleanup) = isolatedDefaults("liveOff")
+		defer { cleanup() }
+		defaults.set(true, forKey: "enableStreaming")
+		defaults.set(false, forKey: DebugMode.defaultsKey)
+
+		UpgradeDefaults.apply(to: defaults)
+
+		#expect(defaults.object(forKey: "enableStreaming") as? Bool == false)
+	}
+
+	@Test func leavesLiveModeOnInDebugMode() {
+		let (defaults, cleanup) = isolatedDefaults("liveDebug")
+		defer { cleanup() }
+		defaults.set(true, forKey: "enableStreaming")
+		defaults.set(true, forKey: DebugMode.defaultsKey)
+
+		UpgradeDefaults.apply(to: defaults)
+
+		#expect(defaults.object(forKey: "enableStreaming") as? Bool == true)
+	}
+
+	@Test func runsOnlyOnce() {
+		let (defaults, cleanup) = isolatedDefaults("liveOnce")
+		defer { cleanup() }
+		UpgradeDefaults.apply(to: defaults)
+		defaults.set(true, forKey: "enableStreaming")
+
+		UpgradeDefaults.apply(to: defaults)
+
+		#expect(defaults.bool(forKey: "enableStreaming"), "A choice made after the migration ran is kept")
+	}
+
+	@Test func leavesInstallsWithoutLiveModeAlone() {
+		let (defaults, cleanup) = isolatedDefaults("liveUnset")
+		defer { cleanup() }
+		defaults.set(MicStreamPolicy.lazyClose.rawValue, forKey: RecordingControlSettings.Key.micStreamPolicy)
+
+		UpgradeDefaults.apply(to: defaults)
+
+		#expect(!defaults.bool(forKey: "enableStreaming"))
+		#expect(defaults.string(forKey: RecordingControlSettings.Key.micStreamPolicy) == MicStreamPolicy.lazyClose.rawValue)
+	}
+
+	/// A kept-open microphone choice had no effect while live mode was on; once live mode is off it
+	/// would start holding the microphone open, so it goes back to per recording.
+	@Test func revertsAKeptOpenMicrophoneWithLiveMode() {
+		let (defaults, cleanup) = isolatedDefaults("liveMic")
+		defer { cleanup() }
+		defaults.set(true, forKey: "enableStreaming")
+		defaults.set(false, forKey: DebugMode.defaultsKey)
+		defaults.set(MicStreamPolicy.lazyClose.rawValue, forKey: RecordingControlSettings.Key.micStreamPolicy)
+
+		UpgradeDefaults.apply(to: defaults)
+
+		#expect(defaults.string(forKey: RecordingControlSettings.Key.micStreamPolicy) == MicStreamPolicy.onDemand.rawValue)
+	}
+}

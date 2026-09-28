@@ -114,6 +114,7 @@ enum UpgradeDefaults {
 	static func apply(to defaults: UserDefaults) {
 		ShortcutMigration.migrate(in: defaults)
 		RecordingOverlayStyle.dropUnknownStoredValue(in: defaults)
+		LiveTranscriptionHiddenMigration.apply(to: defaults)
 		guard !defaults.bool(forKey: appliedKey) else { return }
 		defaults.set(true, forKey: appliedKey)
 		let isUpgrade = defaults.bool(forKey: WhatsNewTracker.onboardingKey)
@@ -123,6 +124,27 @@ enum UpgradeDefaults {
 		if defaults.object(forKey: VoiceActivitySettings.enabledKey) == nil {
 			defaults.set(false, forKey: VoiceActivitySettings.enabledKey)
 			AppLogger.shared.general.info("Skip Silence left off for an existing install")
+		}
+	}
+}
+
+/// Live Transcription Mode is only shown with Debug Mode on, so someone who turned it on earlier
+/// would have no visible way to turn it off. It is switched off once for anyone not in Debug Mode,
+/// together with a kept-open microphone choice that only had no effect because live mode was on.
+enum LiveTranscriptionHiddenMigration {
+	static let appliedKey = "liveTranscriptionHiddenMigrated"
+	static let enabledKey = "enableStreaming"
+
+	static func apply(to defaults: UserDefaults) {
+		guard !defaults.bool(forKey: appliedKey) else { return }
+		defaults.set(true, forKey: appliedKey)
+		guard !DebugMode.isEnabled(in: defaults), defaults.bool(forKey: enabledKey) else { return }
+		defaults.set(false, forKey: enabledKey)
+		AppLogger.shared.general.info("Live Transcription Mode turned off because its setting is hidden outside Debug Mode")
+		let policyKey = RecordingControlSettings.Key.micStreamPolicy
+		if let raw = defaults.string(forKey: policyKey), let policy = MicStreamPolicy(rawValue: raw), policy != .onDemand {
+			defaults.set(MicStreamPolicy.onDemand.rawValue, forKey: policyKey)
+			AppLogger.shared.general.info("Microphone Stream \(policy.rawValue) reverted to onDemand with Live Transcription Mode")
 		}
 	}
 }
