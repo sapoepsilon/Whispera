@@ -611,15 +611,21 @@ struct PostProcessingKeyTransportTests {
 		("http://evil.localhost/v1", false),
 		("http://[::ffff:127.0.0.1]:8080/v1", true),
 		("http://[::2]:8080/v1", false),
-		("http://llm.lan:8080/v1", false),
-		("http://192.168.1.20:11434/v1", false),
+		("http://llm.lan:8080/v1", true),
+		("http://ollama.local:11434/v1", true),
+		("http://192.168.1.20:11434/v1", true),
+		("http://10.0.0.5:8080/v1", true),
+		("http://[fd00::5]:8080/v1", true),
 		("http://api.example.com/v1", false),
+		("http://203.0.113.9:8080/v1", false),
+		("http://172.32.0.1:8080/v1", false),
 	])
-	func keyIsSentOverHttpOnlyToLoopback(baseURL: String, allowed: Bool) throws {
+	func keyTravelsOverHttpOnlyToThisMacOrTheLocalNetwork(baseURL: String, allowed: Bool) throws {
 		let url = try #require(OpenAICompatibleClient.endpoint(baseURL: baseURL, path: "models"))
 		#expect(OpenAICompatibleClient.canSendKey(to: url) == allowed)
 		#expect((OpenAICompatibleClient.insecureKeyWarning(baseURL: baseURL, hasKey: true) == nil) == allowed)
 		#expect(OpenAICompatibleClient.insecureKeyWarning(baseURL: baseURL, hasKey: false) == nil)
+		#expect(OpenAICompatibleClient.canSendKey(to: url) == OpenAICompatibleClient.canSendTranscript(to: url))
 	}
 
 	@Test func refusesToSendAKeyOverPlainHttpToARemoteHost() async {
@@ -721,8 +727,169 @@ struct PostProcessingKeyTransportTests {
 
 	@Test func keylessRequestsToLanServersStillWork() throws {
 		let url = try #require(OpenAICompatibleClient.endpoint(baseURL: "http://192.168.1.20:11434/v1", path: "models"))
-		#expect(!OpenAICompatibleClient.canSendKey(to: url))
+		#expect(OpenAICompatibleClient.canSendTranscript(to: url))
 		#expect(OpenAICompatibleClient.insecureKeyWarning(baseURL: "http://192.168.1.20:11434/v1", hasKey: false) == nil)
+	}
+
+	@Test(arguments: ["lmstudio", "ollama"])
+	func localPresetsMayCarryAKeyOverHttp(providerID: String) throws {
+		let provider = try #require(PostProcessingProvider.provider(withID: providerID))
+		let url = try #require(OpenAICompatibleClient.endpoint(baseURL: provider.defaultBaseURL, path: "models"))
+		#expect(OpenAICompatibleClient.isLoopback(host: url.host ?? ""))
+		#expect(OpenAICompatibleClient.canSendKey(to: url))
+		#expect(OpenAICompatibleClient.insecureKeyWarning(baseURL: provider.defaultBaseURL, hasKey: true) == nil)
+		#expect(OpenAICompatibleClient.insecureTranscriptWarning(baseURL: provider.defaultBaseURL) == nil)
+	}
+
+	/// Redirects keep their own, stricter rule: the key never follows one to another host, LAN or not.
+	@Test func keyStillDropsOnARedirectToAnotherLanHost() throws {
+		var original = URLRequest(url: URL(string: "http://192.168.1.20:8080/v1/models")!)
+		original.setValue("Bearer k", forHTTPHeaderField: "Authorization")
+		var proposed = URLRequest(url: URL(string: "http://192.168.1.21:8080/v1/models")!)
+		proposed.setValue("Bearer k", forHTTPHeaderField: "Authorization")
+		let followed = try #require(OpenAICompatibleClient.redirectedRequest(proposed, from: original))
+		#expect(followed.value(forHTTPHeaderField: "Authorization") == nil)
+
+		var sameHost = URLRequest(url: URL(string: "http://192.168.1.20:8080/v2/models")!)
+		sameHost.setValue("Bearer k", forHTTPHeaderField: "Authorization")
+		#expect(
+			OpenAICompatibleClient.redirectedRequest(sameHost, from: original)?
+				.value(forHTTPHeaderField: "Authorization") == "Bearer k")
+	}
+}
+
+/// Answers every request with a chat completion and records it, so a request to a LAN address can
+/// be observed without that address existing.
+private final class RecordingURLProtocol: URLProtocol {
+	private static let lock = NSLock()
+	nonisolated(unsafe) private static var recorded: [String: [URLRequest]] = [:]
+
+	static func requests(to authority: String) -> [URLRequest] {
+		lock.withLock { recorded[authority] ?? [] }
+	}
+
+	static func session() -> URLSession {
+		let configuration = URLSessionConfiguration.ephemeral
+		configuration.protocolClasses = [RecordingURLProtocol.self]
+		return URLSession(configuration: configuration)
+	}
+
+	override class func canInit(with request: URLRequest) -> Bool { true }
+	override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+	override func startLoading() {
+		let url = request.url!
+		let authority = "\(url.host ?? ""):\(url.port ?? 80)"
+		Self.lock.withLock { Self.recorded[authority, default: []].append(request) }
+		let body = try! JSONSerialization.data(withJSONObject: [
+			"choices": [["message": ["role": "assistant", "content": "Cleaned."]]]
+		])
+		let response = HTTPURLResponse(
+			url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+		client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+		client?.urlProtocol(self, didLoad: body)
+		client?.urlProtocolDidFinishLoading(self)
+	}
+
+	override func stopLoading() {}
+}
+
+@Suite(.serialized)
+struct LocalProviderTests {
+	private func makeSettings(providerID: String, baseURL: String? = nil) -> PostProcessingSettings {
+		let settings = PostProcessingSettings(defaults: isolatedDefaults())
+		settings.isEnabled = true
+		settings.providerID = providerID
+		if let baseURL { settings.setBaseURL(baseURL, for: providerID) }
+		settings.setModel("local-model", for: providerID)
+		settings.timeoutSeconds = 5
+		return settings
+	}
+
+	@Test(arguments: [
+		("lmstudio", "LM Studio", "http://localhost:1234/v1"),
+		("ollama", "Ollama", "http://localhost:11434/v1"),
+	])
+	func localPresetsAreFixedAndKeyOptional(id: String, label: String, baseURL: String) throws {
+		let provider = try #require(PostProcessingProvider.provider(withID: id))
+		#expect(provider.label == label)
+		#expect(provider.kind == .openAICompatible)
+		#expect(provider.defaultBaseURL == baseURL)
+		#expect(!provider.allowsBaseURLEdit)
+		#expect(!provider.requiresAPIKey)
+
+		let settings = makeSettings(providerID: id, baseURL: "http://evil.example/v1")
+		#expect(settings.providerID == id)
+		#expect(settings.baseURL(for: provider) == baseURL)
+		#expect(settings.model(for: id) == "local-model")
+	}
+
+	@Test func localPresetsSitBetweenTheCloudPresetsAndCustom() {
+		let ids = PostProcessingProvider.all.map(\.id)
+		let lmStudio = ids.firstIndex(of: "lmstudio")
+		let ollama = ids.firstIndex(of: "ollama")
+		let custom = ids.firstIndex(of: PostProcessingProvider.customID)
+		#expect(lmStudio != nil && ollama != nil && custom != nil)
+		#expect(ids.last == PostProcessingProvider.customID)
+		#expect(lmStudio! < ollama! && ollama! < custom!)
+		#expect(lmStudio! > ids.firstIndex(of: "bedrock_mantle")!)
+		#expect(Set(ids).count == ids.count)
+	}
+
+	@Test func noHomelabPresetShips() {
+		for provider in PostProcessingProvider.all {
+			#expect(!provider.id.localizedCaseInsensitiveContains("cliproxy"))
+			#expect(!provider.label.localizedCaseInsensitiveContains("cliproxy"))
+			#expect(!provider.defaultBaseURL.contains("192.168."))
+		}
+	}
+
+	@Test(arguments: [("lmstudio", "localhost:1234"), ("ollama", "localhost:11434")])
+	func keylessLocalPresetSendsWithoutAuthorization(id: String, authority: String) async throws {
+		let service = PostProcessingService(
+			settings: makeSettings(providerID: id), secrets: InMemorySecretStore(), session: RecordingURLProtocol.session())
+		let before = RecordingURLProtocol.requests(to: authority).count
+		#expect(await service.process("um hello") == .processed("Cleaned."))
+		let requests = RecordingURLProtocol.requests(to: authority)
+		#expect(requests.count == before + 1)
+		#expect(requests.last?.value(forHTTPHeaderField: "Authorization") == nil)
+	}
+
+	@Test(arguments: ["http://192.168.1.50:8317/v1", "http://10.0.0.5:8080/v1"])
+	func customProviderSendsItsKeyToAPrivateLanAddress(baseURL: String) async throws {
+		let settings = makeSettings(providerID: PostProcessingProvider.customID, baseURL: baseURL)
+		let custom = try #require(PostProcessingProvider.provider(withID: PostProcessingProvider.customID))
+		#expect(settings.baseURL(for: custom) == baseURL)
+		#expect(OpenAICompatibleClient.insecureKeyWarning(baseURL: baseURL, hasKey: true) == nil)
+		#expect(OpenAICompatibleClient.insecureTranscriptWarning(baseURL: baseURL) == nil)
+
+		let service = PostProcessingService(
+			settings: settings, secrets: InMemorySecretStore([PostProcessingProvider.customID: "lan-key"]),
+			session: RecordingURLProtocol.session())
+		#expect(await service.process("um hello") == .processed("Cleaned."))
+		let url = try #require(URL(string: baseURL))
+		let request = try #require(RecordingURLProtocol.requests(to: "\(url.host!):\(url.port!)").last)
+		#expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer lan-key")
+	}
+
+	@Test func customProviderStillRefusesAnInternetHostOverHttp() async throws {
+		let baseURL = "http://203.0.113.77:8080/v1"
+		let settings = makeSettings(providerID: PostProcessingProvider.customID, baseURL: baseURL)
+		#expect(OpenAICompatibleClient.insecureKeyWarning(baseURL: baseURL, hasKey: true) != nil)
+
+		let service = PostProcessingService(
+			settings: settings, secrets: InMemorySecretStore([PostProcessingProvider.customID: "lan-key"]),
+			session: RecordingURLProtocol.session())
+		let outcome = await service.process("um hello")
+		#expect(outcome != .processed("Cleaned."))
+		#expect(RecordingURLProtocol.requests(to: "203.0.113.77:8080").isEmpty)
+
+		let client = OpenAICompatibleClient(
+			baseURL: baseURL, apiKey: "lan-key", model: "m", timeout: 1, session: RecordingURLProtocol.session())
+		await #expect(throws: PostProcessingError.insecureKeyTransport(host: "203.0.113.77")) {
+			_ = try await client.process(PostProcessingMessages(system: nil, user: "hi"))
+		}
+		#expect(RecordingURLProtocol.requests(to: "203.0.113.77:8080").isEmpty)
 	}
 }
 
@@ -756,6 +923,8 @@ struct StructuredOutputTests {
 		#expect(flags["anthropic"] == false)
 		#expect(flags["groq"] == false)
 		#expect(flags[PostProcessingProvider.customID] == false)
+		#expect(flags["lmstudio"] == false)
+		#expect(flags["ollama"] == false)
 	}
 
 	@Test func extractsTheTranscriptionField() {
