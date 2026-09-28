@@ -12,44 +12,51 @@ struct SettingsPaneTests {
 		return try #require(Bundle(path: path))
 	}
 
-	@Test func sidebarKeepsTheOldTabOrder() {
+	@Test func debugModeShowsEveryPaneInTheOldTabOrder() {
 		#expect(
-			SettingsPane.visible(debugModeEnabled: true, liveTranscriptionEnabled: true) == [
+			SettingsPane.visible(debugModeEnabled: true) == [
 				.general, .textInsertion, .storage, .liveTranscription, .fileTranscription, .history, .automation,
 				.benchmark, .postProcessing, .debug,
 			])
 	}
 
-	@Test func debugRowOnlyAppearsInDebugMode() {
-		#expect(!SettingsPane.visible(debugModeEnabled: false, liveTranscriptionEnabled: true).contains(.debug))
-		#expect(SettingsPane.visible(debugModeEnabled: true, liveTranscriptionEnabled: false).contains(.debug))
+	@Test func regularUsersOnlySeeTheSupportedPanes() {
+		#expect(
+			SettingsPane.visible(debugModeEnabled: false) == [
+				.general, .textInsertion, .storage, .fileTranscription, .history, .benchmark, .postProcessing,
+			])
 	}
 
-	@Test func liveTranscriptionRowOnlyAppearsWhileStreamingIsOn() {
-		#expect(
-			!SettingsPane.visible(debugModeEnabled: true, liveTranscriptionEnabled: false).contains(.liveTranscription))
-		#expect(
-			SettingsPane.visible(debugModeEnabled: false, liveTranscriptionEnabled: true).contains(.liveTranscription))
+	@Test func debugAutomationAndLiveTranscriptionOnlyAppearInDebugMode() {
+		let regular = SettingsPane.visible(debugModeEnabled: false)
+		let debug = SettingsPane.visible(debugModeEnabled: true)
+		for pane in [SettingsPane.debug, .automation, .liveTranscription] {
+			#expect(!regular.contains(pane), "\(pane)")
+			#expect(debug.contains(pane), "\(pane)")
+		}
+		#expect(regular.contains(.postProcessing))
 	}
 
 	@Test func hiddenSelectionFallsBackToGeneral() {
-		let visible = SettingsPane.visible(debugModeEnabled: false, liveTranscriptionEnabled: false)
+		let visible = SettingsPane.visible(debugModeEnabled: false)
 		#expect(SettingsPane.resolve(.debug, visible: visible) == .general)
 		#expect(SettingsPane.resolve(.liveTranscription, visible: visible) == .general)
+		#expect(SettingsPane.resolve(.automation, visible: visible) == .general)
 		#expect(SettingsPane.resolve(nil, visible: visible) == .general)
 		#expect(SettingsPane.resolve(.history, visible: visible) == .history)
 	}
 
 	@Test func openedPanesStayMountedUntilHidden() {
-		let all = SettingsPane.visible(debugModeEnabled: true, liveTranscriptionEnabled: true)
+		let all = SettingsPane.visible(debugModeEnabled: true)
 		#expect(SettingsPane.mounted(opened: [], current: .general, visible: all) == [.general])
 		#expect(
 			SettingsPane.mounted(opened: [.general, .benchmark], current: .history, visible: all) == [
 				.general, .history, .benchmark,
 			])
-		let withoutDebug = SettingsPane.visible(debugModeEnabled: false, liveTranscriptionEnabled: true)
+		let withoutDebug = SettingsPane.visible(debugModeEnabled: false)
 		#expect(
-			SettingsPane.mounted(opened: [.general, .debug], current: .general, visible: withoutDebug) == [.general])
+			SettingsPane.mounted(opened: [.general, .debug, .automation], current: .general, visible: withoutDebug)
+				== [.general])
 	}
 
 	@Test func everyPaneHasAValidSymbolAndUniqueIdentifier() {
@@ -95,16 +102,43 @@ struct SettingsPaneTests {
 		let fontSize = SettingsLayout.sidebarFontSize(sizeMode: sizeMode)
 		for language in Self.shippedLanguages {
 			let bundle = try Self.bundle(for: language)
-			let sidebar = SettingsLayout.paneSidebarWidth(sizeMode: sizeMode, bundle: bundle)
-			for pane in SettingsPane.allCases {
-				let title = pane.title(bundle: bundle)
-				let row = Self.renderedLabelWidth(title, pane: pane, fontSize: fontSize)
-				#expect(row > 0, "\(language): \(title)")
-				#expect(
-					row + Self.minimumRowInsets <= sidebar,
-					"\(language) size \(sizeMode): \(title) needs \(row) + insets, sidebar is \(sidebar)")
+			for debugMode in [false, true] {
+				let panes = SettingsPane.visible(debugModeEnabled: debugMode)
+				let sidebar = SettingsLayout.paneSidebarWidth(sizeMode: sizeMode, panes: panes, bundle: bundle)
+				for pane in panes {
+					let title = pane.title(bundle: bundle)
+					let row = Self.renderedLabelWidth(title, pane: pane, fontSize: fontSize)
+					#expect(row > 0, "\(language): \(title)")
+					#expect(
+						row + Self.minimumRowInsets <= sidebar,
+						"\(language) size \(sizeMode) debug \(debugMode): \(title) needs \(row) + insets, sidebar is \(sidebar)"
+					)
+				}
 			}
 		}
+	}
+
+	/// A hidden pane's label must not size the window for users who never see that row.
+	@Test func sidebarWidthIgnoresHiddenPanes() throws {
+		for language in Self.shippedLanguages {
+			let bundle = try Self.bundle(for: language)
+			let regular = SettingsPane.visible(debugModeEnabled: false)
+			let font = SettingsLayout.sidebarFont(sizeMode: 2)
+			#expect(
+				SettingsLayout.paneSidebarWidth(sizeMode: 2, panes: regular, bundle: bundle)
+					== SettingsLayout.sidebarWidth(forTitles: regular.map { $0.title(bundle: bundle) }, font: font),
+				"\(language)")
+			#expect(
+				SettingsLayout.paneSidebarWidth(sizeMode: 2, panes: regular, bundle: bundle)
+					<= SettingsLayout.paneSidebarWidth(
+						sizeMode: 2, panes: SettingsPane.visible(debugModeEnabled: true), bundle: bundle),
+				"\(language)")
+		}
+		let font = SettingsLayout.sidebarFont(sizeMode: 2)
+		let long = String(repeating: "W", count: 60)
+		#expect(
+			SettingsLayout.sidebarWidth(forTitles: ["General", long], font: font)
+				> SettingsLayout.sidebarWidth(forTitles: ["General"], font: font))
 	}
 
 	@Test func largerSidebarIconSizesUseLargerText() {
@@ -198,7 +232,8 @@ struct SettingsPaneTests {
 
 	@Test func everyLanguageOpensAtItsOwnIdealWidth() throws {
 		for language in Self.shippedLanguages {
-			let sidebar = SettingsLayout.paneSidebarWidth(sizeMode: 3, bundle: try Self.bundle(for: language))
+			let sidebar = SettingsLayout.paneSidebarWidth(
+				sizeMode: 3, panes: SettingsPane.visible(debugModeEnabled: false), bundle: try Self.bundle(for: language))
 			let minimum = NSSize(
 				width: SettingsLayout.minimumWindowWidth(sidebarWidth: sidebar), height: SettingsLayout.minimumHeight)
 			let ideal = NSSize(

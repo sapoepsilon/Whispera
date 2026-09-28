@@ -212,7 +212,7 @@ struct SettingsView: View {
 	@State private var selectedPane: SettingsPane = .general
 
 	private var visiblePanes: [SettingsPane] {
-		SettingsPane.visible(debugModeEnabled: debugModeEnabled, liveTranscriptionEnabled: enableStreaming)
+		SettingsPane.visible(debugModeEnabled: debugModeEnabled)
 	}
 
 	private var currentPane: SettingsPane {
@@ -223,7 +223,9 @@ struct SettingsView: View {
 	// sidebar when the user changes the sidebar icon size while Settings is open.
 	@AppStorage(SettingsLayout.sidebarSizeModeKey) private var sidebarSizeMode = 2
 
-	private var sidebarWidth: CGFloat { SettingsLayout.paneSidebarWidth(sizeMode: sidebarSizeMode) }
+	private var sidebarWidth: CGFloat {
+		SettingsLayout.paneSidebarWidth(sizeMode: sidebarSizeMode, panes: visiblePanes)
+	}
 
 	// Clicking the empty space below the rows clears a List selection; keep the current pane instead.
 	private var sidebarSelection: Binding<SettingsPane?> {
@@ -675,15 +677,17 @@ struct SettingsView: View {
 							Toggle("", isOn: $enableTranslation)
 						}
 
-						SettingRow(
-							"Live Transcription Mode",
-							description: "Transcribe speech in real-time with automatic text replacement"
-						) {
-							HStack(spacing: 8) {
-								GlassBetaElement(onTap: {
-									showLiveTranscriptionInfo()
-								})
-								Toggle("", isOn: $enableStreaming)
+						if debugModeEnabled {
+							SettingRow(
+								"Live Transcription Mode",
+								description: "Transcribe speech in real-time with automatic text replacement"
+							) {
+								HStack(spacing: 8) {
+									GlassBetaElement(onTap: {
+										showLiveTranscriptionInfo()
+									})
+									Toggle("", isOn: $enableStreaming)
+								}
 							}
 						}
 
