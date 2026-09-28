@@ -28,6 +28,15 @@ enum WhisperKitTestModel {
 	/// Whether the small-model suites run: the model is there, or it is required.
 	nonisolated static var runsSmallModelTests: Bool { smallModelFolder != nil || requiresModels }
 
+	/// Whether the suites that transcribe through the app's shared transcriber run: some Whisper
+	/// model is downloaded for it to load, or models are required.
+	nonisolated static var runsAppModelTests: Bool { hasAnyModel || requiresModels }
+
+	private nonisolated static var hasAnyModel: Bool {
+		let names = (try? FileManager.default.contentsOfDirectory(atPath: modelsDirectory.path)) ?? []
+		return names.contains { folder($0) != nil }
+	}
+
 	private nonisolated static func folder(_ name: String) -> URL? {
 		let folder = modelsDirectory.appendingPathComponent(name)
 		return FileManager.default.fileExists(atPath: folder.appendingPathComponent("TextDecoder.mlmodelc").path)

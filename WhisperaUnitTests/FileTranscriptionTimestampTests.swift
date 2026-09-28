@@ -104,6 +104,7 @@ struct TimestampDefaultResolutionTests {
 // through the real file-transcription pipeline, and asserts the timestamped and
 // plain outputs. Requires a downloaded Whisper model on the test machine.
 @MainActor
+@Suite(.enabled(if: WhisperKitTestModel.runsAppModelTests, "Needs a downloaded Whisper model"))
 struct FileTranscriptionTimestampE2ETests {
 
 	private func synthesizeFixture() throws -> URL {

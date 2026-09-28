@@ -25,7 +25,10 @@ enum RemoteCommand: Equatable, Sendable {
 		// whispera://toggle carries the verb in the host; whispera:toggle and
 		// whispera:///toggle carry it in the path, so accept all three spellings.
 		let hostVerb = url.host?.trimmingCharacters(in: .whitespaces) ?? ""
-		let pathVerb = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+		// Before macOS 26, URL.path is empty for an opaque URL such as whispera:toggle, while
+		// URLComponents reads the path on every version.
+		let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? url.path
+		let pathVerb = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 		let verb = (hostVerb.isEmpty ? pathVerb : hostVerb).lowercased()
 
 		let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []

@@ -126,6 +126,9 @@ jobs:
       # TEST_RUNNER_WHISPERA_REQUIRE_MODEL_TESTS=1 so the real-model live suites fail instead of
       # skipping if the model goes missing.
       - name: Run WhisperaUnitTests
+        env:
+          # YouTube refuses video info to runner addresses
+          TEST_RUNNER_WHISPERA_SKIP_YOUTUBE_TESTS: "1"
         run: |
           set -o pipefail
           xcodebuild test \
