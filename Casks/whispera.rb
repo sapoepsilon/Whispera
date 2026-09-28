@@ -1,6 +1,6 @@
 cask "whispera" do
-  version "1.3.2"
-  sha256 "29a9f8d26f86a854d2e70d1716f5f1ac47be3d9ef5efa3473130843424fd0385"
+  version "1.4.0"
+  sha256 "15f8989e74652e13b49ecee81c154688a4ec7857d6179d5a5fb49fd4ab5f19d6"
 
   url "https://github.com/sapoepsilon/Whispera/releases/download/v#{version}/Whispera-#{version}.dmg"
   name "Whispera"
