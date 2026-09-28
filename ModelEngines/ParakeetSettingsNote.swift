@@ -12,7 +12,7 @@ struct ParakeetSettingsNote: View {
 					.font(.caption)
 					.foregroundColor(.secondary)
 				Text(
-					"Translation and Live Transcription Mode need a Whisper model; dictation transcribes when you stop recording."
+					"Translation needs a Whisper model; dictation transcribes when you stop recording."
 				)
 				.font(.caption)
 				.foregroundColor(.secondary)

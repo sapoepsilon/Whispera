@@ -70,7 +70,7 @@ struct TextInsertionSettingsView: View {
 					SettingRow(
 						"Auto-Submit",
 						description:
-							"Press a key after inserting so chat boxes send the message. Live dictation presses it once, when you stop."
+							"Press a key after inserting so chat boxes send the message."
 					) {
 						Toggle("", isOn: $autoSubmit)
 					}
@@ -85,13 +85,6 @@ struct TextInsertionSettingsView: View {
 							.labelsHidden()
 							.frame(width: 240)
 						}
-					}
-
-					if pasteMethod == .copyOnly || pasteMethod == .externalScript {
-						Text("Live dictation always pastes as you speak.")
-							.font(.caption)
-							.foregroundColor(.secondary)
-							.frame(maxWidth: .infinity, alignment: .leading)
 					}
 				}
 

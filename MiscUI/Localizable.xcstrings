@@ -1795,48 +1795,25 @@
         }
       }
     },
-    "Also apply to the main shortcut. Live Transcription Mode types as you speak, so its sessions are never post-processed; use the shortcut above for those.": {
+    "Also apply to the main shortcut.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Auch auf den Hauptkurzbefehl anwenden. Der Live-Transkriptionsmodus tippt, während du sprichst, daher werden seine Sitzungen nie nachbearbeitet; verwende dafür den Kurzbefehl oben."
+            "value": "Auch auf den Hauptkurzbefehl anwenden."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aplícalo también al atajo principal. El modo de transcripción en vivo escribe mientras hablas, por lo que sus sesiones nunca se posprocesan; usa el atajo de arriba para eso."
+            "value": "Aplícalo también al atajo principal."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "S'applique aussi au raccourci principal. Le mode Transcription en direct tape pendant que vous parlez, ses sessions ne sont donc jamais post-traitées ; utilisez le raccourci ci-dessus pour cela."
-          }
-        }
-      }
-    },
-    "Also apply to the main shortcut. Live transcription sessions are not affected.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auch auf den Hauptkurzbefehl anwenden. Live-Transkriptionen sind nicht betroffen."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aplicar también al atajo principal. No afecta a las sesiones de transcripción en vivo."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "S'applique aussi au raccourci principal. Les sessions de transcription en direct ne sont pas concernées."
+            "value": "S'applique aussi au raccourci principal."
           }
         }
       }
@@ -9638,29 +9615,6 @@
         }
       }
     },
-    "Live dictation always pastes as you speak.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Live-Diktat fügt immer während des Sprechens ein."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "El dictado en vivo siempre pega mientras hablas."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La dictée en direct colle toujours au fil de la parole."
-          }
-        }
-      }
-    },
     "Load": {
       "extractionState": "manual",
       "localizations": {
@@ -11202,25 +11156,25 @@
         }
       }
     },
-    "Neural uses the Silero model (downloaded once, about 1 MB) for recorded clips and is better at ignoring noise; Live Transcription Mode always uses Energy": {
+    "Neural uses the Silero model (downloaded once, about 1 MB) for recorded clips and is better at ignoring noise": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Neuronal nutzt das Silero-Modell (einmalig geladen, etwa 1 MB) für aufgenommene Clips und ignoriert Geräusche besser; der Live-Transkriptionsmodus nutzt immer Energie"
+            "value": "Neuronal nutzt das Silero-Modell (einmalig geladen, etwa 1 MB) für aufgenommene Clips und ignoriert Geräusche besser"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Neuronal usa el modelo Silero (se descarga una vez, unos 1 MB) para los clips grabados e ignora mejor el ruido; el modo de transcripción en vivo siempre usa Energía"
+            "value": "Neuronal usa el modelo Silero (se descarga una vez, unos 1 MB) para los clips grabados e ignora mejor el ruido"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Neuronal utilise le modèle Silero (téléchargé une fois, environ 1 Mo) pour les extraits enregistrés et ignore mieux le bruit ; le mode de transcription en direct utilise toujours Énergie"
+            "value": "Neuronal utilise le modèle Silero (téléchargé une fois, environ 1 Mo) pour les extraits enregistrés et ignore mieux le bruit"
           }
         }
       }
@@ -13341,25 +13295,25 @@
         }
       }
     },
-    "Press a key after inserting so chat boxes send the message. Live dictation presses it once, when you stop.": {
+    "Press a key after inserting so chat boxes send the message.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drückt nach dem Einfügen eine Taste, damit Chatfelder die Nachricht senden. Das Live-Diktat drückt sie einmal, wenn du stoppst."
+            "value": "Drückt nach dem Einfügen eine Taste, damit Chatfelder die Nachricht senden."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pulsa una tecla después de insertar para que los chats envíen el mensaje. El dictado en vivo la pulsa una vez, al detener."
+            "value": "Pulsa una tecla después de insertar para que los chats envíen el mensaje."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Appuie sur une touche après l'insertion pour que les champs de discussion envoient le message. La dictée en direct l'appuie une fois, à l'arrêt."
+            "value": "Appuie sur une touche après l'insertion pour que les champs de discussion envoient le message."
           }
         }
       }
@@ -13387,25 +13341,25 @@
         }
       }
     },
-    "Press it while recording to discard the dictation without pasting. Once transcribing has started it no longer listens, so an Esc meant for another app can't throw the dictation away; use the cancel button on the pill or in the menu bar instead. In Live Transcription Mode the text is typed as you speak, so it only stops the stream; what was already typed stays.": {
+    "Press it while recording to discard the dictation without pasting. Once transcribing has started it no longer listens, so an Esc meant for another app can't throw the dictation away; use the cancel button on the pill or in the menu bar instead.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drücke es während der Aufnahme, um das Diktat ohne Einfügen zu verwerfen. Sobald die Transkription begonnen hat, hört es nicht mehr zu, damit ein Esc für eine andere App das Diktat nicht verwirft; nutze dann die Abbrechen-Taste in der Pille oder in der Menüleiste. Im Live-Transkriptionsmodus wird der Text beim Sprechen getippt, daher stoppt es nur den Stream; bereits Getipptes bleibt."
+            "value": "Drücke es während der Aufnahme, um das Diktat ohne Einfügen zu verwerfen. Sobald die Transkription begonnen hat, hört es nicht mehr zu, damit ein Esc für eine andere App das Diktat nicht verwirft; nutze dann die Abbrechen-Taste in der Pille oder in der Menüleiste."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Púlsalo mientras grabas para descartar el dictado sin pegarlo. Una vez que empieza la transcripción deja de escuchar, para que un Esc pensado para otra app no descarte el dictado; usa entonces el botón de cancelar de la píldora o de la barra de menús. En el modo de transcripción en vivo el texto se escribe mientras hablas, así que solo detiene la transmisión; lo ya escrito se queda."
+            "value": "Púlsalo mientras grabas para descartar el dictado sin pegarlo. Una vez que empieza la transcripción deja de escuchar, para que un Esc pensado para otra app no descarte el dictado; usa entonces el botón de cancelar de la píldora o de la barra de menús."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Appuyez dessus pendant l'enregistrement pour supprimer la dictée sans la coller. Une fois la transcription commencée, il n'écoute plus, afin qu'un Échap destiné à une autre app ne supprime pas la dictée ; utilisez alors le bouton d'annulation de la pilule ou de la barre des menus. En mode Transcription en direct, le texte est saisi pendant que vous parlez, il arrête donc seulement le flux ; ce qui a déjà été saisi reste."
+            "value": "Appuyez dessus pendant l'enregistrement pour supprimer la dictée sans la coller. Une fois la transcription commencée, il n'écoute plus, afin qu'un Échap destiné à une autre app ne supprime pas la dictée ; utilisez alors le bouton d'annulation de la pilule ou de la barre des menus."
           }
         }
       }
@@ -17159,25 +17113,25 @@
         }
       }
     },
-    "Skip clips with no speech and trim silence from them; in Live Transcription Mode, pause transcribing while you are silent. A skipped clip shows \"No speech detected\" in the menu bar. On by default for new installs; left off when updating from a version without it.": {
+    "Skip clips with no speech and trim silence from them. A skipped clip shows \"No speech detected\" in the menu bar. On by default for new installs; left off when updating from a version without it.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Überspringt Aufnahmen ohne Sprache und schneidet Stille heraus; im Live-Transkriptionsmodus pausiert die Transkription, während du schweigst. Eine übersprungene Aufnahme zeigt „Keine Sprache erkannt“ in der Menüleiste. Bei Neuinstallationen standardmäßig an; bleibt aus beim Update von einer Version ohne diese Funktion."
+            "value": "Überspringt Aufnahmen ohne Sprache und schneidet Stille heraus. Eine übersprungene Aufnahme zeigt „Keine Sprache erkannt“ in der Menüleiste. Bei Neuinstallationen standardmäßig an; bleibt aus beim Update von einer Version ohne diese Funktion."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Omite los clips sin voz y recorta sus silencios; en el modo de transcripción en vivo, pausa la transcripción mientras estás en silencio. Un clip omitido muestra «No se detectó voz» en la barra de menús. Activado por defecto en instalaciones nuevas; desactivado al actualizar desde una versión que no lo tenía."
+            "value": "Omite los clips sin voz y recorta sus silencios. Un clip omitido muestra «No se detectó voz» en la barra de menús. Activado por defecto en instalaciones nuevas; desactivado al actualizar desde una versión que no lo tenía."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ignore les extraits sans parole et en retire les silences ; en mode Transcription en direct, met la transcription en pause pendant vos silences. Un extrait ignoré affiche « Aucune parole détectée » dans la barre des menus. Activé par défaut pour les nouvelles installations ; laissé désactivé lors d'une mise à jour depuis une version qui ne l'avait pas."
+            "value": "Ignore les extraits sans parole et en retire les silences. Un extrait ignoré affiche « Aucune parole détectée » dans la barre des menus. Activé par défaut pour les nouvelles installations ; laissé désactivé lors d'une mise à jour depuis une version qui ne l'avait pas."
           }
         }
       }
@@ -20632,25 +20586,25 @@
         }
       }
     },
-    "Translation and Live Transcription Mode need a Whisper model; dictation transcribes when you stop recording.": {
+    "Translation needs a Whisper model; dictation transcribes when you stop recording.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Übersetzung und Live-Transkriptionsmodus benötigen ein Whisper-Modell; Diktate werden beim Stoppen der Aufnahme transkribiert."
+            "value": "Übersetzung benötigt ein Whisper-Modell; Diktate werden beim Stoppen der Aufnahme transkribiert."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "La traducción y el modo de transcripción en vivo necesitan un modelo Whisper; el dictado se transcribe al detener la grabación."
+            "value": "La traducción necesita un modelo Whisper; el dictado se transcribe al detener la grabación."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La traduction et le mode transcription en direct nécessitent un modèle Whisper ; la dictée est transcrite à l'arrêt de l'enregistrement."
+            "value": "La traduction nécessite un modèle Whisper ; la dictée est transcrite à l'arrêt de l'enregistrement."
           }
         }
       }
@@ -21736,25 +21690,25 @@
         }
       }
     },
-    "What appears on screen while dictating. Not shown in Live Transcription Mode.": {
+    "What appears on screen while dictating.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Was beim Diktieren auf dem Bildschirm erscheint. Wird im Live-Transkriptionsmodus nicht angezeigt."
+            "value": "Was beim Diktieren auf dem Bildschirm erscheint."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lo que aparece en pantalla mientras dictas. No se muestra en el modo de transcripción en vivo."
+            "value": "Lo que aparece en pantalla mientras dictas."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ce qui s'affiche à l'écran pendant la dictée. Non affiché en mode Transcription en direct."
+            "value": "Ce qui s'affiche à l'écran pendant la dictée."
           }
         }
       }

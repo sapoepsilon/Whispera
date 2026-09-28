@@ -96,7 +96,7 @@ struct VoiceActivitySettingsRows: View {
 		SettingRow(
 			"Skip Silence",
 			description:
-				"Skip clips with no speech and trim silence from them; in Live Transcription Mode, pause transcribing while you are silent. A skipped clip shows \"No speech detected\" in the menu bar. On by default for new installs; left off when updating from a version without it."
+				"Skip clips with no speech and trim silence from them. A skipped clip shows \"No speech detected\" in the menu bar. On by default for new installs; left off when updating from a version without it."
 		) {
 			Toggle("", isOn: $vadEnabled)
 		}
@@ -105,7 +105,7 @@ struct VoiceActivitySettingsRows: View {
 			SettingRow(
 				"Speech Detection",
 				description:
-					"Neural uses the Silero model (downloaded once, about 1 MB) for recorded clips and is better at ignoring noise; Live Transcription Mode always uses Energy"
+					"Neural uses the Silero model (downloaded once, about 1 MB) for recorded clips and is better at ignoring noise"
 			) {
 				Picker("", selection: $vadEngine) {
 					ForEach(VADEngine.allCases) { engine in

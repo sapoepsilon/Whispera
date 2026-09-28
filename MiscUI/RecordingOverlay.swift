@@ -82,7 +82,7 @@ struct RecordingOverlaySettingRows: View {
 	var body: some View {
 		SettingRow(
 			"Recording Overlay",
-			description: "What appears on screen while dictating. Not shown in Live Transcription Mode."
+			description: "What appears on screen while dictating."
 		) {
 			Picker("", selection: $styleRaw) {
 				ForEach(RecordingOverlayStyle.allCases) { style in

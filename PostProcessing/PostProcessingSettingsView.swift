@@ -53,7 +53,7 @@ struct PostProcessingSettingsView: View {
 					SettingRow(
 						"Post-process every dictation",
 						description:
-							"Also apply to the main shortcut. Live Transcription Mode types as you speak, so its sessions are never post-processed; use the shortcut above for those."
+							"Also apply to the main shortcut."
 					) {
 						Toggle("", isOn: $applyToEveryDictation).labelsHidden().toggleStyle(.switch)
 							.disabled(!isEnabled)
