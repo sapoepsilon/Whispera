@@ -47,7 +47,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 	/// `session` below, which is the dictation socket, not an HTTP session.
 	private let urlSession: URLSession
 
-	private var session: DictationSession?
+	private var session: WhisperaDictation.DictationSession?
 	private var eventTask: Task<Void, Never>?
 	/// The previous session's close, still running behind the stop that returned
 	/// immediately. The next start awaits it (bounded) before opening capture:
@@ -238,7 +238,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 		-> String
 	{
 		let configuration = try await configuration(for: options)
-		let text = try await DictationSession.transcribe(
+		let text = try await WhisperaDictation.DictationSession.transcribe(
 			configuration: configuration, credentials: credentials, audio: audio)
 		let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 		return trimmed.isEmpty ? "No speech detected" : trimmed
@@ -294,7 +294,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 			wordTracker = DictationWordTracker(typesConfirmedText: false)
 			wordTracker?.startNewSession()
 
-			let session = DictationSession(
+			let session = WhisperaDictation.DictationSession(
 				configuration: configuration, credentials: credentials, audio: MicrophoneSource())
 			self.session = session
 
@@ -556,6 +556,13 @@ final class StreamingTranscriber: SpeechTranscribing {
 			// growing it (nemo-stream QA, WHI-58). The accumulated draft also lands
 			// in `pendingText`, which is what stop pastes for words still in flight.
 			utteranceDraft.append(delta)
+			live.ingest(committed: live.confirmedText, draft: utteranceDraft.draft)
+
+		case .revisedTranscript(let hypothesis):
+			// The engine re-sent the whole utterance rather than the fragment since
+			// the last event, so it replaces the draft instead of extending it.
+			utteranceDraft.clear()
+			utteranceDraft.append(hypothesis)
 			live.ingest(committed: live.confirmedText, draft: utteranceDraft.draft)
 
 		case .finalTranscript:
@@ -860,7 +867,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 /// deliberately — the pass must never read instance fields a newer dictation
 /// owns, the same rule the close epilogue follows.
 private struct TwoPassContext {
-	let session: DictationSession
+	let session: WhisperaDictation.DictationSession
 	let closing: Task<Void, Never>?
 	let mode: TwoPassFinalizerMode
 	let options: TranscriptionOptions
