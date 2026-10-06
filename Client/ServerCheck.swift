@@ -99,8 +99,12 @@ enum ServerCheck: Equatable {
 				return .passed(String(localized: "Test passed: \(model) answered."))
 			case .speech:
 				let silence = [Float](repeating: 0, count: 8000)
-				_ = try await client.transcribe(
-					TranscriptionRequest(model: model, audio: .wav(samples: silence, filename: "test.wav")))
+				do {
+					_ = try await client.transcribe(
+						TranscriptionRequest(model: model, audio: .wav(samples: silence, filename: "test.wav")))
+				} catch OpenAIError.empty {
+					// No words is the right answer for half a second of silence.
+				}
 				return .passed(String(localized: "Test passed: \(model) transcribed a test clip."))
 			}
 		} catch {
