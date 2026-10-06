@@ -173,7 +173,7 @@ final class StreamingTranscriber: SpeechTranscribing {
 			throw StreamingTranscriberError.invalidServerURL
 		}
 		let destination = baseURL.host ?? baseURL.absoluteString
-		let client = OpenAICompatibleClient(
+		let client = WhisperaOpenAI.OpenAICompatibleClient(
 			baseURL: baseURL,
 			apiKeyProvider: WhisperaSettings.speechServer.keyProvider,
 			session: urlSession,

@@ -51,8 +51,8 @@ struct RecipeRouter {
 
 	/// Also used by the Settings "Test" button, which needs the same client the
 	/// recipes will run on rather than an approximation of it.
-	static func client(for entry: ServerEntry, url: URL) -> OpenAICompatibleClient {
-		OpenAICompatibleClient(
+	static func client(for entry: ServerEntry, url: URL) -> WhisperaOpenAI.OpenAICompatibleClient {
+		WhisperaOpenAI.OpenAICompatibleClient(
 			baseURL: url,
 			apiKeyProvider: entry.keyProvider,
 			logger: .whispera)

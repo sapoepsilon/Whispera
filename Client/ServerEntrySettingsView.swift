@@ -266,7 +266,7 @@ struct ServerEntrySettingsView: View {
 		fetchError = nil
 		defer { isFetchingModels = false }
 
-		let client = OpenAICompatibleClient(
+		let client = WhisperaOpenAI.OpenAICompatibleClient(
 			baseURL: url, apiKeyProvider: entry.keyProvider, logger: .whispera)
 		do {
 			// The speech side filters to models that can transcribe, the same way

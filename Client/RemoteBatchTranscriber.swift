@@ -42,10 +42,10 @@ final class RemoteBatchTranscriber: SpeechTranscribing {
 		self.session = session
 	}
 
-	private func client() throws -> OpenAICompatibleClient {
+	private func client() throws -> WhisperaOpenAI.OpenAICompatibleClient {
 		let entry = entryProvider()
 		guard let url = entry.url else { throw RemoteBatchTranscriberError.noServerConfigured }
-		return OpenAICompatibleClient(
+		return WhisperaOpenAI.OpenAICompatibleClient(
 			baseURL: url, apiKeyProvider: entry.keyProvider, session: session, logger: .whispera)
 	}
 

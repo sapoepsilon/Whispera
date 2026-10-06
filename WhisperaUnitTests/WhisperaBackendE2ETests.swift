@@ -59,7 +59,7 @@ struct WhisperaBackendE2ETests {
 	/// VibeProxy (:8317) since no local model is pulled here.
 	@Test func localExecutorRunsRecipeAgainstOpenAICompatibleServer() async throws {
 		let executor = RecipePipeline.openAI(
-			client: OpenAICompatibleClient(baseURL: URL(string: "http://localhost:8317/v1")!),
+			client: WhisperaOpenAI.OpenAICompatibleClient(baseURL: URL(string: "http://localhost:8317/v1")!),
 			defaultModel: { "gpt-5.4-mini" })
 		let recipe = Recipe(
 			name: "echo",
