@@ -5,6 +5,11 @@
 #   LinkHelper/e2e/account-pairing.sh serve            # build link-helper-serve and run it (foreground)
 #   LinkHelper/e2e/account-pairing.sh admin '<json>'   # one admin-socket request, prints the JSON reply
 #   LinkHelper/e2e/account-pairing.sh env              # print the environment `serve` uses
+#   LinkHelper/e2e/account-pairing.sh pair-code        # start code pairing: code, Mac fingerprint, QR payload
+#   LinkHelper/e2e/account-pairing.sh phone pair [--yes]   # a software phone pairs with the live code
+#                                                      # (pairing v2: commit, signed ack, then reveal);
+#                                                      # without --qr it compares the fingerprint on stdin
+#   LinkHelper/e2e/account-pairing.sh phone call GET /v1/devices/me   # a WL1-signed call as that phone
 #   LinkHelper/e2e/account-pairing.sh herdr '<json>'   # control request to the fake herdr (WLH_FAKE_HERDR=1)
 #   LinkHelper/e2e/account-pairing.sh herdr-remote '<json>'   # … to the fake remote machine's herdr
 #   LinkHelper/e2e/account-pairing.sh herdr-requests   # every request both fakes and the fake CLI received
@@ -18,8 +23,8 @@
 #                     without it, join later with:  admin '{"op":"account.set","bearer":"…","backend_url":"…"}'
 #   WLH_POLL_S        relay long-poll wait, seconds   default 1
 #   WLH_MAC_NAME      name the phone shows            default "E2E Mac"
-#   WLH_TEST_CONFIRM  1 = allow admin '{"op":"approve.confirm","device_id":"dev_…"}' (test only;
-#                     the app confirms with Touch ID over XPC instead)   default 1
+#   WLH_TEST_CONFIRM  1 = allow admin '{"op":"approve.confirm","device_id":"dev_…","safety_number":"…"}'
+#                     (test only, debug builds only; the app confirms with Touch ID over XPC)  default 1
 #   WLH_FAKE_HERDR    1 = run fake herdr servers and the fake herdr CLI (e2e/fake_herdr.py,
 #                     e2e/fake-herdr-cli): this Mac's herdr ($WLH_E2E_DIR/herdr.sock), one remote
 #                     machine "fake-main" ("Fake Main Mac", $WLH_E2E_DIR/remote.sock) and one
@@ -36,8 +41,12 @@
 #   {"op":"account.status"}                               device_id, phones, last sync, pending confirmations
 #   {"op":"account.sync"}                                 sync now: pinned / offered / dropped device ids
 #   {"op":"account.clear"}                                leave the account (sends `unpaired` to the phones)
-#   {"op":"approve.pending"}                              iPhones waiting for approve confirmation
-#   {"op":"approve.confirm","device_id":"dev_…"}          test only, needs WLH_TEST_CONFIRM=1
+#   {"op":"approve.pending"}                              iPhones waiting for confirmation, each with its
+#                                                         safety_number and key_changed
+#   {"op":"approve.confirm","device_id":"dev_…","safety_number":"1234 5678 9012"}
+#                                                         test only, needs WLH_TEST_CONFIRM=1; refused with
+#                                                         keys_changed unless the number matches the keys now
+#   {"op":"pair.begin","ttl_s":300}                       a pairing code (pair-code wraps it)
 #   {"op":"devices.list"} / {"op":"status"}               as for any helper
 set -euo pipefail
 
@@ -140,6 +149,27 @@ case "${1:-serve}" in
       echo "== $f"; cat "$DIR/$f.jsonl" 2>/dev/null || true
     done
     ;;
+  pair-code)
+    "$0" admin '{"op":"pair.begin","ttl_s":'"${WLH_PAIR_TTL_S:-300}"'}' | /usr/bin/python3 -c '
+import json, sys
+r = json.load(sys.stdin)
+print("code:        %s" % r["code"])
+print("fingerprint: %s   (the phone shows this before it reveals the code)" % r.get("daemon_fp_display", r["daemon_fp"][:16]))
+print("url:         %s" % r["url"])
+print("qr_payload:  %s" % r["qr_payload"])'
+    ;;
+  phone)
+    shift
+    (cd "$HERE" && swift build --product link-soft-phone >&2)
+    PHONE_BIN="$(cd "$HERE" && swift build --product link-soft-phone --show-bin-path)/link-soft-phone"
+    SUB="${1:?usage: account-pairing.sh phone pair|call …}"; shift
+    if [ "$SUB" = pair ] && [[ " $* " != *" --qr "* ]] && [[ " $* " != *" --url "* ]]; then
+      CODE="${WLH_PAIR_CODE:-}"
+      [ -n "$CODE" ] || { read -r -p "pairing code shown by pair-code: " CODE; }
+      exec "$PHONE_BIN" pair --state "$DIR/phone" --url "http://$LISTEN:$PORT" --code "$CODE" "$@"
+    fi
+    exec "$PHONE_BIN" "$SUB" --state "$DIR/phone" "$@"
+    ;;
   admin)
     REQUEST="${2:?usage: account-pairing.sh admin '<json>'}"
     /usr/bin/python3 - "$DIR/state/admin.sock" "$REQUEST" <<'PYEOF'
@@ -158,7 +188,7 @@ print(data.decode().strip())
 PYEOF
     ;;
   *)
-    echo "usage: account-pairing.sh [serve|admin '<json>'|env|herdr '<json>'|herdr-remote '<json>'|herdr-requests]" >&2
+    echo "usage: account-pairing.sh [serve|admin '<json>'|env|pair-code|phone pair|call …|herdr '<json>'|herdr-remote '<json>'|herdr-requests]" >&2
     exit 2
     ;;
 esac
