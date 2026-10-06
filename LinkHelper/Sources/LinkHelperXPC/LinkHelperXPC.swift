@@ -40,11 +40,14 @@ public enum LinkHelperXPC {
 	func clearAccount(reply: @escaping (Data) -> Void)
 	/// `{"status","device_id","base_url","last_sync_at","phones",…}`.
 	func accountStatus(reply: @escaping (Data) -> Void)
-	/// `{"devices":[{"device_id","name","fingerprint","approve_fp",…}]}` — iPhones waiting for
-	/// the owner to confirm their approve rights.
+	/// `{"devices":[{"device_id","name","fingerprint","approve_fp","safety_number","key_changed",…}]}`
+	/// — iPhones waiting for the owner's confirmation. Until then they get nothing but
+	/// `devices/me`.
 	func pendingApproveConfirmations(reply: @escaping (Data) -> Void)
-	/// The owner confirmed `deviceID` (Touch ID in the app): approvals from it are accepted.
-	func confirmApprove(_ deviceID: String, reply: @escaping (Data) -> Void)
+	/// The owner compared `safetyNumber` with the iPhone and confirmed `deviceID` (Touch ID in
+	/// the app). The helper recomputes the number from the device's current keys and answers
+	/// `keys_changed` when they no longer match what the owner saw.
+	func confirmApprove(_ deviceID: String, safetyNumber: String, reply: @escaping (Data) -> Void)
 }
 
 /// One entry of `pendingApproveConfirmations`.
@@ -55,6 +58,10 @@ public struct PendingApproveConfirmation: Codable, Sendable, Equatable, Identifi
 	public var fingerprint: String
 	public var approveFP: String
 	public var createdAt: Int?
+	/// `1234 5678 9012`: what the owner compares with the iPhone's screen before confirming.
+	public var safetyNumber: String?
+	/// A device this Mac knew whose keys changed (a reinstall, or keys substituted).
+	public var keyChanged: Bool
 
 	public var id: String { deviceID }
 
@@ -63,14 +70,32 @@ public struct PendingApproveConfirmation: Codable, Sendable, Equatable, Identifi
 		case deviceID = "device_id"
 		case approveFP = "approve_fp"
 		case createdAt = "created_at"
+		case safetyNumber = "safety_number"
+		case keyChanged = "key_changed"
 	}
 
-	public init(deviceID: String, name: String, fingerprint: String, approveFP: String, createdAt: Int? = nil) {
+	public init(
+		deviceID: String, name: String, fingerprint: String, approveFP: String, createdAt: Int? = nil,
+		safetyNumber: String? = nil, keyChanged: Bool = false
+	) {
 		self.deviceID = deviceID
 		self.name = name
 		self.fingerprint = fingerprint
 		self.approveFP = approveFP
 		self.createdAt = createdAt
+		self.safetyNumber = safetyNumber
+		self.keyChanged = keyChanged
+	}
+
+	public init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		deviceID = try container.decode(String.self, forKey: .deviceID)
+		name = try container.decode(String.self, forKey: .name)
+		fingerprint = try container.decode(String.self, forKey: .fingerprint)
+		approveFP = try container.decode(String.self, forKey: .approveFP)
+		createdAt = try container.decodeIfPresent(Int.self, forKey: .createdAt)
+		safetyNumber = try container.decodeIfPresent(String.self, forKey: .safetyNumber)
+		keyChanged = try container.decodeIfPresent(Bool.self, forKey: .keyChanged) ?? false
 	}
 
 	/// Decodes a `pendingApproveConfirmations` reply.
@@ -91,6 +116,8 @@ public struct HelperAccountStatus: Codable, Sendable, Equatable {
 	public var lastError: String?
 	public var phones: [String]?
 	public var pendingConfirmations: Int?
+	/// Account iPhones whose keys changed and wait for the owner's confirmation again.
+	public var keyChanged: [String]?
 	/// Per account iPhone: its approval push text and whether it made the latest request.
 	public var phoneDetails: [PhoneDetail]?
 	public var error: ErrorBody?
@@ -127,6 +154,7 @@ public struct HelperAccountStatus: Codable, Sendable, Equatable {
 		case lastSyncAt = "last_sync_at"
 		case lastError = "last_error"
 		case pendingConfirmations = "pending_confirmations"
+		case keyChanged = "key_changed"
 		case phoneDetails = "phone_details"
 	}
 

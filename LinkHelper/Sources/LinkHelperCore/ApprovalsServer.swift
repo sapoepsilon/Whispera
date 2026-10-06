@@ -174,12 +174,31 @@ public final class ApprovalsServer: @unchecked Sendable {
 		guard WireJSON.pythonCanonical(typed) == raw else {
 			throw Malformed("canonical bytes are not in canonical form")
 		}
+		// What every approver parses: no duplicate keys, and no control, bidi, zero-width or
+		// line-break characters that would make a card or push read differently from the bytes.
+		do {
+			_ = try CanonicalApproval(bytes: raw)
+		} catch let refusal as CanonicalApproval.Refusal {
+			switch refusal {
+			case .unsafeCharacters(let field):
+				throw Malformed("unsafe characters in \(field)", code: "unsafe_characters")
+			case .malformed(let detail):
+				throw Malformed("refused by the approval parser: \(detail)")
+			default:
+				throw Malformed("refused by the approval parser")
+			}
+		}
 		return (raw, typed)
 	}
 
 	struct Malformed: Error {
 		let reason: String
-		init(_ reason: String) { self.reason = reason }
+		/// What `approval.error` says to the broker.
+		let code: String
+		init(_ reason: String, code: String = "malformed") {
+			self.reason = reason
+			self.code = code
+		}
 	}
 
 	// MARK: Socket side
@@ -228,12 +247,17 @@ public final class ApprovalsServer: @unchecked Sendable {
 			approvals[rid] = approval
 		} catch {
 			let reason = (error as? Malformed)?.reason ?? "malformed"
+			let code = (error as? Malformed)?.code ?? "malformed"
 			log("approval.malformed", ["request_id": rid ?? "-", "detail": String(reason.prefix(120))])
-			try? connection.sendLine(["op": "approval.error", "request_id": rid ?? NSNull(), "code": "malformed"])
+			try? connection.sendLine([
+				"op": "approval.error", "request_id": rid ?? NSNull(), "code": code,
+				"message": String(reason.prefix(120)),
+			])
 			return nil
 		}
 
-		let active = devices.active()
+		// Only devices the owner confirmed hear about approvals.
+		let active = devices.active().filter(\.approveConfirmed)
 		func field(_ name: String) -> String { approval.canonical[name] as? String ?? "" }
 		let request = ApprovalPush(
 			requestID: approval.requestID, expiresAt: approval.expiresAt, preferDevice: approval.preferDevice,
@@ -411,12 +435,12 @@ public final class ApprovalsServer: @unchecked Sendable {
 		guard decision == "approve" || decision == "deny" else {
 			throw APIError(400, "bad_request", "decision must be approve or deny")
 		}
-		// A phone pinned from the account may deny at once, but approves only after the Mac's
-		// owner confirmed its approve key (step 11). The registry is re-read: a confirm that
-		// landed since the request was verified counts.
-		if decision == "approve", !(devices.get(device.deviceID)?.approveConfirmed ?? device.approveConfirmed) {
+		// Only a device the owner confirmed may settle a request, either way. The registry is
+		// re-read: a confirmation or a key change since the request was verified counts, and the
+		// signature is checked against the approve key pinned now.
+		guard let current = devices.get(device.deviceID), !current.isRevoked, current.approveConfirmed else {
 			log("approval.unconfirmed", ["device": device.deviceID, "request_id": requestID])
-			throw APIError(403, "approve_unconfirmed", "confirm this iPhone on the Mac before it can approve")
+			throw APIError(403, "device_unconfirmed", "confirm this iPhone on the Mac before it can decide")
 		}
 		lock.lock()
 		let found = approvals[requestID]
@@ -438,23 +462,29 @@ public final class ApprovalsServer: @unchecked Sendable {
 			"op": "approval.decision", "request_id": requestID, "decision": decision,
 			"device_id": device.deviceID,
 		]
-		if decision == "approve" {
-			guard let signature = signature as? String, !signature.isEmpty else {
-				throw APIError(422, "bad_signature", "approve needs a signature")
-			}
-			if !skipApprovePrecheck {
-				let key = try? LinkPublicKey(x963Base64: device.approvePubkey)
-				let der = Data(base64Encoded: signature) ?? Data()
-				guard let key,
-					LinkSignatures.verifyApproval(
-						canonical: approval.canonicalBytes, signature: der, approveKey: key)
-				else {
-					log("approval.bad_signature", ["device": device.deviceID, "request_id": requestID])
-					throw APIError(422, "bad_signature", "approve signature does not verify")
-				}
-			}
-			message["signature"] = signature
+		// Approve signs `WL1-APPROVE\n` + canonical, deny `WL1-DENY\n` + canonical, both with the
+		// approve key: a captured one can never pass for the other.
+		guard let signature = signature as? String, !signature.isEmpty else {
+			throw APIError(422, "bad_signature", "\(decision) needs a signature")
 		}
+		if !skipApprovePrecheck {
+			let key = try? LinkPublicKey(x963Base64: current.approvePubkey)
+			let der = Data(base64Encoded: signature) ?? Data()
+			let verified =
+				key.map {
+					decision == "approve"
+						? LinkSignatures.verifyApproval(
+							canonical: approval.canonicalBytes, signature: der, approveKey: $0)
+						: LinkSignatures.verifyDenial(canonical: approval.canonicalBytes, signature: der, approveKey: $0)
+				} ?? false
+			guard verified else {
+				log(
+					"approval.bad_signature",
+					["device": device.deviceID, "request_id": requestID, "detail": "decision=\(decision)"])
+				throw APIError(422, "bad_signature", "\(decision) signature does not verify")
+			}
+		}
+		message["signature"] = signature
 
 		lock.lock()
 		if approval.status != "pending" {

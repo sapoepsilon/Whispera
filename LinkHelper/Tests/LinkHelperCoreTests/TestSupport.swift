@@ -36,23 +36,74 @@ final class SoftPhone {
 		return Response(status: http.statusCode, body: data, headers: http.allHeaderFields)
 	}
 
-	func pair(code: String, daemonFP: String) async throws -> Response {
+	static func post(_ url: URL, _ body: [String: Any]) async throws -> Response {
+		var request = URLRequest(url: url)
+		request.httpMethod = "POST"
+		request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+		return try await send(request)
+	}
+
+	/// What a pairing v2 run sent, so tests can replay or tamper with it.
+	struct PairingRun {
+		var commit: Response
+		var reveal: [String: Any]
+		var response: Response?
+	}
+
+	func pairingBody(code: String, daemonFP: String, pairID: String, nonce: Data) throws -> [String: Any] {
 		let proof = try linkKey.sign(
 			LinkCrypto.pairProofMessage(code: code, daemonFP: daemonFP, approveX963: approveKey.publicKey.x963))
 		let approveProof = try approveKey.sign(LinkCrypto.pairApproveMessage(code: code, daemonFP: daemonFP))
-		let body: [String: Any] = [
-			"v": 1, "code": code, "name": "Test iPhone", "link_pubkey": linkKey.publicKey.x963Base64,
-			"approve_pubkey": approveKey.publicKey.x963Base64, "proof": proof.base64EncodedString(),
-			"approve_proof": approveProof.base64EncodedString(), "apns": NSNull(),
+		return [
+			"v": 2, "pair_id": pairID, "nonce": nonce.base64EncodedString(), "code": code, "name": "Test iPhone",
+			"link_pubkey": linkKey.publicKey.x963Base64, "approve_pubkey": approveKey.publicKey.x963Base64,
+			"proof": proof.base64EncodedString(), "approve_proof": approveProof.base64EncodedString(),
+			"apns": NSNull(),
 		]
-		var request = URLRequest(url: baseURL.appendingPathComponent("v1/pair"))
-		request.httpMethod = "POST"
-		request.httpBody = try JSONSerialization.data(withJSONObject: body)
-		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-		let response = try await Self.send(request)
-		deviceID = response.json["device_id"] as? String ?? ""
-		sttKey = response.json["stt_key"] as? String ?? ""
-		return response
+	}
+
+	func commitment(code: String, daemonFP: String, nonce: Data) -> String {
+		LinkCrypto.pairCommitment(
+			code: code, daemonFP: daemonFP, linkX963: linkKey.publicKey.x963, approveX963: approveKey.publicKey.x963,
+			nonce: nonce)
+	}
+
+	/// Pairing v2: commit, check the signed acknowledgement, then reveal (unless `reveal` is
+	/// false, for tests that capture the reveal and send something else).
+	func pairV2(code: String, daemonFP: String, reveal: Bool = true) async throws -> PairingRun {
+		let nonce = LinkCrypto.randomBytes(32)
+		let commitment = commitment(code: code, daemonFP: daemonFP, nonce: nonce)
+		let commit = try await Self.post(
+			baseURL.appendingPathComponent("v1/pair/commit"), ["v": 2, "commitment": commitment])
+		let pairID = commit.json["pair_id"] as? String ?? ""
+		if commit.status == 201 {
+			let key = try LinkPublicKey(x963Base64: commit.json["daemon_pubkey"] as? String ?? "")
+			let signature = Data(base64Encoded: commit.headers["X-WL-Server-Signature"] as? String ?? "") ?? Data()
+			XCTAssertEqual(key.fingerprint, daemonFP)
+			XCTAssertTrue(key.isValidSignature(signature, for: LinkCrypto.pairCommitAckMessage(body: commit.body)))
+			XCTAssertEqual(commit.json["commitment"] as? String, commitment)
+		}
+		let body = try pairingBody(code: code, daemonFP: daemonFP, pairID: pairID, nonce: nonce)
+		var run = PairingRun(commit: commit, reveal: body, response: nil)
+		if reveal, commit.status == 201 {
+			let response = try await Self.post(baseURL.appendingPathComponent("v1/pair"), body)
+			deviceID = response.json["device_id"] as? String ?? ""
+			sttKey = response.json["stt_key"] as? String ?? ""
+			run.response = response
+		}
+		return run
+	}
+
+	/// Pairing v2 end to end; answers the reveal's response (or the commit's on a refusal).
+	func pair(code: String, daemonFP: String) async throws -> Response {
+		let run = try await pairV2(code: code, daemonFP: daemonFP)
+		return run.response ?? run.commit
+	}
+
+	/// A wrong-code reveal: no commitment first (a guesser).
+	func reveal(_ body: [String: Any]) async throws -> Response {
+		try await Self.post(baseURL.appendingPathComponent("v1/pair"), body)
 	}
 
 	func signed(

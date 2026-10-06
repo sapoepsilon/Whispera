@@ -23,10 +23,17 @@ public struct DeviceRecord: Sendable, Equatable {
 	public var createdAt: Int
 	public var lastSeenAt: Int
 	public var revokedAt: Int?
-	/// Whether the Mac's owner confirmed this device's approve key. A device paired with a code
-	/// was confirmed by typing that code on the Mac; one pinned from the account starts
-	/// unconfirmed and may only deny until the owner confirms it with Touch ID (step 11).
+	/// Whether the Mac's owner confirmed this device (JSON `approve_confirmed`, the name kept for
+	/// existing files). A device paired with a code was confirmed by typing that code on the Mac;
+	/// one pinned from the account starts unconfirmed and may only read `devices/me` or unpair
+	/// itself until the owner compares its safety number and confirms it with Touch ID. An
+	/// unconfirmed device gets no agents, events, approvals, pushes, link offer or STT key.
 	public var approveConfirmed: Bool
+	/// The account device's agreement (KEM) key as the account listed it when it was pinned,
+	/// X9.63 base64; empty for a code-paired device.
+	public var kemPubkey: String
+	/// When a pinned account device's keys last changed (it then starts unconfirmed again).
+	public var keyChangedAt: Int?
 	/// `code` (paired with a pairing code) or `account` (pinned from the account's device list,
 	/// under the account device id).
 	public var origin: Origin
@@ -60,6 +67,8 @@ public struct DeviceRecord: Sendable, Equatable {
 		createdAt = WireJSON.strictInt(json["created_at"]) ?? 0
 		lastSeenAt = WireJSON.strictInt(json["last_seen_at"]) ?? 0
 		revokedAt = WireJSON.strictInt(json["revoked_at"])
+		kemPubkey = json["kem_pubkey"] as? String ?? ""
+		keyChangedAt = WireJSON.strictInt(json["key_changed_at"])
 		// Records written before step 11 have neither field: they were all code-paired, and a
 		// code pairing is the owner's confirmation.
 		approveConfirmed = json["approve_confirmed"] as? Bool ?? true
@@ -83,6 +92,8 @@ public struct DeviceRecord: Sendable, Equatable {
 		createdAt = now
 		lastSeenAt = now
 		revokedAt = nil
+		kemPubkey = ""
+		keyChangedAt = nil
 		self.approveConfirmed = approveConfirmed
 		self.origin = origin
 		pushText = .named
@@ -117,6 +128,8 @@ public struct DeviceRecord: Sendable, Equatable {
 			"last_seen_at": lastSeenAt,
 			"revoked_at": revokedAt ?? NSNull(),
 			"approve_confirmed": approveConfirmed,
+			"kem_pubkey": kemPubkey.isEmpty ? NSNull() : kemPubkey,
+			"key_changed_at": keyChangedAt ?? NSNull(),
 			"origin": origin.rawValue,
 			"push_text": pushText.rawValue,
 		]
@@ -191,13 +204,13 @@ public final class DeviceRegistry: @unchecked Sendable {
 		return .active(key)
 	}
 
-	/// The non-revoked device whose `stt_key_sha256` matches, compared against every device in
-	/// constant time per comparison (§4.4).
+	/// The non-revoked, owner-confirmed device whose `stt_key_sha256` matches, compared against
+	/// every such device in constant time per comparison (§4.4).
 	public func matchSTTKey(_ token: String) -> DeviceRecord? {
 		guard !token.isEmpty else { return nil }
 		let digest = Data(LinkCrypto.sha256Hex(Data(token.utf8)).utf8)
 		var found: DeviceRecord?
-		for device in active() {
+		for device in active() where device.approveConfirmed && !device.sttKeySHA256.isEmpty {
 			if Self.constantTimeEqual(digest, Data(device.sttKeySHA256.utf8)) { found = device }
 		}
 		return found
@@ -230,44 +243,74 @@ public final class DeviceRegistry: @unchecked Sendable {
 		return record
 	}
 
-	/// Pins a device of the Mac's account under its account `device_id` (step 11), approve
-	/// rights unconfirmed. An existing record with the same keys is kept as it is (a revoked one
-	/// stays revoked); `isNew` is false then. A record whose keys changed is replaced and starts
-	/// unconfirmed again. Throws for an invalid id or a clash with a code-paired record.
+	/// What `pinAccountDevice` did.
+	public struct PinResult: Sendable {
+		public var record: DeviceRecord
+		/// A record was created for an id seen for the first time.
+		public var isNew: Bool
+		/// A known id came back with a different link, approve or agreement key: the record now
+		/// holds the new keys and starts unconfirmed again, without an STT key.
+		public var keyChanged: Bool
+	}
+
+	/// What a device name from the account may hold: no control, bidi, zero-width or line
+	/// separator characters (`CanonicalApproval.isUnsafe`), at most 64 characters.
+	public static func sanitizedName(_ name: String) -> String {
+		var scalars = String.UnicodeScalarView()
+		scalars.append(contentsOf: name.unicodeScalars.filter { !CanonicalApproval.isUnsafe($0) })
+		return String(String(scalars).trimmingCharacters(in: .whitespaces).prefix(64))
+	}
+
+	/// Pins a device of the Mac's account under its account `device_id` (step 11), unconfirmed
+	/// and without an STT key. An existing record with the same link, approve and agreement keys
+	/// is kept as it is (a revoked one stays revoked). Any key change for a known id makes it a
+	/// new, unconfirmed device: keys replaced, confirmation and STT key dropped,
+	/// `key_changed_at` set. Throws for an invalid id or a clash with a code-paired record.
 	public func pinAccountDevice(
-		deviceID: String, name: String, link: LinkPublicKey, approve: LinkPublicKey, sttKeySHA256: String
-	) throws -> (record: DeviceRecord, isNew: Bool) {
+		deviceID: String, name: String, link: LinkPublicKey, approve: LinkPublicKey, kem: LinkPublicKey
+	) throws -> PinResult {
 		lock.lock()
 		defer { lock.unlock() }
 		guard LinkCrypto.isValidDeviceID(deviceID) else {
 			throw APIError(400, "bad_request", "invalid account device id")
 		}
+		let name = Self.sanitizedName(name)
+		var keyChanged = false
 		if let existing = devices[deviceID] {
 			guard existing.origin == .account else {
 				throw APIError(409, "conflict", "device id belongs to a code-paired device")
 			}
-			if existing.linkPubkey == link.x963Base64 && existing.approvePubkey == approve.x963Base64 {
+			if existing.linkPubkey == link.x963Base64 && existing.approvePubkey == approve.x963Base64
+				&& existing.kemPubkey == kem.x963Base64
+			{
 				if !existing.isRevoked, existing.name != name, !name.isEmpty {
 					var renamed = existing
-					renamed.name = String(name.prefix(64))
+					renamed.name = name
 					devices[deviceID] = renamed
 					try save()
-					return (renamed, false)
+					return PinResult(record: renamed, isNew: false, keyChanged: false)
 				}
-				return (existing, false)
+				return PinResult(record: existing, isNew: false, keyChanged: false)
 			}
-			if existing.isRevoked { return (existing, false) }
+			if existing.isRevoked { return PinResult(record: existing, isNew: false, keyChanged: false) }
+			keyChanged = true
 		}
 		try FileStore.ensureDirectory(keysDir)
 		try FileStore.writeAtomic(Data(link.spkiPEM.utf8), to: linkPEMPath(deviceID))
 		try FileStore.writeAtomic(Data(approve.spkiPEM.utf8), to: approvePEMPath(deviceID))
-		let record = DeviceRecord(
-			deviceID: deviceID, name: String(name.prefix(64)), link: link, approve: approve,
-			sttKeySHA256: sttKeySHA256, apns: nil, app: nil, now: clock(), approveConfirmed: false,
+		var record = DeviceRecord(
+			deviceID: deviceID, name: name.isEmpty ? "iPhone" : name, link: link, approve: approve,
+			sttKeySHA256: "", apns: nil, app: nil, now: clock(), approveConfirmed: false,
 			origin: .account)
+		record.kemPubkey = kem.x963Base64
+		if keyChanged, let existing = devices[deviceID] {
+			record.createdAt = existing.createdAt
+			record.pushText = existing.pushText
+			record.keyChangedAt = clock()
+		}
 		devices[deviceID] = record
 		try save()
-		return (record, true)
+		return PinResult(record: record, isNew: !keyChanged, keyChanged: keyChanged)
 	}
 
 	/// Replaces the device's STT key hash (a re-sent link offer carries a fresh key).
@@ -280,21 +323,30 @@ public final class DeviceRegistry: @unchecked Sendable {
 		try save()
 	}
 
-	/// Marks the device's approve key confirmed by the owner. Nil if unknown or revoked.
+	/// Marks the device confirmed by the owner, when `matches` accepts the record as it is now
+	/// (checked under the registry lock, so keys cannot change between check and confirm).
+	/// Nil if unknown or revoked; throws 409 `keys_changed` when `matches` refuses.
 	@discardableResult
-	public func confirmApprove(_ deviceID: String) throws -> DeviceRecord? {
+	public func confirmApprove(_ deviceID: String, matches: (DeviceRecord) -> Bool = { _ in true }) throws
+		-> DeviceRecord?
+	{
 		lock.lock()
 		defer { lock.unlock() }
 		guard var record = devices[deviceID], !record.isRevoked else { return nil }
-		if !record.approveConfirmed {
+		guard matches(record) else {
+			throw APIError(
+				409, "keys_changed", "the device's keys changed since this safety number was shown; check again")
+		}
+		if !record.approveConfirmed || record.keyChangedAt != nil {
 			record.approveConfirmed = true
+			record.keyChangedAt = nil
 			devices[deviceID] = record
 			try save()
 		}
 		return record
 	}
 
-	/// Active devices whose approve rights wait for the owner's confirmation.
+	/// Active devices waiting for the owner's confirmation.
 	public func pendingApproveConfirmations() -> [DeviceRecord] {
 		active().filter { !$0.approveConfirmed }
 	}

@@ -75,6 +75,7 @@ public final class PushSealer: @unchecked Sendable {
 		lock.unlock()
 	}
 
+	/// The phones pushes may be sealed to: only those the owner confirmed (AccountLink filters).
 	public func setPhones(_ phones: [TrustedDevice]) {
 		lock.lock()
 		phoneKeys = Dictionary(phones.map { ($0.id, $0.agreementKey) }, uniquingKeysWith: { first, _ in first })
@@ -150,7 +151,7 @@ public final class RelayPush: PushNotifier, @unchecked Sendable {
 	static func plan(_ devices: [DeviceRecord], preferDevice: String?, lastDevice: String?) -> (
 		preferred: DeviceRecord?, others: [DeviceRecord]
 	) {
-		let eligible = devices.filter { !$0.isRevoked && $0.origin == .account }.sorted {
+		let eligible = devices.filter { !$0.isRevoked && $0.origin == .account && $0.approveConfirmed }.sorted {
 			($0.createdAt, $0.deviceID) > ($1.createdAt, $1.deviceID)
 		}
 		let wanted = preferDevice ?? lastDevice ?? eligible.first?.deviceID

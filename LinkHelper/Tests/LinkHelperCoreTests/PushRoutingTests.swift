@@ -202,6 +202,15 @@ final class PushDeliveryTests: XCTestCase {
 		while !condition(), Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
 	}
 
+	private func confirm(_ phones: AccountPhone...) async throws {
+		let id = await helper.daemon.account.deviceID
+		let macID = try XCTUnwrap(id)
+		for phone in phones {
+			_ = try await helper.daemon.account.confirmApprove(
+				phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+		}
+	}
+
 	func testNamedPushesAreSealedForThePhoneAndGenericOnesCarryNothing() async throws {
 		let named = AccountPhone(backend: backend)
 		try await named.register(bearer: "tok-alice", name: "Named")
@@ -210,6 +219,7 @@ final class PushDeliveryTests: XCTestCase {
 		let status = try await helper.daemon.account.connect(bearer: "tok-alice", backendURL: backend.baseURL)
 		let macID = try XCTUnwrap(status["device_id"] as? String)
 		_ = try await helper.daemon.account.syncNow()
+		try await confirm(named, generic)
 
 		let set = try await soft(generic).call("PUT", "/v1/devices/me/push", json: ["text": "generic"])
 		XCTAssertEqual(set.status, 200)
@@ -249,7 +259,9 @@ final class PushDeliveryTests: XCTestCase {
 		XCTAssertFalse(log.contains("API_KEY · demo"), "push text never reaches the log")
 
 		// Denying resolves the approval: both phones get approval.resolved.
-		let denied = try await soft(named).call("POST", "/v1/approvals/\(approval.id)/decision", json: ["decision": "deny"])
+		let denied = try await soft(named).call("POST", "/v1/approvals/\(approval.id)/decision", json: [
+			"decision": "deny", "signature": try approval.denial(named.approveKey),
+		])
 		XCTAssertEqual(denied.status, 200)
 		try await wait { self.backend.notifyCalls.filter { $0.kind == "approval.resolved" }.count == 2 }
 		let resolved = backend.notifyCalls.filter { $0.kind == "approval.resolved" }
@@ -264,6 +276,7 @@ final class PushDeliveryTests: XCTestCase {
 		try await second.register(bearer: "tok-alice", name: "Second")
 		_ = try await helper.daemon.account.connect(bearer: "tok-alice", backendURL: backend.baseURL)
 		_ = try await helper.daemon.account.syncNow()
+		try await confirm(first, second)
 
 		let me = try await soft(first).call("GET", "/v1/devices/me")
 		XCTAssertEqual(me.status, 200)

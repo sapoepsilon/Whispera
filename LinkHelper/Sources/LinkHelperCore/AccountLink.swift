@@ -7,16 +7,20 @@ import WhisperaLink
 ///
 /// - `connect` registers the Mac (`platform: macos`, the relay link key, a KEM record) with the
 ///   account bearer the app hands over, unless it already is, and persists the device id.
-/// - The sync loop lists the account's devices over WL1 (`GET /v1/device/peers`), pins every
-///   active, verified iPhone under its account device id with approve rights pending, and
-///   sends each a sealed `link_offer` — once, and again only when what the offer says changes.
-///   Phones revoked or gone from the list are revoked here, so the HTTP API answers
-///   `auth_revoked`, and nothing is sent to them.
+/// - The sync loop lists the account's devices over WL1 (`GET /v1/device/peers`) and pins every
+///   active, well-formed iPhone under its account device id, unconfirmed. The backend supplies
+///   both the keys and their fingerprints, so a listed phone is only a candidate: it gets no
+///   link offer, STT key, push or API access until the owner compares its safety number with
+///   the iPhone's screen and confirms it on the Mac. A confirmed phone gets a sealed
+///   `link_offer`, again only when what the offer says changes. A known phone whose link,
+///   approve or agreement key changes is unconfirmed again (`device.key_changed`). Phones
+///   revoked or gone from the list are revoked here, so the HTTP API answers `auth_revoked`,
+///   and nothing is sent to them.
 /// - Relay messages are read by one `RelayMailbox` (long poll, open, ack): `unpaired` from a
 ///   verified iPhone of the account is acted on, and `api_request` / `api_cancel` from a pinned
 ///   iPhone go to the `RelayIngress`, which runs them through the LinkAPI (step 12).
-/// - `confirmApprove` (the owner's Touch ID in the app) unlocks approvals for a phone and tells
-///   it with `approve_confirmed`.
+/// - `confirmApprove` (the owner's Touch ID in the app, bound to the safety number the owner
+///   saw) confirms a phone, sends it the link offer and then `approve_confirmed`.
 ///
 /// The bearer is used for registration only and never stored.
 public actor AccountLink {
@@ -55,6 +59,8 @@ public actor AccountLink {
 		public var offered: [String] = []
 		public var dropped: [String] = []
 		public var untrusted: [String] = []
+		/// Known phones whose keys changed: unconfirmed again.
+		public var keyChanged: [String] = []
 	}
 
 	private let paths: HelperConfig.Paths
@@ -114,6 +120,7 @@ public actor AccountLink {
 			"last_error": state?.last_error ?? NSNull(), "syncing": loop != nil,
 			"phones": devices.active().filter { $0.origin == .account }.map(\.deviceID),
 			"pending_confirmations": devices.pendingApproveConfirmations().count,
+			"key_changed": devices.pendingApproveConfirmations().filter { $0.keyChangedAt != nil }.map(\.deviceID),
 		]
 	}
 
@@ -150,19 +157,55 @@ public actor AccountLink {
 	}
 
 	public func pendingConfirmations() -> [[String: Any]] {
-		devices.pendingApproveConfirmations().map(Self.confirmationObject)
+		let macLink = macLinkKey()
+		return devices.pendingApproveConfirmations().map { Self.confirmationObject($0, macLink: macLink) }
 	}
 
-	/// The owner confirmed `deviceID`'s approve key (Touch ID in the app). Marks it and, for an
-	/// account phone, sends it `approve_confirmed`.
-	public func confirmApprove(_ deviceID: String) async throws -> [String: Any] {
-		guard let record = try devices.confirmApprove(deviceID) else {
-			throw APIError(404, "not_found", "no such active device")
+	/// This Mac's account link key (the one the phone lists for it), when registered.
+	nonisolated func macLinkKey() -> LinkPublicKey? {
+		guard let pem = try? String(contentsOfFile: paths.relayKey, encoding: .utf8),
+			let key = try? SoftwareSigningKey(pkcs8PEM: pem)
+		else { return nil }
+		return key.publicKey
+	}
+
+	/// The number the owner compares with the iPhone's screen, from the keys pinned here.
+	static func safetyNumber(_ record: DeviceRecord, macLink: LinkPublicKey?) -> String? {
+		guard let macLink, let link = try? LinkPublicKey(x963Base64: record.linkPubkey),
+			let approve = try? LinkPublicKey(x963Base64: record.approvePubkey)
+		else { return nil }
+		return SafetyNumber.compute(macLink: macLink, phoneLink: link, phoneApprove: approve)
+	}
+
+	static func normalizedSafetyNumber(_ text: String) -> String {
+		text.filter(\.isNumber)
+	}
+
+	/// The owner confirmed `deviceID` (Touch ID in the app) after comparing `safetyNumber` with
+	/// the iPhone. The number is recomputed from the record as it is now; any difference (keys
+	/// changed since the card was shown) refuses with 409 `keys_changed`. Then, for an account
+	/// phone, sends it a link offer with a fresh STT key and `approve_confirmed`.
+	public func confirmApprove(_ deviceID: String, safetyNumber: String) async throws -> [String: Any] {
+		let shown = Self.normalizedSafetyNumber(safetyNumber)
+		guard shown.count == 12 else {
+			throw APIError(400, "bad_request", "safety_number must be the 12 digits the owner compared")
 		}
+		let macLink = macLinkKey()
+		let record: DeviceRecord?
+		do {
+			record = try devices.confirmApprove(deviceID) { current in
+				guard let expected = Self.safetyNumber(current, macLink: macLink) else { return false }
+				return Self.normalizedSafetyNumber(expected) == shown
+			}
+		} catch let error as APIError {
+			log("device.confirm_refused", ["device": deviceID, "detail": error.code])
+			throw error
+		}
+		guard let record else { throw APIError(404, "not_found", "no such active device") }
 		log("device.approve_confirmed", ["device": deviceID])
 		var sent = false
 		if record.origin == .account, state != nil {
-			sent = (try? await serialized { try await self.sendApproveConfirmedLocked(deviceID) }) ?? false
+			sent = (try? await serialized { try await self.sendConfirmedLocked(deviceID) }) ?? false
 		}
 		return ["ok": true, "device": record.publicJSON, "notified": sent]
 	}
@@ -180,14 +223,31 @@ public actor AccountLink {
 		stopMailbox()
 	}
 
-	static func confirmationObject(_ record: DeviceRecord) -> [String: Any] {
+	static func confirmationObject(_ record: DeviceRecord, macLink: LinkPublicKey?) -> [String: Any] {
 		let fingerprint =
 			(try? LinkPublicKey(x963Base64: record.approvePubkey).displayFingerprint) ?? record.approveFP
 		let linkFingerprint = (try? LinkPublicKey(x963Base64: record.linkPubkey).displayFingerprint) ?? record.linkFP
 		return [
 			"device_id": record.deviceID, "name": record.name, "platform": "ios", "approve_fp": record.approveFP,
 			"fingerprint": fingerprint, "link_fingerprint": linkFingerprint, "created_at": record.createdAt,
+			"safety_number": safetyNumber(record, macLink: macLink) ?? NSNull(),
+			"key_changed": record.keyChangedAt != nil, "key_changed_at": record.keyChangedAt ?? NSNull(),
 		]
+	}
+
+	/// Whether the account still lists `phone` with exactly the keys pinned in `record`.
+	static func keysMatch(_ record: DeviceRecord, _ phone: TrustedDevice) -> Bool {
+		record.linkPubkey == phone.linkKey.x963Base64 && record.approvePubkey == phone.approveKey?.x963Base64
+			&& record.kemPubkey == phone.agreementKey.x963Base64
+	}
+
+	/// The listed phones that are pinned here, confirmed by the owner, with unchanged keys: the
+	/// only ones pushes are sealed to.
+	private func confirmedPhones(_ account: AccountDevices) -> [TrustedDevice] {
+		account.phones.filter { phone in
+			guard let record = devices.get(phone.id), !record.isRevoked, record.approveConfirmed else { return false }
+			return Self.keysMatch(record, phone)
+		}
 	}
 
 	// MARK: Serialisation
@@ -343,7 +403,6 @@ public actor AccountLink {
 		let listed = try await client.peers()
 		let account = AccountDevices(classifying: listed, selfID: myID)
 		snapshot = account
-		pushSealer.setPhones(account.phones)
 		var report = SyncReport()
 		report.untrusted = account.untrusted.map(\.id)
 		let unpaired = Set(state?.unpaired ?? [])
@@ -355,11 +414,11 @@ public actor AccountLink {
 				log("account.skip", ["device": phone.id, "detail": "no approve key"])
 				continue
 			}
-			let pinned: (record: DeviceRecord, isNew: Bool)
+			let pinned: DeviceRegistry.PinResult
 			do {
 				pinned = try devices.pinAccountDevice(
 					deviceID: phone.id, name: phone.name, link: phone.linkKey, approve: approve,
-					sttKeySHA256: "")
+					kem: phone.agreementKey)
 			} catch {
 				log("account.skip", ["device": phone.id, "detail": "pin failed"])
 				continue
@@ -368,10 +427,17 @@ public actor AccountLink {
 			keep.insert(phone.id)
 			if pinned.isNew {
 				report.pinned.append(phone.id)
-				log("device.pinned", ["device": phone.id, "detail": "account approve=pending"])
+				log("device.pinned", ["device": phone.id, "detail": "account unconfirmed"])
 			}
+			if pinned.keyChanged {
+				report.keyChanged.append(phone.id)
+				state?.offers[phone.id] = nil
+				log("device.key_changed", ["device": phone.id, "detail": "unconfirmed until the owner confirms again"])
+			}
+			// Nothing goes to a phone the owner has not confirmed: no offer, no STT key.
+			guard pinned.record.approveConfirmed else { continue }
 			let digest = Self.offerDigest(context, approveConfirmed: pinned.record.approveConfirmed)
-			if pinned.isNew || state?.offers[phone.id] != digest {
+			if state?.offers[phone.id] != digest {
 				if try await sendOffer(client, to: phone, record: pinned.record, context: context, myID: myID) {
 					state?.offers[phone.id] = digest
 					report.offered.append(phone.id)
@@ -386,6 +452,7 @@ public actor AccountLink {
 			let why = account.revokedIDs.contains(record.deviceID) ? "revoked in account" : "not in account"
 			log("device.revoked", ["device": record.deviceID, "detail": why])
 		}
+		pushSealer.setPhones(confirmedPhones(account))
 		state?.last_sync_at = clock()
 		state?.last_error = nil
 		status = "registered"
@@ -415,15 +482,25 @@ public actor AccountLink {
 		return true
 	}
 
-	private func sendApproveConfirmedLocked(_ deviceID: String) async throws -> Bool {
+	/// After the owner's confirmation: the link offer (fresh STT key), then `approve_confirmed`,
+	/// both only to the listed phone whose keys are the ones confirmed.
+	private func sendConfirmedLocked(_ deviceID: String) async throws -> Bool {
 		let client = try client()
-		if snapshot?.peer(deviceID) == nil { _ = try await syncPeersLocked() }
-		guard let peer = snapshot?.peer(deviceID) else { return false }
-		try await client.send(.approveConfirmed(deviceID: deviceID), to: peer)
-		if let record = devices.get(deviceID) {
-			state?.offers[deviceID] = Self.offerDigest(offerContext(), approveConfirmed: record.approveConfirmed)
-			saveState()
+		guard let myID = state?.device_id else { return false }
+		_ = try await syncPeersLocked()
+		guard let peer = snapshot?.phones.first(where: { $0.id == deviceID }), let record = devices.get(deviceID),
+			record.approveConfirmed, !record.isRevoked, Self.keysMatch(record, peer)
+		else { return false }
+		let context = offerContext()
+		let digest = Self.offerDigest(context, approveConfirmed: true)
+		if state?.offers[deviceID] != digest {
+			guard try await sendOffer(client, to: peer, record: record, context: context, myID: myID) else {
+				return false
+			}
+			state?.offers[deviceID] = digest
 		}
+		try await client.send(.approveConfirmed(deviceID: deviceID), to: peer)
+		saveState()
 		log("account.approve_confirmed_sent", ["device": deviceID])
 		return true
 	}
@@ -487,7 +564,7 @@ public actor AccountLink {
 		let listed = try await client().peers()
 		let account = AccountDevices(classifying: listed, selfID: state?.device_id)
 		snapshot = account
-		pushSealer.setPhones(account.phones)
+		pushSealer.setPhones(confirmedPhones(account))
 		return account
 	}
 

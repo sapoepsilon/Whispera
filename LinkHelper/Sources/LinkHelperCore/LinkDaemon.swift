@@ -306,17 +306,25 @@ public final class LinkDaemon: @unchecked Sendable {
 			let report = try await account.syncNow()
 			return [
 				"ok": true, "pinned": report.pinned, "offered": report.offered, "dropped": report.dropped,
-				"untrusted": report.untrusted,
+				"untrusted": report.untrusted, "key_changed": report.keyChanged,
 			]
 		}
 	}
 
 	func approvePending() -> [String: Any] {
-		["ok": true, "devices": devices.pendingApproveConfirmations().map(AccountLink.confirmationObject)]
+		let macLink = account.macLinkKey()
+		return [
+			"ok": true,
+			"devices": devices.pendingApproveConfirmations().map {
+				AccountLink.confirmationObject($0, macLink: macLink)
+			},
+		]
 	}
 
-	func approveConfirm(_ deviceID: String) throws -> [String: Any] {
-		try blocking { [account] in try await account.confirmApprove(deviceID) }
+	/// `safetyNumber` is the one the owner compared; the helper recomputes it from the device's
+	/// current keys and refuses (409 `keys_changed`) when they differ.
+	func approveConfirm(_ deviceID: String, safetyNumber: String) throws -> [String: Any] {
+		try blocking { [account] in try await account.confirmApprove(deviceID, safetyNumber: safetyNumber) }
 	}
 
 	private func adminHandlers() -> [String: AdminServer.Handler] {
@@ -336,7 +344,8 @@ public final class LinkDaemon: @unchecked Sendable {
 						403, "forbidden", "approve.confirm needs WHISPERA_LINK_TEST_ADMIN_CONFIRM=1 (test only)")
 				}
 				log("config.warning", ["detail": "approve confirmed over the admin socket (test flag)"])
-				return try approveConfirm(request["device_id"] as? String ?? "")
+				return try approveConfirm(
+					request["device_id"] as? String ?? "", safetyNumber: request["safety_number"] as? String ?? "")
 			},
 			"status": { [unowned self] _ in
 				(try JSONSerialization.jsonObject(with: statusJSON()) as? [String: Any]) ?? ["ok": true]
@@ -365,7 +374,7 @@ public final class LinkDaemon: @unchecked Sendable {
 					ApprovalPush(
 						requestID: LinkCrypto.newPrefixedID("apr"), expiresAt: now() + 60,
 						lastDevice: lastDevice.current, summary: "test push"),
-					devices: devices.active(), isPending: { false })
+					devices: devices.active().filter(\.approveConfirmed), isPending: { false })
 				return [
 					"ok": true, "apns": push.isConfigured ? "configured" : "unconfigured",
 					"results": ["all": status],

@@ -67,7 +67,8 @@ final class ApprovalWindowTests: XCTestCase {
 
 		let late = try broker.request(now: start + 65, ttl: 300)
 		clock.now = start + 65 + 299
-		let lastSecond = try server.decide(late.id, device: phone, decision: "deny", signature: nil)
+		let lastSecond = try server.decide(
+			late.id, device: phone, decision: "deny", signature: try late.denial(approveKey))
 		XCTAssertEqual(lastSecond["status"] as? String, "denied")
 
 		let expired = try broker.request(now: clock.now, ttl: 300)

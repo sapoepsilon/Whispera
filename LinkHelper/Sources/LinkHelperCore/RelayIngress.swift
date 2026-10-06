@@ -257,9 +257,18 @@ public final class RelayIngress: @unchecked Sendable {
 			log("relay.rejected", ["device": sender.id, "detail": "not an iPhone"])
 			return
 		}
-		let refusal: APIError?
+		var refusal: APIError?
 		switch devices.get(sender.id) {
-		case .some(let record) where record.origin == .account && !record.isRevoked: refusal = nil
+		case .some(let record) where record.origin == .account && !record.isRevoked:
+			// The envelope came from the keys the account lists now; they must be the pinned
+			// ones, and an unconfirmed phone reaches only what LinkAPI lets it.
+			let path = String(request.target.split(separator: "?", maxSplits: 1).first ?? "")
+			let route = LinkAPI.match(request.method, path)?.name ?? "unknown"
+			if !AccountLink.keysMatch(record, sender) {
+				refusal = APIError(403, "device_unconfirmed", "this device's keys changed; confirm it on the Mac")
+			} else if !record.approveConfirmed, !LinkAPI.unconfirmedRoutes.contains(route) {
+				refusal = APIError(403, "device_unconfirmed", "confirm this device on the Mac before it can be used")
+			}
 		case .some(let record) where record.isRevoked: refusal = APIError(401, "auth_revoked", "device has been revoked")
 		default: refusal = APIError(401, "auth_unknown_device", "unknown device")
 		}

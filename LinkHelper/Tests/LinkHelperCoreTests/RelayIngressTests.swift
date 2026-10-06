@@ -107,12 +107,17 @@ final class RelayIngressTests: XCTestCase {
 	private func pump() async throws { _ = try await account.syncNow() }
 
 	/// A phone of the account, pinned by the Mac, with its offer read.
-	private func pinnedPhone(name: String = "Test iPhone") async throws -> (RelayPhone, AccountPhone) {
+	private func pinnedPhone(name: String = "Test iPhone", confirmed: Bool = true) async throws -> (
+		RelayPhone, AccountPhone
+	) {
 		let phone = AccountPhone(backend: backend)
 		try await phone.register(bearer: "tok-alice", name: name)
 		let status = try await account.connect(bearer: "tok-alice", backendURL: backend.baseURL)
 		let macID = try XCTUnwrap(status["device_id"] as? String)
 		_ = try await account.syncNow()
+		if confirmed {
+			_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+		}
 		_ = try await phone.receive()
 		return (RelayPhone(phone, macID: macID), phone)
 	}
@@ -174,7 +179,10 @@ final class RelayIngressTests: XCTestCase {
 
 	func testPairingAndSpeechAreNotAvailableOverTheRelay() async throws {
 		let (relay, _) = try await pinnedPhone()
-		for (method, target) in [("POST", "/v1/pair"), ("GET", "/v1/models"), ("POST", "/v1/audio/transcriptions")] {
+		for (method, target) in [
+			("POST", "/v1/pair"), ("POST", "/v1/pair/commit"), ("GET", "/v1/models"),
+			("POST", "/v1/audio/transcriptions"),
+		] {
 			let request = try relay.request(method, target, json: method == "POST" ? ["v": 1] : nil)
 			try await relay.send(request)
 			let response = try await relay.response(request.id, pump: pump)
@@ -193,6 +201,27 @@ final class RelayIngressTests: XCTestCase {
 		XCTAssertEqual(response.status, 200)
 		XCTAssertEqual(json(response.body)["ok"] as? Bool, true)
 		XCTAssertEqual(json(response.body)["daemon_fp"] as? String, helper.daemon.daemonFP)
+	}
+
+	func testAnUnconfirmedPhoneOverTheRelayGetsOnlyItsOwnRecord() async throws {
+		let (relay, phone) = try await pinnedPhone(confirmed: false)
+		let me = try relay.request("GET", "/v1/devices/me")
+		try await relay.send(me)
+		let answered = try await relay.response(me.id, pump: pump)
+		XCTAssertEqual(answered.status, 200)
+		XCTAssertEqual((json(answered.body)["device"] as? [String: Any])?["approve_confirmed"] as? Bool, false)
+		for (method, target, body) in [
+			("GET", "/v1/agents", nil), ("POST", "/v1/agents/w1-p1/prompt", ["text": "rm -rf ~"]),
+			("GET", "/v1/approvals/pending", nil), ("GET", "/v1/events", nil),
+		] as [(String, String, [String: Any]?)] {
+			let request = try relay.request(method, target, json: body)
+			try await relay.send(request)
+			let response = try await relay.response(request.id, pump: pump)
+			XCTAssertEqual(response.status, 403, target)
+			XCTAssertEqual(errorCode(response.body), "device_unconfirmed", target)
+		}
+		XCTAssertNil(helper.daemon.lastDevice.current, "an unconfirmed phone never becomes the push target")
+		XCTAssertFalse(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
 	}
 
 	func testOnlyPinnedPhonesAreServed() async throws {

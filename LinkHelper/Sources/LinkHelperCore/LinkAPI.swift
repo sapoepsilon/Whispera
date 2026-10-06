@@ -20,6 +20,9 @@ final class LinkAPI: @unchecked Sendable {
 	static let interruptKeys: Set<String> = ["esc", "ctrl+c"]
 	/// Background traffic: these signed routes do not make their device the `last_device`.
 	static let backgroundRoutes: Set<String> = ["events", "devices.apns", "devices.push"]
+	/// All an authenticated device the owner has not confirmed yet may do: read its own record
+	/// (to learn it is unconfirmed) and unpair itself.
+	static let unconfirmedRoutes: Set<String> = ["devices.me", "devices.delete"]
 
 	private unowned let daemon: LinkDaemon
 	private let verifier: RequestVerifier
@@ -43,6 +46,8 @@ final class LinkAPI: @unchecked Sendable {
 		switch (method, rest.count, rest[0]) {
 		case ("GET", 1, "health"): return Route(name: "health", auth: .none, body: .json)
 		case ("POST", 1, "pair"): return Route(name: "pair", auth: .none, body: .json)
+		case ("POST", 2, "pair") where rest[1] == "commit":
+			return Route(name: "pair.commit", auth: .none, body: .json)
 		case ("GET", 2, "devices") where rest[1] == "me":
 			return Route(name: "devices.me", auth: .signed, body: .json)
 		case ("DELETE", 2, "devices") where rest[1] == "me":
@@ -105,11 +110,26 @@ final class LinkAPI: @unchecked Sendable {
 				throw APIError(404, "not_found", "not available over the relay")
 			}
 			if route.auth == .none {
-				let body = try readBody(exchange, limit: limit)
 				if route.name == "health" {
+					_ = try readBody(exchange, limit: limit)
 					return send(exchange, 200, health(), requestID: requestID)
 				}
-				let (out, signature) = try daemon.pairing.handlePair(body)
+				if rateLimiter.isBlocked(exchange.remoteHost) {
+					throw APIError(429, "rate_limited", "too many failed attempts; retry in 60 s")
+				}
+				let out: Data
+				let signature: String
+				do {
+					let body = try readBody(exchange, limit: limit)
+					if route.name == "pair.commit" {
+						(out, signature) = try daemon.pairing.handleCommit(body, from: exchange.remoteHost)
+					} else {
+						(out, signature) = try daemon.pairing.handlePair(body, from: exchange.remoteHost)
+					}
+				} catch let error as APIError where (400..<500).contains(error.status) {
+					rateLimiter.fail(exchange.remoteHost)
+					throw error
+				}
 				return exchange.respond(
 					201,
 					headers: [
@@ -144,10 +164,19 @@ final class LinkAPI: @unchecked Sendable {
 				throw error
 			}
 			deviceID = device.deviceID
-			if !Self.backgroundRoutes.contains(route.name) { daemon.lastDevice.record(device.deviceID) }
 			guard matched != nil else { throw APIError(404, "not_found", "no such route") }
+			// Re-read: a confirmation or a key change since the lookup counts.
+			let current = daemon.devices.get(device.deviceID) ?? device
+			if !current.approveConfirmed, !Self.unconfirmedRoutes.contains(route.name) {
+				throw APIError(
+					403, "device_unconfirmed",
+					"confirm this device on the Mac (compare the safety number) before it can be used")
+			}
+			if current.approveConfirmed, !Self.backgroundRoutes.contains(route.name) {
+				daemon.lastDevice.record(device.deviceID)
+			}
 			if body == nil { body = try readBody(exchange, limit: limit) }
-			try serve(route, exchange: exchange, device: device, body: body ?? Data(), requestID: requestID)
+			try serve(route, exchange: exchange, device: current, body: body ?? Data(), requestID: requestID)
 		} catch let error as APIError {
 			exchange.respond(error.status, headers: [("X-WL-Request-Id", requestID)], body: error.envelope)
 		} catch is HTTPExchange.ConnectionGone {

@@ -99,7 +99,11 @@ public struct HelperConfig: Sendable {
 			cfg.ssePingInterval = ping
 		}
 		if env["WHISPERA_LINK_BONJOUR"] == "0" { cfg.bonjour = false }
-		cfg.testSkipApprovePrecheck = env["WHISPERA_LINK_TEST_SKIP_APPROVE_PRECHECK"] == "1"
+		#if DEBUG
+			// Test-only switches; a release build never reads them from the environment.
+			cfg.testSkipApprovePrecheck = env["WHISPERA_LINK_TEST_SKIP_APPROVE_PRECHECK"] == "1"
+			cfg.testAdminConfirm = env["WHISPERA_LINK_TEST_ADMIN_CONFIRM"] == "1"
+		#endif
 		if let url = nonEmpty(env["WHISPERA_LINK_RELAY_BASE_URL"]) { cfg.relayBaseURL = url }
 		if let url = nonEmpty(env["WHISPERA_LINK_ACCOUNT_BACKEND_URL"]) { cfg.accountBackendURL = url }
 		if let bearer = nonEmpty(env["WHISPERA_LINK_ACCOUNT_BEARER"]) { cfg.accountBearer = bearer }
@@ -111,7 +115,6 @@ public struct HelperConfig: Sendable {
 				.filter { !$0.isEmpty }
 		}
 		if let name = nonEmpty(env["WHISPERA_LINK_MAC_NAME"]) { cfg.macName = name }
-		cfg.testAdminConfirm = env["WHISPERA_LINK_TEST_ADMIN_CONFIRM"] == "1"
 		if let cli = env["WHISPERA_LINK_HERDR_CLI"] { cfg.herdrCLI = cli }
 		if let seconds = nonEmpty(env["WHISPERA_LINK_APPROVAL_FALLBACK_S"]).flatMap(Double.init), seconds >= 0 {
 			cfg.approvalFallback = seconds

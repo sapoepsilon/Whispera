@@ -46,6 +46,29 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 		lock.unlock()
 	}
 
+	/// Gives the listed device `id` all the keys (and KEM record) of the device `donor`
+	/// registered with, and drops `donor`: a reinstall, or a backend substituting keys.
+	func substituteKeys(of id: String, from donor: String) {
+		lock.lock()
+		defer { lock.unlock() }
+		guard var target = devices[id], let source = devices[donor]?.device else { return }
+		target.device.link_pubkey = source.link_pubkey
+		target.device.link_fp = source.link_fp
+		target.device.approve_pubkey = source.approve_pubkey
+		target.device.approve_fp = source.approve_fp
+		target.device.kem_pubkey = source.kem_pubkey
+		devices[id] = target
+		devices[donor] = nil
+		order.removeAll { $0 == donor }
+	}
+
+	/// Replaces only the device's KEM record (`KEMKeyRecord.base64`).
+	func setKEMRecord(of id: String, _ record: String) {
+		lock.lock()
+		devices[id]?.device.kem_pubkey = record
+		lock.unlock()
+	}
+
 	/// Every accepted `POST /v1/notify` body, in order.
 	var notifyCalls: [NotifyRequest] {
 		lock.lock()
@@ -228,6 +251,14 @@ final class AccountPhone {
 			approveKey: approveKey.publicKey, agreementKey: agreementKey.publicKey, transport: backend)
 		deviceID = device.device_id
 		return device
+	}
+
+	/// The safety number the iPhone shows for the Mac `macID`, from the keys the account lists.
+	func safetyNumber(macID: String) throws -> String {
+		guard let mac = backend.device(macID) else { throw RelayError.unknownSender(macID) }
+		return SafetyNumber.compute(
+			macLink: try LinkPublicKey(x963Base64: mac.link_pubkey), phoneLink: linkKey.publicKey,
+			phoneApprove: approveKey.publicKey)
 	}
 
 	var relay: RelayClient {
