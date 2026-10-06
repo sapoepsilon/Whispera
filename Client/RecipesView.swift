@@ -136,9 +136,14 @@ struct RecipesView: View {
 	/// fallback to the input and the same failure report above.
 	@ViewBuilder
 	private var tryCleanUpRows: some View {
-		TextField("Try it", text: $tryInput, prompt: Text("Paste a transcript"), axis: .vertical)
-			.lineLimit(2...5)
-			.accessibilityIdentifier("cleanUpTryInput")
+		VStack(alignment: .leading, spacing: 6) {
+			Text("Try it")
+			TextField("Try it", text: $tryInput, prompt: Text("Paste a transcript"), axis: .vertical)
+				.labelsHidden()
+				.textFieldStyle(.roundedBorder)
+				.lineLimit(2...5)
+				.accessibilityIdentifier("cleanUpTryInput")
+		}
 		HStack {
 			if let tryOutput {
 				Text(verbatim: tryOutput)
