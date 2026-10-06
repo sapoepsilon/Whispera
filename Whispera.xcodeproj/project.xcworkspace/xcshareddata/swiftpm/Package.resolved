@@ -1,5 +1,5 @@
 {
-  "originHash" : "dab403c07784f66bf8578498a8381c4d74a9ce991c91e0839aa2531617a49674",
+  "originHash" : "dbfffaad6f2c4155a8340d04e9e2862cbbc5095bdfbc38e33f785a3f45dd85c6",
   "pins" : [
     {
       "identity" : "fluidaudio",
@@ -98,6 +98,14 @@
       "state" : {
         "revision" : "150169bfba0889c229a2ce7494cf8949f18e6906",
         "version" : "1.1.9"
+      }
+    },
+    {
+      "identity" : "whispera-components",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/whispera-components",
+      "state" : {
+        "revision" : "105f151325f65d0b211d27aa26d061f980ab7103"
       }
     },
     {

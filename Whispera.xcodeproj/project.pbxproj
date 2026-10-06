@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D6LINKHLP000000000000020 /* LinkHelperCore in Frameworks */ = {isa = PBXBuildFile; productRef = D6LINKHLP000000000000030 /* LinkHelperCore */; };
+		D6LINKHLP000000000000021 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6LINKHLP000000000000031 /* WhisperKit */; };
+		D6LINKHLP000000000000022 /* LinkHelperXPC in Frameworks */ = {isa = PBXBuildFile; productRef = D6LINKHLP000000000000032 /* LinkHelperXPC */; };
+		D6LINKHLP000000000000023 /* WhisperaLinkHelper.app in Embed Login Items */ = {isa = PBXBuildFile; fileRef = D6LINKHLP000000000000001 /* WhisperaLinkHelper.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
 		1A1A1A1A1A1A1A1A1A1A1A1A /* WhisperaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A2A /* WhisperaApp.swift */; };
 		1A1A1A1A1A1A1A1A1A1A1A1B /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A2B /* MenuBarView.swift */; };
 		1A1A1A1A1A1A1A1A1A1A1A1C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A2C /* SettingsView.swift */; };
@@ -99,6 +103,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		D6LINKHLP000000000000040 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EAEAEAEAEAEAEAEAEAEAEAEA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D6LINKHLP000000000000010;
+			remoteInfo = WhisperaLinkHelper;
+		};
 		D63850D12E179188000FD465 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = EAEAEAEAEAEAEAEAEAEAEAEA /* Project object */;
@@ -115,7 +126,22 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		D6LINKHLP000000000000050 /* Embed Login Items */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LoginItems;
+			dstSubfolderSpec = 1;
+			files = (
+				D6LINKHLP000000000000023 /* WhisperaLinkHelper.app in Embed Login Items */,
+			);
+			name = "Embed Login Items";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		D6LINKHLP000000000000001 /* WhisperaLinkHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhisperaLinkHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2A2A2A2A2A2A2A2A2A2A2A2A /* WhisperaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperaApp.swift; sourceTree = "<group>"; };
 		2A2A2A2A2A2A2A2A2A2A2A2B /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		2A2A2A2A2A2A2A2A2A2A2A2C /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -205,6 +231,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		D6LINKHLP000000000000002 /* WhisperaLinkHelper */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaLinkHelper; sourceTree = "<group>"; };
 		D6AUTO0012F0000000000001 /* Automation */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Automation; sourceTree = "<group>"; };
 		D6CLIENTSYNCGRP000000001 /* Client */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Client; sourceTree = "<group>"; };
 		D63850CC2E179188000FD465 /* WhisperaUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUITests; sourceTree = "<group>"; };
@@ -219,6 +246,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		D6LINKHLP000000000000060 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D6LINKHLP000000000000020 /* LinkHelperCore in Frameworks */,
+				D6LINKHLP000000000000021 /* WhisperKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5A5A5A5A5A5A5A5A5A5A5A5A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -234,6 +270,7 @@
 				D6WPKGBLD00000000000011 /* WhisperaOpenAI in Frameworks */,
 				D6WPKGBLD00000000000021 /* WhisperaRecipes in Frameworks */,
 				D6WPKGBLD00000000000031 /* WhisperaBackend in Frameworks */,
+				D6LINKHLP000000000000022 /* LinkHelperXPC in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -257,6 +294,7 @@
 		6A6A6A6A6A6A6A6A6A6A6A6A = {
 			isa = PBXGroup;
 			children = (
+				D6LINKHLP000000000000002 /* WhisperaLinkHelper */,
 				D6AUTO0012F0000000000001 /* Automation */,
 				D6MDLENG2F30000000000000 /* ModelEngines */,
 				D6BENCH032F0000000000000 /* Benchmark */,
@@ -309,6 +347,7 @@
 			isa = PBXGroup;
 			children = (
 				3A3A3A3A3A3A3A3A3A3A3A3A /* Whispera.app */,
+				D6LINKHLP000000000000001 /* WhisperaLinkHelper.app */,
 				D63850CB2E179188000FD465 /* WhisperaUITests.xctest */,
 				D63850DE2E1791AF000FD465 /* WhisperaUnitTests.xctest */,
 			);
@@ -448,6 +487,30 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		D6LINKHLP000000000000010 /* WhisperaLinkHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D6LINKHLP000000000000070 /* Build configuration list for PBXNativeTarget "WhisperaLinkHelper" */;
+			buildPhases = (
+				D6LINKHLP000000000000061 /* Sources */,
+				D6LINKHLP000000000000060 /* Frameworks */,
+				D6LINKHLP000000000000062 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D6LINKHLP000000000000002 /* WhisperaLinkHelper */,
+			);
+			name = WhisperaLinkHelper;
+			packageProductDependencies = (
+				D6LINKHLP000000000000030 /* LinkHelperCore */,
+				D6LINKHLP000000000000031 /* WhisperKit */,
+			);
+			productName = WhisperaLinkHelper;
+			productReference = D6LINKHLP000000000000001 /* WhisperaLinkHelper.app */;
+			productType = "com.apple.product-type.application";
+		};
 		9A9A9A9A9A9A9A9A9A9A9A9A /* Whispera */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = BABABABABABABABABABABABA /* Build configuration list for PBXNativeTarget "Whispera" */;
@@ -456,10 +519,12 @@
 				CACACACACACACACACACACACA /* Sources */,
 				5A5A5A5A5A5A5A5A5A5A5A5A /* Frameworks */,
 				DADADADADADADADADADADADA /* Resources */,
+				D6LINKHLP000000000000050 /* Embed Login Items */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D6LINKHLP000000000000041 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D6A15700000000000000A001 /* History */,
@@ -533,6 +598,9 @@
 				LastSwiftUpdateCheck = 1630;
 				LastUpgradeCheck = 1630;
 				TargetAttributes = {
+					D6LINKHLP000000000000010 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					9A9A9A9A9A9A9A9A9A9A9A9A = {
 						CreatedOnToolsVersion = 15.0;
 					};
@@ -565,12 +633,14 @@
 				D6SPARKLE2ED700000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				D6FLUIDAU2F3000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 				D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */,
+				D6LINKHLP000000000000080 /* XCLocalSwiftPackageReference "LinkHelper" */,
 			);
 			productRefGroup = 8A8A8A8A8A8A8A8A8A8A8A8A /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				9A9A9A9A9A9A9A9A9A9A9A9A /* Whispera */,
+				D6LINKHLP000000000000010 /* WhisperaLinkHelper */,
 				D63850CA2E179188000FD465 /* WhisperaUITests */,
 				D63850DD2E1791AF000FD465 /* WhisperaUnitTests */,
 			);
@@ -578,6 +648,13 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		D6LINKHLP000000000000062 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D63850C92E179188000FD465 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -625,6 +702,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		D6LINKHLP000000000000061 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CACACACACACACACACACACACA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -726,6 +810,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		D6LINKHLP000000000000041 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D6LINKHLP000000000000010 /* WhisperaLinkHelper */;
+			targetProxy = D6LINKHLP000000000000040 /* PBXContainerItemProxy */;
+		};
 		D63850D22E179188000FD465 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 9A9A9A9A9A9A9A9A9A9A9A9A /* Whispera */;
@@ -739,6 +828,64 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		D6LINKHLP000000000000071 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 37;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = LVKV6U72U3;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Whispera Link";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Whispera Link lets your paired iPhone reach this Mac on your network.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macwhisper.app.debug.LinkHelper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D6LINKHLP000000000000072 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 37;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = LVKV6U72U3;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Whispera Link";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Whispera Link lets your paired iPhone reach this Mac on your network.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macwhisper.app.LinkHelper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		BBBBBBBBBBBBBBBBBBBBBBB1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1024,6 +1171,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		D6LINKHLP000000000000070 /* Build configuration list for PBXNativeTarget "WhisperaLinkHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D6LINKHLP000000000000071 /* Debug */,
+				D6LINKHLP000000000000072 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		BABABABABABABABABABABABA /* Build configuration list for PBXNativeTarget "Whispera" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1062,11 +1218,21 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		D6LINKHLP000000000000080 /* XCLocalSwiftPackageReference "LinkHelper" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LinkHelper;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sapoepsilon/whispera-components";
-			requirement = { kind = exactVersion; version = 0.1.2; };
+			requirement = {
+				kind = revision;
+				revision = 105f151325f65d0b211d27aa26d061f980ab7103;
+			};
 		};
 		D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -1119,6 +1285,21 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D6LINKHLP000000000000030 /* LinkHelperCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6LINKHLP000000000000080 /* XCLocalSwiftPackageReference "LinkHelper" */;
+			productName = LinkHelperCore;
+		};
+		D6LINKHLP000000000000031 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6D486302EA49C1F00C1D5FA /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			productName = WhisperKit;
+		};
+		D6LINKHLP000000000000032 /* LinkHelperXPC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6LINKHLP000000000000080 /* XCLocalSwiftPackageReference "LinkHelper" */;
+			productName = LinkHelperXPC;
+		};
 		D63900CE2E3D77B4005B5623 /* YouTubeKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */;
