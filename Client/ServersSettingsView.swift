@@ -24,16 +24,28 @@ extension StreamingGranularity {
 /// picker that used to sit under "LLM Servers" is gone (WHI-91), and so is the
 /// separate direct-engine URL block that duplicated it on the speech side.
 struct ServersSettingsView: View {
+	/// What the picker shows when nothing has been stored yet.
+	///
+	/// The fresh-install value, not `auto` — the same constant
+	/// `WhisperaSettings.transcriptionEngine` degrades an absent key to. They
+	/// disagreed, so a fresh install ran WhisperKit while this picker read
+	/// "Automatic (recommended)" (QA, 2026-08-23). Only the *absent* case is
+	/// affected: an explicit `auto` is a stored string and keeps winning. Named
+	/// rather than inlined so the agreement is assertable — see
+	/// `TranscriptionRouterTests.thePickerDefaultIsTheEngineAFreshInstallRuns`.
+	static let defaultEngineRawValue = TranscriptionEngine.fresh.rawValue
+
 	@AppStorage(WhisperaSettings.transcriptionEngineKey) private var transcriptionEngineRaw =
-		TranscriptionEngine.auto.rawValue
+		ServersSettingsView.defaultEngineRawValue
 	@AppStorage(WhisperaSettings.transcriptionBackendURLKey) private var backendURL = ""
 	@AppStorage(WhisperaSettings.transcriptionServerIdKey) private var pinnedServerId = ""
 	@AppStorage("enableStreaming") private var enableStreaming = Constants.enableStreamingDefault
 	@AppStorage(WhisperaSettings.twoPassFinalizerKey) private var twoPassFinalizerRaw =
 		TwoPassFinalizerMode.off.rawValue
 
-	/// Falls back to `auto` for the same reason `WhisperaSettings` does: a stored
-	/// engine from a build that shipped one we no longer do must degrade, not trap.
+	/// Falls back to `TranscriptionEngine.fresh` for the same reason
+	/// `WhisperaSettings` does: a stored engine from a build that shipped one we
+	/// no longer do must degrade, not trap.
 	private var selectedEngine: TranscriptionEngine {
 		TranscriptionEngine.stored(transcriptionEngineRaw)
 	}

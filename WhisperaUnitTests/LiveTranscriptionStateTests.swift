@@ -100,15 +100,18 @@ struct LiveTranscriptionSegmentBufferTests {
 		#expect(state.waitingForModelStatusText == "Waiting for model...")
 	}
 
-	@Test func confirmPendingPromotesTheTailAndEmptiesIt() {
+	/// The pending tail joins the confirmed body rather than replacing it. This
+	/// used to expect `"two three"` — the segments before the two-segment pending
+	/// window were thrown away at the end of every on-device dictation.
+	@Test func confirmPendingPromotesTheTailOntoWhatWasAlreadyConfirmed() {
 		let state = LiveTranscriptionState()
 		state.ingest(segmentTexts: ["one", "two", "three"])
 
 		state.confirmPending()
 
-		#expect(state.confirmedText == "two three")
+		#expect(state.confirmedText == "one two three")
 		#expect(state.pendingText == "")
-		#expect(state.stableDisplayText == "two three")
+		#expect(state.stableDisplayText == "one two three")
 	}
 
 	@Test func confirmPendingWithNothingPendingLeavesConfirmedTextAlone() {
@@ -118,7 +121,7 @@ struct LiveTranscriptionSegmentBufferTests {
 
 		state.confirmPending()
 
-		#expect(state.confirmedText == "two three")
+		#expect(state.confirmedText == "one two three")
 	}
 
 	@Test func confirmedTextChangesAreAnnouncedOnce() {
@@ -399,7 +402,8 @@ struct UtteranceDraftAccumulatorTests {
 	private func repeatsItsOwnPrefix(_ text: String) -> Bool {
 		let words = text.split(separator: " ")
 		guard words.count >= 4 else { return false }
-		for length in 2...(words.count / 2) where words.prefix(length).elementsEqual(
+		for length in 2...(words.count / 2)
+		where words.prefix(length).elementsEqual(
 			words.dropFirst(length).prefix(length))
 		{
 			return true
@@ -740,5 +744,97 @@ struct LiveTranscriptionFinalizePassTests {
 		state.isWaitingForModel = false
 		state.isFinalizing = true
 		#expect(!state.isSessionActive)
+	}
+}
+
+/// The end of an on-device dictation.
+///
+/// QA, 2026-08-23: WhisperKit's own final hypothesis was complete, but the paste
+/// dropped about 40% of it and `DictationWordTracker` logged "Text filtering
+/// logic failed, returning the confirmed text by Whisperkit". The cause was
+/// `confirmPending`'s blind `confirmedText = pendingText`: correct for a server
+/// engine, which resends the whole utterance, and destructive for WhisperKit,
+/// which keeps only the last two segments pending and has already confirmed
+/// everything before them. PR #76 fixed the same class of bug on the server
+/// path; these pin the on-device half of it.
+@MainActor
+struct LiveTranscriptionPromotionTests {
+	/// The mash-up itself: a long body confirmed segment by segment, a two-word
+	/// tail still pending, and the whole thing pasted.
+	@Test func aLongOnDeviceDictationKeepsItsBodyAtStop() {
+		let state = LiveTranscriptionState()
+		let segments = [
+			"The quick brown fox", "jumps over the lazy dog", "while the rain",
+			"keeps falling on the roof", "and nobody says a word",
+		]
+
+		state.ingest(segmentTexts: segments)
+		state.confirmPending()
+
+		#expect(state.confirmedText == segments.joined(separator: " "))
+	}
+
+	/// Growing history, the way a live stream actually arrives — one more
+	/// segment per pass — and then the stop.
+	@Test func segmentsArrivingOneAtATimeStillEndUpWhole() {
+		let state = LiveTranscriptionState()
+		let segments = ["one", "two", "three", "four", "five", "six"]
+
+		for count in 1...segments.count {
+			state.ingest(segmentTexts: Array(segments.prefix(count)))
+		}
+		state.confirmPending()
+
+		#expect(state.confirmedText == "one two three four five six")
+	}
+
+	/// The server engine's shape must be untouched: it resends the whole
+	/// utterance as the pending text, so promoting it is a replace, not an
+	/// append. This is the behaviour PR #76 established.
+	@Test func aFullHypothesisStillReplacesRatherThanDoubling() {
+		#expect(
+			LiveTranscriptionState.promoting(
+				confirmed: "the quick brown fox",
+				pending: "the quick brown fox jumps over the lazy dog")
+				== "the quick brown fox jumps over the lazy dog")
+	}
+
+	/// A re-transcription is free to change casing and punctuation, so the same
+	/// sentence spelled two ways is still one sentence.
+	@Test func aRespelledHypothesisIsStillRecognisedAsTheSameWords() {
+		#expect(
+			LiveTranscriptionState.promoting(
+				confirmed: "the quick brown fox",
+				pending: "The quick, brown fox jumps.")
+				== "The quick, brown fox jumps.")
+	}
+
+	/// A tail that was already promoted once does not get promoted twice.
+	@Test func aTailAlreadyHeldIsNotAppendedAgain() {
+		#expect(
+			LiveTranscriptionState.promoting(
+				confirmed: "one two three", pending: "two three") == "one two three")
+	}
+
+	/// A revised tail overlapping the confirmed end is spliced, so the shared
+	/// clause is rendered once.
+	@Test func aRevisedTailIsSplicedRatherThanDoubled() {
+		#expect(
+			LiveTranscriptionState.promoting(
+				confirmed: "he sat on the mat", pending: "on the mat and waited")
+				== "he sat on the mat and waited")
+	}
+
+	/// A one-word coincidence is not an overlap — the pending words are new and
+	/// all of them have to survive.
+	@Test func aSingleRepeatedWordIsNotTreatedAsARestatement() {
+		#expect(
+			LiveTranscriptionState.promoting(confirmed: "give me the", pending: "the report now")
+				== "give me the the report now")
+	}
+
+	@Test func anEmptySideIsWhicheverSideHasWords() {
+		#expect(LiveTranscriptionState.promoting(confirmed: "", pending: "hello") == "hello")
+		#expect(LiveTranscriptionState.promoting(confirmed: "hello", pending: "") == "hello")
 	}
 }

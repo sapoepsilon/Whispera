@@ -65,6 +65,25 @@ struct TranscriptionRouterTests {
 		#expect(TranscriptionEngine.fresh == .whisperKit)
 	}
 
+	/// QA, 2026-08-23: a fresh install transcribed on-device while the Servers
+	/// picker read "Automatic (recommended)" — the view's `@AppStorage` default
+	/// and the router's absent-key fallback were two different constants. What
+	/// the picker shows with nothing stored has to be the engine that actually
+	/// runs with nothing stored.
+	@Test func thePickerDefaultIsTheEngineAFreshInstallRuns() {
+		#expect(
+			TranscriptionEngine.stored(ServersSettingsView.defaultEngineRawValue)
+				== TranscriptionEngine.stored(nil))
+		#expect(ServersSettingsView.defaultEngineRawValue == TranscriptionEngine.whisperKit.rawValue)
+	}
+
+	/// Migration safety for the same change: the fix moves only the *absent*
+	/// case. Someone who chose Automatic on purpose has a stored string, and it
+	/// still wins.
+	@Test func anExplicitAutomaticChoiceSurvivesTheDefaultChange() {
+		#expect(TranscriptionEngine.stored(TranscriptionEngine.auto.rawValue) == .auto)
+	}
+
 	@Test func onlyTheOnDeviceEngineManagesModels() {
 		#expect(
 			TranscriptionRouter.transcriber(for: .whisperKit).capabilities.contains(.managedModels))
