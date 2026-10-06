@@ -34,6 +34,33 @@ final class ConfigTests: XCTestCase {
 		XCTAssertEqual(config.paths.accountState, "/tmp/wl-home/.whispera-link/account.json")
 	}
 
+	func testHerdrCLIAndPushFallbackSettings() throws {
+		let defaults = HelperConfig.load(environment: ["HOME": "/tmp/wl-home", "WHISPERA_LINK_CONFIG": "/nonexistent"])
+		XCTAssertEqual(defaults.herdrCLI, "herdr")
+		XCTAssertEqual(defaults.approvalFallback, 20)
+		XCTAssertEqual(defaults.remotePollInterval, 10)
+		let config = HelperConfig.load(environment: [
+			"HOME": "/tmp/wl-home", "WHISPERA_LINK_CONFIG": "/nonexistent",
+			"WHISPERA_LINK_HERDR_CLI": "~/bin/herdr", "WHISPERA_LINK_APPROVAL_FALLBACK_S": "1.5",
+			"WHISPERA_LINK_REMOTE_POLL_S": "2",
+		])
+		XCTAssertEqual(config.herdrCLI, "/tmp/wl-home/bin/herdr")
+		XCTAssertEqual(config.approvalFallback, 1.5)
+		XCTAssertEqual(config.remotePollInterval, 2)
+
+		// A bare name is found on PATH or in ~/.local/bin; a missing one means no remote machines.
+		let home = FileManager.default.temporaryDirectory.appendingPathComponent("wlc-\(UUID().uuidString.prefix(8))")
+		let bin = home.appendingPathComponent(".local/bin")
+		try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(at: home) }
+		let tool = bin.appendingPathComponent("herdr").path
+		try Data("#!/bin/sh\n".utf8).write(to: URL(fileURLWithPath: tool))
+		chmod(tool, 0o755)
+		XCTAssertEqual(HerdrCLI.resolve("herdr", environment: ["HOME": home.path, "PATH": "/nonexistent"]), tool)
+		XCTAssertNil(HerdrCLI.resolve("no-such-herdr", environment: ["HOME": home.path, "PATH": "/nonexistent"]))
+		XCTAssertNil(HerdrCLI.resolve("", environment: [:]))
+	}
+
 	func testOfferAddressesFollowTheListener() {
 		var config = HelperConfig(paths: .init(config: "/x", stateDir: "/x", log: "/x"))
 		config.listenHost = "127.0.0.1"

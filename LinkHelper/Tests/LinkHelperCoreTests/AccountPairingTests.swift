@@ -336,30 +336,35 @@ final class FakeBroker {
 
 	private let socketPath: String
 	private var connections: [UnixConnection] = []
+	private var readers: [DispatchSemaphore] = []
 
 	init(socketPath: String) throws {
 		self.socketPath = socketPath
 	}
 
-	func request() throws -> Approval {
+	/// Opens an approval created at `now` that expires `ttl` seconds later (the broker's
+	/// window is 300 s; 120 keeps older tests as they were).
+	func request(now: Int = Int(Date().timeIntervalSince1970), ttl: Int = 120) throws -> Approval {
 		let connection = try UnixConnection.connect(path: socketPath, timeout: 2)
 		connections.append(connection)
-		let now = Int(Date().timeIntervalSince1970)
 		let id = LinkCrypto.newPrefixedID("apr")
 		let canonical: [String: Any] = [
 			"v": 1, "request_id": id, "nonce": LinkCrypto.makeNonce(), "op": "save", "key": "API_KEY",
 			"summary": "save API_KEY", "project": "demo", "token": "tok", "host": "mac", "caller": "agent",
-			"via": "cli", "broker": "test", "created_at": now, "expires_at": now + 120,
+			"via": "cli", "broker": "test", "created_at": now, "expires_at": now + ttl,
 		]
 		let bytes = try XCTUnwrap(WireJSON.pythonCanonical(canonical))
 		try connection.sendLine([
 			"op": "approval.request", "v": 1, "request_id": id, "canonical_b64": bytes.base64EncodedString(),
-			"expires_at": now + 120,
+			"expires_at": now + ttl,
 		])
 		guard case .line(let ack) = try connection.readLine(timeout: 3),
 			WireJSON.decodeObject(ack)?["op"] as? String == "approval.ack"
 		else { throw NSError(domain: "FakeBroker", code: 1) }
+		let done = DispatchSemaphore(value: 0)
+		readers.append(done)
 		let thread = Thread {
+			defer { done.signal() }
 			while true {
 				guard let result = try? connection.readLine(timeout: 0.2) else { return }
 				switch result {
@@ -376,7 +381,12 @@ final class FakeBroker {
 		return Approval(id: id, canonical: bytes)
 	}
 
+	/// Shuts the sockets down and waits for the readers before closing: a reader still polling
+	/// a closed fd number could read the next test's socket once the number is reused.
 	func close() {
+		for connection in connections { shutdown(connection.fd, SHUT_RDWR) }
+		for reader in readers { _ = reader.wait(timeout: .now() + 2) }
+		readers.removeAll()
 		for connection in connections { connection.close() }
 	}
 }

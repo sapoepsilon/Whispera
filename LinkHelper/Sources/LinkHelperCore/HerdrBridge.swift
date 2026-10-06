@@ -1,9 +1,9 @@
 import Foundation
 
 /// herdr socket client (PROTOCOL §6). One short-lived connection per call. Beyond v1's read and
-/// prompt calls it sends `agent.send_keys` and `agent.start` (the phone's keys, interrupt and
-/// start-agent controls); `allowedMethods` is still a closed list, so no `pane.*` write or any
-/// other method can leave the helper.
+/// prompt calls it sends `agent.send_keys`, `agent.start` and `tab.create` (the phone's keys,
+/// interrupt, stop and start-agent controls); `allowedMethods` is still a closed list, so no
+/// `pane.*` write or any other method can leave the helper.
 public final class HerdrClient: @unchecked Sendable {
 	static let connectTimeout: TimeInterval = 1
 	public static let callTimeout: TimeInterval = 5
@@ -11,7 +11,7 @@ public final class HerdrClient: @unchecked Sendable {
 	static let maxLine = 8 * 1024 * 1024
 	public static let allowedMethods: Set<String> = [
 		"ping", "agent.list", "agent.get", "agent.read", "agent.prompt", "agent.send_keys", "agent.start",
-		"events.subscribe",
+		"tab.create", "events.subscribe",
 	]
 	public static let readSources = ["visible", "recent", "recent_unwrapped"]
 
@@ -214,6 +214,21 @@ public final class HerdrClient: @unchecked Sendable {
 		let result = try Self.expect(
 			call("agent.start", params, timeout: Double(timeoutMS) / 1000 + Self.callTimeout), "agent_started")
 		return ["agent": Self.mapAgent(result["agent"] as? [String: Any] ?? [:])]
+	}
+}
+
+extension HerdrClient {
+	/// `tab.create` without focus; returns the new tab's root pane id.
+	func createTab(workspaceID: String?, cwd: String?, label: String) throws -> String {
+		var params: [String: Any] = ["label": label, "focus": false]
+		if let workspaceID { params["workspace_id"] = workspaceID }
+		if let cwd { params["cwd"] = cwd }
+		let result = try Self.expect(call("tab.create", params), "tab_created")
+		guard let pane = (result["root_pane"] as? [String: Any])?["pane_id"] as? String else {
+			throw APIError(
+				502, "herdr_error", "tab.create returned no root pane", extra: ["herdr_code": "unexpected_type"])
+		}
+		return pane
 	}
 }
 

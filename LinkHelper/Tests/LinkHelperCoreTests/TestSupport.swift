@@ -98,6 +98,8 @@ final class TestDaemon {
 		config.port = 0
 		config.bonjour = false
 		config.herdrSocket = herdrSocket ?? directory.appendingPathComponent("no-herdr.sock").path
+		// Never the real herdr CLI: no remote machines unless a test brings the fake one.
+		config.herdrCLI = ""
 		config.sttUpstreamBaseURL = upstream
 		configure(&config)
 		daemon = try LinkDaemon(

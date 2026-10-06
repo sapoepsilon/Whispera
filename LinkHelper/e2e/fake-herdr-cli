@@ -1,0 +1,193 @@
+#!/usr/bin/python3
+"""Fake herdr CLI for the helper's tests and e2e runs: `machine list` and the API commands the
+helper runs on other machines (`--machine <id> agent …`, `tab create`), answered by fake_herdr.py
+socket servers. Output and exit codes follow herdr 0.9.1: one JSON line per command
+(`{"id":"cli:…","result":{…}}`, or `{"error":{…},"id":…}` with exit 1), except `agent read`, which
+prints the text itself.
+
+Configuration: `--fake-config FILE` as the first arguments, or FAKE_HERDR_CONFIG=FILE:
+  {"local_socket": "/tmp/x/herdr.sock",
+   "machines": [{"id": "m1", "label": "Main Mac", "enabled": true, "socket": "/tmp/x/m1.sock"},
+                {"id": "m2", "label": "Dead Mac", "enabled": true, "unreachable": true},
+                {"id": "m3", "label": "Off", "enabled": false, "socket": "…"}],
+   "log": "/tmp/x/cli.jsonl"}
+Every invocation is appended to `log` as {"ts", "argv"} so tests can assert what ran.
+"""
+
+import json
+import os
+import socket
+import sys
+import time
+
+USAGE_ERROR = 2
+
+
+def load_config(argv):
+    path = os.environ.get("FAKE_HERDR_CONFIG")
+    if len(argv) >= 2 and argv[0] == "--fake-config":
+        path, argv = argv[1], argv[2:]
+    if not path:
+        sys.stderr.write("fake-herdr-cli: no --fake-config or FAKE_HERDR_CONFIG\n")
+        sys.exit(USAGE_ERROR)
+    with open(path) as f:
+        return json.load(f), argv
+
+
+def log_invocation(config, argv):
+    path = config.get("log")
+    if path:
+        with open(path, "a") as f:
+            f.write(json.dumps({"ts": time.time(), "argv": argv}) + "\n")
+
+
+def rpc(socket_path, method, params, timeout=40):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    s.connect(socket_path)
+    s.sendall((json.dumps({"id": "cli", "method": method, "params": params}) + "\n").encode())
+    buf = b""
+    while b"\n" not in buf:
+        chunk = s.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+    s.close()
+    return json.loads(buf.split(b"\n", 1)[0])
+
+
+def emit(cli_id, response):
+    if "error" in response:
+        print(json.dumps({"error": response["error"], "id": cli_id}))
+        return 1
+    print(json.dumps({"id": cli_id, "result": response.get("result", {})}))
+    return 0
+
+
+def take_options(args, flags=(), repeat=()):
+    """Splits herdr-style arguments: positionals in order, `--name value` options anywhere,
+    bare flags, and everything after `--` as extra arguments."""
+    positionals, options, extra = [], {}, []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            extra = args[i + 1:]
+            break
+        if a.startswith("--"):
+            name = a[2:]
+            if name in flags:
+                options[name] = True
+                i += 1
+                continue
+            if i + 1 >= len(args):
+                raise ValueError("missing value for " + a)
+            if name in repeat:
+                options.setdefault(name, []).append(args[i + 1])
+            else:
+                options[name] = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("-") and a != "-":
+            raise ValueError("unknown option: " + a)
+        positionals.append(a)
+        i += 1
+    return positionals, options, extra
+
+
+def machine_list(config, args):
+    machines = config.get("machines", [])
+    if "--json" in args:
+        out = [{"id": m["id"], "label": m.get("label", m["id"]), "target": m.get("target", m["id"] + ".ts"),
+                "session": "default", "enabled": bool(m.get("enabled", True)), "selected": False}
+               for m in machines]
+        print(json.dumps(out, indent=2))
+    else:
+        for m in machines:
+            print("\t".join([m["id"], m.get("label", m["id"]), m.get("target", m["id"] + ".ts"), "default",
+                             "enabled" if m.get("enabled", True) else "disabled"]))
+    return 0
+
+
+def api_command(sock, args):
+    if len(args) < 2:
+        sys.stderr.write("usage: herdr agent|tab <command>\n")
+        return USAGE_ERROR
+    group, command, rest = args[0], args[1], args[2:]
+    cli_id = "cli:%s:%s" % (group, command)
+    try:
+        if (group, command) == ("agent", "list"):
+            return emit(cli_id, rpc(sock, "agent.list", {}))
+        if (group, command) == ("agent", "get"):
+            pos, _, _ = take_options(rest)
+            return emit(cli_id, rpc(sock, "agent.get", {"target": pos[0]}))
+        if (group, command) == ("agent", "read"):
+            pos, opts, _ = take_options(rest, flags=("ansi",))
+            params = {"target": pos[0], "source": opts.get("source", "recent").replace("-", "_"),
+                      "lines": int(opts.get("lines", "50")), "format": opts.get("format", "text")}
+            response = rpc(sock, "agent.read", params)
+            if "error" in response:
+                return emit(cli_id, response)
+            sys.stdout.write(response["result"]["read"]["text"] + "\n")
+            return 0
+        if (group, command) == ("agent", "prompt"):
+            pos, opts, _ = take_options(rest, flags=("wait",), repeat=("until",))
+            params = {"target": pos[0], "text": pos[1]}
+            if opts.get("wait"):
+                params["wait"] = {"until": opts.get("until") or ["idle", "done", "blocked"],
+                                  "timeout_ms": int(opts.get("timeout", "30000"))}
+            return emit(cli_id, rpc(sock, "agent.prompt", params))
+        if (group, command) == ("agent", "send-keys"):
+            pos, _, _ = take_options(rest)
+            return emit(cli_id, rpc(sock, "agent.send_keys", {"target": pos[0], "keys": pos[1:]}))
+        if (group, command) == ("agent", "start"):
+            pos, opts, extra = take_options(rest)
+            params = {"name": pos[0], "kind": opts["kind"], "pane_id": opts["pane"], "args": extra}
+            if "timeout" in opts:
+                params["timeout_ms"] = int(opts["timeout"])
+            return emit(cli_id, rpc(sock, "agent.start", params))
+        if (group, command) == ("tab", "create"):
+            _, opts, _ = take_options(rest, flags=("focus", "no-focus"))
+            params = {"focus": bool(opts.get("focus")) and not opts.get("no-focus")}
+            if "workspace" in opts:
+                params["workspace_id"] = opts["workspace"]
+            if "cwd" in opts:
+                params["cwd"] = opts["cwd"]
+            if "label" in opts:
+                params["label"] = opts["label"]
+            return emit(cli_id, rpc(sock, "tab.create", params))
+    except (IndexError, KeyError, ValueError) as e:
+        sys.stderr.write("usage error: %s\n" % e)
+        return USAGE_ERROR
+    sys.stderr.write("fake-herdr-cli: unsupported command %s %s\n" % (group, command))
+    return USAGE_ERROR
+
+
+def main(argv):
+    config, argv = load_config(argv)
+    log_invocation(config, argv)
+    if argv[:2] == ["machine", "list"]:
+        return machine_list(config, argv[2:])
+    sock = config.get("local_socket")
+    if argv[:1] == ["--machine"]:
+        if len(argv) < 2:
+            sys.stderr.write("usage: herdr --machine <label-or-id> <command>\n")
+            return USAGE_ERROR
+        wanted, argv = argv[1], argv[2:]
+        machine = next((m for m in config.get("machines", []) if wanted in (m["id"], m.get("label"))), None)
+        if machine is None:
+            sys.stderr.write("unknown machine: %s\n" % wanted)
+            return 1
+        if machine.get("unreachable") or not machine.get("socket"):
+            time.sleep(float(machine.get("hang_s", 0)))
+            sys.stderr.write("ssh: connect to host %s port 22: Connection refused\n" % machine.get("target", wanted))
+            return 255
+        sock = machine["socket"]
+    if not sock:
+        sys.stderr.write("herdr server is not running\n")
+        return 1
+    return api_command(sock, argv)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

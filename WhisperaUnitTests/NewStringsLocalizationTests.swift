@@ -7,6 +7,9 @@ import Testing
 struct NewStringsAreLocalizedTests {
 	/// Strings added for these fixes, which LocalizationCatalogTests then checks are translated.
 	static let keys = [
+		"Push: named",
+		"Push: generic",
+		"Last used",
 		"Microphone Access Required",
 		"Whispera needs access to your microphone to transcribe audio. Please grant permission in System Settings > Privacy & Security > Microphone.",
 		"Open System Settings",

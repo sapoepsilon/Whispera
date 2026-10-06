@@ -60,6 +60,13 @@ final class LastDeviceFile: @unchecked Sendable {
 			in: .whitespacesAndNewlines)
 	}
 
+	/// The device recorded last, if any.
+	var current: String? {
+		lock.lock()
+		defer { lock.unlock() }
+		return written.flatMap { $0.isEmpty ? nil : $0 }
+	}
+
 	func record(_ deviceID: String) {
 		lock.lock()
 		defer { lock.unlock() }

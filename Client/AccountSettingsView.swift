@@ -227,6 +227,14 @@ struct AccountDeviceRowView: View {
 					Text(verbatim: "·")
 					Text(verbatim: row.fingerprint)
 						.font(.caption.monospaced())
+					if !row.isRevoked, let push = row.pushTextLabel {
+						Text(verbatim: "·")
+						Text(verbatim: push)
+					}
+					if !row.isRevoked, row.isLastUsed {
+						Text(verbatim: "·")
+						Text("Last used")
+					}
 				}
 				.font(.caption)
 				.foregroundColor(.secondary)

@@ -12,8 +12,9 @@ import WhisperaLink
 ///   sends each a sealed `link_offer` — once, and again only when what the offer says changes.
 ///   Phones revoked or gone from the list are revoked here, so the HTTP API answers
 ///   `auth_revoked`, and nothing is sent to them.
-/// - Relay messages are read with a long poll; only `unpaired` from a verified iPhone of the
-///   account is acted on.
+/// - Relay messages are read by one `RelayMailbox` (long poll, open, ack): `unpaired` from a
+///   verified iPhone of the account is acted on, and `api_request` / `api_cancel` from a pinned
+///   iPhone go to the `RelayIngress`, which runs them through the LinkAPI (step 12).
 /// - `confirmApprove` (the owner's Touch ID in the app) unlocks approvals for a phone and tells
 ///   it with `approve_confirmed`.
 ///
@@ -64,8 +65,12 @@ public actor AccountLink {
 	private let offerContext: @Sendable () -> OfferContext
 	private let clock: @Sendable () -> Int
 	private let pollWait: Int
+	private let ingress: RelayIngress?
+	private let pushSealer: PushSealer
+	private let approvalFallback: TimeInterval
 	private var state: State?
 	private var snapshot: AccountDevices?
+	private var mailbox: RelayMailbox?
 	private var loop: Task<Void, Never>?
 	private var tail: Task<Void, Never>?
 	private var status = "signed_out"
@@ -73,6 +78,7 @@ public actor AccountLink {
 	public init(
 		paths: HelperConfig.Paths, devices: DeviceRegistry, push: SwitchablePush,
 		transport: LinkTransport = URLSessionLinkTransport(), pollWait: Int = 25, log: OpsLog = .null,
+		ingress: RelayIngress? = nil, pushSealer: PushSealer = PushSealer(), approvalFallback: TimeInterval = 20,
 		clock: @escaping @Sendable () -> Int = { Int(Date().timeIntervalSince1970) },
 		offerContext: @escaping @Sendable () -> OfferContext
 	) {
@@ -81,6 +87,9 @@ public actor AccountLink {
 		self.push = push
 		self.transport = transport
 		self.pollWait = pollWait
+		self.ingress = ingress
+		self.pushSealer = pushSealer
+		self.approvalFallback = approvalFallback
 		self.log = log
 		self.clock = clock
 		self.offerContext = offerContext
@@ -126,6 +135,7 @@ public actor AccountLink {
 	public func disconnect() async -> [String: Any] {
 		loop?.cancel()
 		loop = nil
+		stopMailbox()
 		_ = try? await serialized { await self.disconnectLocked() }
 		return statusObject()
 	}
@@ -167,6 +177,7 @@ public actor AccountLink {
 	public func stop() {
 		loop?.cancel()
 		loop = nil
+		stopMailbox()
 	}
 
 	static func confirmationObject(_ record: DeviceRecord) -> [String: Any] {
@@ -196,7 +207,9 @@ public actor AccountLink {
 	private func startLoop() {
 		// A negative wait turns the background loop off (tests drive `syncNow` themselves).
 		guard loop == nil, state != nil, pollWait >= 0 else { return }
-		let wait = pollWait
+		// The mailbox long-polls on its own task, so a relayed request is served as soon as it
+		// lands; this loop only keeps the pinned phones in step with the account.
+		let interval = UInt64(max(pollWait, 1))
 		loop = Task { [weak self] in
 			var backoff: UInt64 = 1
 			while !Task.isCancelled {
@@ -205,11 +218,9 @@ public actor AccountLink {
 					try await self.serialized {
 						_ = try await self.syncPeersLocked()
 					}
-					let started = Date()
-					try await self.serialized { try await self.pollMessagesLocked(wait: wait) }
 					backoff = 1
-					// A relay that answers at once (no long poll, or wait 0) still gets a breather.
-					if Date().timeIntervalSince(started) < 1 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+					try await self.startMailbox()
+					try? await Task.sleep(nanoseconds: interval * 1_000_000_000)
 				} catch is CancellationError {
 					return
 				} catch {
@@ -231,6 +242,7 @@ public actor AccountLink {
 		if ["auth_revoked", "auth_unknown_device"].contains(code) {
 			status = "revoked"
 			loop = nil
+			stopMailbox()
 			return true
 		}
 		return false
@@ -252,6 +264,7 @@ public actor AccountLink {
 			// Signed into another account, or this Mac was revoked: start over with new keys.
 			log("account.reregister", ["device": state.device_id])
 			dropAccountPins(reason: "account_changed")
+			stopMailbox()
 		}
 		let linkKey = SoftwareSigningKey()
 		let kemKey = P256.KeyAgreement.PrivateKey()
@@ -282,6 +295,7 @@ public actor AccountLink {
 		status = "signed_out"
 		try? FileManager.default.removeItem(atPath: paths.accountState)
 		push.replace(with: UnconfiguredPush())
+		pushSealer.configure(macID: nil, agreementKey: nil, macName: "")
 		log("account.disconnected")
 	}
 
@@ -293,7 +307,10 @@ public actor AccountLink {
 	}
 
 	private func activatePush() {
-		if let client = try? client() { push.replace(with: RelayPush(client: client, log: log)) }
+		guard let client = try? client() else { return }
+		pushSealer.configure(
+			macID: state?.device_id, agreementKey: try? agreementKey(), macName: offerContext().macName)
+		push.replace(with: RelayPush(client: client, sealer: pushSealer, fallbackAfter: approvalFallback, log: log))
 	}
 
 	private func client() throws -> RelayClient {
@@ -326,6 +343,7 @@ public actor AccountLink {
 		let listed = try await client.peers()
 		let account = AccountDevices(classifying: listed, selfID: myID)
 		snapshot = account
+		pushSealer.setPhones(account.phones)
 		var report = SyncReport()
 		report.untrusted = account.untrusted.map(\.id)
 		let unpaired = Set(state?.unpaired ?? [])
@@ -410,34 +428,71 @@ public actor AccountLink {
 		return true
 	}
 
-	private func pollMessagesLocked(wait: Int) async throws {
-		let client = try client()
-		let after = state?.cursor ?? 0
-		let messages = try await client.messages(after: after, wait: wait)
-		guard !messages.isEmpty else { return }
-		let agreement = try agreementKey()
-		var refreshed = false
-		var last = after
-		for relayed in messages.sorted(by: { $0.seq < $1.seq }) {
-			last = max(last, relayed.seq)
-			var account = snapshot ?? AccountDevices(classifying: [], selfID: state?.device_id)
-			if account.peer(relayed.from) == nil && !refreshed {
-				_ = try? await syncPeersLocked()
-				refreshed = true
-				account = snapshot ?? account
+	// MARK: Mailbox
+
+	/// The relay inbox: one mailbox per registration, its cursor saved in `account.json`.
+	private func ensureMailbox() async throws -> RelayMailbox {
+		if let mailbox { return mailbox }
+		guard let myID = state?.device_id else { throw APIError(409, "not_registered", "not registered") }
+		let box = RelayMailbox(
+			client: try client(), agreementKey: try agreementKey(),
+			devices: { [weak self] refresh in
+				guard let self else { throw CancellationError() }
+				return try await self.accountDevices(refresh: refresh)
+			},
+			wait: max(pollWait, 0), idleDelay: pollWait > 0 ? 0 : 1,
+			loadCursor: { [weak self] in await self?.cursor ?? 0 },
+			saveCursor: { [weak self] in await self?.saveCursor($0) },
+			handler: { [weak self] received in await self?.handle(received) })
+		let log = self.log
+		await box.setEventObserver { event in
+			switch event {
+			case .rejected(_, let from, let error):
+				log("account.message_rejected", ["device": from, "detail": String(error.prefix(80))])
+			case .unroutedResponse(_, let from):
+				log("account.message_ignored", ["device": from, "detail": "api_response"])
+			case .fetchFailed(let detail):
+				log("account.poll_error", ["detail": String(detail.prefix(80))])
+			case .refreshedDevices(let sender):
+				log("account.peers_refresh", ["device": sender])
 			}
-			let received: ReceivedLinkMessage
-			do {
-				received = try client.openLinkMessage(relayed, devices: account, agreementKey: agreement)
-			} catch {
-				log("account.message_rejected", ["device": relayed.from, "detail": "\(type(of: error))"])
-				continue
-			}
-			handle(received)
 		}
-		_ = try? await client.ack(upTo: last)
-		state?.cursor = last
+		mailbox = box
+		log.debug("account.mailbox", ["device": myID])
+		return box
+	}
+
+	private func startMailbox() async throws {
+		try await ensureMailbox().start()
+	}
+
+	private func stopMailbox() {
+		guard let box = mailbox else { return }
+		mailbox = nil
+		Task { await box.stop() }
+	}
+
+	private var cursor: Int64 { state?.cursor ?? 0 }
+
+	private func saveCursor(_ value: Int64) {
+		guard state != nil, value > (state?.cursor ?? 0) else { return }
+		state?.cursor = value
 		saveState()
+	}
+
+	/// The mailbox's view of the account: the last peer list, re-fetched when it meets a
+	/// sender it does not know (pinning stays with the sync loop).
+	private func accountDevices(refresh: Bool) async throws -> AccountDevices {
+		if !refresh, let snapshot { return snapshot }
+		let listed = try await client().peers()
+		let account = AccountDevices(classifying: listed, selfID: state?.device_id)
+		snapshot = account
+		pushSealer.setPhones(account.phones)
+		return account
+	}
+
+	private func pollMessagesLocked(wait: Int) async throws {
+		_ = try await ensureMailbox().pumpOnce(wait: wait)
 	}
 
 	private func handle(_ received: ReceivedLinkMessage) {
@@ -453,8 +508,19 @@ public actor AccountLink {
 			}
 			if state?.unpaired.contains(sender.id) == false { state?.unpaired.append(sender.id) }
 			state?.offers[sender.id] = nil
+			saveState()
 			log("device.revoked", ["device": sender.id, "detail": "phone unpaired"])
-		case .linkOffer, .approveConfirmed:
+		case .apiRequest(let request):
+			guard let ingress, let client = try? client() else {
+				log("account.message_ignored", ["device": sender.id, "detail": "api_request"])
+				return
+			}
+			ingress.accept(request, sender: sender) { messages in
+				try await client.send(messages, to: sender, ttl: RelayAPI.ttl)
+			}
+		case .apiCancel(let id):
+			ingress?.cancel(id: id, sender: sender.id)
+		case .linkOffer, .approveConfirmed, .apiResponse:
 			log("account.message_ignored", ["device": sender.id, "detail": received.message.type])
 		}
 	}

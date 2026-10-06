@@ -94,11 +94,13 @@ final class FakeHelperAccountLink: HelperAccountLinking, @unchecked Sendable {
 	private(set) var cleared = 0
 	var confirmSucceeds = true
 	var registered = false
+	var phoneDetails: [HelperAccountStatus.PhoneDetail]?
 
 	private func status() -> HelperAccountStatus {
 		HelperAccountStatus(
 			ok: true, status: registered ? "registered" : "signed_out", deviceID: registered ? macID : nil,
-			baseURL: nil, lastSyncAt: nil, lastError: nil, phones: [], pendingConfirmations: pending.count, error: nil)
+			baseURL: nil, lastSyncAt: nil, lastError: nil, phones: [], pendingConfirmations: pending.count,
+			phoneDetails: phoneDetails, error: nil)
 	}
 
 	func setAccount(bearer: String, backendURL: URL) async -> HelperAccountStatus? {
@@ -328,6 +330,29 @@ struct AccountSettingsModelTests {
 		await model.revoke(try #require(model.devices.first { $0.name == "iPhone" }))
 		#expect(directory.revoked == [phone.device_id])
 		#expect(model.devices.first { $0.name == "iPhone" }?.isRevoked == true)
+	}
+
+	@Test func iPhoneRowsShowTheirPushTextAndWhichWasUsedLast() async throws {
+		let helper = FakeHelperAccountLink()
+		helper.registered = true
+		let mac = try AccountFixtures.device(helper.macID, name: "Studio Mac", platform: .macos)
+		let named = try AccountFixtures.device("dev_cccccccccccccccccccccccc", name: "iPhone", platform: .ios)
+		let generic = try AccountFixtures.device("dev_ffffffffffffffffffffffff", name: "Work iPhone", platform: .ios)
+		helper.phoneDetails = [
+			.init(deviceID: named.device_id, pushText: "named", lastUsed: true),
+			.init(deviceID: generic.device_id, pushText: "generic", lastUsed: false),
+		]
+		let model = AccountSettingsModel(
+			defaults: AccountFixtures.defaults(), signIn: FakeAccountSigningIn(.staticToken("t")),
+			directory: FakeAccountDirectory([mac, named, generic]), helper: helper, hostedClientID: { "" })
+
+		await model.load()
+		let rows = Dictionary(uniqueKeysWithValues: model.devices.map { ($0.name, $0) })
+		#expect(rows["iPhone"]?.pushTextLabel == String(localized: "Push: named"))
+		#expect(rows["iPhone"]?.isLastUsed == true)
+		#expect(rows["Work iPhone"]?.pushTextLabel == String(localized: "Push: generic"))
+		#expect(rows["Work iPhone"]?.isLastUsed == false)
+		#expect(rows["Studio Mac"]?.pushTextLabel == nil)
 	}
 
 	@Test func signingOutRevokesThisMacAndClearsTheHelperAndTheCredential() async throws {

@@ -30,6 +30,9 @@ public struct DeviceRecord: Sendable, Equatable {
 	/// `code` (paired with a pairing code) or `account` (pinned from the account's device list,
 	/// under the account device id).
 	public var origin: Origin
+	/// What approval pushes to this device say (`PUT /v1/devices/me/push`, step 12): the
+	/// request's text sealed for the phone (`named`, the default) or nothing about it.
+	public var pushText: PushTextMode
 
 	public enum Origin: String, Sendable {
 		case code, account
@@ -61,6 +64,7 @@ public struct DeviceRecord: Sendable, Equatable {
 		// code pairing is the owner's confirmation.
 		approveConfirmed = json["approve_confirmed"] as? Bool ?? true
 		origin = (json["origin"] as? String).flatMap(Origin.init(rawValue:)) ?? .code
+		pushText = (json["push_text"] as? String).flatMap(PushTextMode.init(rawValue:)) ?? .named
 	}
 
 	init(
@@ -81,6 +85,7 @@ public struct DeviceRecord: Sendable, Equatable {
 		revokedAt = nil
 		self.approveConfirmed = approveConfirmed
 		self.origin = origin
+		pushText = .named
 	}
 
 	var storedJSON: [String: Any] {
@@ -113,6 +118,7 @@ public struct DeviceRecord: Sendable, Equatable {
 			"revoked_at": revokedAt ?? NSNull(),
 			"approve_confirmed": approveConfirmed,
 			"origin": origin.rawValue,
+			"push_text": pushText.rawValue,
 		]
 	}
 }
@@ -330,6 +336,19 @@ public final class DeviceRegistry: @unchecked Sendable {
 		record.apns = token.map { DeviceRecord.APNs(token: $0, env: env, updatedAt: clock()) }
 		devices[deviceID] = record
 		try save()
+		return record
+	}
+
+	/// Sets what approval pushes to the device say. Nil if unknown.
+	public func setPushText(_ deviceID: String, _ mode: PushTextMode) throws -> DeviceRecord? {
+		lock.lock()
+		defer { lock.unlock() }
+		guard var record = devices[deviceID] else { return nil }
+		if record.pushText != mode {
+			record.pushText = mode
+			devices[deviceID] = record
+			try save()
+		}
 		return record
 	}
 

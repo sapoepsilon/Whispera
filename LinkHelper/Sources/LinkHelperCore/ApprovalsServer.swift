@@ -77,6 +77,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 	private let clock: @Sendable () -> Int
 	private let log: OpsLog
 	private let skipApprovePrecheck: Bool
+	private let lastDevice: @Sendable () -> String?
 	private let lock = NSLock()
 	private var approvals: [String: Approval] = [:]
 	private var openConnections = 0
@@ -86,7 +87,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 		socketPath: String, devices: DeviceRegistry, publish: @escaping (String, [String: Any]) -> Void,
 		push: PushNotifier = UnconfiguredPush(),
 		clock: @escaping @Sendable () -> Int = { Int(Date().timeIntervalSince1970) },
-		log: OpsLog = .null, skipApprovePrecheck: Bool = false
+		log: OpsLog = .null, skipApprovePrecheck: Bool = false, lastDevice: @escaping @Sendable () -> String? = { nil }
 	) {
 		listener = UnixListener(path: socketPath)
 		self.devices = devices
@@ -95,6 +96,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 		self.clock = clock
 		self.log = log
 		self.skipApprovePrecheck = skipApprovePrecheck
+		self.lastDevice = lastDevice
 	}
 
 	public func start() throws {
@@ -232,9 +234,15 @@ public final class ApprovalsServer: @unchecked Sendable {
 		}
 
 		let active = devices.active()
-		let pushStatus = push.notifyApproval(
+		func field(_ name: String) -> String { approval.canonical[name] as? String ?? "" }
+		let request = ApprovalPush(
 			requestID: approval.requestID, expiresAt: approval.expiresAt, preferDevice: approval.preferDevice,
-			devices: active)
+			lastDevice: lastDevice(), requester: field("caller"), key: field("key"), summary: field("summary"),
+			project: field("project"))
+		let pushStatus = push.notifyApproval(request, devices: active) { [weak self, weak approval] in
+			guard let self, let approval else { return false }
+			return self.isPending(approval)
+		}
 		try? connection.sendLine([
 			"op": "approval.ack", "request_id": approval.requestID, "devices": active.count, "push": pushStatus,
 		])
@@ -324,6 +332,14 @@ public final class ApprovalsServer: @unchecked Sendable {
 		signalResult(approval)
 	}
 
+	/// Still waiting for a decision (the push fallback asks before waking more phones).
+	private func isPending(_ approval: Approval) -> Bool {
+		checkExpiry(approval)
+		lock.lock()
+		defer { lock.unlock() }
+		return approval.status == "pending"
+	}
+
 	private func checkExpiry(_ approval: Approval) {
 		lock.lock()
 		let due = approval.status == "pending" && clock() >= approval.expiresAt
@@ -358,7 +374,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 		lock.unlock()
 		log("approval.resolved", ["request_id": approval.requestID, "status": status, "detail": detail])
 		publish("approval.resolved", ["request_id": approval.requestID, "status": status])
-		push.notifyResolved(requestID: approval.requestID, devices: devices.active())
+		push.notifyResolved(requestID: approval.requestID)
 		return true
 	}
 
@@ -463,6 +479,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 			approval.status = "cancelled"
 			lock.unlock()
 			publish("approval.resolved", ["request_id": requestID, "status": "cancelled"])
+			push.notifyResolved(requestID: requestID)
 			throw APIError(503, "broker_unavailable", "broker connection is gone")
 		}
 		log(
@@ -477,7 +494,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 		let cancelReason = approval.cancelReason
 		lock.unlock()
 		publish("approval.resolved", ["request_id": requestID, "status": finalStatus])
-		push.notifyResolved(requestID: requestID, devices: devices.active())
+		push.notifyResolved(requestID: requestID)
 		if got && outcome == nil {
 			if let cancelReason, cancelReason != "broker_eof" {
 				throw APIError(

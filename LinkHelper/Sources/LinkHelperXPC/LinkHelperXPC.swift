@@ -91,11 +91,33 @@ public struct HelperAccountStatus: Codable, Sendable, Equatable {
 	public var lastError: String?
 	public var phones: [String]?
 	public var pendingConfirmations: Int?
+	/// Per account iPhone: its approval push text and whether it made the latest request.
+	public var phoneDetails: [PhoneDetail]?
 	public var error: ErrorBody?
 
 	public struct ErrorBody: Codable, Sendable, Equatable {
 		public var code: String
 		public var message: String?
+	}
+
+	public struct PhoneDetail: Codable, Sendable, Equatable {
+		public var deviceID: String
+		/// `named` or `generic`.
+		public var pushText: String
+		/// The device that signed the helper's latest request (pushed first for approvals).
+		public var lastUsed: Bool
+
+		enum CodingKeys: String, CodingKey {
+			case deviceID = "device_id"
+			case pushText = "push_text"
+			case lastUsed = "last_used"
+		}
+
+		public init(deviceID: String, pushText: String, lastUsed: Bool) {
+			self.deviceID = deviceID
+			self.pushText = pushText
+			self.lastUsed = lastUsed
+		}
 	}
 
 	enum CodingKeys: String, CodingKey {
@@ -105,11 +127,13 @@ public struct HelperAccountStatus: Codable, Sendable, Equatable {
 		case lastSyncAt = "last_sync_at"
 		case lastError = "last_error"
 		case pendingConfirmations = "pending_confirmations"
+		case phoneDetails = "phone_details"
 	}
 
 	public init(
 		ok: Bool, status: String? = nil, deviceID: String? = nil, baseURL: String? = nil, lastSyncAt: Int? = nil,
-		lastError: String? = nil, phones: [String]? = nil, pendingConfirmations: Int? = nil, error: ErrorBody? = nil
+		lastError: String? = nil, phones: [String]? = nil, pendingConfirmations: Int? = nil,
+		phoneDetails: [PhoneDetail]? = nil, error: ErrorBody? = nil
 	) {
 		self.ok = ok
 		self.status = status
@@ -119,11 +143,16 @@ public struct HelperAccountStatus: Codable, Sendable, Equatable {
 		self.lastError = lastError
 		self.phones = phones
 		self.pendingConfirmations = pendingConfirmations
+		self.phoneDetails = phoneDetails
 		self.error = error
 	}
 
 	public static func decode(_ data: Data) -> HelperAccountStatus? {
 		try? JSONDecoder().decode(HelperAccountStatus.self, from: data)
+	}
+
+	public func phoneDetail(_ deviceID: String) -> PhoneDetail? {
+		phoneDetails?.first { $0.deviceID == deviceID }
 	}
 }
 

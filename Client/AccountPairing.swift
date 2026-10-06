@@ -212,8 +212,12 @@ struct AccountDeviceRow: Identifiable, Equatable {
 	/// Its keys did not verify against the fingerprints the backend advertises.
 	let isUntrusted: Bool
 	let isThisMac: Bool
+	/// iPhones pinned by this Mac's link: what approval pushes say (`named` / `generic`).
+	var pushText: String?
+	/// The iPhone that made the latest request here; approvals push to it first.
+	var isLastUsed = false
 
-	init(_ device: PublicDevice, thisMac: String?) {
+	init(_ device: PublicDevice, thisMac: String?, detail: HelperAccountStatus.PhoneDetail? = nil) {
 		id = device.device_id
 		name = device.name
 		platform = device.platform
@@ -222,6 +226,17 @@ struct AccountDeviceRow: Identifiable, Equatable {
 		isRevoked = device.isRevoked
 		isUntrusted = !device.isRevoked && trusted == nil
 		isThisMac = device.device_id == thisMac
+		pushText = detail?.pushText
+		isLastUsed = detail?.lastUsed ?? false
+	}
+
+	/// "Push: named" / "Push: generic" for an iPhone the link knows.
+	var pushTextLabel: String? {
+		switch pushText {
+		case "named": return String(localized: "Push: named")
+		case "generic": return String(localized: "Push: generic")
+		default: return nil
+		}
 	}
 
 	var platformName: String {
@@ -420,9 +435,16 @@ final class AccountSettingsModel {
 			let bearer = try await signIn.validBearer()
 			let listed = try await directory.devices(baseURL: backend, bearer: bearer)
 			let me = thisMacID
+			let status = helperStatus
 			// This Mac first, revoked devices last, the backend's order otherwise.
 			devices = listed.enumerated()
-				.map { (index: $0.offset, row: AccountDeviceRow($0.element, thisMac: me)) }
+				.map {
+					(
+						index: $0.offset,
+						row: AccountDeviceRow(
+							$0.element, thisMac: me, detail: status?.phoneDetail($0.element.device_id))
+					)
+				}
 				.sorted {
 					($0.row.isRevoked ? 1 : 0, $0.row.isThisMac ? 0 : 1, $0.index)
 						< ($1.row.isRevoked ? 1 : 0, $1.row.isThisMac ? 0 : 1, $1.index)
