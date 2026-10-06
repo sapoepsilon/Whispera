@@ -87,21 +87,80 @@ public struct ApprovalRequest: Equatable, Sendable {
 		decision == .approve ? signedMessage : denialMessage
 	}
 
-	/// The secret the request touches: the KEY for a save, the broker's summary for a read.
-	public var secret: String { op == "save" && !key.isEmpty ? key : summary }
+	/// The secret the request touches: the KEY when the request names one, else the broker's
+	/// summary.
+	public var secret: String { key.isEmpty ? summary : key }
 
-	/// What the Touch ID sheet says (the phone's wording, §7.3).
-	public var authenticationReason: String {
-		broker.isEmpty ? "approve secret access" : "approve secret access on \(broker)"
+	/// Which Bitwarden token the broker will use. A read that asks for the write token, or a
+	/// token the card doesn't know, must stand out (`CanonicalApproval.tokenKind`).
+	public enum TokenKind: Equatable, Sendable {
+		case read, write
+		case other(String)
 	}
+
+	public var tokenKind: TokenKind {
+		switch token.lowercased() {
+		case "read": return .read
+		case "write": return .write
+		default: return .other(token)
+		}
+	}
+
+	/// What the Touch ID sheet says. macOS shows it as "Whispera is trying to …", and any
+	/// same-user process can word its own prompt, so it names the secret, the token, the agent
+	/// and the host instead of a generic line. Requester-claimed text is stripped of unsafe
+	/// characters and bounded.
+	public var authenticationReason: String { reason(verb: "approve") }
 
 	/// What the Touch ID sheet says for a deny.
-	public var denialReason: String {
-		broker.isEmpty ? "deny secret access" : "deny secret access on \(broker)"
-	}
+	public var denialReason: String { reason(verb: "deny") }
 
 	public func reason(for decision: ApprovalCardState.Decision) -> String {
 		decision == .approve ? authenticationReason : denialReason
+	}
+
+	private func reason(verb: String) -> String {
+		let name = Self.bounded(secret, 64)
+		var what: String
+		switch op {
+		case "save": what = name.isEmpty ? "saving a secret" : "saving \(name)"
+		case "bws": what = key.isEmpty ? (name.isEmpty ? "reading a secret" : name) : "reading \(name)"
+		default:
+			let action = Self.bounded(op, 24)
+			what = name.isEmpty ? action : "\(action) \(name)"
+		}
+		let tokenName = Self.bounded(token, 16)
+		if !tokenName.isEmpty { what += " (\(tokenName) token)" }
+		let agent = Self.bounded(caller, 40)
+		let mac = Self.bounded(host, 40)
+		if !agent.isEmpty { what += " for \(agent)" }
+		if !mac.isEmpty { what += " on \(mac)" }
+		return "\(verb) \(what)"
+	}
+
+	/// C0/C1 controls (newlines included), DEL, the Arabic letter mark, zero-width characters,
+	/// bidi marks, embeddings, overrides and isolates, line/paragraph separators and the BOM: the
+	/// set `CanonicalApproval.isUnsafe` refuses. The helper already refuses such requests; the
+	/// card strips them again before showing anything.
+	public static func isUnsafe(_ scalar: Unicode.Scalar) -> Bool {
+		switch scalar.value {
+		case 0x00...0x1F, 0x7F...0x9F: return true
+		case 0x061C, 0x200B...0x200F, 0x2028...0x202E, 0x2060...0x2069, 0xFEFF: return true
+		default: return false
+		}
+	}
+
+	/// `text` without unsafe scalars, for display.
+	public static func displayable(_ text: String) -> String {
+		var scalars = String.UnicodeScalarView()
+		scalars.append(contentsOf: text.unicodeScalars.filter { !isUnsafe($0) })
+		return String(scalars)
+	}
+
+	/// `displayable(text)` cut at the end to `limit` characters (never in the middle).
+	static func bounded(_ text: String, _ limit: Int) -> String {
+		let clean = displayable(text).trimmingCharacters(in: .whitespaces)
+		return clean.count > limit ? String(clean.prefix(limit - 1)) + "…" : clean
 	}
 }
 

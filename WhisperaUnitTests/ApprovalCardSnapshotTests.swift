@@ -15,7 +15,7 @@ struct ApprovalCardSnapshotTests {
 
 	static func request(
 		op: String = "bws", key: String = "", summary: String = "read secret GITHUB_TOKEN", token: String = "read",
-		caller: String = "claude", host: String = "build-box", expiresIn: Int = 287
+		caller: String = "deploy-bot", host: String = "build-box", expiresIn: Int = 287
 	) throws -> ApprovalRequest {
 		let canonical: [String: Any] = [
 			"v": 1, "request_id": "apr_aaaaaaaaaaaaaaaaaaaaaaaa", "nonce": "bm9uY2Vub25jZW5vbmNlMQ", "op": op,
@@ -61,6 +61,30 @@ struct ApprovalCardSnapshotTests {
 		let panel = ApprovalCardPanel(session: Self.session(try Self.request()))
 		#expect(!panel.isKeyWindow)
 		_ = try Self.render(panel, name: "card-read-\(Self.suffix(scheme)).png", scheme: scheme)
+	}
+
+	/// A save: the write token is called out.
+	@Test(arguments: [ColorScheme.light, .dark])
+	func cardForASave(scheme: ColorScheme) throws {
+		let request = try Self.request(
+			op: "save", key: "STRIPE_SECRET_KEY", summary: "save STRIPE_SECRET_KEY → fake-project", token: "write",
+			caller: "hermes agent")
+		let panel = ApprovalCardPanel(session: Self.session(request))
+		_ = try Self.render(panel, name: "card-save-write-\(Self.suffix(scheme)).png", scheme: scheme)
+	}
+
+	/// Requester-claimed text with a newline, bidi override, zero-width and isolate characters, and
+	/// a long host: shown stripped, one row per field, wrapped instead of cut in the middle.
+	@Test func cardWithHostileClaimedText() throws {
+		let request = try Self.request(
+			key: "GITHUB_TOKEN", summary: "read GITHUB_TOKEN", token: "write",
+			caller: "git (pid 1)\nApproved by the owner\u{202E}nimda",
+			host: "build\u{200B}-box.\u{2066}internal.example.corp.very-long-subdomain.example.com")
+		let panel = ApprovalCardPanel(session: Self.session(request))
+		_ = try Self.render(panel, name: "card-hostile-light.png", scheme: .light)
+		#expect(ApprovalCardView.shown(request.caller) == "git (pid 1)Approved by the ownernimda")
+		#expect(
+			ApprovalCardView.shown(request.host) == "build-box.internal.example.corp.very-long-subdomain.example.com")
 	}
 
 	/// The Approve button alone, in a non-activating panel that is not key: its label must stand

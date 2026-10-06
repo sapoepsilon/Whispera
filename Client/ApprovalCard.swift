@@ -291,7 +291,7 @@ final class XPCApprovalLink: ApprovalHelperLink, @unchecked Sendable {
 final class ApprovalCardPanel: NSPanel {
 	init(session: ApprovalCardSession) {
 		super.init(
-			contentRect: NSRect(x: 0, y: 0, width: 380, height: 240),
+			contentRect: NSRect(x: 0, y: 0, width: 400, height: 280),
 			styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
 		titleVisibility = .hidden
 		titlebarAppearsTransparent = true
@@ -345,25 +345,74 @@ struct ApprovalCardView: View {
 						.foregroundColor(state.secondsLeft(now: session.now) <= 30 ? .orange : .secondary)
 				}
 			}
-			Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-				row("Agent", request.caller)
-				row("Mac", request.host)
+			// What the broker will do, and with which token: a read that asks for the write token
+			// must stand out.
+			HStack(spacing: 8) {
+				Text(verbatim: Self.shown(request.op))
+					.font(.callout.monospaced().weight(.semibold))
+					.padding(.horizontal, 8)
+					.padding(.vertical, 3)
+					.background(Capsule().fill(Color.primary.opacity(0.08)))
+					.accessibilityLabel(Text("Operation") + Text(verbatim: " \(Self.shown(request.op))"))
+				tokenBadge
+			}
+			// Every value comes from the broker's canonical bytes, one row per field, wrapped and
+			// never truncated. Agent and Mac are whatever the requester said; the card says so.
+			Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
 				row("Secret", request.secret)
+				if request.summary != request.secret { row("Request", request.summary) }
 				if !request.project.isEmpty { row("Project", request.project) }
+				row("Agent (claimed by requester)", request.caller)
+				row("Mac (claimed by requester)", request.host)
 			}
 			.font(.callout)
 			footer
 		}
 		.padding(16)
-		.frame(width: 380)
+		.frame(width: 400)
+	}
+
+	/// Text from the request without control, bidi, zero-width or separator characters. The
+	/// helper refuses such requests already; the card doesn't rely on it.
+	static func shown(_ text: String) -> String { ApprovalRequest.displayable(text) }
+
+	@ViewBuilder private var tokenBadge: some View {
+		switch request.tokenKind {
+		case .read:
+			badge(Text("Read token"), systemImage: "eye", emphasised: false)
+		case .write:
+			badge(Text("Write token"), systemImage: "exclamationmark.triangle.fill", emphasised: true)
+		case .other(let token):
+			badge(
+				Text(String(format: String(localized: "%@ token"), Self.shown(token))),
+				systemImage: "exclamationmark.triangle.fill", emphasised: true)
+		}
+	}
+
+	private func badge(_ text: Text, systemImage: String, emphasised: Bool) -> some View {
+		Label {
+			text
+		} icon: {
+			Image(systemName: systemImage)
+		}
+		.labelStyle(.titleAndIcon)
+		.font(.callout.weight(emphasised ? .bold : .medium))
+		.foregroundStyle(emphasised ? Color.white : Color.primary)
+		.padding(.horizontal, 8)
+		.padding(.vertical, 3)
+		.background(Capsule().fill(emphasised ? Color.orange : Color.primary.opacity(0.08)))
 	}
 
 	private func row(_ label: LocalizedStringKey, _ value: String) -> some View {
-		GridRow {
-			Text(label).foregroundColor(.secondary)
-			Text(value.isEmpty ? "—" : value)
-				.lineLimit(2)
-				.truncationMode(.middle)
+		let shown = Self.shown(value)
+		return GridRow(alignment: .firstTextBaseline) {
+			Text(label)
+				.foregroundColor(.secondary)
+				.frame(width: 118, alignment: .leading)
+				.fixedSize(horizontal: false, vertical: true)
+			Text(verbatim: shown.isEmpty ? "—" : shown)
+				.fixedSize(horizontal: false, vertical: true)
+				.frame(maxWidth: .infinity, alignment: .leading)
 				.textSelection(.enabled)
 		}
 	}

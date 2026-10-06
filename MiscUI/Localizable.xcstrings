@@ -300,6 +300,29 @@
         }
       }
     },
+    "%@ token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token „%@“"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeton %@"
+          }
+        }
+      }
+    },
     "%@ types text, so it needs a modifier such as ⌘, ⌥ or ⌃. Esc, Delete and the F-keys work on their own.": {
       "extractionState": "manual",
       "localizations": {
@@ -1657,25 +1680,25 @@
         }
       }
     },
-    "Agent": {
+    "Agent (claimed by requester)": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent"
+            "value": "Agent (laut Anfrage)"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agente"
+            "value": "Agente (según quien lo pide)"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent"
+            "value": "Agent (selon le demandeur)"
           }
         }
       }
@@ -10926,25 +10949,25 @@
         }
       }
     },
-    "Mac": {
+    "Mac (claimed by requester)": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mac"
+            "value": "Mac (laut Anfrage)"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mac"
+            "value": "Mac (según quien lo pide)"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mac"
+            "value": "Mac (selon le demandeur)"
           }
         }
       }
@@ -13364,6 +13387,29 @@
         }
       }
     },
+    "Operation": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorgang"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Operación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opération"
+          }
+        }
+      }
+    },
     "Optimized Compute Configuration": {
       "extractionState": "manual",
       "localizations": {
@@ -15273,6 +15319,29 @@
         }
       }
     },
+    "Read token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lese-Token"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token de lectura"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeton de lecture"
+          }
+        }
+      }
+    },
     "Ready": {
       "extractionState": "manual",
       "localizations": {
@@ -16235,6 +16304,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Remplacer la clé enregistrée"
+          }
+        }
+      }
+    },
+    "Request": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anfrage"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solicitud"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requête"
           }
         }
       }
@@ -24469,6 +24561,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mot"
+          }
+        }
+      }
+    },
+    "Write token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schreib-Token"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token de escritura"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeton d’écriture"
           }
         }
       }
