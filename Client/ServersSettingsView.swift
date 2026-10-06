@@ -132,6 +132,12 @@ struct ServersSettingsView: View {
 					.foregroundColor(.secondary)
 					ServerEntrySettingsView(capability: .llm)
 				}
+
+				Divider()
+
+				SettingsSection("Mac Link") {
+					MacLinkSettingsSection()
+				}
 			}
 			.padding(20)
 		}

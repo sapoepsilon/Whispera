@@ -107,6 +107,17 @@ for framework in "$APP_BUNDLE"/Contents/Frameworks/*.framework; do
     "$framework"
 done
 
+# Login items (the Mac link helper) are nested apps: signed on their own, before the app that
+# embeds them, or the app's signature seals an unsigned bundle and notarization refuses it.
+for login_item in "$APP_BUNDLE"/Contents/Library/LoginItems/*.app; do
+  [ -e "$login_item" ] || continue
+  echo "  Signing login item: $(basename "$login_item")"
+  codesign --force --options runtime \
+    --sign "$DEVELOPER_ID" \
+    $KEYCHAIN_PARAM \
+    "$login_item"
+done
+
 echo "  Signing main app bundle..."
 codesign --force --options runtime \
   --entitlements "${APP_NAME}.entitlements" \
