@@ -38,6 +38,6 @@ let package = Package(
 		.executableTarget(
 			name: "link-soft-phone",
 			dependencies: [.product(name: "WhisperaLink", package: "whispera-components")]),
-		.testTarget(name: "LinkHelperCoreTests", dependencies: ["LinkHelperCore"]),
+		.testTarget(name: "LinkHelperCoreTests", dependencies: ["LinkHelperCore", "LinkHelperXPC"]),
 	]
 )

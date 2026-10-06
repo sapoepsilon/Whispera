@@ -66,6 +66,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 			return [
 				"request_id": requestID, "status": status, "created_at": createdAt, "expires_at": expiresAt,
 				"canonical_b64": canonicalB64, "display": display, "decided_by": decidedBy ?? NSNull(),
+				"reason": cancelReason ?? NSNull(),
 			]
 		}
 	}
@@ -78,7 +79,10 @@ public final class ApprovalsServer: @unchecked Sendable {
 	private let log: OpsLog
 	private let skipApprovePrecheck: Bool
 	private let lastDevice: @Sendable () -> String?
+	private let macApprover: () -> DeviceRecord?
+	private let offerMacCard: () -> Bool
 	private let lock = NSLock()
+	private var changeHandler: (() -> Void)?
 	private var approvals: [String: Approval] = [:]
 	private var openConnections = 0
 	private var stopped = false
@@ -87,7 +91,8 @@ public final class ApprovalsServer: @unchecked Sendable {
 		socketPath: String, devices: DeviceRegistry, publish: @escaping (String, [String: Any]) -> Void,
 		push: PushNotifier = UnconfiguredPush(),
 		clock: @escaping @Sendable () -> Int = { Int(Date().timeIntervalSince1970) },
-		log: OpsLog = .null, skipApprovePrecheck: Bool = false, lastDevice: @escaping @Sendable () -> String? = { nil }
+		log: OpsLog = .null, skipApprovePrecheck: Bool = false, lastDevice: @escaping @Sendable () -> String? = { nil },
+		macApprover: @escaping () -> DeviceRecord? = { nil }, offerMacCard: @escaping () -> Bool = { false }
 	) {
 		listener = UnixListener(path: socketPath)
 		self.devices = devices
@@ -97,6 +102,23 @@ public final class ApprovalsServer: @unchecked Sendable {
 		self.log = log
 		self.skipApprovePrecheck = skipApprovePrecheck
 		self.lastDevice = lastDevice
+		self.macApprover = macApprover
+		self.offerMacCard = offerMacCard
+	}
+
+	/// Called after any approval appears or changes status, on the thread that changed it. The
+	/// Mac approval card refreshes from it (§8.1).
+	public func onChange(_ handler: @escaping () -> Void) {
+		lock.lock()
+		changeHandler = handler
+		lock.unlock()
+	}
+
+	private func changed() {
+		lock.lock()
+		let handler = changeHandler
+		lock.unlock()
+		handler?()
 	}
 
 	public func start() throws {
@@ -267,8 +289,10 @@ public final class ApprovalsServer: @unchecked Sendable {
 			guard let self, let approval else { return false }
 			return self.isPending(approval)
 		}
+		let macCard = macApprover() != nil && offerMacCard()
 		try? connection.sendLine([
-			"op": "approval.ack", "request_id": approval.requestID, "devices": active.count, "push": pushStatus,
+			"op": "approval.ack", "request_id": approval.requestID,
+			"devices": active.count + (macApprover() != nil ? 1 : 0), "push": pushStatus, "mac_card": macCard,
 		])
 		log(
 			"approval.request",
@@ -278,6 +302,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 					"op=\(approval.canonical["op"] ?? "") push=\(pushStatus) prefer=\(approval.preferDevice ?? "-")",
 			])
 		publish("approval.pending", ["request_id": approval.requestID, "expires_at": approval.expiresAt])
+		changed()
 		return approval
 	}
 
@@ -309,13 +334,14 @@ public final class ApprovalsServer: @unchecked Sendable {
 					if outcome != "accepted" && approval.status == "approved" { approval.status = "denied" }
 					lock.unlock()
 					signalResult(approval)
+					changed()
 					log(
 						"approval.result",
 						["request_id": approval.requestID, "detail": "outcome=\(outcome)"])
 				case "approval.cancel":
 					let reason = message["reason"] as? String ?? ""
 					let status = reason == "timeout" ? "expired" : "cancelled"
-					if !resolve(approval, status, detail: "reason=\(reason)") {
+					if !resolve(approval, status, detail: "reason=\(reason)", reason: reason) {
 						supersede(approval, status, reason)
 					}
 				default:
@@ -334,7 +360,9 @@ public final class ApprovalsServer: @unchecked Sendable {
 	}
 
 	private func brokerGone(_ approval: Approval) {
-		if !resolve(approval, "cancelled", detail: "broker_eof") { supersede(approval, "cancelled", "broker_eof") }
+		if !resolve(approval, "cancelled", detail: "broker_eof", reason: "broker_eof") {
+			supersede(approval, "cancelled", "broker_eof")
+		}
 		signalResult(approval)
 	}
 
@@ -354,6 +382,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 			"approval.superseded",
 			["request_id": approval.requestID, "status": status, "detail": "reason=\(reason)"])
 		signalResult(approval)
+		changed()
 	}
 
 	/// Still waiting for a decision (the push fallback asks before waking more phones).
@@ -387,7 +416,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 
 	/// pending → a terminal status; publishes `approval.resolved` once.
 	@discardableResult
-	private func resolve(_ approval: Approval, _ status: String, detail: String) -> Bool {
+	private func resolve(_ approval: Approval, _ status: String, detail: String, reason: String? = nil) -> Bool {
 		lock.lock()
 		guard approval.status == "pending" else {
 			lock.unlock()
@@ -395,7 +424,9 @@ public final class ApprovalsServer: @unchecked Sendable {
 		}
 		approval.status = status
 		approval.resolvedAt = clock()
+		if let reason { approval.cancelReason = reason }
 		lock.unlock()
+		changed()
 		log("approval.resolved", ["request_id": approval.requestID, "status": status, "detail": detail])
 		publish("approval.resolved", ["request_id": approval.requestID, "status": status])
 		push.notifyResolved(requestID: approval.requestID)
@@ -442,6 +473,34 @@ public final class ApprovalsServer: @unchecked Sendable {
 			log("approval.unconfirmed", ["device": device.deviceID, "request_id": requestID])
 			throw APIError(403, "device_unconfirmed", "confirm this iPhone on the Mac before it can decide")
 		}
+		return try settle(
+			requestID, deciderID: current.deviceID, approvePubkey: current.approvePubkey, decision: decision,
+			signature: signature, verify: !skipApprovePrecheck)
+	}
+
+	/// A decision from the Mac approval card (§8.1): the same broker round trip as a phone's, with
+	/// the Mac approver's own key standing in for a device. It never consults the device registry:
+	/// the Mac approver is not an account device, and a registry entry that happens to share its
+	/// id can neither block nor impersonate it. Approve and deny are both verified against the
+	/// Mac approve key here, before anything reaches the broker.
+	public func decideFromMac(_ requestID: String, decision: String, signature: Any?) throws -> [String: Any] {
+		guard decision == "approve" || decision == "deny" else {
+			throw APIError(400, "bad_request", "decision must be approve or deny")
+		}
+		guard let mac = macApprover() else {
+			throw APIError(409, "no_mac_approver", "this Mac has no approval card key")
+		}
+		return try settle(
+			requestID, deciderID: mac.deviceID, approvePubkey: mac.approvePubkey, decision: decision,
+			signature: signature, verify: true)
+	}
+
+	/// The shared tail of `decide` and `decideFromMac`: the caller has already established who is
+	/// deciding and with which approve key.
+	private func settle(
+		_ requestID: String, deciderID: String, approvePubkey: String, decision: String, signature: Any?,
+		verify: Bool
+	) throws -> [String: Any] {
 		lock.lock()
 		let found = approvals[requestID]
 		lock.unlock()
@@ -460,15 +519,15 @@ public final class ApprovalsServer: @unchecked Sendable {
 
 		var message: [String: Any] = [
 			"op": "approval.decision", "request_id": requestID, "decision": decision,
-			"device_id": device.deviceID,
+			"device_id": deciderID,
 		]
 		// Approve signs `WL1-APPROVE\n` + canonical, deny `WL1-DENY\n` + canonical, both with the
 		// approve key: a captured one can never pass for the other.
 		guard let signature = signature as? String, !signature.isEmpty else {
 			throw APIError(422, "bad_signature", "\(decision) needs a signature")
 		}
-		if !skipApprovePrecheck {
-			let key = try? LinkPublicKey(x963Base64: current.approvePubkey)
+		if verify {
+			let key = try? LinkPublicKey(x963Base64: approvePubkey)
 			let der = Data(base64Encoded: signature) ?? Data()
 			let verified =
 				key.map {
@@ -480,7 +539,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 			guard verified else {
 				log(
 					"approval.bad_signature",
-					["device": device.deviceID, "request_id": requestID, "detail": "decision=\(decision)"])
+					["device": deciderID, "request_id": requestID, "detail": "decision=\(decision)"])
 				throw APIError(422, "bad_signature", "\(decision) signature does not verify")
 			}
 		}
@@ -497,7 +556,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 			throw APIError(503, "broker_unavailable", "broker connection is gone")
 		}
 		approval.status = decision == "approve" ? "approved" : "denied"
-		approval.decidedBy = device.deviceID
+		approval.decidedBy = deciderID
 		approval.decidedAt = clock()
 		approval.resolvedAt = clock()
 		message["decided_at"] = approval.decidedAt
@@ -510,11 +569,13 @@ public final class ApprovalsServer: @unchecked Sendable {
 			lock.unlock()
 			publish("approval.resolved", ["request_id": requestID, "status": "cancelled"])
 			push.notifyResolved(requestID: requestID)
+			changed()
 			throw APIError(503, "broker_unavailable", "broker connection is gone")
 		}
+		changed()
 		log(
 			"approval.decision",
-			["device": device.deviceID, "request_id": requestID, "detail": "decision=\(decision)"])
+			["device": deciderID, "request_id": requestID, "detail": "decision=\(decision)"])
 
 		let got = approval.result.wait(timeout: .now() + Self.resultWait) == .success
 		if got { approval.result.signal() }
@@ -525,6 +586,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 		lock.unlock()
 		publish("approval.resolved", ["request_id": requestID, "status": finalStatus])
 		push.notifyResolved(requestID: requestID)
+		changed()
 		if got && outcome == nil {
 			if let cancelReason, cancelReason != "broker_eof" {
 				throw APIError(
@@ -538,4 +600,5 @@ public final class ApprovalsServer: @unchecked Sendable {
 		}
 		return ["request_id": requestID, "status": finalStatus, "broker_outcome": outcome ?? NSNull()]
 	}
+
 }

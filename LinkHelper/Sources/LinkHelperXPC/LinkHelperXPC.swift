@@ -27,7 +27,7 @@ public enum LinkHelperXPC {
 @objc public protocol LinkHelperXPCProtocol {
 	/// `HelperStatus` as JSON.
 	func status(reply: @escaping (Data) -> Void)
-	/// `{"approvals":[…]}` — pending approvals for the Mac approval card (step 8).
+	/// `{"approvals":[…]}` — pending approvals for the Mac approval card.
 	func pendingApprovals(reply: @escaping (Data) -> Void)
 
 	// Account pairing (step 11). Requests and replies are JSON objects; a failure answers
@@ -48,6 +48,26 @@ public enum LinkHelperXPC {
 	/// the app). The helper recomputes the number from the device's current keys and answers
 	/// `keys_changed` when they no longer match what the owner saw.
 	func confirmApprove(_ deviceID: String, safetyNumber: String, reply: @escaping (Data) -> Void)
+
+	/// Registers this connection for `approvalsChanged()` callbacks (it must export
+	/// `LinkHelperAppXPCProtocol`) and answers `pendingApprovals`.
+	func watchApprovals(reply: @escaping (Data) -> Void)
+	/// One approval as `GET /v1/approvals/{id}` shows it, or `{"error":{…}}`.
+	func approval(_ requestID: String, reply: @escaping (Data) -> Void)
+	/// The card's decision. `signature` is the Mac approve key's DER signature, base64, over
+	/// `WL1-APPROVE\n` + the canonical bytes for an approve and `WL1-DENY\n` + the canonical bytes
+	/// for a deny; the helper verifies both against that key. Replies like
+	/// `POST /v1/approvals/{id}/decision`: `{"request_id","status","broker_outcome"}` or `{"error":{…}}`.
+	func decide(_ requestID: String, decision: String, signature: String?, reply: @escaping (Data) -> Void)
+	/// Stores the card's `{"device_id","name","approve_pubkey"}`; `{}` removes it. Replies `macApprover`.
+	func enrollMacApprover(_ request: Data, reply: @escaping (Data) -> Void)
+	/// `{"mac_approver":{…}|null,"pem_path":"…"}`.
+	func macApprover(reply: @escaping (Data) -> Void)
+}
+
+/// What the helper calls back on a connection that asked to `watchApprovals`.
+@objc public protocol LinkHelperAppXPCProtocol {
+	func approvalsChanged()
 }
 
 /// One entry of `pendingApproveConfirmations`.
@@ -200,6 +220,7 @@ public struct HelperStatus: Codable, Sendable, Equatable {
 	public var sttModels: [String]?
 	public var devices: Int
 	public var pendingApprovals: Int
+	public var macApprover: String?
 
 	enum CodingKeys: String, CodingKey {
 		case ok, version, `protocol`, pid, port, herdr, broker, apns, stt, devices
@@ -208,13 +229,14 @@ public struct HelperStatus: Codable, Sendable, Equatable {
 		case sttMode = "stt_mode"
 		case sttModels = "stt_models"
 		case pendingApprovals = "pending_approvals"
+		case macApprover = "mac_approver"
 	}
 
 	public init(
 		ok: Bool, version: String, protocol: Int, pid: Int32, port: Int, publicURL: String?, daemonFP: String,
 		herdr: String,
 		broker: String, apns: String, stt: String, sttMode: String?, sttModels: [String]?, devices: Int,
-		pendingApprovals: Int
+		pendingApprovals: Int, macApprover: String? = nil
 	) {
 		self.ok = ok
 		self.version = version
@@ -231,5 +253,6 @@ public struct HelperStatus: Codable, Sendable, Equatable {
 		self.sttModels = sttModels
 		self.devices = devices
 		self.pendingApprovals = pendingApprovals
+		self.macApprover = macApprover
 	}
 }

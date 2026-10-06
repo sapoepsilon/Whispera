@@ -27,6 +27,8 @@ public final class LinkDaemon: @unchecked Sendable {
 	let speech: SpeechService
 	let push: PushNotifier
 	let lastDevice: LastDeviceFile
+	public let macApprovers: MacApproverStore
+	public let macCard = MacCardOffer()
 	public let daemonFP: String
 	/// X9.63 base64 of the daemon key: what a link offer pins.
 	public let daemonPubkeyB64: String
@@ -94,10 +96,14 @@ public final class LinkDaemon: @unchecked Sendable {
 		self.push = notifier
 		let lastDevice = LastDeviceFile(path: config.paths.lastDevice)
 		self.lastDevice = lastDevice
+		let macStore = MacApproverStore(stateDir: config.paths.stateDir)
+		macApprovers = macStore
+		let offer = macCard
 		approvals = ApprovalsServer(
 			socketPath: config.paths.approvalsSocket, devices: registry, publish: { hub.publish($0, $1) },
 			push: notifier,
-			log: opsLog, skipApprovePrecheck: config.testSkipApprovePrecheck, lastDevice: { lastDevice.current })
+			log: opsLog, skipApprovePrecheck: config.testSkipApprovePrecheck, lastDevice: { lastDevice.current },
+			macApprover: { macStore.current?.deviceRecord }, offerMacCard: { offer.offer(log: opsLog) })
 		speech = SpeechService(
 			upstreamBaseURL: config.sttUpstreamBaseURL, upstreamKeyFile: config.sttUpstreamAPIKeyFile,
 			timeout: config.sttTimeout,
@@ -238,7 +244,7 @@ public final class LinkDaemon: @unchecked Sendable {
 			apns: push.isConfigured ? "configured" : "unconfigured",
 			stt: speech.isConfigured ? "configured" : "unconfigured",
 			sttMode: speech.mode, sttModels: speech.localModels, devices: devices.activeCount,
-			pendingApprovals: approvals.pendingCount)
+			pendingApprovals: approvals.pendingCount, macApprover: macApprovers.current?.deviceID)
 	}
 
 	public func statusJSON() -> Data {
@@ -327,6 +333,58 @@ public final class LinkDaemon: @unchecked Sendable {
 		try blocking { [account] in try await account.confirmApprove(deviceID, safetyNumber: safetyNumber) }
 	}
 
+	// MARK: Mac approval card (§8.1)
+
+	/// `GET /v1/approvals/{id}`'s body, or `{"error":{…}}`.
+	public func approvalJSON(_ requestID: String) -> Data {
+		do {
+			return WireJSON.encode(try approvals.get(requestID))
+		} catch {
+			return Self.errorJSON(error)
+		}
+	}
+
+	/// The card's decision: `{"request_id","status","broker_outcome"}` or `{"error":{…}}`.
+	public func decideFromMacJSON(_ requestID: String, decision: String, signature: String?) -> Data {
+		do {
+			let reply = try approvals.decideFromMac(requestID, decision: decision, signature: signature)
+			log("approval.mac_decision", ["request_id": requestID, "detail": "decision=\(decision)"])
+			return WireJSON.encode(reply)
+		} catch {
+			return Self.errorJSON(error)
+		}
+	}
+
+	/// Stores (or, with `{}`, removes) the card's approve key; answers `macApproverJSON()`.
+	public func enrollMacApproverJSON(_ body: Data) -> Data {
+		do {
+			guard let request = WireJSON.decodeObject(body) else {
+				throw APIError(400, "bad_request", "expected a JSON object")
+			}
+			let approver = try macApprovers.enroll(request, now: now())
+			log("mac_approver.\(approver == nil ? "removed" : "enrolled")", ["device": approver?.deviceID ?? "-"])
+			return macApproverJSON()
+		} catch {
+			return Self.errorJSON(error)
+		}
+	}
+
+	/// `{"mac_approver":{…}|null,"pem_path":…}`.
+	public func macApproverJSON() -> Data {
+		WireJSON.encode([
+			"mac_approver": macApprovers.current?.json as Any? ?? NSNull(), "pem_path": macApprovers.pemPath,
+		])
+	}
+
+	static func errorJSON(_ error: Error) -> Data {
+		guard let api = error as? APIError else {
+			return WireJSON.encode(["error": ["code": "internal", "message": error.localizedDescription]])
+		}
+		var body: [String: Any] = ["code": api.code, "message": api.message]
+		for (key, value) in api.extra where body[key] == nil { body[key] = value }
+		return WireJSON.encode(["error": body])
+	}
+
 	private func adminHandlers() -> [String: AdminServer.Handler] {
 		[
 			"account.set": { [unowned self] request in
@@ -386,5 +444,34 @@ public final class LinkDaemon: @unchecked Sendable {
 	/// The line `whispera-link serve` prints once listening; the e2e scripts wait for it.
 	public func listeningLine() -> String {
 		"whispera-link \(Self.version) listening host=\(config.listenHost) port=\(port) url=\(publicURL) fp=\(daemonFP)"
+	}
+}
+
+/// Whether a Mac approval card can show for a new request, and how to get one up: the app is
+/// either already watching over XPC or the helper launches it (§8.1).
+public final class MacCardOffer: @unchecked Sendable {
+	private let lock = NSLock()
+	private var watching: () -> Bool = { false }
+	private var launch: (() -> Void)?
+
+	public init() {}
+
+	public func configure(watching: @escaping () -> Bool, launch: (() -> Void)?) {
+		lock.lock()
+		self.watching = watching
+		self.launch = launch
+		lock.unlock()
+	}
+
+	func offer(log: OpsLog) -> Bool {
+		lock.lock()
+		let watching = self.watching
+		let launch = self.launch
+		lock.unlock()
+		if watching() { return true }
+		guard let launch else { return false }
+		log("mac_card.launch")
+		launch()
+		return true
 	}
 }
