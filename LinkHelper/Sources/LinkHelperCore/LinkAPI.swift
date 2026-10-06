@@ -471,12 +471,20 @@ final class LinkAPI: @unchecked Sendable {
 		)
 		let interval = daemon.config.ssePingInterval
 		var nextPing = Date().addingTimeInterval(interval)
-		// A relayed stream can end without a write failing (api_cancel, its lifetime): look
-		// every second. A direct stream ends when a write fails, as before.
+		// A relayed stream can end without a write failing (api_cancel, its lifetime), and any
+		// stream must end once its device loses the right to it (revoked, unconfirmed again, or
+		// its keys changed behind its id): look every second.
 		let relayed = exchange.relaySender != nil
+		let devices = daemon.devices
+		let entitled = { Self.mayKeepStreaming(devices.get(device.deviceID), opened: device) }
 		while true {
 			let wait = max(0, nextPing.timeIntervalSinceNow)
-			switch stream.next(timeout: relayed ? min(wait, 1) : wait) {
+			let next = stream.next(timeout: min(wait, 1))
+			guard entitled() else {
+				daemon.log("events.closed", ["device": device.deviceID, "detail": "device no longer confirmed"])
+				return
+			}
+			switch next {
 			case .closed: return
 			case .timeout:
 				if relayed && !exchange.isAlive { return }
@@ -487,6 +495,13 @@ final class LinkAPI: @unchecked Sendable {
 				try exchange.write(frame)
 			}
 		}
+	}
+
+	/// Whether an open event stream may go on: the device is still active and confirmed, with the
+	/// keys it had when the stream opened.
+	static func mayKeepStreaming(_ current: DeviceRecord?, opened: DeviceRecord) -> Bool {
+		guard let current, !current.isRevoked, current.approveConfirmed else { return false }
+		return current.linkPubkey == opened.linkPubkey && current.approvePubkey == opened.approvePubkey
 	}
 
 	private func parseJSON(_ body: Data) throws -> [String: Any] {
