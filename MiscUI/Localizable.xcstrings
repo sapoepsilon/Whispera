@@ -806,6 +806,29 @@
         }
       }
     },
+    "AI Mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "KI-Modus"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modo IA"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode IA"
+          }
+        }
+      }
+    },
     "AI Model": {
       "extractionState": "manual",
       "localizations": {
@@ -14257,6 +14280,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reçoit la transcription sur l'entrée standard et dans WHISPERA_TRANSCRIPT. Whispera exécute une copie privée du script, donc $0 est la copie : elle est lancée dans le dossier du script, WHISPERA_SCRIPT_PATH contient le chemin d'origine et WHISPERA_SCRIPT_DIR son dossier. Choisissez de nouveau le script après l'avoir modifié."
+          }
+        }
+      }
+    },
+    "Recipes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rezepte"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recetas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recettes"
           }
         }
       }
