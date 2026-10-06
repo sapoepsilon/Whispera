@@ -254,6 +254,10 @@ struct SettingsView: View {
 			if !panes.contains(selectedPane) { selectedPane = currentPane }
 		}
 		.background(DebugModeShortcut())
+		.onAppear { applyRequestedPane(SettingsRouting.takeRequestedDestination()) }
+		.onReceive(NotificationCenter.default.publisher(for: .openSettingsRequested)) { notification in
+			applyRequestedPane(SettingsRouting.destination(in: notification.userInfo))
+		}
 		.background(
 			SettingsWindowConfigurator(
 				minimumSize: NSSize(
@@ -828,6 +832,10 @@ struct SettingsView: View {
 				}
 				.padding(20)
 			}
+		case .aiMode:
+			LLMModeSettingsView()
+		case .recipes:
+			RecipesView()
 		case .textInsertion:
 			TextInsertionSettingsView()
 		case .storage:
@@ -1285,6 +1293,12 @@ struct SettingsView: View {
 		case .debug:
 			LogViewerView()
 		}
+	}
+
+	/// Another surface (the pill's "Add your own…") asked Settings to open on a pane.
+	private func applyRequestedPane(_ pane: SettingsPane?) {
+		guard let pane else { return }
+		selectedPane = pane
 	}
 
 	private func loadAvailableModels() {
@@ -1919,4 +1933,3 @@ struct LiveTranscriptionInfoView: View {
 		.background(Color(NSColor.windowBackgroundColor))
 	}
 }
-

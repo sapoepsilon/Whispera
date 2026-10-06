@@ -15,7 +15,7 @@ struct SettingsPaneTests {
 	@Test func debugModeShowsEveryPaneInTheOldTabOrder() {
 		#expect(
 			SettingsPane.visible(debugModeEnabled: true) == [
-				.general, .textInsertion, .storage, .liveTranscription, .fileTranscription, .history, .automation,
+				.general, .aiMode, .recipes, .textInsertion, .storage, .liveTranscription, .fileTranscription, .history, .automation,
 				.benchmark, .postProcessing, .debug,
 			])
 	}
@@ -23,7 +23,7 @@ struct SettingsPaneTests {
 	@Test func regularUsersOnlySeeTheSupportedPanes() {
 		#expect(
 			SettingsPane.visible(debugModeEnabled: false) == [
-				.general, .textInsertion, .storage, .fileTranscription, .history, .benchmark, .postProcessing,
+				.general, .aiMode, .recipes, .textInsertion, .storage, .fileTranscription, .history, .benchmark, .postProcessing,
 			])
 	}
 

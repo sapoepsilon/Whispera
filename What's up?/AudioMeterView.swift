@@ -41,7 +41,7 @@ struct AudioMeterView: View {
 						width: barWidth,
 						height: calculateBarHeight(for: level)
 					)
-					.animation(.spring(response: 0.15, dampingFraction: 0.6), value: level)
+					.animation(Motion.meter, value: level)
 			}
 		}
 		.frame(height: effectiveMaxHeight)

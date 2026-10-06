@@ -7,7 +7,7 @@ struct EngineTranscript {
 
 /// A speech-to-text backend other than the built-in WhisperKit path.
 @MainActor
-protocol TranscriptionEngine: AnyObject {
+protocol LocalModelEngine: AnyObject {
 	var modelID: String { get }
 	func transcribe(samples: [Float]) async throws -> EngineTranscript
 	func transcribe(fileURL: URL) async throws -> EngineTranscript

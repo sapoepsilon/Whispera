@@ -198,6 +198,7 @@
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D6AUTO0012F0000000000001 /* Automation */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Automation; sourceTree = "<group>"; };
+		D6CLIENTSYNCGRP000000001 /* Client */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Client; sourceTree = "<group>"; };
 		D63850CC2E179188000FD465 /* WhisperaUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUITests; sourceTree = "<group>"; };
 		D6TXTPROC2F00000000000001 /* TextProcessing */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = TextProcessing; sourceTree = "<group>"; };
 		D63850DF2E1791AF000FD465 /* WhisperaUnitTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = WhisperaUnitTests; sourceTree = "<group>"; };
@@ -263,6 +264,7 @@
 				D6077E972DF10E77009E7404 /* Assets.xcassets */,
 				D63850CC2E179188000FD465 /* WhisperaUITests */,
 				D63850DF2E1791AF000FD465 /* WhisperaUnitTests */,
+				D6CLIENTSYNCGRP000000001 /* Client */,
 				8A8A8A8A8A8A8A8A8A8A8A8A /* Products */,
 				2A2A2A2A2A2A2A2A2A2A2A2A /* WhisperaApp.swift */,
 				D6C10A012F20000000000001 /* RecordingGlowWindow.swift */,
@@ -454,6 +456,7 @@
 				D6POSTPROC2F0000000000001 /* PostProcessing */,
 				D6AUTO0012F0000000000001 /* Automation */,
 				D6MISCUI12F0000000000001 /* MiscUI */,
+				D6CLIENTSYNCGRP000000001 /* Client */,
 			);
 			name = Whispera;
 			productName = MacWhisper;

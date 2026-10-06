@@ -1,9 +1,11 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 @MainActor
 class LiveTranscriptionWindow: NSWindow {
 	private let whisperKit = WhisperKitTranscriber.shared
+	private let coordinator = DictationCoordinator.shared
 	private let audioManager: AudioManager
 	private var observationTimer: Timer?
 	private var lastCaretPosition: NSPoint?
@@ -69,11 +71,14 @@ class LiveTranscriptionWindow: NSWindow {
 	}
 
 	private func shouldShowWindow() -> Bool {
-		RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
+		// Keep the HUD up briefly after a recipe errors so the message is
+		// readable. The running state itself lives in the listening pill.
+		let recipeActive = coordinator.overlayError != nil
+		return RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
 			mode: audioManager.currentRecordingMode,
 			transcriberWantsWindow: whisperKit.shouldShowLiveTranscriptionWindow
 				&& (whisperKit.isTranscribing || whisperKit.isWaitingForModel)
-		)
+		) || recipeActive
 	}
 
 	private func refresh() {
@@ -83,8 +88,17 @@ class LiveTranscriptionWindow: NSWindow {
 			let newSize = self.calculateDynamicSize()
 
 			if !self.isVisible {
-				self.positionNearCaret(size: newSize)
-				self.makeKeyAndOrderFront(nil)
+				// The recipe error is not tied to what the user is typing, so it
+				// rises into the pill's resting place instead of dropping in at
+				// the caret.
+				if self.isShowingRecipeError {
+					self.presentErrorAtBottomCenter(size: newSize)
+				} else {
+					self.positionNearCaret(size: newSize)
+					self.makeKeyAndOrderFront(nil)
+				}
+			} else if self.isShowingRecipeError {
+				self.updateWindowSize(newSize)
 			} else {
 				if self.followCaret {
 					_ = AccessibilityHelper.getCaretPosition()
@@ -117,12 +131,62 @@ class LiveTranscriptionWindow: NSWindow {
 		} else {
 			if self.isVisible {
 				self.orderOut(nil)
+				// The error entry fades in from 0; restore it so a later
+				// caret-anchored word display is never left invisible.
+				self.alphaValue = 1
 				self.lastTextContent = ""
 			}
 		}
 	}
 
+	/// The HUD is showing the recipe error rather than live transcription. Matches
+	/// DictationView, which gives `overlayError` priority over every other branch.
+	private var isShowingRecipeError: Bool {
+		coordinator.overlayError != nil
+	}
+
+	/// Rises into the same bottom-centre resting place as the listening pill,
+	/// on the pill's own motion constants, instead of dropping in from above.
+	private func presentErrorAtBottomCenter(size: NSSize) {
+		let origin = RecordingOverlayPolicy.origin(
+			for: size, in: screenForWindow().visibleFrame, position: RecordingOverlayPosition.stored())
+		let target = NSRect(origin: origin, size: size)
+
+		guard !Motion.systemReduceMotion else {
+			alphaValue = 1
+			setFrame(target, display: true)
+			makeKeyAndOrderFront(nil)
+			return
+		}
+
+		alphaValue = 0
+		setFrame(target.offsetBy(dx: 0, dy: -Self.errorRiseDistance), display: false)
+		makeKeyAndOrderFront(nil)
+
+		NSAnimationContext.runAnimationGroup { context in
+			context.duration = Motion.structuralDuration
+			context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+			context.allowsImplicitAnimation = true
+			self.animator().setFrame(target, display: true)
+		}
+		NSAnimationContext.runAnimationGroup { context in
+			context.duration = Motion.revealDuration
+			context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+			context.allowsImplicitAnimation = true
+			self.animator().alphaValue = 1
+		}
+	}
+
+	/// How far below its resting place the error starts its rise.
+	private static let errorRiseDistance: CGFloat = 24
+
 	private func calculateDynamicSize() -> NSSize {
+		// The recipe error gets its own comfortable width.
+		if let overlayError = coordinator.overlayError {
+			let width = min(480, max(200, CGFloat(overlayError.count) * 7 + 60))
+			return NSSize(width: width, height: 44)
+		}
+
 		let pendingText =
 			whisperKit.isWaitingForModel
 			? whisperKit.waitingForModelStatusText
@@ -260,6 +324,13 @@ class LiveTranscriptionWindow: NSWindow {
 			return
 		}
 
+		// The error stays bottom-centre for its whole life; only the live
+		// transcription display tracks the caret.
+		if isShowingRecipeError {
+			positionAtBottomCenter(size: newSize)
+			return
+		}
+
 		if let caretPosition = lastCaretPosition {
 			positionRelativeToCaret(caretPosition: caretPosition, windowSize: newSize)
 		} else {
@@ -274,7 +345,9 @@ class LiveTranscriptionWindow: NSWindow {
 			if let caretPosition = newCaretPosition {
 				self.lastCaretPosition = caretPosition
 
-				if self.followCaret && self.isVisible && self.whisperKit.isTranscribing {
+				if self.followCaret && self.isVisible && self.whisperKit.isTranscribing
+					&& !self.isShowingRecipeError
+				{
 					let windowSize = self.calculateDynamicSize()
 					self.positionRelativeToCaret(caretPosition: caretPosition, windowSize: windowSize)
 				}
