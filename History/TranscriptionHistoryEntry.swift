@@ -121,16 +121,16 @@ struct HistoryPostProcessing: Equatable, Sendable {
 		self.errorMessage = errorMessage
 	}
 
-	init(_ run: PostProcessingRun) {
-		switch run.outcome {
+	/// `outcome` is nil when nothing was sent (an empty transcript, a cancelled run).
+	init(recipe: Recipe, outcome: RecipeRunOutcome?) {
+		let template = recipe.steps.first?.config.prompt ?? ""
+		switch outcome {
 		case .processed(let text):
-			self.init(processedText: text, promptName: run.prompt.name, promptTemplate: run.prompt.template)
-		case .skipped:
-			self.init(processedText: nil, promptName: run.prompt.name, promptTemplate: run.prompt.template)
-		case .failed(_, let error):
-			self.init(
-				processedText: nil, promptName: run.prompt.name, promptTemplate: run.prompt.template,
-				errorMessage: error)
+			self.init(processedText: text, promptName: recipe.name, promptTemplate: template)
+		case .failed(let error):
+			self.init(processedText: nil, promptName: recipe.name, promptTemplate: template, errorMessage: error)
+		case nil:
+			self.init(processedText: nil, promptName: recipe.name, promptTemplate: template)
 		}
 	}
 }

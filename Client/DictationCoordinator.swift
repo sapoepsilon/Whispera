@@ -5,6 +5,16 @@ import Foundation
 import SwiftUI
 import WhisperaOpenAI
 
+struct DictationResult: Equatable {
+	let text: String
+	let history: HistoryPostProcessing?
+}
+
+enum RecipeRunOutcome: Equatable, Sendable {
+	case processed(String)
+	case failed(String)
+}
+
 /// Glue between transcription and the recipe engine. Given transcribed text, it
 /// runs the matching recipe (if any) and returns what should be pasted. With
 /// recipes switched off, or no match, the raw transcription is returned
@@ -22,7 +32,7 @@ final class DictationCoordinator {
 	private let run: (Recipe, String) async throws -> String
 	private let isEnabled: () -> Bool
 	private let defaultCommandId: () -> String
-	private var currentTask: Task<String?, Never>?
+	private var currentTask: Task<DictationResult?, Never>?
 
 	init(
 		store: RecipeStore = .shared,
@@ -48,9 +58,14 @@ final class DictationCoordinator {
 		return store.recipes.first { $0.id == id }
 	}
 
-	/// The recipe this dictation should run, if any. Nothing runs unless the
-	/// user switched recipes on; then a trigger phrase wins over the default.
-	private func selectRecipe(for transcription: String) -> (recipe: Recipe, input: String)? {
+	/// The recipe this dictation should run, if any. A dictation that asked for
+	/// Clean up (its shortcut, or `toggle-post-process`) runs it whatever the
+	/// switch says: that request is the opt-in. Otherwise nothing runs unless
+	/// the user switched recipes on; then a trigger phrase wins over the default.
+	private func selectRecipe(for transcription: String, cleanUp: Bool) -> (recipe: Recipe, input: String)? {
+		if cleanUp, let recipe = store.recipes.first(where: CleanUpRecipe.isBuiltIn) {
+			return (recipe, transcription)
+		}
 		guard isEnabled() else { return nil }
 		if let match = RecipeMatcher.match(text: transcription, recipes: store.recipes) {
 			return (match.recipe, match.remainder)
@@ -60,13 +75,19 @@ final class DictationCoordinator {
 
 	/// Returns the text to paste, or `nil` if nothing should be pasted (empty
 	/// dictation, or a superseded run). A new call cancels any in-flight recipe.
+	func process(_ transcription: String) async -> String? {
+		await processDictation(transcription, cleanUp: false)?.text
+	}
+
+	/// The text to paste plus what history should record about the recipe run,
+	/// or `nil` if nothing should be pasted.
 	///
 	/// A recipe that fails — unreachable server, 401/403, 5xx, timeout, empty
 	/// answer — pastes the raw transcription without a word on the HUD: a
 	/// warning per dictation is noise the user can do nothing about mid-sentence.
 	/// The reason goes to `RecipeRunHealth`, which Settings shows until the next
 	/// run succeeds.
-	func process(_ transcription: String) async -> String? {
+	func processDictation(_ transcription: String, cleanUp: Bool) async -> DictationResult? {
 		currentTask?.cancel()
 
 		// Empty/whitespace dictation: do nothing — never spend a model call.
@@ -74,7 +95,9 @@ final class DictationCoordinator {
 			return nil
 		}
 
-		guard let selected = selectRecipe(for: transcription) else { return transcription }
+		guard let selected = selectRecipe(for: transcription, cleanUp: cleanUp) else {
+			return DictationResult(text: transcription, history: nil)
+		}
 		let (recipe, input) = selected
 
 		isRunning = true
@@ -84,30 +107,50 @@ final class DictationCoordinator {
 			runningRecipeName = nil
 		}
 
-		let health = self.health
-		let task = Task { () -> String? in
-			do {
-				let output = try await run(recipe, input)
-				if Task.isCancelled { return nil }
-				guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-					health.recordFailure(recipeName: recipe.name, reason: "The model returned an empty response.")
-					return transcription
-				}
-				health.recordSuccess()
-				return output
-			} catch is CancellationError {
-				return nil
-			} catch {
-				if Task.isCancelled { return nil }
-				let reason = RecipeRunHealth.condense(
-					(error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-				AppLogger.shared.network.error("Recipe \"\(recipe.name)\" failed, pasted the raw transcript: \(reason)")
-				health.recordFailure(recipeName: recipe.name, reason: reason)
-				return transcription
+		let task = Task { () -> DictationResult? in
+			guard let outcome = await execute(recipe, input: input) else { return nil }
+			let history = HistoryPostProcessing(recipe: recipe, outcome: outcome)
+			switch outcome {
+			case .processed(let text): return DictationResult(text: text, history: history)
+			case .failed: return DictationResult(text: transcription, history: history)
 			}
 		}
 		currentTask = task
 		return await task.value
+	}
+
+	/// Runs Clean up once, outside the dictation flow (History's "Clean Up
+	/// Again"), without cancelling a dictation that is still running.
+	func cleanUpForHistory(_ transcript: String) async -> HistoryPostProcessing {
+		let recipe = store.recipes.first(where: CleanUpRecipe.isBuiltIn) ?? CleanUpRecipe.make()
+		guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+			let outcome = await execute(recipe, input: transcript)
+		else { return HistoryPostProcessing(recipe: recipe, outcome: nil) }
+		return HistoryPostProcessing(recipe: recipe, outcome: outcome)
+	}
+
+	/// `nil` when the run was cancelled; a failure is recorded for Settings.
+	private func execute(_ recipe: Recipe, input: String) async -> RecipeRunOutcome? {
+		do {
+			let output = RecipeOutputText.clean(try await run(recipe, input))
+			if Task.isCancelled { return nil }
+			guard !output.isEmpty else {
+				let reason = "The model returned an empty response."
+				health.recordFailure(recipeName: recipe.name, reason: reason)
+				return .failed(reason)
+			}
+			health.recordSuccess()
+			return .processed(output)
+		} catch is CancellationError {
+			return nil
+		} catch {
+			if Task.isCancelled { return nil }
+			let reason = RecipeRunHealth.condense(
+				(error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+			AppLogger.shared.network.error("Recipe \"\(recipe.name)\" failed, pasted the raw transcript: \(reason)")
+			health.recordFailure(recipeName: recipe.name, reason: reason)
+			return .failed(reason)
+		}
 	}
 
 	func cancel() {

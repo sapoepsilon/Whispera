@@ -45,8 +45,8 @@ struct ModifierOnlyShortcutTests {
 		let defaults = UserDefaults(suiteName: suite)!
 		defaults.removePersistentDomain(forName: suite)
 		defaults.set(ModifierOnlyShortcut.rightOption.rawValue, forKey: ShortcutDefaults.dictationKey)
-		#expect(PostProcessShortcutMonitor.conflictingShortcut(for: "⌥⇧Space", defaults: defaults) == nil)
-		#expect(PostProcessShortcutMonitor.conflictingShortcut(for: "⌃F", defaults: defaults) == "⌃F")
+		#expect(CleanUpShortcutMonitor.conflictingShortcut(for: "⌥⇧Space", defaults: defaults) == nil)
+		#expect(CleanUpShortcutMonitor.conflictingShortcut(for: "⌃F", defaults: defaults) == "⌃F")
 	}
 
 	@Test func displayNamesReplaceStoredNames() {

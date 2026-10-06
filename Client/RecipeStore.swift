@@ -54,8 +54,12 @@ final class RecipeStore {
 		mirror()
 	}
 
+	/// The built-in Clean up recipe is always in the store, so "nothing to lose"
+	/// means nothing but built-ins rather than an empty list.
 	func loadDefaults() async {
-		store.loadDefaults()
+		if store.recipes.allSatisfy(CleanUpRecipe.isBuiltIn) {
+			for recipe in Recipe.localDefaults { store.create(recipe) }
+		}
 		mirror()
 	}
 

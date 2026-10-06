@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025-2026 Ismatulla Mansurov
 
+import AppKit
 import SwiftUI
 
 /// Settings tab for managing recipes. Create / edit / delete, and
-/// load the starter set. See WHI-30.
+/// load the starter set. See WHI-30. The built-in Clean up recipe (what used
+/// to be the Post-Processing pane) lives here too, with its shortcut.
 struct RecipesView: View {
 	@State private var store = RecipeStore.shared
 	@State private var editing: Recipe?
@@ -12,12 +14,20 @@ struct RecipesView: View {
 	@State private var health = RecipeRunHealth.shared
 	@AppStorage(WhisperaSettings.defaultCommandIdKey) private var defaultCommandId = ""
 	@AppStorage(WhisperaSettings.recipesEnabledKey) private var recipesEnabled = false
+	@AppStorage(CleanUpSettings.Key.onRequestEnabled) private var cleanUpOnRequest = false
+	@AppStorage(CleanUpSettings.Key.shortcut) private var cleanUpShortcut = CleanUpSettings.defaultShortcut
+	@State private var isRecordingShortcut = false
+	@State private var shortcutMonitor: Any?
+	@State private var recorderToken: UUID?
+	@State private var alert: RecipesAlert?
+	@Environment(\.settingsPaneIsActive) private var isActivePane
 
 	var body: some View {
 		VStack(spacing: 0) {
 			header
 			enableRow
-			if recipesEnabled, let failure = health.lastFailure {
+			cleanUpShortcutRow
+			if recipesEnabled || cleanUpOnRequest, let failure = health.lastFailure {
 				failureRow(failure)
 			}
 
@@ -35,7 +45,7 @@ struct RecipesView: View {
 						.buttonStyle(.plain)
 					}
 					.onDelete { offsets in
-						let targets = offsets.map { store.recipes[$0] }
+						let targets = offsets.map { store.recipes[$0] }.filter { !CleanUpRecipe.isBuiltIn($0) }
 						Task { for r in targets { await store.delete(r) } }
 					}
 				}
@@ -55,6 +65,18 @@ struct RecipesView: View {
 		.background(Color(nsColor: .textBackgroundColor))
 		.task { await store.reload() }
 		.onChange(of: defaultCommandId) { _, id in WhisperaSettings.didPickDefaultCommand(id) }
+		.onChange(of: isActivePane) { _, isActive in
+			if !isActive { stopRecordingShortcut() }
+		}
+		.onDisappear(perform: stopRecordingShortcut)
+		.alert(
+			alert?.title ?? "", isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } }),
+			presenting: alert
+		) { _ in
+			Button("OK", role: .cancel) {}
+		} message: { alert in
+			Text(alert.message)
+		}
 		.sheet(isPresented: $isCreating) {
 			RecipeEditor(
 				recipe: Recipe(name: "", steps: [RecipeStep(config: LLMStepConfig(prompt: "{{input}}"))])
@@ -98,6 +120,64 @@ struct RecipesView: View {
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.padding(.horizontal, 20)
 		.padding(.bottom, 10)
+	}
+
+	/// Clean up on request: the shortcut (and `toggle-post-process`) runs it on
+	/// one dictation even while recipes are off for every other dictation.
+	private var cleanUpShortcutRow: some View {
+		VStack(alignment: .leading, spacing: 2) {
+			HStack {
+				Toggle("Clean up with a shortcut", isOn: $cleanUpOnRequest)
+					.toggleStyle(.switch)
+				Spacer()
+				Button(isRecordingShortcut ? String(localized: "Press keys...") : cleanUpShortcut) {
+					isRecordingShortcut ? stopRecordingShortcut() : startRecordingShortcut()
+				}
+				.disabled(!cleanUpOnRequest)
+				.accessibilityIdentifier("cleanUpShortcutButton")
+			}
+			Text("Dictate with this shortcut to run Clean up on that dictation only. Always uses text mode.")
+				.font(.caption)
+				.foregroundColor(.secondary)
+		}
+		.frame(maxWidth: .infinity, alignment: .leading)
+		.padding(.horizontal, 20)
+		.padding(.bottom, 10)
+	}
+
+	private func startRecordingShortcut() {
+		isRecordingShortcut = true
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = ShortcutRecorderGate.shared.begin()
+		shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+			guard isRecordingShortcut else { return event }
+			let modifiers = event.modifierFlags.intersection(ShortcutCombo.relevantModifiers)
+			guard !modifiers.isEmpty else { return nil }
+			stopRecordingShortcut()
+			guard let formatted = ShortcutDisplayFormatter.format(keyCode: event.keyCode, modifiers: modifiers)
+			else {
+				alert = RecipesAlert(
+					title: String(localized: "Shortcut not available"),
+					message: String(localized: "That key can't be used in a shortcut. Try a letter, number or F-key."))
+				return nil
+			}
+			if let conflict = CleanUpShortcutMonitor.conflictingShortcut(for: formatted) {
+				alert = RecipesAlert(
+					title: String(localized: "Shortcut not available"),
+					message: String(localized: "\(formatted) is already used by another Whispera shortcut (\(conflict))."))
+				return nil
+			}
+			cleanUpShortcut = formatted
+			return nil
+		}
+	}
+
+	private func stopRecordingShortcut() {
+		isRecordingShortcut = false
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = nil
+		if let shortcutMonitor { NSEvent.removeMonitor(shortcutMonitor) }
+		shortcutMonitor = nil
 	}
 
 	/// The one place a failed recipe run is reported: the dictation itself
@@ -154,8 +234,18 @@ struct RecipesView: View {
 
 	private func recipeRow(_ recipe: Recipe) -> some View {
 		VStack(alignment: .leading, spacing: 2) {
-			Text(recipe.name.isEmpty ? "Untitled" : recipe.name)
-				.font(.subheadline.weight(.medium))
+			HStack(spacing: 6) {
+				Text(recipe.name.isEmpty ? "Untitled" : recipe.name)
+					.font(.subheadline.weight(.medium))
+				if CleanUpRecipe.isBuiltIn(recipe) {
+					Text("Built-in")
+						.font(.caption2)
+						.padding(.horizontal, 5)
+						.padding(.vertical, 1)
+						.background(Capsule().fill(Color.secondary.opacity(0.15)))
+						.foregroundColor(.secondary)
+				}
+			}
 			if recipe.id == defaultCommandId {
 				Text("Default · runs on every dictation")
 					.font(.caption)
@@ -248,4 +338,10 @@ private struct RecipeEditor: View {
 			get: { draft.triggerPhrase ?? "" },
 			set: { draft.triggerPhrase = $0.isEmpty ? nil : $0 })
 	}
+}
+
+private struct RecipesAlert: Identifiable {
+	let id = UUID()
+	let title: String
+	let message: String
 }

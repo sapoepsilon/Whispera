@@ -93,6 +93,14 @@ struct NewStringsAreLocalizedTests {
 		"Run recipes on dictation",
 		"When off, dictation is pasted exactly as you said it.",
 		"Last recipe run failed: %@ — used the raw transcript",
+		// Post-Processing became the built-in Clean up recipe
+		"Clean up with a shortcut",
+		"Dictate with this shortcut to run Clean up on that dictation only. Always uses text mode.",
+		"Built-in",
+		"Clean Up Again",
+		"Recipe failed: %@",
+		"Original transcript, rewritten by %@",
+		"Clean up failed: %@",
 	]
 
 	@Test func everyNewStringIsInTheCatalog() throws {

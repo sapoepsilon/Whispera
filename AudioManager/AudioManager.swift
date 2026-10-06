@@ -258,10 +258,11 @@ final class AudioManager: NSObject {
 	}
 
 	/// Transforms a finished transcription before it is pasted (recipe matching
-	/// + execution). Returns nil to paste nothing. Injected by the app so
-	/// AudioManager stays free of recipe/network dependencies. WHI-41.
+	/// + execution; the Bool asks for Clean up). Returns nil to paste nothing.
+	/// Injected by the app so AudioManager stays free of recipe/network
+	/// dependencies. WHI-41.
 	@ObservationIgnored
-	var dictationProcessor: ((String) async -> String?)?
+	var dictationProcessor: ((String, Bool) async -> DictationResult?)?
 
 	// MARK: - Initialization
 
@@ -321,16 +322,13 @@ final class AudioManager: NSObject {
 	func startRecordingSession(postProcess: Bool = false) {
 		guard !isSessionActive else { return }
 		pendingStopAfterStart = false
-		let postProcessing = PostProcessingSettings()
-		// Post-processing rewrites the whole transcript, so that session must run in text mode.
-		let forceTextMode = postProcess && postProcessing.isEnabled
+		// Clean up rewrites the whole transcript, so a session that asks for it runs in text mode.
+		let cleanUp = postProcess && CleanUpSettings().isOnRequestEnabled
 		let mode: RecordingMode =
-			enableStreaming && whisperKitTranscriber.supportsLiveTranscription && !forceTextMode
+			enableStreaming && whisperKitTranscriber.supportsLiveTranscription && !cleanUp
 			? .liveTranscription : .text
 		currentRecordingMode = mode
-		let shouldPostProcess = postProcessing.shouldPostProcess(
-			requestedByShortcut: postProcess, isLiveMode: mode == .liveTranscription)
-		startRecording(mode: mode, postProcess: shouldPostProcess)
+		startRecording(mode: mode, postProcess: cleanUp)
 	}
 
 	/// Stops the active recording and transcribes it. A stop that arrives while the
@@ -1341,16 +1339,17 @@ extension AudioManager {
 			guard let text = Self.textToPaste(afterLiveDictationFinished: polished ?? draft) else { return }
 			let secure = SecureDictation.isSecureInputActive
 			let policy = SecureDictationPolicy.resolve(postProcessRequested: false, secureInput: secure)
-			let toPaste = await self.applyDictationProcessor(
-				text, mode: .text, secureInput: policy.concealClipboard)
+			let processed = await self.applyDictationProcessor(
+				text, mode: .text, secureInput: policy.concealClipboard, cleanUp: false)
 			if policy.rememberAsLastTranscription {
 				self.lastTranscription = text
 			}
-			if let toPaste, !toPaste.isEmpty {
+			if let toPaste = processed?.text, !toPaste.isEmpty {
 				self.pasteToFocusedApp(toPaste, concealed: policy.concealClipboard)
 			}
 			if policy.saveToHistory {
-				self.recordHistory(text: text, audio: nil, source: .liveDictation)
+				self.recordHistory(
+					text: text, audio: nil, source: .liveDictation, postProcessing: processed?.history)
 			}
 		}
 	}
@@ -1519,46 +1518,34 @@ extension AudioManager {
 				finishTranscription(id)
 				return
 			}
-			let secureBeforeProcessing = SecureDictation.isSecureInputActive
-			let processed = await postProcessIfRequested(
-				rawTranscription,
-				requested: SecureDictationPolicy.resolve(
-					postProcessRequested: session.postProcess, secureInput: secureBeforeProcessing
-				).postProcess)
-			let transcription = processed.text
-			guard !ledger.isCancelled(id) else {
-				AppLogger.shared.audioManager.info("Discarding post-processed text of a cancelled recording")
-				return
-			}
 			let policy = SecureDictationPolicy.resolve(
-				postProcessRequested: session.postProcess,
-				secureInput: secureBeforeProcessing || SecureDictation.isSecureInputActive)
+				postProcessRequested: session.postProcess, secureInput: SecureDictation.isSecureInputActive)
 			if let notice = SecureDictationPolicy.skippedPostProcessingNotice(
-				postProcessRequested: session.postProcess,
-				secureInput: secureBeforeProcessing || SecureDictation.isSecureInputActive)
+				postProcessRequested: session.postProcess, secureInput: SecureDictation.isSecureInputActive)
 			{
 				postNotice(notice)
 			}
-			if policy.rememberAsLastTranscription {
-				lastTranscription = transcription
-			} else {
-				AppLogger.shared.audioManager.info(
-					"Secure input is on; the dictation is pasted but not kept in history or post-processed")
-			}
-			let toPaste = await applyDictationProcessor(
-				transcription, mode: session.mode, secureInput: policy.concealClipboard)
+			let processed = await applyDictationProcessor(
+				rawTranscription, mode: session.mode, secureInput: policy.concealClipboard,
+				cleanUp: policy.postProcess)
 			guard !ledger.isCancelled(id) else {
 				AppLogger.shared.audioManager.info("Discarding the processed dictation of a cancelled recording")
 				return
 			}
+			if policy.rememberAsLastTranscription {
+				lastTranscription = processed?.text ?? rawTranscription
+			} else {
+				AppLogger.shared.audioManager.info(
+					"Secure input is on; the dictation is pasted but not kept in history or sent to a recipe")
+			}
 			finishTranscription(id)
 
-			if session.mode == .text, let toPaste {
+			if session.mode == .text, let toPaste = processed?.text {
 				pasteToFocusedApp(toPaste, concealed: policy.concealClipboard)
 			}
 			// After the paste so saving the recording never delays the text
 			if policy.saveToHistory {
-				recordHistory(text: rawTranscription, audio: historyAudio, postProcessing: processed.history)
+				recordHistory(text: rawTranscription, audio: historyAudio, postProcessing: processed?.history)
 			}
 		} catch {
 			guard !ledger.isCancelled(id) else { return }
@@ -1618,10 +1605,12 @@ extension AudioManager {
 	/// execution) when in text mode. Returns nil to paste nothing. Never runs on
 	/// a dictation into a secure input field, which stays out of every LLM. WHI-41.
 	fileprivate func applyDictationProcessor(
-		_ transcription: String, mode: RecordingMode, secureInput: Bool
-	) async -> String? {
-		guard mode == .text, !secureInput, let processor = dictationProcessor else { return transcription }
-		return await processor(transcription)
+		_ transcription: String, mode: RecordingMode, secureInput: Bool, cleanUp: Bool
+	) async -> DictationResult? {
+		guard mode == .text, !secureInput, let processor = dictationProcessor else {
+			return DictationResult(text: transcription, history: nil)
+		}
+		return await processor(transcription, cleanUp)
 	}
 }
 

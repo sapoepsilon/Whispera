@@ -64,7 +64,7 @@ enum DictationShortcutFormatter {
 		let flags = modifiers.intersection(ShortcutCombo.relevantModifiers)
 		guard let key = ShortcutKeyCodes.keyName(forKeyCode: keyCode) else { return nil }
 		guard !flags.isEmpty || allowsBareKey(keyCode) else { return nil }
-		return PostProcessingShortcutFormatter.format(modifiers: flags, key: key)
+		return ShortcutDisplayFormatter.format(modifiers: flags, key: key)
 	}
 }
 

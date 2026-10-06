@@ -1286,8 +1286,6 @@ struct SettingsView: View {
 			AutomationSettingsView()
 		case .benchmark:
 			BenchmarkView()
-		case .postProcessing:
-			PostProcessingSettingsView()
 		case .debug:
 			LogViewerView()
 		}

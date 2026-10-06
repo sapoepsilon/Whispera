@@ -12,7 +12,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	case history
 	case automation
 	case benchmark
-	case postProcessing
 	case debug
 
 	var id: String { rawValue }
@@ -30,7 +29,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 		case .history: return String(localized: "History", bundle: bundle)
 		case .automation: return String(localized: "Automation", bundle: bundle)
 		case .benchmark: return String(localized: "Benchmark", bundle: bundle)
-		case .postProcessing: return String(localized: "Post-Processing", bundle: bundle)
 		case .debug: return String(localized: "Debug", bundle: bundle)
 		}
 	}
@@ -48,12 +46,17 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 		case .history: return "clock.arrow.circlepath"
 		case .automation: return "bolt.horizontal"
 		case .benchmark: return "speedometer"
-		case .postProcessing: return "wand.and.stars"
 		case .debug: return "ladybug"
 		}
 	}
 
 	var accessibilityIdentifier: String { "settingsSidebar.\(rawValue)" }
+
+	/// Post-Processing became the Clean up recipe, so a request for its old pane
+	/// (a saved destination, an automation link) opens Recipes.
+	static func named(_ raw: String) -> SettingsPane? {
+		raw == "postProcessing" ? .recipes : SettingsPane(rawValue: raw)
+	}
 
 	/// Live Transcription and Automation are not supported for regular users yet, so they sit
 	/// behind Debug Mode with the Debug pane. The features themselves keep working (URL scheme,

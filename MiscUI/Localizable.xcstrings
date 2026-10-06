@@ -3244,6 +3244,29 @@
         }
       }
     },
+    "Built-in": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integriert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integrada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intégrée"
+          }
+        }
+      }
+    },
     "CPU": {
       "extractionState": "manual",
       "localizations": {
@@ -3957,6 +3980,52 @@
         }
       }
     },
+    "Clean Up Again": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut „Clean up“ ausführen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a ejecutar «Clean up»"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relancer « Clean up »"
+          }
+        }
+      }
+    },
+    "Clean up failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„Clean up“ fehlgeschlagen: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Clean up» falló: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de « Clean up » : %@"
+          }
+        }
+      }
+    },
     "Clean up the transcript with Apple Intelligence on this Mac before it is pasted. History keeps the original text.": {
       "extractionState": "manual",
       "localizations": {
@@ -3976,6 +4045,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nettoie la transcription avec Apple Intelligence sur ce Mac avant de la coller. L'historique conserve le texte d'origine."
+          }
+        }
+      }
+    },
+    "Clean up with a shortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Kurzbefehl „Clean up“ ausführen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutar «Clean up» con un atajo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer « Clean up » avec un raccourci"
           }
         }
       }
@@ -6161,6 +6253,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dicter"
+          }
+        }
+      }
+    },
+    "Dictate with this shortcut to run Clean up on that dictation only. Always uses text mode.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit diesem Kurzbefehl diktieren, um „Clean up“ nur auf dieses Diktat anzuwenden. Nutzt immer den Textmodus."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dicta con este atajo para aplicar «Clean up» solo a ese dictado. Siempre usa el modo de texto."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictez avec ce raccourci pour appliquer « Clean up » à cette dictée uniquement. Utilise toujours le mode texte."
           }
         }
       }
@@ -13571,6 +13686,29 @@
         }
       }
     },
+    "Original transcript, rewritten by %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Originaltranskript, umgeschrieben von %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcripción original, reescrita por %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription d'origine, réécrite par %@"
+          }
+        }
+      }
+    },
     "Other": {
       "extractionState": "manual",
       "localizations": {
@@ -15476,6 +15614,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reçoit la transcription sur l'entrée standard et dans WHISPERA_TRANSCRIPT. Whispera exécute une copie privée du script, donc $0 est la copie : elle est lancée dans le dossier du script, WHISPERA_SCRIPT_PATH contient le chemin d'origine et WHISPERA_SCRIPT_DIR son dossier. Choisissez de nouveau le script après l'avoir modifié."
+          }
+        }
+      }
+    },
+    "Recipe failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rezept fehlgeschlagen: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La receta falló: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de la recette : %@"
           }
         }
       }

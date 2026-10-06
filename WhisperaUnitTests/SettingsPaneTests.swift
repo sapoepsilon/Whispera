@@ -16,14 +16,14 @@ struct SettingsPaneTests {
 		#expect(
 			SettingsPane.visible(debugModeEnabled: true) == [
 				.general, .servers, .account, .recipes, .textInsertion, .storage, .liveTranscription, .fileTranscription, .history, .automation,
-				.benchmark, .postProcessing, .debug,
+				.benchmark, .debug,
 			])
 	}
 
 	@Test func regularUsersOnlySeeTheSupportedPanes() {
 		#expect(
 			SettingsPane.visible(debugModeEnabled: false) == [
-				.general, .servers, .account, .recipes, .textInsertion, .storage, .fileTranscription, .history, .benchmark, .postProcessing,
+				.general, .servers, .account, .recipes, .textInsertion, .storage, .fileTranscription, .history, .benchmark,
 			])
 	}
 
@@ -34,7 +34,14 @@ struct SettingsPaneTests {
 			#expect(!regular.contains(pane), "\(pane)")
 			#expect(debug.contains(pane), "\(pane)")
 		}
-		#expect(regular.contains(.postProcessing))
+		#expect(regular.contains(.recipes))
+	}
+
+	@Test func postProcessingOpensRecipes() {
+		#expect(SettingsPane(rawValue: "postProcessing") == nil)
+		#expect(SettingsPane.named("postProcessing") == .recipes)
+		#expect(SettingsPane.named("history") == .history)
+		#expect(SettingsRouting.destination(in: [SettingsRouting.destinationKey: "postProcessing"]) == .recipes)
 	}
 
 	@Test func hiddenSelectionFallsBackToGeneral() {
