@@ -2,7 +2,7 @@ import AppKit
 
 enum SettingsPane: String, CaseIterable, Identifiable {
 	case general
-	case aiMode
+	case servers
 	case recipes
 	case textInsertion
 	case storage
@@ -19,7 +19,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	func title(bundle: Bundle = .main) -> String {
 		switch self {
 		case .general: return String(localized: "General", bundle: bundle)
-		case .aiMode: return String(localized: "AI Mode", bundle: bundle)
+		case .servers: return String(localized: "Servers", bundle: bundle)
 		case .recipes: return String(localized: "Recipes", bundle: bundle)
 		case .textInsertion: return String(localized: "Text Insertion", bundle: bundle)
 		case .storage: return String(localized: "Storage & Downloads", bundle: bundle)
@@ -36,7 +36,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	var systemImage: String {
 		switch self {
 		case .general: return "gear"
-		case .aiMode: return "brain"
+		case .servers: return "server.rack"
 		case .recipes: return "command"
 		case .textInsertion: return "text.cursor"
 		case .storage: return "internaldrive"

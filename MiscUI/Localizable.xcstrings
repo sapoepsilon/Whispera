@@ -806,29 +806,6 @@
         }
       }
     },
-    "AI Mode": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "KI-Modus"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Modo IA"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mode IA"
-          }
-        }
-      }
-    },
     "AI Model": {
       "extractionState": "manual",
       "localizations": {
@@ -16304,6 +16281,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoie chaque transcription au serveur %@ pour la nettoyer avant de la coller. L'historique conserve le texte d'origine."
+          }
+        }
+      }
+    },
+    "Servers": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidores"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveurs"
           }
         }
       }

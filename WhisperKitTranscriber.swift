@@ -12,20 +12,14 @@ import WhisperKit
 	var isInitialized = false
 	private var cancellables = Set<AnyCancellable>()
 	var isInitializing = false
-	var isWaitingForModel: Bool = false
-	var waitingForModelStatusText: String = ""
 	var isStreamingAudio: Bool = false
 	var initializationProgress: Double = 0.0
 	var initializationStatus = String(localized: "Starting...")
 	var availableModels: [String] = []
 	var currentModel: String?
 	var downloadedModels: Set<String> = []
-	var onConfirmedTextChange: ((String) -> Void)?
 	@ObservationIgnored var onLiveAudioSamples: (@MainActor ([Float]) -> Void)?
-	var shouldShowLiveTranscriptionWindow: Bool = false
-	var isTranscribing: Bool = false
 	var decodingOptions: DecodingOptions?
-	var currentText: String = ""
 	var dictationWordTracker: DictationWordTracker?
 	@ObservationIgnored private var lastLiveSession: (text: String, samples: [Float]) = (text: "", samples: [])
 	/// Where the text pipeline reads its settings; tests point it at an isolated suite.
@@ -37,19 +31,52 @@ import WhisperKit
 	/// Stopping decodes the words said after the newest pass before committing the session.
 	@ObservationIgnored private var liveFinishTask: Task<Bool, Never>?
 	@ObservationIgnored private var liveFinish = LiveSessionGate()
-	var confirmedText: String = "" {
-		didSet {
-			onConfirmedTextChange?(confirmedText)
-		}
-	}
-	private var pendingText: String = ""  // Internal working property
-	var stableDisplayText: String = ""  // UI-facing stable property
+	/// Feeds `shouldUpdatePendingText`; the HUD-facing text lives in `LiveTranscriptionState`.
 	private var lastDisplayedPendingText: String = ""
-	var shouldShowDebugWindow: Bool = false
-	var latestWord: String {
-		let words = stableDisplayText.split(separator: " ")
-		return words.last?.description ?? ""
+
+	/// The one live-transcription surface, shared with every other engine. The
+	/// properties below forward to it so existing callers, views and tests are
+	/// unchanged while a remote engine can drive the same HUD. See WHI-58.
+	@ObservationIgnored
+	private let live = LiveTranscriptionState.shared
+
+	var onConfirmedTextChange: ((String) -> Void)? {
+		get { live.onConfirmedTextChange }
+		set { live.onConfirmedTextChange = newValue }
 	}
+	var isWaitingForModel: Bool {
+		get { live.isWaitingForModel }
+		set { live.isWaitingForModel = newValue }
+	}
+	var waitingForModelStatusText: String {
+		get { live.waitingForModelStatusText }
+		set { live.waitingForModelStatusText = newValue }
+	}
+	var shouldShowLiveTranscriptionWindow: Bool {
+		get { live.shouldShowLiveTranscriptionWindow }
+		set { live.shouldShowLiveTranscriptionWindow = newValue }
+	}
+	var isTranscribing: Bool {
+		get { live.isTranscribing }
+		set { live.isTranscribing = newValue }
+	}
+	var confirmedText: String {
+		get { live.confirmedText }
+		set { live.confirmedText = newValue }
+	}
+	private var pendingText: String {
+		get { live.pendingText }
+		set { live.pendingText = newValue }
+	}
+	var stableDisplayText: String {
+		get { live.stableDisplayText }
+		set { live.stableDisplayText = newValue }
+	}
+	var shouldShowDebugWindow: Bool {
+		get { live.shouldShowDebugWindow }
+		set { live.shouldShowDebugWindow = newValue }
+	}
+	var latestWord: String { live.latestWord }
 
 	func clearLiveTranscriptionState() {
 		liveSession.end()

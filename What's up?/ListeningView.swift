@@ -8,6 +8,10 @@ enum PillPhase: Equatable {
 	case initializing
 	case preparingModel(String)
 	case transcribing
+	/// The post-stop finalize pass ("Polishing…"). A phase of this pill because
+	/// the pill is the anchor the user watches after stopping; the words window
+	/// has already dismissed and must not come back to repeat the status.
+	case finalizing(String)
 	case runningRecipe(String)
 	case recording
 }
@@ -46,6 +50,7 @@ struct PillLayout: Equatable {
 
 struct ListeningView: View {
 	@State private var whisperKit = WhisperKitTranscriber.shared
+	@State private var live = LiveTranscriptionState.shared
 	@State private var coordinator = DictationCoordinator.shared
 	@State private var showControls = false
 	@State private var showCancel = false
@@ -112,6 +117,11 @@ struct ListeningView: View {
 			if coordinator.isRunning {
 				return .runningRecipe(coordinator.runningRecipeName ?? "command")
 			}
+			// Same shape for the two-pass polish: the words window dismissed at
+			// stop, and this pill is the one surface that says the paste is coming.
+			if live.isFinalizing {
+				return .finalizing(live.finalizingStatusText)
+			}
 			// A load in progress only blocks transcription when no other engine is loaded
 			if whisperKit.isWaitingForModel
 				|| whisperKit.isInitializing
@@ -147,25 +157,14 @@ struct ListeningView: View {
 			EmptyView()
 		case .initializing, .recording:
 			micLiveRow
-		case .preparingModel(let status):
+		case .preparingModel(let status), .finalizing(let status):
 			HStack(spacing: 8) {
-				ZStack {
-					ProgressView()
-						.scaleEffect(0.7)
-				}
-				.frame(width: 20, height: 20)
-				Text(status)
-					.font(.system(.caption, design: .rounded))
-					.foregroundColor(.secondary)
-					.lineLimit(1)
+				PillStatusRow(indicator: .progress, text: status)
 				cancelButton
 			}
 		case .transcribing:
 			HStack(spacing: 8) {
-				Text(transcribingText)
-					.font(.system(.caption, design: .rounded))
-					.foregroundColor(.secondary)
-					.lineLimit(1)
+				PillStatusRow(text: transcribingText)
 				cancelButton
 			}
 		case .runningRecipe(let name):
@@ -176,7 +175,7 @@ struct ListeningView: View {
 	/// One branch for both mic-live phases, so the device icon keeps its identity
 	/// across the initializing/recording flip a device switch causes.
 	private var micLiveRow: some View {
-		HStack(spacing: 8) {
+		HStack(spacing: PillSpacing.sm) {
 			if layout.phase == .recording {
 				controlsButton
 			} else {
@@ -264,16 +263,11 @@ struct ListeningView: View {
 	/// The post-dictation action, running inside the pill. It takes its final
 	/// layout immediately; the window's animated frame growth is what reveals it.
 	private func runningRecipeView(_ name: String) -> some View {
-		HStack(spacing: 8) {
-			ProgressView()
-				.scaleEffect(0.7)
-			Text("Running \(name)…")
-				.font(.system(.caption, design: .rounded))
-				.foregroundColor(.secondary)
-				.lineLimit(1)
+		HStack(spacing: PillSpacing.sm) {
+			PillStatusRow(indicator: .progress, text: "Running \(name)…")
 			if layout.showCancel {
 				Button("Cancel") { coordinator.cancel() }
-					.font(.system(.caption, design: .rounded))
+					.font(PillTypography.status)
 					.buttonStyle(.plain)
 					.foregroundColor(.blue)
 			}
@@ -333,8 +327,8 @@ struct ListeningView: View {
 	private var pillContent: some View {
 		contentView
 			.transition(.opacity)
-			.padding(.horizontal, 14)
-			.padding(.vertical, 10)
+			.padding(.horizontal, PillSpacing.md)
+			.padding(.vertical, PillSpacing.sm)
 			.fixedSize(horizontal: true, vertical: false)
 			// The module swap is a pure fade at the reveal constant. The content
 			// takes its final layout immediately and the window's frame animation
@@ -348,32 +342,12 @@ struct ListeningView: View {
 			if #available(macOS 26.0, *) {
 				pillContent
 					.frame(height: 30 * layout.typeScale)
-					.modifier(AdaptiveGlassModifier())
 			} else {
 				pillContent
 					.frame(height: 50 * layout.typeScale)
-					.background(
-						AdaptiveMaterialBackground(
-							style: .ultraThin, shape: RoundedRectangle(cornerRadius: cornerRadius))
-					)
-					.overlay(
-						RoundedRectangle(cornerRadius: cornerRadius)
-							.strokeBorder(
-								LinearGradient(
-									colors: [
-										Color.blue.opacity(0.3),
-										Color.blue.opacity(0.1),
-									],
-									startPoint: .topLeading,
-									endPoint: .bottomTrailing
-								),
-								lineWidth: 1
-							)
-					)
-					.shadow(color: Color.blue.opacity(0.1), radius: 8, x: 0, y: 2)
-					.shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
 			}
 		}
+		.pillChrome(cornerRadius: cornerRadius)
 		// The pill reports its natural laid-out size and the window assigns it once
 		// per real change, mirroring the popover's measurement bridge.
 		.onGeometryChange(for: CGSize.self) { proxy in

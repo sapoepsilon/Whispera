@@ -55,7 +55,10 @@ enum RecordingOverlayPolicy {
 	static func shouldShowPill(state: AudioState, mode: RecordingMode, style: RecordingOverlayStyle)
 		-> Bool
 	{
-		style == .pill && RecordingWindowPolicy.shouldShowListeningWindow(state: state, mode: mode)
+		// Live mode shows its own words HUD instead of the pill while it records; after
+		// stop the pill carries the status of a paste that is still coming (WHI-58)
+		style == .pill && (mode != .liveTranscription || state == .transcribing)
+			&& RecordingWindowPolicy.shouldShowListeningWindow(state: state)
 	}
 
 	// The bottom inset matches the pill's historical placement at 10% of the visible height.
