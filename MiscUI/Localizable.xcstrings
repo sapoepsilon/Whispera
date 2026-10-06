@@ -4371,29 +4371,6 @@
         }
       }
     },
-    "Confirm with Touch ID": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mit Touch ID bestätigen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Confirmar con Touch ID"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Confirmer avec Touch ID"
-          }
-        }
-      }
-    },
     "Continue": {
       "extractionState": "manual",
       "localizations": {
@@ -8948,25 +8925,25 @@
         }
       }
     },
-    "It joined your account. Check the fingerprint matches the one on the iPhone before you confirm.": {
+    "It joined your account. It can't reach this Mac until you confirm it here.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Es ist deinem Konto beigetreten. Prüfe vor dem Bestätigen, ob der Fingerabdruck mit dem auf dem iPhone übereinstimmt."
+            "value": "Es ist deinem Konto beigetreten. Es kann diesen Mac erst erreichen, wenn du es hier bestätigst."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Se unió a tu cuenta. Comprueba que la huella coincide con la del iPhone antes de confirmar."
+            "value": "Se unió a tu cuenta. No puede acceder a este Mac hasta que lo confirmes aquí."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Il a rejoint votre compte. Vérifiez que l’empreinte correspond à celle de l’iPhone avant de confirmer."
+            "value": "Il a rejoint votre compte. Il ne peut pas accéder à ce Mac tant que vous ne l’avez pas confirmé ici."
           }
         }
       }
@@ -10623,6 +10600,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lien avec le Mac"
+          }
+        }
+      }
+    },
+    "Mac fingerprint: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac-Fingerabdruck: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Huella del Mac: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empreinte du Mac : %@"
           }
         }
       }
@@ -12490,6 +12490,29 @@
         }
       }
     },
+    "Not available yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch nicht verfügbar"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no disponible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore disponible"
+          }
+        }
+      }
+    },
     "Not granted": {
       "extractionState": "manual",
       "localizations": {
@@ -12578,6 +12601,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nombre de mots dans la fenêtre de transcription (1-200+)"
+          }
+        }
+      }
+    },
+    "Numbers Match — Confirm with Touch ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nummern stimmen überein – mit Touch ID bestätigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los números coinciden: confirmar con Touch ID"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les numéros correspondent — Confirmer avec Touch ID"
           }
         }
       }
@@ -16492,6 +16538,29 @@
         }
       }
     },
+    "Safety number — must match the one on your iPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sicherheitsnummer – muss mit der auf deinem iPhone übereinstimmen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Número de seguridad: debe coincidir con el de tu iPhone"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Numéro de sécurité — doit correspondre à celui de votre iPhone"
+          }
+        }
+      }
+    },
     "Same as above": {
       "extractionState": "manual",
       "localizations": {
@@ -19551,6 +19620,29 @@
         }
       }
     },
+    "The Mac link didn't send a safety number for this iPhone. Try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Mac-Link hat für dieses iPhone keine Sicherheitsnummer gesendet. Versuche es noch einmal."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El enlace del Mac no envió un número de seguridad para este iPhone. Inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le lien du Mac n’a pas envoyé de numéro de sécurité pour cet iPhone. Réessayez."
+          }
+        }
+      }
+    },
     "The Mac link is starting…": {
       "extractionState": "manual",
       "localizations": {
@@ -20333,6 +20425,29 @@
         }
       }
     },
+    "This device's keys changed. If you didn't reinstall Whispera on it, don't confirm.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Schlüssel dieses Geräts haben sich geändert. Wenn du Whispera darauf nicht neu installiert hast, bestätige nicht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las claves de este dispositivo cambiaron. Si no reinstalaste Whispera en él, no lo confirmes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les clés de cet appareil ont changé. Si vous n’y avez pas réinstallé Whispera, ne confirmez pas."
+          }
+        }
+      }
+    },
     "This entry has no transcript to post-process.": {
       "extractionState": "manual",
       "localizations": {
@@ -20375,6 +20490,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cette fonctionnalité est en cours de développement et des améliorations arrivent bientôt."
+          }
+        }
+      }
+    },
+    "This iPhone's keys changed while the card was open. Compare the new safety number before you confirm.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Schlüssel dieses iPhones haben sich geändert, während die Karte offen war. Vergleiche die neue Sicherheitsnummer, bevor du bestätigst."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las claves de este iPhone cambiaron mientras la tarjeta estaba abierta. Compara el nuevo número de seguridad antes de confirmar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les clés de cet iPhone ont changé pendant que la carte était ouverte. Comparez le nouveau numéro de sécurité avant de confirmer."
           }
         }
       }

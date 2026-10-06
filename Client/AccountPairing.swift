@@ -76,13 +76,33 @@ protocol AccountDirectory: Sendable {
 	func revoke(baseURL: URL, bearer: String, deviceID: String) async throws
 }
 
+/// What the helper said to a confirmation.
+enum HelperConfirmResult: Equatable, Sendable {
+	case confirmed
+	/// The device's keys are no longer the ones behind the safety number the owner compared.
+	case keysChanged
+	case failed(String?)
+
+	/// Reads a `confirmApprove` / `approve.confirm` reply.
+	static func decode(_ data: Data?) -> HelperConfirmResult {
+		guard let data, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+			return .failed(nil)
+		}
+		if object["ok"] as? Bool == true { return .confirmed }
+		let code = (object["error"] as? [String: Any])?["code"] as? String
+		return code == "keys_changed" ? .keysChanged : .failed(code)
+	}
+}
+
 /// The link helper's account calls (XPC).
 protocol HelperAccountLinking: Sendable {
 	func setAccount(bearer: String, backendURL: URL) async -> HelperAccountStatus?
 	func clearAccount() async -> HelperAccountStatus?
 	func accountStatus() async -> HelperAccountStatus?
 	func pendingConfirmations() async -> [PendingApproveConfirmation]?
-	func confirmApprove(deviceID: String) async -> Bool
+	/// `safetyNumber` is the one the card showed: the helper confirms only when it still matches
+	/// the device's keys.
+	func confirmApprove(deviceID: String, safetyNumber: String) async -> HelperConfirmResult
 }
 
 enum AuthenticatorResult: Equatable, Sendable {
@@ -191,13 +211,121 @@ struct XPCHelperAccountLink: HelperAccountLinking {
 			.flatMap(PendingApproveConfirmation.decodeList)
 	}
 
-	func confirmApprove(deviceID: String) async -> Bool {
-		guard let data = await MacLinkHelper.call(timeout: 30, { $0.confirmApprove(deviceID, reply: $1) }),
-			let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-		else { return false }
-		return object["ok"] as? Bool == true
+	func confirmApprove(deviceID: String, safetyNumber: String) async -> HelperConfirmResult {
+		HelperConfirmResult.decode(
+			await MacLinkHelper.call(timeout: 30, { $0.confirmApprove(deviceID, safetyNumber: safetyNumber, reply: $1) }))
 	}
 }
+
+/// Which helper and authenticator the shared models use. Release builds: XPC and Touch ID,
+/// always.
+enum AccountLinkEnvironment {
+	static func helper(environment: [String: String] = ProcessInfo.processInfo.environment)
+		-> HelperAccountLinking
+	{
+		#if DEBUG
+			// Screen recordings and manual checks: talk to a standalone e2e helper
+			// (LinkHelper/e2e/account-pairing.sh serve) over its admin socket, never the
+			// installed helper.
+			if let path = environment["WHISPERA_E2E_ADMIN_SOCKET"], !path.isEmpty {
+				AppLogger.shared.general.info("Account link: using the e2e helper at \(path) (debug build)")
+				return AdminSocketHelperAccountLink(path: path)
+			}
+		#endif
+		return XPCHelperAccountLink()
+	}
+
+	static func authenticator(environment: [String: String] = ProcessInfo.processInfo.environment)
+		-> Authenticator
+	{
+		#if DEBUG
+			if environment["WHISPERA_TEST_AUTHENTICATOR"] == "allow" {
+				AppLogger.shared.general.info("Account link: owner authentication is faked (debug build)")
+				return AllowingTestAuthenticator()
+			}
+		#endif
+		return LocalAuthenticator()
+	}
+}
+
+#if DEBUG
+	/// Debug builds only (`WHISPERA_TEST_AUTHENTICATOR=allow`): every owner check passes, so a
+	/// confirmation can be recorded without a real Touch ID.
+	struct AllowingTestAuthenticator: Authenticator {
+		func authenticate(reason: String) async -> AuthenticatorResult {
+			try? await Task.sleep(nanoseconds: 600_000_000)
+			return .success
+		}
+	}
+
+	/// Debug builds only (`WHISPERA_E2E_ADMIN_SOCKET`): the account calls over a standalone e2e
+	/// helper's admin socket, one JSON line each way. `approve.confirm` there needs the helper's
+	/// test flag (`WLH_TEST_CONFIRM=1`, the script's default).
+	struct AdminSocketHelperAccountLink: HelperAccountLinking {
+		let path: String
+
+		func request(_ object: [String: Any]) async -> Data? {
+			let path = self.path
+			return await Task.detached { Self.exchange(object, path: path) }.value
+		}
+
+		static func exchange(_ object: [String: Any], path: String) -> Data? {
+			guard var line = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+			line.append(0x0A)
+			let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+			guard fd >= 0 else { return nil }
+			defer { close(fd) }
+			var timeout = timeval(tv_sec: 60, tv_usec: 0)
+			setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+			var address = sockaddr_un()
+			address.sun_family = sa_family_t(AF_UNIX)
+			let bytes = Array(path.utf8)
+			guard bytes.count < MemoryLayout.size(ofValue: address.sun_path) else { return nil }
+			withUnsafeMutableBytes(of: &address.sun_path) { buffer in
+				buffer.copyBytes(from: bytes)
+				buffer[bytes.count] = 0
+			}
+			let connected = withUnsafePointer(to: &address) {
+				$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+					connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+				}
+			}
+			guard connected == 0 else { return nil }
+			let sent = line.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+			guard sent == line.count else { return nil }
+			var reply = Data()
+			var chunk = [UInt8](repeating: 0, count: 65536)
+			while !reply.contains(0x0A) {
+				let count = read(fd, &chunk, chunk.count)
+				guard count > 0 else { break }
+				reply.append(contentsOf: chunk[0..<count])
+			}
+			return reply.isEmpty ? nil : reply
+		}
+
+		func setAccount(bearer: String, backendURL: URL) async -> HelperAccountStatus? {
+			await request(["op": "account.set", "bearer": bearer, "backend_url": backendURL.absoluteString])
+				.flatMap(HelperAccountStatus.decode)
+		}
+
+		func clearAccount() async -> HelperAccountStatus? {
+			await request(["op": "account.clear"]).flatMap(HelperAccountStatus.decode)
+		}
+
+		func accountStatus() async -> HelperAccountStatus? {
+			await request(["op": "account.status"]).flatMap(HelperAccountStatus.decode)
+		}
+
+		func pendingConfirmations() async -> [PendingApproveConfirmation]? {
+			await request(["op": "approve.pending"]).flatMap(PendingApproveConfirmation.decodeList)
+		}
+
+		func confirmApprove(deviceID: String, safetyNumber: String) async -> HelperConfirmResult {
+			HelperConfirmResult.decode(
+				await request(["op": "approve.confirm", "device_id": deviceID, "safety_number": safetyNumber]))
+		}
+	}
+#endif
 
 // MARK: - Account settings model
 
@@ -260,7 +388,7 @@ struct AccountDeviceRow: Identifiable, Equatable {
 @MainActor
 @Observable
 final class AccountSettingsModel {
-	static let shared = AccountSettingsModel()
+	static let shared = AccountSettingsModel(helper: AccountLinkEnvironment.helper())
 
 	var provider: AccountProvider {
 		didSet { defaults.set(provider.rawValue, forKey: AccountSettingsKeys.provider) }
@@ -496,7 +624,8 @@ final class AccountSettingsModel {
 @MainActor
 @Observable
 final class ApproveConfirmModel {
-	static let shared = ApproveConfirmModel()
+	static let shared = ApproveConfirmModel(
+		helper: AccountLinkEnvironment.helper(), authenticator: AccountLinkEnvironment.authenticator())
 
 	private(set) var pending: [PendingApproveConfirmation] = []
 	private(set) var confirmingID: String?
@@ -521,10 +650,15 @@ final class ApproveConfirmModel {
 		String(format: String(localized: "allow %@ to approve secrets on this Mac"), item.name)
 	}
 
-	/// Touch ID, then the helper marks the phone confirmed and tells it. Returns whether it was.
+	/// Touch ID, then the helper confirms the phone, bound to the safety number the card showed
+	/// (it refuses if the phone's keys changed since). Returns whether it did.
 	@discardableResult
 	func confirm(_ item: PendingApproveConfirmation) async -> Bool {
 		guard confirmingID == nil else { return false }
+		guard let safetyNumber = item.safetyNumber, !safetyNumber.isEmpty else {
+			lastError = String(localized: "The Mac link didn't send a safety number for this iPhone. Try again.")
+			return false
+		}
 		confirmingID = item.deviceID
 		defer { confirmingID = nil }
 		switch await authenticator.authenticate(reason: Self.reason(for: item)) {
@@ -536,7 +670,15 @@ final class ApproveConfirmModel {
 			lastError = message
 			return false
 		}
-		guard await helper.confirmApprove(deviceID: item.deviceID) else {
+		switch await helper.confirmApprove(deviceID: item.deviceID, safetyNumber: safetyNumber) {
+		case .confirmed:
+			break
+		case .keysChanged:
+			lastError = String(
+				localized: "This iPhone's keys changed while the card was open. Compare the new safety number before you confirm.")
+			await refresh()
+			return false
+		case .failed:
 			lastError = String(localized: "The Mac link didn't accept the confirmation. Try again.")
 			return false
 		}

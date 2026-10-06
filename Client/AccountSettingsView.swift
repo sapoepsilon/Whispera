@@ -260,48 +260,81 @@ struct AccountDeviceRowView: View {
 	}
 }
 
-/// "<iPhone> wants to approve secrets on this Mac": shown until the owner confirms with Touch ID.
+/// "<iPhone> wants to approve secrets on this Mac": shown until the owner compares the safety
+/// number with the iPhone's screen and confirms with Touch ID. Until then the iPhone gets
+/// nothing from this Mac.
 struct ApproveConfirmCard: View {
 	let item: PendingApproveConfirmation
 	let isConfirming: Bool
 	let confirm: () -> Void
 	let notNow: () -> Void
 
+	/// The warning for a device whose keys changed, nil otherwise.
+	static func keyChangeWarning(for item: PendingApproveConfirmation) -> String? {
+		item.keyChanged
+			? String(localized: "This device's keys changed. If you didn't reinstall Whispera on it, don't confirm.")
+			: nil
+	}
+
 	var body: some View {
-		VStack(alignment: .leading, spacing: 10) {
+		VStack(alignment: .leading, spacing: 12) {
 			HStack(alignment: .top, spacing: 12) {
-				Image(systemName: "iphone.badge.exclamationmark")
+				Image(systemName: item.keyChanged ? "exclamationmark.triangle.fill" : "iphone.badge.exclamationmark")
 					.font(.title)
-					.foregroundColor(.orange)
+					.foregroundColor(item.keyChanged ? .red : .orange)
 				VStack(alignment: .leading, spacing: 4) {
 					Text(String(format: String(localized: "%@ wants to approve secrets on this Mac"), item.name))
 						.font(.headline)
-					Text("It joined your account. Check the fingerprint matches the one on the iPhone before you confirm.")
+					Text("It joined your account. It can't reach this Mac until you confirm it here.")
 						.font(.caption)
 						.foregroundColor(.secondary)
-					HStack(spacing: 6) {
-						Text("Fingerprint")
-							.font(.caption)
-							.foregroundColor(.secondary)
-						Text(verbatim: item.fingerprint)
-							.font(.caption.monospaced())
-					}
 				}
+			}
+			if let warning = Self.keyChangeWarning(for: item) {
+				Label(warning, systemImage: "exclamationmark.triangle")
+					.font(.callout.weight(.semibold))
+					.foregroundColor(.red)
+					.fixedSize(horizontal: false, vertical: true)
+			}
+			VStack(alignment: .leading, spacing: 4) {
+				Text("Safety number — must match the one on your iPhone")
+					.font(.caption)
+					.foregroundColor(.secondary)
+				if let number = item.safetyNumber {
+					Text(verbatim: number)
+						.font(.system(size: 28, weight: .semibold, design: .monospaced))
+						.textSelection(.enabled)
+						.accessibilityIdentifier("approve-confirm-safety-number")
+				} else {
+					Text("Not available yet")
+						.font(.callout)
+						.foregroundColor(.secondary)
+				}
+				HStack(spacing: 6) {
+					Text("Fingerprint")
+					Text(verbatim: item.fingerprint)
+						.font(.caption.monospaced())
+				}
+				.font(.caption)
+				.foregroundColor(.secondary)
 			}
 			HStack {
 				Spacer()
 				Button("Not Now", action: notNow)
 					.disabled(isConfirming)
 				Button(action: confirm) {
-					Label("Confirm with Touch ID", systemImage: "touchid")
+					Label("Numbers Match — Confirm with Touch ID", systemImage: "touchid")
 				}
 				.buttonStyle(.borderedProminent)
-				.disabled(isConfirming)
+				.disabled(isConfirming || item.safetyNumber == nil)
 			}
 		}
 		.padding(14)
-		.background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.08)))
-		.overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.35)))
+		.background(
+			RoundedRectangle(cornerRadius: 10).fill((item.keyChanged ? Color.red : Color.orange).opacity(0.08))
+		)
+		.overlay(
+			RoundedRectangle(cornerRadius: 10).stroke((item.keyChanged ? Color.red : Color.orange).opacity(0.35)))
 	}
 }
 

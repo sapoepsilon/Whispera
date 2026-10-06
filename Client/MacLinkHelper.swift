@@ -3,6 +3,7 @@
 
 import Foundation
 import LinkHelperXPC
+import WhisperaLink
 import ServiceManagement
 import SwiftUI
 
@@ -186,6 +187,14 @@ struct MacLinkSettingsSection: View {
 				)
 				.font(.caption.monospacedDigit())
 				.foregroundColor(.secondary)
+				// What a phone pairing by typed address and code shows before it sends the code.
+				Text(
+					String(
+						format: String(localized: "Mac fingerprint: %@"), LinkCrypto.displayFingerprint(status.daemonFP))
+				)
+				.font(.caption.monospaced())
+				.foregroundColor(.secondary)
+				.textSelection(.enabled)
 				if !confirmations.visible.isEmpty {
 					Text("An iPhone is waiting for you to confirm it in Settings > Account.")
 						.font(.caption)
