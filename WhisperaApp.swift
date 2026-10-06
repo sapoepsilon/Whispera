@@ -185,6 +185,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		#endif
 
 		Task { @MainActor in
+			// Before the first dictation can run a recipe: installs from before the
+			// recipes switch decide it once, off unless the user set one up.
+			RecipeEnablementMigration.migrateIfNeeded(in: .standard, recipes: RecipeStore.shared.recipes)
 			audioManager = AudioManager()
 			let coordinator = DictationCoordinator.shared
 			audioManager.dictationProcessor = { text in await coordinator.process(text) }

@@ -9983,6 +9983,29 @@
         }
       }
     },
+    "Last recipe run failed: %@ — used the raw transcript": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte Rezeptausführung fehlgeschlagen: %@ – das unveränderte Transkript wurde verwendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La última ejecución de la receta falló: %@ — se usó la transcripción original"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La dernière exécution de la recette a échoué : %@ — la transcription brute a été utilisée"
+          }
+        }
+      }
+    },
     "Last used": {
       "extractionState": "manual",
       "localizations": {
@@ -16925,6 +16948,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lancer le banc d'essai"
+          }
+        }
+      }
+    },
+    "Run recipes on dictation": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rezepte beim Diktieren ausführen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutar recetas al dictar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exécuter les recettes pendant la dictée"
           }
         }
       }
@@ -23894,6 +23940,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lorsqu'elle est masquée, rouvrez Whispera depuis le Finder ou Spotlight pour afficher l'icône et son menu"
+          }
+        }
+      }
+    },
+    "When off, dictation is pasted exactly as you said it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn aus, wird das Diktat genau so eingefügt, wie du es gesagt hast."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si está desactivado, el dictado se pega tal como lo dijiste."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé, la dictée est collée exactement telle que vous l'avez dite."
           }
         }
       }

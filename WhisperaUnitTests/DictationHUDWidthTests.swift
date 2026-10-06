@@ -246,42 +246,35 @@ struct DictationHUDContentTests {
 	@Test func aSessionWithNoWordsYetShowsNothing() {
 		#expect(
 			!DictationHUDContent.hasSomethingToSay(
-				overlayError: nil, isWaitingForModel: false, waitingStatusText: "",
+				isWaitingForModel: false, waitingStatusText: "",
 				displayText: "", hasShownWordsThisSession: false))
 	}
 
 	@Test func aWaitingStatusLineIsContent() {
 		#expect(
 			DictationHUDContent.hasSomethingToSay(
-				overlayError: nil, isWaitingForModel: true, waitingStatusText: "Connecting…",
+				isWaitingForModel: true, waitingStatusText: "Connecting…",
 				displayText: "", hasShownWordsThisSession: false))
 	}
 
 	@Test func waitingWithAnEmptyStatusIsNotContent() {
 		#expect(
 			!DictationHUDContent.hasSomethingToSay(
-				overlayError: nil, isWaitingForModel: true, waitingStatusText: "",
+				isWaitingForModel: true, waitingStatusText: "",
 				displayText: "", hasShownWordsThisSession: false))
 	}
 
 	@Test func wordsAreContent() {
 		#expect(
 			DictationHUDContent.hasSomethingToSay(
-				overlayError: nil, isWaitingForModel: false, waitingStatusText: "",
+				isWaitingForModel: false, waitingStatusText: "",
 				displayText: "hello there", hasShownWordsThisSession: false))
 	}
 
 	@Test func aBlankTranscriptAfterWordsHoldsTheWindow() {
 		#expect(
 			DictationHUDContent.hasSomethingToSay(
-				overlayError: nil, isWaitingForModel: false, waitingStatusText: "",
+				isWaitingForModel: false, waitingStatusText: "",
 				displayText: "", hasShownWordsThisSession: true))
-	}
-
-	@Test func aRecipeErrorIsContent() {
-		#expect(
-			DictationHUDContent.hasSomethingToSay(
-				overlayError: "Recipe failed", isWaitingForModel: false, waitingStatusText: "",
-				displayText: "", hasShownWordsThisSession: false))
 	}
 }

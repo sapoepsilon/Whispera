@@ -167,13 +167,11 @@ struct DictationHUDFrame {
 /// window (and DictationView keeps the held words) until the session ends.
 enum DictationHUDContent {
 	static func hasSomethingToSay(
-		overlayError: String?,
 		isWaitingForModel: Bool,
 		waitingStatusText: String,
 		displayText: String,
 		hasShownWordsThisSession: Bool
 	) -> Bool {
-		if overlayError != nil { return true }
 		if isWaitingForModel { return !waitingStatusText.isEmpty }
 		return !displayText.isEmpty || hasShownWordsThisSession
 	}

@@ -4,7 +4,6 @@ struct DictationView: View {
 	// Bound to the shared live state rather than one engine, so whichever engine
 	// is transcribing reaches this view. See WHI-58.
 	@Bindable private var live = LiveTranscriptionState.shared
-	@State private var coordinator = DictationCoordinator.shared
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	private let audioManager: AudioManager
 
@@ -49,14 +48,7 @@ struct DictationView: View {
 	// See RecordingWindowPolicy and PillAnchor.
 	var body: some View {
 		Group {
-			if let overlayError = coordinator.overlayError {
-				PillStatusRow(
-					indicator: .icon("exclamationmark.triangle.fill", .orange),
-					text: overlayError,
-					textColor: .primary
-				)
-				.transition(.opacity.combined(with: .scale(scale: 0.95)))
-			} else if live.isWaitingForModel {
+			if live.isWaitingForModel {
 				PillStatusRow(indicator: .progress, text: live.waitingForModelStatusText)
 					.animation(.easeInOut(duration: 0.2), value: live.waitingForModelStatusText)
 					.transition(.opacity.combined(with: .scale(scale: 0.95)))

@@ -89,6 +89,10 @@ struct NewStringsAreLocalizedTests {
 		"Shows a card with Touch ID when an agent asks the broker for a secret.",
 		"Couldn't set up approvals on this Mac",
 		"The Mac link isn't running. Turn it on above, then try again.",
+		// Recipes are off until the user turns them on; a failed run is reported in Settings
+		"Run recipes on dictation",
+		"When off, dictation is pasted exactly as you said it.",
+		"Last recipe run failed: %@ — used the raw transcript",
 	]
 
 	@Test func everyNewStringIsInTheCatalog() throws {

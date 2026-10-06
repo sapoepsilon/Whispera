@@ -2,8 +2,8 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-/// The pill's overlay for transient live-session content: the emerging words,
-/// a "waiting for model" status, or a post-dictation recipe error. It always
+/// The pill's overlay for transient live-session content: the emerging words
+/// or a "waiting for model" status. It always
 /// sits above the listening pill — see `PillAnchor` — growing upward as its
 /// content grows, and never follows the caret: that used to be this window's
 /// only positioning mode, but with the pill itself now visible in every
@@ -14,7 +14,6 @@ class LiveTranscriptionWindow: NSWindow {
 	// The shared live state, not one engine: any engine that streams drives this
 	// window. See WHI-58.
 	private let live = LiveTranscriptionState.shared
-	private let coordinator = DictationCoordinator.shared
 	private let audioManager: AudioManager
 	private var observationTimer: Timer?
 	private var lastTextContent: String = ""
@@ -88,9 +87,6 @@ class LiveTranscriptionWindow: NSWindow {
 	}
 
 	private func shouldShowWindow() -> Bool {
-		// Keep the HUD up briefly after a recipe errors so the message is
-		// readable. The running state itself lives in the listening pill.
-		let recipeActive = coordinator.overlayError != nil
 		if isSessionActive, !live.isWaitingForModel, !live.stableDisplayText.isEmpty {
 			hadWordsThisSession = true
 		}
@@ -100,7 +96,6 @@ class LiveTranscriptionWindow: NSWindow {
 		// reported). A session that has said nothing yet keeps the window
 		// hidden rather than presenting an empty capsule.
 		let hasContent = DictationHUDContent.hasSomethingToSay(
-			overlayError: coordinator.overlayError,
 			isWaitingForModel: live.isWaitingForModel,
 			waitingStatusText: live.waitingForModelStatusText,
 			displayText: live.stableDisplayText,
@@ -109,7 +104,7 @@ class LiveTranscriptionWindow: NSWindow {
 			mode: audioManager.currentRecordingMode,
 			transcriberWantsWindow: isSessionActive
 				&& live.shouldShowLiveTranscriptionWindow && hasContent
-		) || recipeActive
+		)
 	}
 
 	private func refresh() {
@@ -139,7 +134,7 @@ class LiveTranscriptionWindow: NSWindow {
 				// frame rule has decayed: the shrink half of the hysteresis
 				// fires on time, not on new words, so a speaker who pauses
 				// still gets the gap closed under them.
-				if pendingText != self.lastTextContent || self.isShowingRecipeError
+				if pendingText != self.lastTextContent
 					|| abs(newSize.width - self.frame.width) >= 1
 				{
 					self.updateWindowSize(newSize)
@@ -156,12 +151,6 @@ class LiveTranscriptionWindow: NSWindow {
 			}
 			self.hadWordsThisSession = false
 		}
-	}
-
-	/// The HUD is showing the recipe error rather than live transcription. Matches
-	/// DictationView, which gives `overlayError` priority over every other branch.
-	private var isShowingRecipeError: Bool {
-		coordinator.overlayError != nil
 	}
 
 	/// A dictation is running — see `LiveTranscriptionState.isSessionActive`.
@@ -199,19 +188,8 @@ class LiveTranscriptionWindow: NSWindow {
 		// A hidden window has no width worth preserving; forgetting it here is
 		// what starts the next session compact.
 		if !isVisible { frameRule.reset() }
-		let holdSteady = isSessionActive || isShowingRecipeError
+		let holdSteady = isSessionActive
 		let now = CACurrentMediaTime()
-
-		if let overlayError = coordinator.overlayError {
-			// The recipe error is a caption-sized status line, measured like one.
-			let width = frameRule.update(
-				estimated: DictationHUDWidth.statusWidth(overlayError),
-				maximum: maxWidth,
-				isDictating: holdSteady,
-				now: now
-			)
-			return NSSize(width: width, height: 44)
-		}
 
 		let estimated: CGFloat
 		if live.isWaitingForModel {
