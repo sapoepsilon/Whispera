@@ -77,6 +77,9 @@
 		D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D6SPARKLE2ED700000000002 /* Sparkle */; };
 		D6FLUIDAU2F3000000000003 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = D6FLUIDAU2F3000000000002 /* FluidAudio */; };
 		D6WDICTBLD00000000000003 /* WhisperaDictation in Frameworks */ = {isa = PBXBuildFile; productRef = D6WDICTPRD00000000000002 /* WhisperaDictation */; };
+		D6WPKGBLD00000000000011 /* WhisperaOpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000010 /* WhisperaOpenAI */; };
+		D6WPKGBLD00000000000021 /* WhisperaRecipes in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000020 /* WhisperaRecipes */; };
+		D6WPKGBLD00000000000031 /* WhisperaBackend in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000030 /* WhisperaBackend */; };
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
 		D6AUDIN101F0000000000001 /* VoiceActivityTrimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN201F0000000000001 /* VoiceActivityTrimmer.swift */; };
 		D6AUDIN102F0000000000001 /* AudioInputSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN202F0000000000001 /* AudioInputSettingsView.swift */; };
@@ -228,6 +231,9 @@
 				D6SPARKLE2ED700000000003 /* Sparkle in Frameworks */,
 				D6FLUIDAU2F3000000000003 /* FluidAudio in Frameworks */,
 				D6WDICTBLD00000000000003 /* WhisperaDictation in Frameworks */,
+				D6WPKGBLD00000000000011 /* WhisperaOpenAI in Frameworks */,
+				D6WPKGBLD00000000000021 /* WhisperaRecipes in Frameworks */,
+				D6WPKGBLD00000000000031 /* WhisperaBackend in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1152,6 +1158,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
 			productName = WhisperaDictation;
+		};
+		D6WPKGPRD00000000000010 /* WhisperaOpenAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
+			productName = WhisperaOpenAI;
+		};
+		D6WPKGPRD00000000000020 /* WhisperaRecipes */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
+			productName = WhisperaRecipes;
+		};
+		D6WPKGPRD00000000000030 /* WhisperaBackend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
+			productName = WhisperaBackend;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

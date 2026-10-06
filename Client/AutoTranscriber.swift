@@ -4,93 +4,36 @@
 import Foundation
 import WhisperaDictation
 
-/// How close to real-time a server's words arrive. Ranked so `auto` can prefer
-/// the best available delta quality when the user hasn't pinned a specific
-/// server — a native streaming engine beats one whose deltas are synthesized
-/// by the proxy, which beats a server that only hands back whole utterances.
+/// Bounded `GET /transcription/servers`.
 ///
-/// Absent or unrecognised reads as `.utterance`, the worst case: an older
-/// backend, or one whose delta-synthesis work hasn't landed yet, simply looks
-/// like it has no live words rather than being assumed to have the best kind.
-/// See AUTOCHOOSE-RESULT.md.
-enum StreamingGranularity: String, Sendable, Equatable {
-	case nativeDelta = "native-delta"
-	case synthesizedDelta = "synthesized-delta"
-	case utterance
-
-	static func from(_ raw: String?) -> StreamingGranularity {
-		raw.flatMap(StreamingGranularity.init(rawValue:)) ?? .utterance
-	}
-
-	/// Lower sorts first: native beats synthesized beats utterance-only.
-	var rank: Int {
-		switch self {
-		case .nativeDelta: return 0
-		case .synthesizedDelta: return 1
-		case .utterance: return 2
-		}
-	}
-}
-
-/// One server as `auto` needs to see it to rank and pick — the fields the
-/// policy reads, lifted off `WhisperaDictation.DictationServer` so the decision
-/// table below is a pure function of plain values with no decoder behind it.
-struct DiscoveredServer: Sendable, Equatable {
-	let id: String
-	let label: String
-	/// What the server runs, for the Settings server list. The policy never
-	/// ranks on it — granularity is the quality signal — but a user pinning a
-	/// server picks by model name as much as by label.
-	let model: String
-	let isOnline: Bool
-	let supportsRealtime: Bool
-	let isDefault: Bool
-	let granularity: StreamingGranularity
-}
-
-/// `GET /transcription/servers`, mapped onto what the policy ranks on.
+/// The decoder, the request builder and the ranking all live in
+/// `WhisperaDictation` now. What used to sit here — a `StreamingGranularity`
+/// enum, a `DiscoveredServer` struct mirroring `DictationServer` field for
+/// field plus one, and a `ServerDiscoveryProbe` that mapped between them —
+/// existed only because the package did not decode `realtime.granularity`, the
+/// field this whole feature ranks on. It does (WHI-71), so the mirror is gone
+/// and `auto` ranks the package's own type. See WHI-94.
 ///
-/// This used to carry its own `Decodable` mirror of the response, because the
-/// package's `DictationServer` did not decode `realtime.granularity` — the
-/// field this whole feature ranks on — and a second decoder was the cheaper of
-/// two bad options at the time. The package decodes it now (WHI-71), so what
-/// is left here is a mapping and nothing else: one decoder, one request
-/// builder, one place for the contract to live.
-enum ServerDiscoveryProbe {
-	static func fetch(
-		baseURL: URL,
-		credentials: DictationCredentialProvider,
-		session: URLSession,
-		timeout: TimeInterval
-	) async throws -> [DiscoveredServer] {
-		let directory = DictationServerDirectory(
-			baseURL: baseURL, credentials: credentials, session: session)
-
-		// Bounded here rather than on the session: `auto` resolves at the top of
-		// every dictation, and a backend that is merely slow must cost the user a
-		// few seconds and then fall back on-device, not hold the microphone open
-		// for whatever the URLSession default happens to be.
-		let servers = try await withThrowingTaskGroup(of: [DictationServer].self) { group in
-			group.addTask { try await directory.servers() }
-			group.addTask {
-				try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-				throw StreamingTranscriberError.engineUnreachable(
-					baseURL.host ?? baseURL.absoluteString)
-			}
-			defer { group.cancelAll() }
-			return try await group.next() ?? []
+/// The timeout stays app-side and stays off the URLSession: `auto` resolves at
+/// the top of every dictation, and a backend that is merely slow must cost the
+/// user a few seconds and then fall back on-device, not hold the microphone
+/// open for whatever the URLSession default happens to be.
+func discoverServers(
+	baseURL: URL,
+	credentials: DictationCredentialProvider,
+	session: URLSession,
+	timeout: TimeInterval
+) async throws -> [DictationServer] {
+	let directory = DictationServerDirectory(
+		baseURL: baseURL, credentials: credentials, session: session)
+	return try await withThrowingTaskGroup(of: [DictationServer].self) { group in
+		group.addTask { try await directory.servers() }
+		group.addTask {
+			try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+			throw StreamingTranscriberError.engineUnreachable(baseURL.host ?? baseURL.absoluteString)
 		}
-
-		return servers.map {
-			DiscoveredServer(
-				id: $0.id,
-				label: $0.label,
-				model: $0.model,
-				isOnline: $0.isOnline,
-				supportsRealtime: $0.supportsRealtime,
-				isDefault: $0.default ?? false,
-				granularity: .from($0.realtime?.granularity))
-		}
+		defer { group.cancelAll() }
+		return try await group.next() ?? []
 	}
 }
 
@@ -98,7 +41,7 @@ enum ServerDiscoveryProbe {
 /// policy below can say something more useful than "unavailable" when it logs.
 enum AutoDiscoveryOutcome: Equatable {
 	case unavailable(reason: String)
-	case servers([DiscoveredServer])
+	case servers([DictationServer])
 }
 
 /// What `auto` decided, and — for a remote pick — which server and how good its
@@ -267,16 +210,14 @@ final class AutoTranscriber: SpeechTranscribing {
 		local: SpeechTranscribing = WhisperKitTranscriber.shared,
 		baseURLProvider: @escaping () -> URL? = { WhisperaSettings.transcriptionServerURL },
 		pinnedServerIdProvider: @escaping () -> String = { WhisperaSettings.transcriptionServerId },
-		tokenStore: AuthTokenStore = .shared,
+		credentials: any DictationCredentialProvider = BackendCredentials.shared,
 		urlSession: URLSession = .shared
 	) {
 		self.local = local
 		self.baseURLProvider = baseURLProvider
 		self.pinnedServerIdProvider = pinnedServerIdProvider
 		self.urlSession = urlSession
-		self.credentials = .refreshingBearer {
-			(try? tokenStore.load()).flatMap { $0.isEmpty ? nil : $0 } ?? ""
-		}
+		self.credentials = credentials
 		let serverIdBox = ServerIdBox()
 		self.serverIdBox = serverIdBox
 		self.remote = StreamingTranscriber(
@@ -394,7 +335,7 @@ final class AutoTranscriber: SpeechTranscribing {
 				discovery: .unavailable(reason: "no transcription server configured"))
 		}
 		do {
-			let servers = try await ServerDiscoveryProbe.fetch(
+			let servers = try await discoverServers(
 				baseURL: baseURL, credentials: credentials, session: session, timeout: timeout)
 			return AutoEnginePolicy.resolve(
 				serverURLConfigured: true, pinnedServerId: pinnedServerId, discovery: .servers(servers))
