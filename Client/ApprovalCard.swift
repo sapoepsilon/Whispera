@@ -378,6 +378,7 @@ struct ApprovalCardView: View {
 			VStack(alignment: .leading, spacing: 6) {
 				HStack {
 					Button("Deny") { session.deny() }
+						.buttonStyle(ApprovalCardButtonStyle(prominent: false))
 						.disabled(!canDeny)
 					Spacer()
 					if case .submitting = state.phase {
@@ -387,8 +388,9 @@ struct ApprovalCardView: View {
 						session.approve()
 					} label: {
 						Label("Approve with Touch ID", systemImage: "touchid")
+							.labelStyle(.titleAndIcon)
 					}
-					.buttonStyle(.borderedProminent)
+					.buttonStyle(ApprovalCardButtonStyle(prominent: true))
 					.disabled(!state.canApprove(now: session.now))
 				}
 				if let notice = state.notice {
@@ -443,6 +445,47 @@ struct ApprovalCardView: View {
 		case .cancelled: return String(localized: "The request was withdrawn.")
 		case .expired: return String(localized: "The request expired.")
 		case .failed: return String(localized: "Couldn't finish here. Approve with Touch ID or on your iPhone.")
+		}
+	}
+}
+
+/// The card's buttons draw their own fill and label colours. The panel never becomes the key
+/// window (it must not take the keyboard from whatever the owner is typing in), and in a window
+/// that isn't key macOS draws `.borderedProminent` with its inactive, translucent white bezel
+/// while the label stays white: in light mode Approve showed as an empty light rectangle and only
+/// Deny was readable.
+/// These colours don't depend on the window's key state, in light and dark mode.
+struct ApprovalCardButtonStyle: ButtonStyle {
+	var prominent: Bool
+
+	func makeBody(configuration: Configuration) -> some View {
+		StyledButton(configuration: configuration, prominent: prominent)
+	}
+
+	private struct StyledButton: View {
+		let configuration: ButtonStyleConfiguration
+		let prominent: Bool
+		@Environment(\.isEnabled) private var isEnabled
+
+		var body: some View {
+			let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+			configuration.label
+				.font(.body.weight(prominent ? .semibold : .regular))
+				.foregroundStyle(prominent ? Color.white : Color.primary)
+				.padding(.horizontal, 12)
+				.padding(.vertical, 5)
+				.background(shape.fill(fill))
+				.overlay(shape.strokeBorder(Color.primary.opacity(prominent ? 0 : 0.12)))
+				.contentShape(shape)
+				.opacity(isEnabled ? 1 : 0.45)
+		}
+
+		private var fill: Color {
+			// The owner's system accent colour, whatever the window's state.
+			if prominent {
+				return Color(nsColor: .controlAccentColor).opacity(configuration.isPressed ? 0.75 : 1)
+			}
+			return Color.primary.opacity(configuration.isPressed ? 0.16 : 0.08)
 		}
 	}
 }
