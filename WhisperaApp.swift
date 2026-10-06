@@ -179,6 +179,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		// Before any engine reads a server URL: the shared key splits into
 		// per-mode keys exactly once, keyed off the engine it was typed for.
 		TranscriptionServerURLMigration.migrateIfNeeded(in: .standard)
+		Task { @MainActor in MacLinkHelper.shared.applyAtLaunch() }
 
 		Task { @MainActor in
 			audioManager = AudioManager()

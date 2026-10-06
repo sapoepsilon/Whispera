@@ -1726,6 +1726,29 @@
         }
       }
     },
+    "Allow Whispera Link in Login Items to finish turning it on.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erlaube Whispera Link unter Anmeldeobjekte, um es fertig einzuschalten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permite Whispera Link en Ítems de inicio para terminar de activarlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisez Whispera Link dans Ouverture pour terminer l’activation."
+          }
+        }
+      }
+    },
     "Allow whispera:// links": {
       "extractionState": "manual",
       "localizations": {
@@ -4804,6 +4827,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Impossible d'utiliser le fichier son"
+          }
+        }
+      }
+    },
+    "Couldn't change the Mac link": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Mac-Verbindung konnte nicht geändert werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo cambiar el enlace con el Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de modifier le lien avec le Mac"
           }
         }
       }
@@ -8741,6 +8787,29 @@
         }
       }
     },
+    "Keep the Mac link running when Whispera is quit": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac-Verbindung aktiv halten, wenn Whispera beendet ist"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantener el enlace con el Mac activo cuando Whispera está cerrado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Garder le lien avec le Mac actif quand Whispera est fermé"
+          }
+        }
+      }
+    },
     "Keep the audio so entries can be replayed or re-transcribed": {
       "extractionState": "manual",
       "localizations": {
@@ -10117,6 +10186,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Basse (128 kbit/s)"
+          }
+        }
+      }
+    },
+    "Mac Link": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac-Verbindung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enlace con el Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lien avec le Mac"
           }
         }
       }
@@ -12187,6 +12279,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvrir les réglages Clavier"
+          }
+        }
+      }
+    },
+    "Open Login Items": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmeldeobjekte öffnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir Ítems de inicio"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir les éléments d’ouverture"
           }
         }
       }
@@ -15664,6 +15779,29 @@
         }
       }
     },
+    "Running on port %lld · %lld paired devices · speech: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Läuft auf Port %lld · %lld gekoppelte Geräte · Sprache: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En el puerto %lld · %lld dispositivos vinculados · voz: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur le port %lld · %lld appareils jumelés · parole : %@"
+          }
+        }
+      }
+    },
     "Running...": {
       "extractionState": "manual",
       "localizations": {
@@ -18581,6 +18719,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cette touche ne peut pas être utilisée. Appuyez sur Commande, Option, Contrôle ou Maj + une autre touche, ou touchez ⌘ droite, ⌥ droite, ⌃ droite, ⇧ droite ou Fn seule"
+          }
+        }
+      }
+    },
+    "The Mac link is starting…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Mac-Verbindung startet …"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El enlace con el Mac se está iniciando…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le lien avec le Mac démarre…"
           }
         }
       }
@@ -22767,6 +22928,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Votre raccourci global peut entrer en conflit avec des raccourcis d'apps :"
+          }
+        }
+      }
+    },
+    "Your paired iPhone can reach your agents, approve secret requests and transcribe with this Mac's model.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein gekoppeltes iPhone kann deine Agenten erreichen, Anfragen nach Geheimnissen genehmigen und mit dem Modell dieses Macs transkribieren."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu iPhone vinculado puede acceder a tus agentes, aprobar solicitudes de secretos y transcribir con el modelo de este Mac."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre iPhone jumelé peut joindre vos agents, approuver les demandes de secrets et transcrire avec le modèle de ce Mac."
           }
         }
       }
