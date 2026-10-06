@@ -180,6 +180,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		// per-mode keys exactly once, keyed off the engine it was typed for.
 		TranscriptionServerURLMigration.migrateIfNeeded(in: .standard)
 		Task { @MainActor in MacLinkHelper.shared.applyAtLaunch() }
+		#if DEBUG
+			Task { @MainActor in ApprovalCardCenter.shared.showDemoIfRequested() }
+		#endif
 
 		Task { @MainActor in
 			audioManager = AudioManager()

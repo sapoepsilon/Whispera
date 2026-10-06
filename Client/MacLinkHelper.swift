@@ -47,6 +47,7 @@ final class MacLinkHelper: ObservableObject {
 			setEnabled(false)
 		}
 		guard isEnabled else { return }
+		ApprovalCardCenter.shared.start()
 		Task {
 			try? await Task.sleep(nanoseconds: 3_000_000_000)
 			await refresh()
@@ -70,8 +71,10 @@ final class MacLinkHelper: ObservableObject {
 			if enabled {
 				try service.register()
 				AppLogger.shared.general.info("Mac link helper registered")
+				ApprovalCardCenter.shared.start()
 			} else {
 				try service.unregister()
+				ApprovalCardCenter.shared.stop()
 				helperStatus = nil
 				AppLogger.shared.general.info("Mac link helper unregistered")
 			}
@@ -204,6 +207,10 @@ struct MacLinkSettingsSection: View {
 				Text("The Mac link is starting…")
 					.font(.caption)
 					.foregroundColor(.secondary)
+			}
+			if enabled && helper.serviceStatus == .enabled {
+				Divider()
+				MacApproverSettingsRow()
 			}
 		}
 		.task {

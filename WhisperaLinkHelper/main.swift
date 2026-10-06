@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import LinkHelperCore
 
@@ -8,4 +9,23 @@ guard arguments.isEmpty || arguments == ["serve"] else {
 	FileHandle.standardError.write(Data("usage: WhisperaLinkHelper [serve]\n".utf8))
 	exit(2)
 }
-exit(HelperRuntime.serve(engine: WhisperKitSpeechEngine()))
+
+/// Whispera.app/Contents/Library/LoginItems/WhisperaLinkHelper.app → Whispera.app.
+let containingApp = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
+	.deletingLastPathComponent().deletingLastPathComponent()
+
+func launchWhisperaForApprovalCard() {
+	guard containingApp.pathExtension == "app" else { return }
+	let configuration = NSWorkspace.OpenConfiguration()
+	configuration.activates = false
+	configuration.addsToRecentItems = false
+	configuration.arguments = ["--approval-card"]
+	NSWorkspace.shared.openApplication(at: containingApp, configuration: configuration) { _, error in
+		if let error {
+			FileHandle.standardError.write(
+				Data("whispera-link: cannot open Whispera for the approval card: \(error.localizedDescription)\n".utf8))
+		}
+	}
+}
+
+exit(HelperRuntime.serve(engine: WhisperKitSpeechEngine(), launchApp: launchWhisperaForApprovalCard))
