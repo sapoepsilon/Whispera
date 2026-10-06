@@ -76,7 +76,7 @@ final class TestDaemon {
 	let daemon: LinkDaemon
 	let port: Int
 
-	init(engine: LocalSpeechEngine? = nil, upstream: String = "") throws {
+	init(engine: LocalSpeechEngine? = nil, upstream: String = "", herdrSocket: String? = nil) throws {
 		directory = FileManager.default.temporaryDirectory.appendingPathComponent(
 			"wlh-\(UUID().uuidString.prefix(8))")
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -88,7 +88,7 @@ final class TestDaemon {
 		config.listenHost = "127.0.0.1"
 		config.port = 0
 		config.bonjour = false
-		config.herdrSocket = directory.appendingPathComponent("no-herdr.sock").path
+		config.herdrSocket = herdrSocket ?? directory.appendingPathComponent("no-herdr.sock").path
 		config.sttUpstreamBaseURL = upstream
 		daemon = try LinkDaemon(config: config, engine: engine)
 		port = try daemon.start()

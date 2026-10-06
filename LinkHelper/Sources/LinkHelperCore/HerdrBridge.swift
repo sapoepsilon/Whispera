@@ -148,7 +148,28 @@ public final class HerdrClient: @unchecked Sendable {
 		return ["agent": Self.mapAgent(result["agent"] as? [String: Any] ?? [:])]
 	}
 
+	/// The pane's text. herdr refuses a `recent` read longer than the screen while an
+	/// alternate-screen agent (Claude Code, Codex) is working, `agent_not_idle`, because that
+	/// history can only be captured by scrolling while idle; the answer is then the visible
+	/// screen, `"source":"visible"` and `"truncated":true`, rather than an error.
 	public func read(_ target: String, source: String, lines: Int) throws -> [String: Any] {
+		do {
+			return try readOnce(target, source: source, lines: lines)
+		} catch let error as APIError where source != Self.visibleSource && Self.isBusyRead(error) {
+			var answer = try readOnce(target, source: Self.visibleSource, lines: lines)
+			answer["truncated"] = true
+			return answer
+		}
+	}
+
+	static let visibleSource = "visible"
+
+	/// herdr's refusal of a long read while the agent works.
+	static func isBusyRead(_ error: APIError) -> Bool {
+		error.extra["herdr_code"] as? String == "agent_not_idle"
+	}
+
+	private func readOnce(_ target: String, source: String, lines: Int) throws -> [String: Any] {
 		let result = try Self.expect(
 			call(
 				"agent.read",
