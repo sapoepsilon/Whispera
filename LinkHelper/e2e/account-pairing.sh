@@ -30,6 +30,8 @@
 #                     machine "fake-main" ("Fake Main Mac", $WLH_E2E_DIR/remote.sock) and one
 #                     unreachable machine "fake-dead". Without it the helper has no herdr at all.
 #                     The real herdr is never used.                       default 0
+#   WLH_FAKE_AGENTS   N = each fake herdr (this Mac and fake-main) serves N generated agents with
+#                     long titles and cwds instead of its 3/2 preset agents (WLH_FAKE_HERDR=1)
 #   WLH_APPROVAL_FALLBACK_S  seconds before the other iPhones are pushed  default 20 (helper default)
 #   WLH_REMOTE_POLL_S seconds between remote-machine status polls        default 10 (helper default)
 #   WLH_OFFER_BASE_URLS  comma-separated base URLs the link offer advertises instead of the listener
@@ -88,9 +90,14 @@ HERDR_SOCKET() { if [ "${WLH_FAKE_HERDR:-0}" = 1 ]; then echo "$DIR/herdr.sock";
 start_fake_herdr() {
   local e2e="$HERE/e2e"
   rm -f "$DIR/herdr.sock" "$DIR/remote.sock" "$DIR/herdr-requests.jsonl" "$DIR/remote-requests.jsonl" "$DIR/herdr-cli.jsonl"
-  /usr/bin/python3 "$e2e/fake_herdr.py" --socket "$DIR/herdr.sock" --record "$DIR/herdr-requests.jsonl" > "$DIR/fake-herdr.out" 2>&1 &
+  local many_local=() many_remote=()
+  if [ -n "${WLH_FAKE_AGENTS:-}" ]; then
+    many_local=(--agents "$WLH_FAKE_AGENTS")
+    many_remote=(--agents "$WLH_FAKE_AGENTS" --prefix r)
+  fi
+  /usr/bin/python3 "$e2e/fake_herdr.py" --socket "$DIR/herdr.sock" ${many_local[@]+"${many_local[@]}"} --record "$DIR/herdr-requests.jsonl" > "$DIR/fake-herdr.out" 2>&1 &
   echo $! > "$DIR/fake-herdr.pids"
-  /usr/bin/python3 "$e2e/fake_herdr.py" --socket "$DIR/remote.sock" --preset remote --record "$DIR/remote-requests.jsonl" > "$DIR/fake-remote.out" 2>&1 &
+  /usr/bin/python3 "$e2e/fake_herdr.py" --socket "$DIR/remote.sock" --preset remote ${many_remote[@]+"${many_remote[@]}"} --record "$DIR/remote-requests.jsonl" > "$DIR/fake-remote.out" 2>&1 &
   echo $! >> "$DIR/fake-herdr.pids"
   cat > "$DIR/fake-herdr-cli.json" <<JSON
 {"local_socket": "$DIR/herdr.sock", "log": "$DIR/herdr-cli.jsonl",

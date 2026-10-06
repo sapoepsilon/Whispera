@@ -7,6 +7,12 @@ records every request it receives (method + params) so tests can assert what was
 
 Agents: three by default (w1:p1 codex idle, w1:p2 codex blocked, w2:p1 gemini working);
 `--preset remote` gives another machine's set (w9:p1 codex idle, w9:p2 gemini working).
+`--agents N` serves N generated agents instead (claude/codex/pi, long titles and cwds, spread
+over 12 workspaces, every status; `--prefix` keeps two fakes' pane ids apart).
+
+Like herdr 0.9.1, `agent.read` of a *working* agent refuses a non-visible read longer than
+its screen (SCREEN_ROWS) with `agent_not_idle`: alternate-screen history can only be
+captured by scrolling while idle. `source: visible` always answers.
 `tab.create` adds a tab whose root pane is a plain shell; `agent.start` turns such a pane
 into an agent (it refuses a pane that already runs one).
 
@@ -37,6 +43,7 @@ import threading
 import time
 
 BLOCKED_PANE = "w1:p2"
+SCREEN_ROWS = 50
 
 
 def make_agent(pane, ws, tab, agent, status, rev, cwd, name=None):
@@ -47,6 +54,37 @@ def make_agent(pane, ws, tab, agent, status, rev, cwd, name=None):
         "revision": rev, "state_labels": {}, "tokens": {"secret_token": "must-not-leak"},
         "agent_session": {"id": "sess-1"}, "interactive_ready": True, "launch_pending": False,
     }
+
+
+TITLES = [
+    "Release version, cleanup worktrees, and task allocation across the whole monorepo",
+    "Investigate flaky relay ciphertext tests on CI and pin the failing seed",
+    "Refactor the pairing flow so a revoked device can never reuse its old safety number",
+    "Write the migration for push routing and backfill APNs environments for every device",
+    "Review PR: approval card marks claimed fields and names the secret at Touch ID",
+    "Port LocalAgreement-2 to the streaming shim and prove monotonic stable suffixes",
+]
+WORKSPACES = ["kentra-health", "whispera", "whispera-ios", "whispera-backend", "whispera-components",
+              "homelab", "personal-skills", "hermes-agent", "fridgy", "dotfiles", "notes", "scratch"]
+
+
+def generated_agents(count, prefix="w"):
+    """`count` realistic agents: long titles and cwds, all statuses, 12 workspaces."""
+    kinds = ["claude", "codex", "pi"]
+    statuses = ["idle", "working", "blocked", "done", "idle", "working"]
+    agents = {}
+    for i in range(count):
+        ws_index = i % len(WORKSPACES)
+        ws = "%s%d" % (prefix, ws_index + 1)
+        pane = "%s:p%d" % (ws, i // len(WORKSPACES) + 1)
+        cwd = "/Users/fake/Developer/%s/.claude/worktrees/agent-%03d-%s" % (
+            WORKSPACES[ws_index], i, "feature-branch-with-a-rather-long-descriptive-name")
+        a = make_agent(pane, ws, ws + ":t%d" % (i // len(WORKSPACES) + 1), kinds[i % 3], statuses[i % 6],
+                       i + 1, cwd)
+        a["title"] = "%s (#%d)" % (TITLES[i % len(TITLES)], i + 1)
+        a["foreground_cwd"] = cwd
+        agents[pane] = a
+    return agents
 
 
 def default_agents(preset="local"):
@@ -66,9 +104,12 @@ def default_agents(preset="local"):
 
 
 class FakeHerdr:
-    def __init__(self, socket_path, agents=None, shape="envelope", version="0.9.1", preset="local", record=None):
+    def __init__(self, socket_path, agents=None, shape="envelope", version="0.9.1", preset="local", record=None,
+                 count=None, prefix="w"):
         self.socket_path = socket_path
-        self.agents = agents if agents is not None else default_agents(preset)
+        if agents is None:
+            agents = generated_agents(count, prefix) if count is not None else default_agents(preset)
+        self.agents = agents
         self.shells = {}               # pane_id -> pane info for plain shell panes (from tab.create)
         self.shape = shape
         self.version = version
@@ -218,8 +259,15 @@ class FakeHerdr:
                 if params.get("source") not in ("visible", "recent", "recent_unwrapped", "detection"):
                     return ("invalid_params", "bad source")
                 n = params.get("lines") or 50
+                if agent["agent_status"] == "working" and params["source"] != "visible" and n > SCREEN_ROWS:
+                    return ("agent_not_idle",
+                            "cannot read %d lines while %s is working: its alternate-screen history can only "
+                            "be captured by scrolling while idle. Wait and retry, or use --source visible"
+                            % (n, target))
                 text = self.texts.get(target) or "\n".join("%s line %d" % (target, i) for i in range(1, 301))
                 lines = text.split("\n")
+                if params["source"] == "visible":
+                    lines = lines[-SCREEN_ROWS:]
                 return {"type": "pane_read", "read": {
                     "pane_id": target, "workspace_id": agent["workspace_id"], "tab_id": agent["tab_id"],
                     "source": params["source"], "format": params.get("format", "text"),
@@ -417,6 +465,8 @@ def main(argv=None):
     ap.add_argument("--shape", default="envelope", choices=("envelope", "flat"))
     ap.add_argument("--preset", default="local", choices=("local", "remote"))
     ap.add_argument("--record", default=None, help="append every request as a JSON line to this file")
+    ap.add_argument("--agents", type=int, default=None, help="serve this many generated agents")
+    ap.add_argument("--prefix", default="w", help="workspace id prefix of generated agents")
     ap.add_argument("cmd", nargs="?", default="serve", choices=("serve", "ctl"))
     ap.add_argument("payload", nargs="?", default=None, help='ctl: {"method":"_fake.…","params":{…}}')
     a = ap.parse_args(argv)
@@ -424,8 +474,9 @@ def main(argv=None):
         req = json.loads(a.payload)
         print(json.dumps(ctl(a.socket, req["method"], req.get("params"))))
         return 0
-    fh = FakeHerdr(a.socket, shape=a.shape, preset=a.preset, record=a.record).start()
-    print("fake_herdr listening socket=%s" % a.socket, flush=True)
+    fh = FakeHerdr(a.socket, shape=a.shape, preset=a.preset, record=a.record, count=a.agents,
+                   prefix=a.prefix).start()
+    print("fake_herdr listening socket=%s agents=%d" % (a.socket, len(fh.agents)), flush=True)
     try:
         while True:
             time.sleep(3600)
