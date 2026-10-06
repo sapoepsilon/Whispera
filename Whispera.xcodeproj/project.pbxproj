@@ -904,7 +904,7 @@
 				DEVELOPMENT_TEAM = LVKV6U72U3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
-				WHISPERA_CLERK_CLIENT_ID = "";
+				WHISPERA_CLERK_CLIENT_ID = G1diJHbzgz2OlEIh;
 				INFOPLIST_KEY_CFBundleDisplayName = Whispera;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -941,7 +941,7 @@
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
-				WHISPERA_CLERK_CLIENT_ID = "";
+				WHISPERA_CLERK_CLIENT_ID = G1diJHbzgz2OlEIh;
 				INFOPLIST_KEY_CFBundleDisplayName = Whispera;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;

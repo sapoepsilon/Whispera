@@ -33,9 +33,9 @@ enum AccountProvider: String, CaseIterable, Identifiable {
 	}
 }
 
-/// Where the account settings live. The hosted Clerk client id is owner-provided: it comes from
-/// the `WHISPERA_CLERK_CLIENT_ID` build setting (Info.plist `WhisperaClerkClientID`) and can be
-/// overridden with the `whisperaAccountClerkClientID` default; this repository ships none.
+/// Where the account settings live. The hosted Clerk client id (a public PKCE client, no secret)
+/// comes from the `WHISPERA_CLERK_CLIENT_ID` build setting (Info.plist `WhisperaClerkClientID`) and
+/// can be overridden with the `whisperaAccountClerkClientID` default.
 enum AccountSettingsKeys {
 	static let backendURL = "whisperaAccountBackendURL"
 	static let provider = "whisperaAccountProvider"
