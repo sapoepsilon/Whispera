@@ -1,0 +1,13 @@
+{
+  "pins" : [
+    {
+      "identity" : "whispera-components",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/whispera-components",
+      "state" : {
+        "revision" : "105f151325f65d0b211d27aa26d061f980ab7103"
+      }
+    }
+  ],
+  "version" : 2
+}
