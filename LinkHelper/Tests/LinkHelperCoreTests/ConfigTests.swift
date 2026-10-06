@@ -74,4 +74,12 @@ final class ConfigTests: XCTestCase {
 		XCTAssertFalse(OfferAddresses.isTailscale("192.168.50.190"))
 		XCTAssertEqual(OfferAddresses.baseURLs(config: config, port: 7000, override: ["http://x:1"]), ["http://x:1"])
 	}
+
+	/// The phone pairs on `link_port`; a helper not on 7787 must say where it is.
+	func testBonjourTXTCarriesTheLinkPort() {
+		let fp = String(repeating: "ab", count: 32)
+		XCTAssertEqual(LinkDaemon.bonjourTXT(port: 17798, daemonFP: fp)["link_port"], "17798")
+		XCTAssertEqual(LinkDaemon.bonjourTXT(port: 7787, daemonFP: fp)["fp"], String(fp.prefix(16)))
+		XCTAssertNil(LinkDaemon.bonjourTXT(port: 0, daemonFP: fp)["link_port"])
+	}
 }

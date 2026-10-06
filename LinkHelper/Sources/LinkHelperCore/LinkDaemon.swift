@@ -180,6 +180,14 @@ public final class LinkDaemon: @unchecked Sendable {
 		}
 	}
 
+	/// The `_whispera._tcp` TXT record. `link_port` tells a phone which port pairs with this
+	/// helper; without it the phone assumes 7787 and a helper on any other port is unreachable.
+	static func bonjourTXT(port: Int, daemonFP: String) -> [String: String] {
+		var txt = ["path": "/v1", "scheme": "http", "v": "1", "fp": String(daemonFP.prefix(16))]
+		if (1...65535).contains(port) { txt["link_port"] = String(port) }
+		return txt
+	}
+
 	/// Starts every listener. Returns the bound HTTP port.
 	@discardableResult
 	public func start() throws -> Int {
@@ -188,9 +196,7 @@ public final class LinkDaemon: @unchecked Sendable {
 		let server = HTTPServer(
 			host: config.listenHost, port: config.port,
 			advertisement: advertise
-				? HTTPServer.Advertisement(
-					type: Self.bonjourType,
-					txt: ["path": "/v1", "scheme": "http", "v": "1", "fp": String(daemonFP.prefix(16))])
+				? HTTPServer.Advertisement(type: Self.bonjourType, txt: Self.bonjourTXT(port: config.port, daemonFP: daemonFP))
 				: nil,
 			handler: { api.handle($0) })
 		server.onServiceRegistration = { [log] change in log("bonjour", ["detail": change]) }
