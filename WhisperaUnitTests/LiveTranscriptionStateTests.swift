@@ -287,6 +287,184 @@ struct UtteranceDraftAccumulatorTests {
 		#expect(accumulator.draft == "should be working right")
 	}
 
+	// MARK: - The delta contract (WHI-67/69)
+
+	/// The regression test. `UtteranceDraftAccumulator.append` was
+	/// `fragments += delta` and nothing else, on the strength of the
+	/// OpenAI-Realtime promise that a `…transcription.delta` frame carries only
+	/// the new fragment. Engines behind the backend do not all keep it: one
+	/// re-sends the whole utterance on every event, and glued on with `+=` that
+	/// renders the sentence's own prefix once per event.
+	///
+	/// Revert `append` to `fragments += delta` and this fails with
+	/// `"HelloHello worldHello world today"` — the doubled text a user would have
+	/// pasted.
+	@Test func aFullResendReplacesTheDraftInsteadOfDoublingItsPrefix() {
+		var accumulator = UtteranceDraftAccumulator()
+
+		accumulator.append("Hello")
+		accumulator.append("Hello world")
+		accumulator.append("Hello world today")
+
+		#expect(accumulator.draft == "Hello world today")
+	}
+
+	/// The engine revised its own tail and carried on: "should be work" became
+	/// "should be working", re-sent with the continuation attached. The shared
+	/// clause is rendered once, spliced at the overlap.
+	@Test func aRevisedTailIsSplicedRatherThanAppended() {
+		var accumulator = UtteranceDraftAccumulator()
+
+		accumulator.append("Eh this")
+		accumulator.append(" should be work")
+		accumulator.append("this should be working right")
+
+		#expect(accumulator.draft == "Eh this should be working right")
+	}
+
+	/// An engine that repeats its last frame — after a reconnect, or through a
+	/// proxy that replays it — has nothing new to add.
+	@Test func aRepeatedTailIsIgnored() {
+		var accumulator = UtteranceDraftAccumulator()
+
+		accumulator.append("the meeting is at four")
+		accumulator.append(" is at four")
+
+		#expect(accumulator.draft == "the meeting is at four")
+	}
+
+	/// The other half of the contract: an engine that says which it meant is
+	/// believed outright, without any text-shape guessing. This is what
+	/// `DictationEvent.revisedTranscript` takes.
+	@Test func anAnnouncedHypothesisReplacesTheDraftEvenWhenItSharesNoPrefix() {
+		var accumulator = UtteranceDraftAccumulator()
+		accumulator.append("their going too")
+
+		accumulator.replace(with: "they're going to")
+
+		#expect(accumulator.draft == "they're going to")
+	}
+
+	/// The splice must not eat a legitimate short fragment. A draft ending
+	/// "…on the" followed by a genuine " the mat" shares four characters by
+	/// coincidence, which is below the revision floor — so it appends.
+	@Test func aShortCoincidentalOverlapStillAppends() {
+		var accumulator = UtteranceDraftAccumulator()
+
+		accumulator.append("the cat sat on the")
+		accumulator.append(" the mat")
+
+		#expect(accumulator.draft == "the cat sat on the the mat")
+	}
+
+	/// The property that matters, over all three delta dialects at once: whatever
+	/// the engine's habit, neither the rendered draft nor the pasted transcript
+	/// ever repeats its own prefix.
+	@Test func noDialectEverRendersADuplicatedPrefix() {
+		let fixtures: [(name: String, deltas: [String], expected: String)] = [
+			("append-only", ["The meeting", " is at", " four o'clock."], "The meeting is at four o'clock."),
+			(
+				"full-resend",
+				["The meeting", "The meeting is at", "The meeting is at four o'clock."],
+				"The meeting is at four o'clock."
+			),
+			(
+				"mixed",
+				["The meeting", " is at", "The meeting is at four", " o'clock."],
+				"The meeting is at four o'clock."
+			),
+		]
+
+		for fixture in fixtures {
+			let state = LiveTranscriptionState()
+			var accumulator = UtteranceDraftAccumulator()
+			state.ingest(committed: "Good morning.", draft: "")
+			for delta in fixture.deltas {
+				accumulator.append(delta)
+				state.ingest(committed: state.confirmedText, draft: accumulator.draft)
+			}
+
+			#expect(accumulator.draft == fixture.expected, "\(fixture.name) draft")
+
+			let pasted = LiveTranscriptionState.joined(
+				committed: state.confirmedText, draft: state.pendingText
+			).trimmingCharacters(in: .whitespacesAndNewlines)
+			#expect(pasted == "Good morning. \(fixture.expected)", "\(fixture.name) paste")
+			#expect(!repeatsItsOwnPrefix(pasted), "\(fixture.name) pasted a duplicated prefix")
+		}
+	}
+
+	/// True when the text opens with a phrase it then says again immediately —
+	/// the exact shape `fragments += delta` produced against a revising engine.
+	private func repeatsItsOwnPrefix(_ text: String) -> Bool {
+		let words = text.split(separator: " ")
+		guard words.count >= 4 else { return false }
+		for length in 2...(words.count / 2) where words.prefix(length).elementsEqual(
+			words.dropFirst(length).prefix(length))
+		{
+			return true
+		}
+		return false
+	}
+
+	/// The shim's contract, now that WHI-68 has traced it: `join(deltas)` equals
+	/// the `completed` transcript, and the tail is flushed at end of utterance. So
+	/// the committed event says the same words the draft already holds — and the
+	/// draft has to give way to it rather than be added to it, or `stopStreaming`
+	/// pastes committed *plus* a draft that repeats it.
+	///
+	/// Replays the handler exactly: `.partialTranscript` accumulates,
+	/// `.finalTranscript` clears, `.transcript` replaces the committed text.
+	@Test func aCompletedUtteranceThatRepeatsItsOwnDeltasIsPastedOnce() {
+		let state = LiveTranscriptionState()
+		var accumulator = UtteranceDraftAccumulator()
+		let deltas = ["The meeting", " is at", " four o'clock."]
+		let completed = deltas.joined().trimmingCharacters(in: .whitespaces)
+
+		for delta in deltas {
+			accumulator.append(delta)
+			state.ingest(committed: state.confirmedText, draft: accumulator.draft)
+		}
+		#expect(state.pendingText == completed)
+
+		accumulator.clear()
+		state.ingest(committed: completed, draft: "")
+
+		#expect(state.pendingText == "")
+		let pasted = LiveTranscriptionState.joined(
+			committed: state.confirmedText, draft: state.pendingText
+		).trimmingCharacters(in: .whitespacesAndNewlines)
+		#expect(pasted == completed)
+		#expect(!repeatsItsOwnPrefix(pasted))
+	}
+
+	/// speaches 0.9.0-rc.3 can emit the same `…transcription.completed` twice for
+	/// one conversation item. The package drops the second by item id, but the
+	/// client must be idempotent anyway: a whole-transcript event *replaces* the
+	/// committed text rather than appending to it, so a duplicate that does get
+	/// through cannot double the utterance.
+	@Test func aDuplicateCompletedEventDoesNotDoubleTheUtterance() {
+		let state = LiveTranscriptionState()
+		var accumulator = UtteranceDraftAccumulator()
+		let completed = "The meeting is at four o'clock."
+
+		accumulator.append("The meeting is at four o'clock.")
+		state.ingest(committed: state.confirmedText, draft: accumulator.draft)
+
+		for _ in 0..<2 {
+			accumulator.clear()
+			state.ingest(committed: completed, draft: "")
+		}
+
+		#expect(state.confirmedText == completed)
+		#expect(state.pendingText == "")
+		let pasted = LiveTranscriptionState.joined(
+			committed: state.confirmedText, draft: state.pendingText
+		).trimmingCharacters(in: .whitespacesAndNewlines)
+		#expect(pasted == completed)
+		#expect(!repeatsItsOwnPrefix(pasted))
+	}
+
 	@Test func clearingStartsTheNextUtteranceEmpty() {
 		var accumulator = UtteranceDraftAccumulator()
 		accumulator.append("Hello, hello")
