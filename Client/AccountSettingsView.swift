@@ -241,7 +241,8 @@ struct AccountDeviceRowView: View {
 				Text("Revoked")
 					.font(.caption)
 					.foregroundColor(.secondary)
-			} else {
+			} else if !row.isThisMac {
+				// Sign out covers this Mac.
 				Button("Revoke", role: .destructive, action: revoke)
 					.disabled(disabled)
 			}

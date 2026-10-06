@@ -438,7 +438,7 @@ final class AccountSettingsModel {
 	}
 
 	func revoke(_ row: AccountDeviceRow) async {
-		guard let backend, !row.isRevoked else { return }
+		guard let backend, !row.isRevoked, !row.isThisMac else { return }
 		isWorking = true
 		defer { isWorking = false }
 		do {

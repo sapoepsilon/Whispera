@@ -321,6 +321,10 @@ struct AccountSettingsModelTests {
 		#expect(model.devices.first { $0.name == "Forged" }?.isUntrusted == true)
 		#expect(model.devices.first { $0.name == "iPhone" }?.fingerprint.count == 19)
 
+		// This Mac is never revoked from its own list: Sign out covers it.
+		await model.revoke(try #require(model.devices.first { $0.isThisMac }))
+		#expect(directory.revoked.isEmpty)
+
 		await model.revoke(try #require(model.devices.first { $0.name == "iPhone" }))
 		#expect(directory.revoked == [phone.device_id])
 		#expect(model.devices.first { $0.name == "iPhone" }?.isRevoked == true)
