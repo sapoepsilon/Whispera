@@ -114,7 +114,7 @@ final class HelperHTTPTests: XCTestCase {
 		models.setValue("Bearer \(phone.sttKey)", forHTTPHeaderField: "Authorization")
 		let listed = try await SoftPhone.send(models)
 		let ids = (listed.json["data"] as? [[String: Any]])?.compactMap { $0["id"] as? String }
-		XCTAssertEqual(ids, ["whisper-1", "openai_whisper-small"])
+		XCTAssertEqual(ids, ["whispera-mac"])
 		XCTAssertEqual(
 			(listed.json["data"] as? [[String: Any]])?.first?["task"] as? String, "automatic-speech-recognition")
 
@@ -171,8 +171,10 @@ final class HelperHTTPTests: XCTestCase {
 		engine.models = []
 		let phone = try await helper.pairedPhone()
 		let response = try await phone.call("GET", "/v1/models")
-		XCTAssertEqual(response.status, 503)
-		XCTAssertEqual(response.errorCode, "upstream_unconfigured")
+		XCTAssertEqual(response.status, 200)
+		let model = (response.json["data"] as? [[String: Any]])?.first
+		XCTAssertEqual(model?["ready"] as? Bool, false)
+		XCTAssertEqual(model?["message"] as? String, SpeechService.noModelReady)
 		let health = try await SoftPhone.send(URLRequest(url: helper.baseURL.appendingPathComponent("v1/health")))
 		XCTAssertEqual(health.json["stt"] as? String, "unconfigured")
 	}

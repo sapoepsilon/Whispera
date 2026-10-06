@@ -13,6 +13,8 @@ public struct HelperConfig: Sendable {
 	public var maxJSONBytes = 65536
 	public var sttUpstreamBaseURL = ""
 	public var sttUpstreamAPIKeyFile = ""
+	/// The model sent to the upstream; empty passes the phone's own model through.
+	public var sttUpstreamModel = ""
 	public var sttTimeout: Double = 120
 	public var sttMaxUploadBytes = 26_214_400
 	public var apnsTopic = "com.chatgenie.Whispera"
@@ -163,6 +165,7 @@ public struct HelperConfig: Sendable {
 				guard let stt = value as? [String: Any] else { continue }
 				if let v = string(stt["upstream_base_url"]) { sttUpstreamBaseURL = v }
 				if let v = string(stt["upstream_api_key_file"]) { sttUpstreamAPIKeyFile = v }
+				if let v = string(stt["upstream_model"]) { sttUpstreamModel = v }
 				if let v = double(stt["timeout_s"]) { sttTimeout = v }
 				if let v = int("stt.max_upload_bytes", stt["max_upload_bytes"]) { sttMaxUploadBytes = v }
 			case "apns":
