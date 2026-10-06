@@ -18,7 +18,7 @@ let package = Package(
 	dependencies: [
 		.package(
 			url: "https://github.com/sapoepsilon/whispera-components",
-			revision: "105f151325f65d0b211d27aa26d061f980ab7103")
+			revision: "be360c01892c1a0fc220f242e341924ddf8ae86f")
 	],
 	targets: [
 		.target(name: "LinkHelperXPC"),

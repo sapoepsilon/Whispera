@@ -27,7 +27,7 @@ final class MacLinkHelper: ObservableObject {
 
 	/// The embedded helper's bundle id: `com.macwhisper.app.LinkHelper` in release builds,
 	/// `com.macwhisper.app.debug.LinkHelper` in debug ones. launchd names its Mach service the same.
-	static var helperBundleIdentifier: String {
+	nonisolated static var helperBundleIdentifier: String {
 		let plist = Bundle.main.bundleURL.appendingPathComponent(
 			"Contents/Library/LoginItems/WhisperaLinkHelper.app/Contents/Info.plist")
 		let info = NSDictionary(contentsOf: plist)
@@ -56,6 +56,10 @@ final class MacLinkHelper: ObservableObject {
 			} else {
 				AppLogger.shared.general.error("Mac link helper did not answer over XPC (status \(self.serviceStatus.rawValue))")
 			}
+			// A signed-in Mac re-hands the bearer, so a helper that lost its state joins again;
+			// one that is already on the account does nothing.
+			await AccountSettingsModel.shared.handOffAtLaunch()
+			await ApproveConfirmModel.shared.refresh()
 		}
 	}
 
@@ -93,7 +97,17 @@ final class MacLinkHelper: ObservableObject {
 	}
 
 	nonisolated static func fetchStatus(machServiceName: String, timeout: TimeInterval = 2) async -> HelperStatus? {
-		let connection = NSXPCConnection(machServiceName: machServiceName, options: [])
+		await call(machServiceName: machServiceName, timeout: timeout) { $0.status(reply: $1) }
+			.flatMap(LinkHelperXPC.decodeStatus)
+	}
+
+	/// One request to the running helper; nil when it does not answer within `timeout`.
+	nonisolated static func call(
+		machServiceName: String? = nil, timeout: TimeInterval = 5,
+		_ send: (LinkHelperXPCProtocol, @escaping (Data) -> Void) -> Void
+	) async -> Data? {
+		let name = machServiceName ?? helperBundleIdentifier
+		let connection = NSXPCConnection(machServiceName: name, options: [])
 		connection.remoteObjectInterface = NSXPCInterface(with: LinkHelperXPCProtocol.self)
 		if isDeveloperIDSigned { connection.setCodeSigningRequirement(LinkHelperXPC.helperRequirement) }
 		connection.resume()
@@ -103,7 +117,7 @@ final class MacLinkHelper: ObservableObject {
 			let proxy =
 				connection.remoteObjectProxyWithErrorHandler { _ in once.resume(nil) } as? LinkHelperXPCProtocol
 			guard let proxy else { return once.resume(nil) }
-			proxy.status { data in once.resume(LinkHelperXPC.decodeStatus(data)) }
+			send(proxy) { data in once.resume(data) }
 			DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { once.resume(nil) }
 		}
 	}
@@ -123,13 +137,13 @@ final class MacLinkHelper: ObservableObject {
 
 	private final class OnceBox: @unchecked Sendable {
 		private let lock = NSLock()
-		private var continuation: CheckedContinuation<HelperStatus?, Never>?
+		private var continuation: CheckedContinuation<Data?, Never>?
 
-		init(_ continuation: CheckedContinuation<HelperStatus?, Never>) {
+		init(_ continuation: CheckedContinuation<Data?, Never>) {
 			self.continuation = continuation
 		}
 
-		func resume(_ value: HelperStatus?) {
+		func resume(_ value: Data?) {
 			lock.lock()
 			let pending = continuation
 			continuation = nil
@@ -143,6 +157,7 @@ final class MacLinkHelper: ObservableObject {
 struct MacLinkSettingsSection: View {
 	@ObservedObject private var helper = MacLinkHelper.shared
 	@AppStorage(MacLinkHelper.enabledKey) private var enabled = false
+	@State private var confirmations = ApproveConfirmModel.shared
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
@@ -171,13 +186,21 @@ struct MacLinkSettingsSection: View {
 				)
 				.font(.caption.monospacedDigit())
 				.foregroundColor(.secondary)
+				if !confirmations.visible.isEmpty {
+					Text("An iPhone is waiting for you to confirm it in Settings > Account.")
+						.font(.caption)
+						.foregroundColor(.orange)
+				}
 			} else if enabled && helper.serviceStatus == .enabled {
 				Text("The Mac link is starting…")
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}
 		}
-		.task { await helper.refresh() }
+		.task {
+			await helper.refresh()
+			await confirmations.refresh()
+		}
 		.alert(
 			"Couldn't change the Mac link",
 			isPresented: Binding(get: { helper.lastError != nil }, set: { if !$0 { helper.lastError = nil } }),

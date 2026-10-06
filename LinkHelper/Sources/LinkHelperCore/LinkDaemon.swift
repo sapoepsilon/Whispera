@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import LinkHelperXPC
+import SystemConfiguration
 import WhisperaLink
 
 /// The whole helper, wired once (PROTOCOL §1.2: cross-module wiring happens only here).
@@ -21,10 +22,16 @@ public final class LinkDaemon: @unchecked Sendable {
 	let push: PushNotifier
 	let lastDevice: LastDeviceFile
 	public let daemonFP: String
+	/// X9.63 base64 of the daemon key: what a link offer pins.
+	public let daemonPubkeyB64: String
+	/// Account pairing (step 11).
+	public let account: AccountLink
 	private var api: LinkAPI!
 	private var http: HTTPServer?
 	private var admin: AdminServer?
 	private let urlBox: URLBox
+	/// The bound HTTP port, for link offers built off the main thread.
+	private let portBox: URLBox
 
 	private final class URLBox: @unchecked Sendable {
 		private let lock = NSLock()
@@ -47,21 +54,30 @@ public final class LinkDaemon: @unchecked Sendable {
 	///   - engine: the Mac's own speech engine; answers `/v1/audio/transcriptions` when no
 	///     upstream is configured.
 	///   - push: how approvals reach phones; nil picks the relay when `relay` is configured.
-	public init(config: HelperConfig, engine: LocalSpeechEngine?, push: PushNotifier? = nil) throws {
+	///   - accountTransport: how the account backend is reached (a fake in tests).
+	public init(
+		config: HelperConfig, engine: LocalSpeechEngine?, push: PushNotifier? = nil,
+		accountTransport: LinkTransport = URLSessionLinkTransport()
+	) throws {
 		self.config = config
 		let opsLog = OpsLog(path: config.paths.log, debug: config.logDebug)
 		log = opsLog
 		try FileStore.ensureDirectory(config.paths.stateDir)
 		try FileStore.ensureDirectory(config.paths.keysDir)
 		let key = try Self.loadOrCreateDaemonKey(config.paths.daemonKey, log: opsLog)
-		daemonFP = LinkPublicKey(key.privateKey.publicKey).fingerprint
+		let daemonPublic = LinkPublicKey(key.privateKey.publicKey)
+		let daemonFP = daemonPublic.fingerprint
+		let daemonPubkeyB64 = daemonPublic.x963Base64
+		self.daemonFP = daemonFP
+		self.daemonPubkeyB64 = daemonPubkeyB64
 		let registry = try DeviceRegistry(path: config.paths.devices, keysDir: config.paths.keysDir)
 		devices = registry
 		herdr = HerdrClient(socketPath: config.herdrSocket)
 		let hub = EventHub()
 		self.hub = hub
 		subscriber = HerdrSubscriber(socketPath: config.herdrSocket, emit: { hub.publish($0, $1) }, log: opsLog)
-		let notifier = push ?? Self.relayPush(config: config, log: opsLog) ?? UnconfiguredPush()
+		let switchable = SwitchablePush(Self.relayPush(config: config, log: opsLog) ?? UnconfiguredPush())
+		let notifier: PushNotifier = push ?? switchable
 		self.push = notifier
 		approvals = ApprovalsServer(
 			socketPath: config.paths.approvalsSocket, devices: registry, publish: { hub.publish($0, $1) },
@@ -74,10 +90,23 @@ public final class LinkDaemon: @unchecked Sendable {
 		lastDevice = LastDeviceFile(path: config.paths.lastDevice)
 		let urlBox = URLBox()
 		self.urlBox = urlBox
+		let portBox = URLBox()
+		self.portBox = portBox
 		pairing = PairingManager(
 			devices: registry, daemonKey: key, publicURL: { urlBox.value }, defaultTTL: config.pairCodeTTL,
 			log: opsLog)
 		registry.onRevoke { hub.closeDevice($0) }
+		let macName = config.macName.isEmpty ? Self.computerName() : config.macName
+		let offerConfig = config
+		account = AccountLink(
+			paths: config.paths, devices: registry, push: switchable, transport: accountTransport,
+			pollWait: config.accountPollWait, log: opsLog,
+			offerContext: { [portBox] in
+				let port = Int(portBox.value) ?? offerConfig.port
+				return AccountLink.OfferContext(
+					baseURLs: OfferAddresses.baseURLs(config: offerConfig, port: port, override: offerConfig.offerBaseURLs),
+					daemonPubkeyB64: daemonPubkeyB64, daemonFP: daemonFP, macName: macName)
+			})
 		api = LinkAPI(daemon: self)
 	}
 
@@ -103,6 +132,14 @@ public final class LinkDaemon: @unchecked Sendable {
 	}
 
 	public var publicURL: String { urlBox.value }
+
+	/// The user-visible computer name ("Uzi's MacBook Pro"), without a DNS lookup.
+	static func computerName() -> String {
+		if let name = SCDynamicStoreCopyComputerName(nil, nil) as String?, !name.isEmpty { return name }
+		var buffer = [CChar](repeating: 0, count: 256)
+		let host = gethostname(&buffer, buffer.count) == 0 ? String(cString: buffer) : ""
+		return host.split(separator: ".").first.map(String.init) ?? "Mac"
+	}
 
 	public var port: Int { http?.boundPort ?? 0 }
 
@@ -134,6 +171,7 @@ public final class LinkDaemon: @unchecked Sendable {
 		http = server
 		let (url, warning) = config.effectivePublicURL(boundPort: port)
 		urlBox.value = url
+		portBox.value = String(port)
 		if let warning { log("config.warning", ["detail": warning]) }
 		if config.testSkipApprovePrecheck { log("config.warning", ["detail": "test_skip_approve_precheck"]) }
 		try approvals.start()
@@ -141,6 +179,18 @@ public final class LinkDaemon: @unchecked Sendable {
 		try admin.start()
 		self.admin = admin
 		subscriber.start()
+		Task { [account] in await account.start() }
+		if !config.accountBearer.isEmpty, let backend = URL(string: config.accountBackendURL.isEmpty ? config.relayBaseURL : config.accountBackendURL) {
+			// Standalone/e2e: join the account from the environment, as the app's XPC call would.
+			let bearer = config.accountBearer
+			Task { [account, log] in
+				do {
+					_ = try await account.connect(bearer: bearer, backendURL: backend)
+				} catch {
+					log("account.connect_failed", ["detail": Self.errorCode(error)])
+				}
+			}
+		}
 		log(
 			"serve",
 			["detail": "listening \(config.listenHost):\(port) fp=\(daemonFP.prefix(16)) stt=\(speech.mode)"])
@@ -148,6 +198,7 @@ public final class LinkDaemon: @unchecked Sendable {
 	}
 
 	public func stop() {
+		Task { [account] in await account.stop() }
 		hub.closeAll()
 		http?.stop()
 		admin?.stop()
@@ -175,8 +226,87 @@ public final class LinkDaemon: @unchecked Sendable {
 		WireJSON.encode(["approvals": approvals.pending()])
 	}
 
+	static func errorCode(_ error: Error) -> String {
+		(error as? APIError)?.code ?? (error as? LinkError)?.code ?? "\(type(of: error))"
+	}
+
+	/// Runs an account call to completion for a synchronous caller (admin socket, XPC bridge).
+	func blocking(_ timeout: TimeInterval = 60, _ work: @escaping @Sendable () async throws -> [String: Any])
+		throws -> [String: Any]
+	{
+		let box = BlockingBox()
+		let done = DispatchSemaphore(value: 0)
+		Task {
+			do {
+				box.result = .success(try await work())
+			} catch {
+				box.result = .failure(error)
+			}
+			done.signal()
+		}
+		guard done.wait(timeout: .now() + timeout) == .success, let result = box.result else {
+			throw APIError(504, "timed_out", "account call timed out")
+		}
+		return try result.get()
+	}
+
+	private final class BlockingBox: @unchecked Sendable {
+		var result: Result<[String: Any], Error>?
+	}
+
+	/// Account calls shared by the admin socket and XPC. Each answers a JSON object.
+	func accountSet(bearer: String, backendURL: String) throws -> [String: Any] {
+		guard let url = URL(string: backendURL.isEmpty ? (config.accountBackendURL.isEmpty ? config.relayBaseURL : config.accountBackendURL) : backendURL),
+			!url.absoluteString.isEmpty
+		else { throw APIError(400, "bad_request", "backend_url is required") }
+		return try blocking { [account] in try await account.connect(bearer: bearer, backendURL: url) }
+	}
+
+	func accountStatus() -> [String: Any] {
+		(try? blocking(5) { [account] in await account.statusObject() }) ?? ["ok": false]
+	}
+
+	func accountClear() -> [String: Any] {
+		(try? blocking { [account] in await account.disconnect() }) ?? ["ok": false]
+	}
+
+	func accountSync() throws -> [String: Any] {
+		try blocking { [account] in
+			let report = try await account.syncNow()
+			return [
+				"ok": true, "pinned": report.pinned, "offered": report.offered, "dropped": report.dropped,
+				"untrusted": report.untrusted,
+			]
+		}
+	}
+
+	func approvePending() -> [String: Any] {
+		["ok": true, "devices": devices.pendingApproveConfirmations().map(AccountLink.confirmationObject)]
+	}
+
+	func approveConfirm(_ deviceID: String) throws -> [String: Any] {
+		try blocking { [account] in try await account.confirmApprove(deviceID) }
+	}
+
 	private func adminHandlers() -> [String: AdminServer.Handler] {
 		[
+			"account.set": { [unowned self] request in
+				try accountSet(
+					bearer: request["bearer"] as? String ?? "", backendURL: request["backend_url"] as? String ?? "")
+			},
+			"account.status": { [unowned self] _ in accountStatus() },
+			"account.sync": { [unowned self] _ in try accountSync() },
+			"account.clear": { [unowned self] _ in accountClear() },
+			"approve.pending": { [unowned self] _ in approvePending() },
+			"approve.confirm": { [unowned self] request in
+				// Touch ID lives in the app; this path exists for automated tests only.
+				guard config.testAdminConfirm else {
+					throw APIError(
+						403, "forbidden", "approve.confirm needs WHISPERA_LINK_TEST_ADMIN_CONFIRM=1 (test only)")
+				}
+				log("config.warning", ["detail": "approve confirmed over the admin socket (test flag)"])
+				return try approveConfirm(request["device_id"] as? String ?? "")
+			},
 			"status": { [unowned self] _ in
 				(try JSONSerialization.jsonObject(with: statusJSON()) as? [String: Any]) ?? ["ok": true]
 			},

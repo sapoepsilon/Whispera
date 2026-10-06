@@ -84,6 +84,8 @@
 		D6WPKGBLD00000000000011 /* WhisperaOpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000010 /* WhisperaOpenAI */; };
 		D6WPKGBLD00000000000021 /* WhisperaRecipes in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000020 /* WhisperaRecipes */; };
 		D6WPKGBLD00000000000031 /* WhisperaBackend in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000030 /* WhisperaBackend */; };
+		D6WPKGBLD00000000000041 /* WhisperaAccount in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000040 /* WhisperaAccount */; };
+		D6WPKGBLD00000000000051 /* WhisperaLink in Frameworks */ = {isa = PBXBuildFile; productRef = D6WPKGPRD00000000000050 /* WhisperaLink */; };
 		FDB1B0A903214623AADB4048 /* KeyboardInputSourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91EF5D0CAB5432B90AFFF23 /* KeyboardInputSourceManager.swift */; };
 		D6AUDIN101F0000000000001 /* VoiceActivityTrimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN201F0000000000001 /* VoiceActivityTrimmer.swift */; };
 		D6AUDIN102F0000000000001 /* AudioInputSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AUDIN202F0000000000001 /* AudioInputSettingsView.swift */; };
@@ -270,6 +272,8 @@
 				D6WPKGBLD00000000000011 /* WhisperaOpenAI in Frameworks */,
 				D6WPKGBLD00000000000021 /* WhisperaRecipes in Frameworks */,
 				D6WPKGBLD00000000000031 /* WhisperaBackend in Frameworks */,
+				D6WPKGBLD00000000000041 /* WhisperaAccount in Frameworks */,
+				D6WPKGBLD00000000000051 /* WhisperaLink in Frameworks */,
 				D6LINKHLP000000000000022 /* LinkHelperXPC in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -900,6 +904,7 @@
 				DEVELOPMENT_TEAM = LVKV6U72U3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
+				WHISPERA_CLERK_CLIENT_ID = "";
 				INFOPLIST_KEY_CFBundleDisplayName = Whispera;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -936,6 +941,7 @@
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
+				WHISPERA_CLERK_CLIENT_ID = "";
 				INFOPLIST_KEY_CFBundleDisplayName = Whispera;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -1233,7 +1239,7 @@
 			repositoryURL = "https://github.com/sapoepsilon/whispera-components";
 			requirement = {
 				kind = revision;
-				revision = 105f151325f65d0b211d27aa26d061f980ab7103;
+				revision = be360c01892c1a0fc220f242e341924ddf8ae86f;
 			};
 		};
 		D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {
@@ -1356,6 +1362,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
 			productName = WhisperaBackend;
+		};
+		D6WPKGPRD00000000000040 /* WhisperaAccount */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
+			productName = WhisperaAccount;
+		};
+		D6WPKGPRD00000000000050 /* WhisperaLink */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D6WDICTPKG00000000000001 /* XCRemoteSwiftPackageReference "whispera-components" */;
+			productName = WhisperaLink;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -395,6 +395,13 @@ public final class ApprovalsServer: @unchecked Sendable {
 		guard decision == "approve" || decision == "deny" else {
 			throw APIError(400, "bad_request", "decision must be approve or deny")
 		}
+		// A phone pinned from the account may deny at once, but approves only after the Mac's
+		// owner confirmed its approve key (step 11). The registry is re-read: a confirm that
+		// landed since the request was verified counts.
+		if decision == "approve", !(devices.get(device.deviceID)?.approveConfirmed ?? device.approveConfirmed) {
+			log("approval.unconfirmed", ["device": device.deviceID, "request_id": requestID])
+			throw APIError(403, "approve_unconfirmed", "confirm this iPhone on the Mac before it can approve")
+		}
 		lock.lock()
 		let found = approvals[requestID]
 		lock.unlock()

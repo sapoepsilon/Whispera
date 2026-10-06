@@ -31,6 +31,42 @@ final class HelperXPCService: NSObject, NSXPCListenerDelegate, LinkHelperXPCProt
 	func status(reply: @escaping (Data) -> Void) { reply(daemon.statusJSON()) }
 
 	func pendingApprovals(reply: @escaping (Data) -> Void) { reply(daemon.pendingApprovalsJSON()) }
+
+	func setAccount(_ request: Data, reply: @escaping (Data) -> Void) {
+		let object = WireJSON.decodeObject(request) ?? [:]
+		answer(reply) { [daemon] in
+			try daemon.accountSet(
+				bearer: object["bearer"] as? String ?? "", backendURL: object["backend_url"] as? String ?? "")
+		}
+	}
+
+	func clearAccount(reply: @escaping (Data) -> Void) { answer(reply) { [daemon] in daemon.accountClear() } }
+
+	func accountStatus(reply: @escaping (Data) -> Void) { answer(reply) { [daemon] in daemon.accountStatus() } }
+
+	func pendingApproveConfirmations(reply: @escaping (Data) -> Void) {
+		answer(reply) { [daemon] in daemon.approvePending() }
+	}
+
+	func confirmApprove(_ deviceID: String, reply: @escaping (Data) -> Void) {
+		answer(reply) { [daemon] in try daemon.approveConfirm(deviceID) }
+	}
+
+	/// Off the XPC queue: account calls wait on the network.
+	private func answer(_ reply: @escaping (Data) -> Void, _ work: @escaping () throws -> [String: Any]) {
+		DispatchQueue.global().async {
+			do {
+				reply(WireJSON.encode(try work()))
+			} catch let error as APIError {
+				reply(WireJSON.encode(error.adminObject))
+			} catch {
+				reply(
+					WireJSON.encode([
+						"ok": false, "error": ["code": LinkDaemon.errorCode(error), "message": "\(error.localizedDescription)"],
+					]))
+			}
+		}
+	}
 }
 
 /// `WhisperaLinkHelper serve`: the helper's whole life. Launched by launchd as a login item it

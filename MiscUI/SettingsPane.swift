@@ -3,6 +3,7 @@ import AppKit
 enum SettingsPane: String, CaseIterable, Identifiable {
 	case general
 	case servers
+	case account
 	case recipes
 	case textInsertion
 	case storage
@@ -20,6 +21,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 		switch self {
 		case .general: return String(localized: "General", bundle: bundle)
 		case .servers: return String(localized: "Servers", bundle: bundle)
+		case .account: return String(localized: "Account", bundle: bundle)
 		case .recipes: return String(localized: "Recipes", bundle: bundle)
 		case .textInsertion: return String(localized: "Text Insertion", bundle: bundle)
 		case .storage: return String(localized: "Storage & Downloads", bundle: bundle)
@@ -37,6 +39,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 		switch self {
 		case .general: return "gear"
 		case .servers: return "server.rack"
+		case .account: return "person.crop.circle"
 		case .recipes: return "command"
 		case .textInsertion: return "text.cursor"
 		case .storage: return "internaldrive"
