@@ -137,6 +137,9 @@ struct NewStringsAreLocalizedTests {
 		"Set it to run on every dictation, or use its shortcut",
 		"No trigger phrase",
 		"Edit",
+		"Try it",
+		"Paste a transcript",
+		"Run Clean up",
 	]
 
 	@Test func everyNewStringIsInTheCatalog() throws {

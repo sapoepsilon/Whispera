@@ -21,6 +21,9 @@ struct RecipesView: View {
 	@State private var recorderToken: UUID?
 	@State private var alert: RecipesAlert?
 	@Environment(\.settingsPaneIsActive) private var isActivePane
+	@State private var tryInput = ""
+	@State private var tryOutput: String?
+	@State private var isTrying = false
 
 	var body: some View {
 		Form {
@@ -65,6 +68,7 @@ struct RecipesView: View {
 					.disabled(!cleanUpOnRequest)
 					.accessibilityIdentifier("cleanUpShortcutButton")
 				}
+				tryCleanUpRows
 			} header: {
 				Text("Clean up")
 			}
@@ -125,6 +129,37 @@ struct RecipesView: View {
 			RecipeEditor(recipe: recipe) { updated in
 				Task { await store.update(updated) }
 			}
+		}
+	}
+
+	/// Runs Clean up exactly as a dictation would — same pipeline, same quiet
+	/// fallback to the input and the same failure report above.
+	@ViewBuilder
+	private var tryCleanUpRows: some View {
+		TextField("Try it", text: $tryInput, prompt: Text("Paste a transcript"), axis: .vertical)
+			.lineLimit(2...5)
+			.accessibilityIdentifier("cleanUpTryInput")
+		HStack {
+			if let tryOutput {
+				Text(verbatim: tryOutput)
+					.textSelection(.enabled)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.accessibilityIdentifier("cleanUpTryOutput")
+			} else {
+				Spacer()
+			}
+			if isTrying { ProgressView().controlSize(.small) }
+			Button("Run Clean up") {
+				let input = tryInput
+				isTrying = true
+				tryOutput = nil
+				Task {
+					tryOutput = await DictationCoordinator.shared.processDictation(input, cleanUp: true)?.text
+					isTrying = false
+				}
+			}
+			.disabled(isTrying || tryInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+			.accessibilityIdentifier("cleanUpTryButton")
 		}
 	}
 

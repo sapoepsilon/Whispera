@@ -14330,6 +14330,29 @@
         }
       }
     },
+    "Paste a transcript": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkript einfügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pega una transcripción"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collez une transcription"
+          }
+        }
+      }
+    },
     "Paste key": {
       "extractionState": "manual",
       "localizations": {
@@ -17546,6 +17569,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lancer le banc d'essai"
+          }
+        }
+      }
+    },
+    "Run Clean up": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„Clean up“ ausführen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutar «Clean up»"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer « Clean up »"
           }
         }
       }
@@ -23618,6 +23664,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Essayez"
+          }
+        }
+      }
+    },
+    "Try it": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausprobieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essayer"
           }
         }
       }
