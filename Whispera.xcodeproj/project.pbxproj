@@ -843,7 +843,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Whispera Link lets your paired iPhone reach this Mac on your network.";
+				INFOPLIST_FILE = LinkHelper/HelperInfo.plist;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Whispera Link lets your paired iPhone find and reach this Mac on your network.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -872,7 +873,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Whispera Link lets your paired iPhone reach this Mac on your network.";
+				INFOPLIST_FILE = LinkHelper/HelperInfo.plist;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Whispera Link lets your paired iPhone find and reach this Mac on your network.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

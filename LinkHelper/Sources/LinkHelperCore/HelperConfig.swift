@@ -135,7 +135,11 @@ public struct HelperConfig: Sendable {
 		while url.hasSuffix("/") { url.removeLast() }
 		if !url.isEmpty { return (url, nil) }
 		if Self.loopbackHosts.contains(listenHost) { return ("http://127.0.0.1:\(boundPort)", nil) }
-		let short = ProcessInfo.processInfo.hostName.split(separator: ".").first.map(String.init) ?? "localhost"
+		// gethostname, not ProcessInfo.hostName: the latter resolves the name over DNS and can
+		// stall startup for half a minute on a network that does not answer.
+		var buffer = [CChar](repeating: 0, count: 256)
+		let name = gethostname(&buffer, buffer.count) == 0 ? String(cString: buffer) : ""
+		let short = name.split(separator: ".").first.map(String.init) ?? "localhost"
 		let derived = "http://\(short.isEmpty ? "localhost" : short).local:\(boundPort)"
 		return (derived, "public_url is empty; using \(derived) in the pairing QR")
 	}

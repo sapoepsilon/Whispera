@@ -129,6 +129,7 @@ public final class LinkDaemon: @unchecked Sendable {
 					txt: ["path": "/v1", "scheme": "http", "v": "1", "fp": String(daemonFP.prefix(16))])
 				: nil,
 			handler: { api.handle($0) })
+		server.onServiceRegistration = { [log] change in log("bonjour", ["detail": change]) }
 		let port = try server.start()
 		http = server
 		let (url, warning) = config.effectivePublicURL(boundPort: port)

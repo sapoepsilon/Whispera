@@ -205,6 +205,8 @@ public final class HTTPServer: @unchecked Sendable {
 	private let port: Int
 	private let advertisement: Advertisement?
 	private let handler: (HTTPExchange) -> Void
+	/// Bonjour registration changes, for the ops log (`add(name)` / `remove(name)`).
+	public var onServiceRegistration: ((String) -> Void)?
 	private let queue = DispatchQueue(label: "link.http.listener")
 	private var listener: NWListener?
 	public private(set) var boundPort = 0
@@ -246,6 +248,15 @@ public final class HTTPServer: @unchecked Sendable {
 			}
 		}
 		listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
+		if let report = onServiceRegistration {
+			listener.serviceRegistrationUpdateHandler = { change in
+				switch change {
+				case .add(let endpoint): report("add \(endpoint)")
+				case .remove(let endpoint): report("remove \(endpoint)")
+				@unknown default: report("\(change)")
+				}
+			}
+		}
 		listener.start(queue: queue)
 		guard ready.wait(timeout: .now() + 10) == .success else {
 			listener.cancel()
@@ -256,6 +267,12 @@ public final class HTTPServer: @unchecked Sendable {
 		if let error = failure.error {
 			listener.cancel()
 			throw error
+		}
+		if let report = onServiceRegistration {
+			listener.stateUpdateHandler = { state in
+				if case .waiting(let error) = state { report("listener waiting: \(error)") }
+				if case .failed(let error) = state { report("listener failed: \(error)") }
+			}
 		}
 		self.listener = listener
 		boundPort = Int(listener.port?.rawValue ?? UInt16(port))
