@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {
 	case general
@@ -51,6 +52,53 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	}
 
 	var accessibilityIdentifier: String { "settingsSidebar.\(rawValue)" }
+
+	var sidebarGroup: Int {
+		switch self {
+		case .general, .servers, .account: return 0
+		case .recipes, .textInsertion, .liveTranscription, .fileTranscription, .history: return 1
+		case .storage, .automation, .benchmark, .debug: return 2
+		}
+	}
+
+	var iconColor: Color {
+		switch self {
+		case .general, .debug: return .gray
+		case .servers, .fileTranscription: return .blue
+		case .account, .recipes: return .purple
+		case .textInsertion: return .indigo
+		case .storage, .automation: return .orange
+		case .liveTranscription: return .red
+		case .history: return .green
+		case .benchmark: return .pink
+		}
+	}
+
+	func matches(_ query: String) -> Bool {
+		let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !query.isEmpty else { return true }
+		let keywords: [String] =
+			switch self {
+			case .general:
+				[
+					"Microphone", "Whisper Model", "Recording Control", "Shortcuts & Feedback", "Appearance",
+					"Application", "Language",
+				]
+			case .servers: ["Speech", "LLM server", "Mac Link"]
+			case .account: ["Sign in", "Devices"]
+			case .recipes: ["Clean up", "Shortcut"]
+			case .textInsertion: ["Clipboard", "Auto-Submit"]
+			case .storage: ["WhisperKit Models", "Application Logs"]
+			case .liveTranscription: ["Live Transcription Mode"]
+			case .fileTranscription: ["YouTube", "Transcription Options"]
+			case .history: ["Save transcription history", "Save recordings"]
+			case .automation: ["Remote Control", "Launchers", "Command Line"]
+			case .benchmark: ["RTF Benchmark"]
+			case .debug: ["Logging"]
+			}
+		return ([title()] + keywords.map { NSLocalizedString($0, comment: "") })
+			.contains { $0.localizedStandardContains(query) }
+	}
 
 	/// Post-Processing became the Clean up recipe, so a request for its old pane
 	/// (a saved destination, an automation link) opens Recipes.

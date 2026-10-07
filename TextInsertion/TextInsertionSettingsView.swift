@@ -27,127 +27,124 @@ struct TextInsertionSettingsView: View {
 	private var clipboardRestoreHoldMs = TextInsertionSettings.defaultClipboardRestoreHoldMs
 
 	var body: some View {
-		ScrollView {
-			VStack(spacing: 24) {
-				SettingsSection("Insertion") {
-					SettingRow("Insert Text By", description: pasteMethod.summary) {
-						Picker("Insert Text By", selection: $pasteMethod) {
-							ForEach(PasteMethod.allCases) { method in
-								Text(method.displayName).tag(method)
-							}
-						}
-						.labelsHidden()
-						.frame(width: 240, alignment: .trailing)
-					}
-
-					if pasteMethod == .externalScript {
-						SettingRow(
-							"Script",
-							description: scriptStatus ?? Self.scriptUsage
-						) {
-							// Read-only: the script must be picked with the file panel so it can be approved
-							HStack(spacing: 8) {
-								Text(externalScriptPath.isEmpty ? String(localized: "No script chosen") : externalScriptPath)
-									.font(.system(.body, design: .monospaced))
-									.foregroundColor(externalScriptPath.isEmpty ? .secondary : .primary)
-									.lineLimit(1)
-									.truncationMode(.middle)
-									.frame(width: 200, alignment: .leading)
-								Button("Choose…") { chooseScript() }
-									.buttonStyle(.bordered)
-							}
+		Form {
+			SettingsSection("Insertion") {
+				SettingRow("Insert Text By", description: pasteMethod.summary) {
+					Picker("Insert Text By", selection: $pasteMethod) {
+						ForEach(PasteMethod.allCases) { method in
+							Text(method.displayName).tag(method)
 						}
 					}
+					.labelsHidden()
+					.frame(width: 240, alignment: .trailing)
+				}
 
+				if pasteMethod == .externalScript {
 					SettingRow(
-						"Append Trailing Space",
-						description:
-							"Add a space after each transcript so the next one does not run into it"
+						"Script",
+						description: scriptStatus ?? Self.scriptUsage
 					) {
-						Toggle("Append Trailing Space", isOn: $appendTrailingSpace)
-							.labelsHidden()
-					}
-
-					SettingRow(
-						"Auto-Submit",
-						description:
-							"Press a key after inserting so chat boxes send the message."
-					) {
-						Toggle("Auto-Submit", isOn: $autoSubmit)
-							.labelsHidden()
-					}
-
-					if autoSubmit {
-						SettingRow("Submit With") {
-							Picker("Submit With", selection: $autoSubmitKey) {
-								ForEach(AutoSubmitKey.allCases) { key in
-									Text(key.displayName).tag(key)
-								}
-							}
-							.labelsHidden()
-							.frame(width: 240, alignment: .trailing)
+						// Read-only: the script must be picked with the file panel so it can be approved
+						HStack(spacing: 8) {
+							Text(
+								externalScriptPath.isEmpty
+									? String(localized: "No script chosen") : externalScriptPath
+							)
+							.font(.system(.body, design: .monospaced))
+							.foregroundColor(externalScriptPath.isEmpty ? .secondary : .primary)
+							.lineLimit(1)
+							.truncationMode(.middle)
+							.frame(width: 200, alignment: .leading)
+							Button("Choose…") { chooseScript() }
+								.buttonStyle(.bordered)
 						}
 					}
 				}
 
-				Divider()
+				SettingRow(
+					"Append Trailing Space",
+					description:
+						"Add a space after each transcript so the next one does not run into it"
+				) {
+					Toggle("Append Trailing Space", isOn: $appendTrailingSpace)
+						.labelsHidden()
+				}
 
-				SettingsSection("Clipboard") {
-					SettingRow(
-						"After Inserting",
-						description:
-							"Restore puts back what you had copied once the transcript is pasted. Exceptions: passwords and other concealed items are cleared rather than restored, anything larger than 16 MB per item or 32 MB in total is lost and the transcript stays, and files or images another app only promised to provide may come back incomplete."
-					) {
-						Picker("After Inserting", selection: $clipboardHandling) {
-							ForEach(ClipboardHandling.allCases) { handling in
-								Text(handling.displayName).tag(handling)
+				SettingRow(
+					"Auto-Submit",
+					description:
+						"Press a key after inserting so chat boxes send the message."
+				) {
+					Toggle("Auto-Submit", isOn: $autoSubmit)
+						.labelsHidden()
+				}
+
+				if autoSubmit {
+					SettingRow("Submit With") {
+						Picker("Submit With", selection: $autoSubmitKey) {
+							ForEach(AutoSubmitKey.allCases) { key in
+								Text(key.displayName).tag(key)
 							}
 						}
 						.labelsHidden()
 						.frame(width: 240, alignment: .trailing)
-					}
-				}
-
-				Divider()
-
-				SettingsSection("Advanced") {
-					SettingRow(
-						"Delay Before Paste",
-						description: "Wait after writing the clipboard before sending ⌘V"
-					) {
-						delayStepper(value: $pasteDelayBeforeMs)
-					}
-
-					SettingRow(
-						"Delay After Paste",
-						description:
-							"Extra wait after the app reads the transcript before the clipboard is restored; raise it if an app pastes your old clipboard"
-					) {
-						delayStepper(value: $pasteDelayAfterMs)
-					}
-
-					SettingRow(
-						"Minimum Hold After Paste",
-						description:
-							"The transcript stays on the clipboard at least this long after ⌘V before the previous clipboard returns"
-					) {
-						Stepper(
-							value: Binding(
-								get: { clipboardRestoreHoldMs },
-								set: { clipboardRestoreHoldMs = TextInsertionSettings.clampedHold($0) }
-							),
-							in: TextInsertionSettings.restoreHoldRange,
-							step: 50
-						) {
-							Text("\(clipboardRestoreHoldMs) ms")
-								.font(.system(.body, design: .monospaced))
-								.frame(minWidth: 70, alignment: .trailing)
-						}
 					}
 				}
 			}
-			.padding(20)
+
+			SettingsSection("Clipboard") {
+				SettingRow(
+					"After Inserting",
+					description:
+						"Restore puts back what you had copied once the transcript is pasted. Exceptions: passwords and other concealed items are cleared rather than restored, anything larger than 16 MB per item or 32 MB in total is lost and the transcript stays, and files or images another app only promised to provide may come back incomplete."
+				) {
+					Picker("After Inserting", selection: $clipboardHandling) {
+						ForEach(ClipboardHandling.allCases) { handling in
+							Text(handling.displayName).tag(handling)
+						}
+					}
+					.labelsHidden()
+					.frame(width: 240, alignment: .trailing)
+				}
+			}
+
+			SettingsSection("Advanced") {
+				SettingRow(
+					"Delay Before Paste",
+					description: "Wait after writing the clipboard before sending ⌘V"
+				) {
+					delayStepper(value: $pasteDelayBeforeMs)
+				}
+
+				SettingRow(
+					"Delay After Paste",
+					description:
+						"Extra wait after the app reads the transcript before the clipboard is restored; raise it if an app pastes your old clipboard"
+				) {
+					delayStepper(value: $pasteDelayAfterMs)
+				}
+
+				SettingRow(
+					"Minimum Hold After Paste",
+					description:
+						"The transcript stays on the clipboard at least this long after ⌘V before the previous clipboard returns"
+				) {
+					Stepper(
+						value: Binding(
+							get: { clipboardRestoreHoldMs },
+							set: { clipboardRestoreHoldMs = TextInsertionSettings.clampedHold($0) }
+						),
+						in: TextInsertionSettings.restoreHoldRange,
+						step: 50
+					) {
+						Text("\(clipboardRestoreHoldMs) ms")
+							.font(.system(.body, design: .monospaced))
+							.frame(minWidth: 70, alignment: .trailing)
+					}
+				}
+			}
 		}
+		.formStyle(.grouped)
 		.task(id: "\(pasteMethod.rawValue)|\(externalScriptPath)|\(externalScriptApproval)") {
 			guard pasteMethod == .externalScript else { return }
 			let path = externalScriptPath
