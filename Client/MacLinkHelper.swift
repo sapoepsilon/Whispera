@@ -53,11 +53,13 @@ final class MacLinkHelper: ObservableObject {
 			await refresh()
 			if let status = helperStatus {
 				AppLogger.shared.general.info(
-					"Mac link helper answering: pid \(status.pid) port \(status.port) devices \(status.devices) speech \(status.sttMode ?? status.stt)"
+					"Mac link helper answering: pid \(status.pid) port \(status.port) devices \(status.devices) speech \(status.sttEngine ?? status.sttMode ?? status.stt)"
 				)
 			} else {
 				AppLogger.shared.general.error("Mac link helper did not answer over XPC (status \(self.serviceStatus.rawValue))")
 			}
+			await syncSpeechServerKey()
+			observeSpeechServerAddress()
 			// A signed-in Mac re-hands the bearer, so a helper that lost its state joins again;
 			// one that is already on the account does nothing.
 			await AccountSettingsModel.shared.handOffAtLaunch()
@@ -72,6 +74,11 @@ final class MacLinkHelper: ObservableObject {
 				try service.register()
 				AppLogger.shared.general.info("Mac link helper registered")
 				ApprovalCardCenter.shared.start()
+				Task {
+					try? await Task.sleep(nanoseconds: 3_000_000_000)
+					await syncSpeechServerKey()
+					observeSpeechServerAddress()
+				}
 			} else {
 				try service.unregister()
 				ApprovalCardCenter.shared.stop()
@@ -84,6 +91,47 @@ final class MacLinkHelper: ObservableObject {
 			AppLogger.shared.general.error("Mac link helper registration failed: \(error.localizedDescription)")
 		}
 		serviceStatus = service.status
+	}
+
+	private var speechAddressObserver: NSObjectProtocol?
+	private var handedSpeechAddress: String?
+
+	/// Hands the helper the speech server's API key, bound to the server's address, so a paired
+	/// phone transcribing with this Mac's engine reaches that server while Whispera is quit. The
+	/// helper reads the selected engine, address and model from Whispera's settings itself; only
+	/// the key, which lives in Whispera's Keychain, has to be handed over. `{}` clears it.
+	func syncSpeechServerKey() async {
+		guard isEnabled else { return }
+		let entry = WhisperaSettings.speechServer
+		var request: [String: String] = [:]
+		if let url = entry.url, let key = entry.keyProvider(), !key.isEmpty {
+			request = ["base_url": url.absoluteString, "key": key]
+		}
+		handedSpeechAddress = entry.url?.absoluteString ?? ""
+		let body = (try? JSONSerialization.data(withJSONObject: request)) ?? Data("{}".utf8)
+		let reply = await Self.call { $0.setSpeechServerKey(body, reply: $1) }
+		let ok = reply.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["ok"] as? Bool
+		if ok == true {
+			AppLogger.shared.general.info(
+				"Mac link helper has the speech server key: \(request.isEmpty ? "none" : "set")")
+		} else {
+			AppLogger.shared.general.error("Mac link helper did not take the speech server key")
+		}
+	}
+
+	/// A key is bound to the address it was handed for, so a new speech server address hands it again.
+	private func observeSpeechServerAddress() {
+		guard speechAddressObserver == nil else { return }
+		speechAddressObserver = NotificationCenter.default.addObserver(
+			forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+		) { [weak self] _ in
+			Task { @MainActor in
+				guard let self, self.isEnabled else { return }
+				let address = WhisperaSettings.speechServer.url?.absoluteString ?? ""
+				guard address != self.handedSpeechAddress else { return }
+				await self.syncSpeechServerKey()
+			}
+		}
 	}
 
 	func openLoginItemsSettings() {
@@ -186,7 +234,8 @@ struct MacLinkSettingsSection: View {
 					String(
 						format: String(
 							localized: "Running on port %lld · %lld paired devices · speech: %@"),
-						Int64(status.port), Int64(status.devices), status.sttMode ?? status.stt)
+						Int64(status.port), Int64(status.devices),
+						status.sttEngine ?? status.sttMode ?? status.stt)
 				)
 				.font(.caption.monospacedDigit())
 				.foregroundColor(.secondary)

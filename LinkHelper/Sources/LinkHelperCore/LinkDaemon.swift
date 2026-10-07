@@ -59,13 +59,16 @@ public final class LinkDaemon: @unchecked Sendable {
 	}
 
 	/// - Parameters:
-	///   - engine: the Mac's own speech engine; answers `/v1/audio/transcriptions` when no
-	///     upstream is configured.
+	///   - engine: the Mac's own on-device speech engine.
+	///   - speechSelection: which engine Whispera has selected; nil serves the configured
+	///     upstream, else `engine` (the e2e daemon).
+	///   - speechKeys: the speech server key Whispera handed over.
 	///   - push: how approvals reach phones; nil picks the relay when `relay` is configured.
 	///   - accountTransport: how the account backend is reached (a fake in tests).
 	public init(
 		config: HelperConfig, engine: LocalSpeechEngine?, push: PushNotifier? = nil,
-		accountTransport: LinkTransport = URLSessionLinkTransport()
+		accountTransport: LinkTransport = URLSessionLinkTransport(), speechSelection: MacSpeechSelecting? = nil,
+		speechKeys: SpeechKeyStoring? = nil
 	) throws {
 		self.config = config
 		let opsLog = OpsLog(path: config.paths.log, debug: config.logDebug)
@@ -106,8 +109,8 @@ public final class LinkDaemon: @unchecked Sendable {
 			macApprover: { macStore.current?.deviceRecord }, offerMacCard: { offer.offer(log: opsLog) })
 		speech = SpeechService(
 			upstreamBaseURL: config.sttUpstreamBaseURL, upstreamKeyFile: config.sttUpstreamAPIKeyFile,
-			timeout: config.sttTimeout,
-			engine: engine, log: opsLog)
+			upstreamModel: config.sttUpstreamModel, timeout: config.sttTimeout,
+			engine: engine, selection: speechSelection, keyStore: speechKeys, log: opsLog)
 		let ingress = RelayIngress(devices: registry, log: opsLog)
 		relayIngress = ingress
 		let urlBox = URLBox()
@@ -249,7 +252,8 @@ public final class LinkDaemon: @unchecked Sendable {
 			daemonFP: daemonFP, herdr: herdrState(), broker: approvals.isConnected ? "connected" : "idle",
 			apns: push.isConfigured ? "configured" : "unconfigured",
 			stt: speech.isConfigured ? "configured" : "unconfigured",
-			sttMode: speech.mode, sttModels: speech.localModels, devices: devices.activeCount,
+			sttMode: speech.mode, sttModels: speech.localModels, sttEngine: speech.engineInfo().name,
+			devices: devices.activeCount,
 			pendingApprovals: approvals.pendingCount, macApprover: macApprovers.current?.deviceID)
 	}
 

@@ -63,6 +63,11 @@ public enum LinkHelperXPC {
 	func enrollMacApprover(_ request: Data, reply: @escaping (Data) -> Void)
 	/// `{"mac_approver":{…}|null,"pem_path":"…"}`.
 	func macApprover(reply: @escaping (Data) -> Void)
+
+	/// The API key of the speech server selected in Whispera, `{"base_url","key"}`; `{}` removes
+	/// it. The helper sends it only to that base URL, on the phone's behalf, and never to a phone.
+	/// Replies `{"ok":true}` or `{"ok":false,"error":{…}}`.
+	func setSpeechServerKey(_ request: Data, reply: @escaping (Data) -> Void)
 }
 
 /// What the helper calls back on a connection that asked to `watchApprovals`.
@@ -218,6 +223,8 @@ public struct HelperStatus: Codable, Sendable, Equatable {
 	public var stt: String
 	public var sttMode: String?
 	public var sttModels: [String]?
+	/// The engine phones transcribe with, e.g. "WhisperKit · openai_whisper-small".
+	public var sttEngine: String?
 	public var devices: Int
 	public var pendingApprovals: Int
 	public var macApprover: String?
@@ -228,6 +235,7 @@ public struct HelperStatus: Codable, Sendable, Equatable {
 		case daemonFP = "daemon_fp"
 		case sttMode = "stt_mode"
 		case sttModels = "stt_models"
+		case sttEngine = "stt_engine"
 		case pendingApprovals = "pending_approvals"
 		case macApprover = "mac_approver"
 	}
@@ -235,7 +243,8 @@ public struct HelperStatus: Codable, Sendable, Equatable {
 	public init(
 		ok: Bool, version: String, protocol: Int, pid: Int32, port: Int, publicURL: String?, daemonFP: String,
 		herdr: String,
-		broker: String, apns: String, stt: String, sttMode: String?, sttModels: [String]?, devices: Int,
+		broker: String, apns: String, stt: String, sttMode: String?, sttModels: [String]?, sttEngine: String? = nil,
+		devices: Int,
 		pendingApprovals: Int, macApprover: String? = nil
 	) {
 		self.ok = ok
@@ -251,6 +260,7 @@ public struct HelperStatus: Codable, Sendable, Equatable {
 		self.stt = stt
 		self.sttMode = sttMode
 		self.sttModels = sttModels
+		self.sttEngine = sttEngine
 		self.devices = devices
 		self.pendingApprovals = pendingApprovals
 		self.macApprover = macApprover

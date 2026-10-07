@@ -68,6 +68,14 @@ final class HelperXPCService: NSObject, NSXPCListenerDelegate, LinkHelperXPCProt
 		}
 	}
 
+	func setSpeechServerKey(_ request: Data, reply: @escaping (Data) -> Void) {
+		let object = WireJSON.decodeObject(request) ?? [:]
+		answer(reply) { [daemon] in
+			try daemon.setSpeechServerKey(
+				baseURL: object["base_url"] as? String ?? "", key: object["key"] as? String ?? "")
+		}
+	}
+
 	func clearAccount(reply: @escaping (Data) -> Void) { answer(reply) { [daemon] in daemon.accountClear() } }
 
 	func accountStatus(reply: @escaping (Data) -> Void) { answer(reply) { [daemon] in daemon.accountStatus() } }
@@ -125,8 +133,13 @@ final class HelperXPCService: NSObject, NSXPCListenerDelegate, LinkHelperXPCProt
 public enum HelperRuntime {
 	/// - Parameter launchApp: opens Whispera in the background so it can show the approval card;
 	///   nil where there is no app to open (the e2e `link-helper-serve`).
+	///   - selection: which engine Whispera has selected (the app's settings); nil serves the
+	///     configured upstream or `engine`. `WHISPERA_LINK_APP_DEFAULTS` names another
+	///     preferences domain to read it from (the e2e scripts).
+	///   - speechKeys: where the speech server key Whispera hands over is kept.
 	public static func serve(
 		engine: LocalSpeechEngine?, environment: [String: String] = ProcessInfo.processInfo.environment,
+		selection: MacSpeechSelecting? = nil, speechKeys: SpeechKeyStoring? = nil,
 		launchApp: (() -> Void)? = nil
 	) -> Int32 {
 		let config = HelperConfig.load(environment: environment) {
@@ -134,7 +147,11 @@ public enum HelperRuntime {
 		}
 		let daemon: LinkDaemon
 		do {
-			daemon = try LinkDaemon(config: config, engine: engine)
+			let domain = environment["WHISPERA_LINK_APP_DEFAULTS"].flatMap { $0.isEmpty ? nil : $0 }
+			daemon = try LinkDaemon(
+				config: config, engine: engine,
+				speechSelection: domain.map { AppSpeechSelection(domain: $0) } ?? selection,
+				speechKeys: speechKeys ?? (domain != nil ? MemorySpeechKeyStore() : nil))
 			try daemon.start()
 		} catch {
 			FileHandle.standardError.write(

@@ -28,4 +28,9 @@ func launchWhisperaForApprovalCard() {
 	}
 }
 
-exit(HelperRuntime.serve(engine: WhisperKitSpeechEngine(), launchApp: launchWhisperaForApprovalCard))
+/// Phones transcribe with whatever engine is selected in Whispera, read from Whispera's own settings.
+let appDomain = AppSpeechSelection.appDomain(helperBundleIdentifier: Bundle.main.bundleIdentifier)
+exit(
+	HelperRuntime.serve(
+		engine: WhisperKitSpeechEngine(appDomain: appDomain), selection: AppSpeechSelection(domain: appDomain),
+		speechKeys: KeychainSpeechKeyStore(), launchApp: launchWhisperaForApprovalCard))

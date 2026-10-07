@@ -135,6 +135,7 @@ final class TestDaemon {
 	init(
 		engine: LocalSpeechEngine? = nil, upstream: String = "", accountTransport: LinkTransport? = nil,
 		herdrSocket: String? = nil,
+		speechSelection: MacSpeechSelecting? = nil, speechKeys: SpeechKeyStoring? = nil,
 		configure: (inout HelperConfig) -> Void = { _ in }
 	) throws {
 		directory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -154,7 +155,8 @@ final class TestDaemon {
 		config.sttUpstreamBaseURL = upstream
 		configure(&config)
 		daemon = try LinkDaemon(
-			config: config, engine: engine, accountTransport: accountTransport ?? URLSessionLinkTransport())
+			config: config, engine: engine, accountTransport: accountTransport ?? URLSessionLinkTransport(),
+			speechSelection: speechSelection, speechKeys: speechKeys)
 		port = try daemon.start()
 	}
 

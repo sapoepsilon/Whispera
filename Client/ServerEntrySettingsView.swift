@@ -168,6 +168,13 @@ struct ServerEntrySettingsView: View {
 		}
 	}
 
+	/// Paired phones transcribe through this Mac's speech server, so the Mac link helper keeps
+	/// its own copy of the key, bound to the server's address.
+	private func handKeyToMacLink() {
+		guard capability == .speech else { return }
+		Task { await MacLinkHelper.shared.syncSpeechServerKey() }
+	}
+
 	/// Optional: a LAN engine usually wants no key, a cloud always does. Stored
 	/// in the Keychain by server id, never in UserDefaults. A 401/403 is said
 	/// here, next to the field that fixes it.
@@ -183,6 +190,7 @@ struct ServerEntrySettingsView: View {
 							try? OpenAIKeyStore.shared.delete(serverId: capability.keychainId)
 							hasSavedKey = false
 							keyError = nil
+							handKeyToMacLink()
 						}
 						.accessibilityIdentifier("\(id)ServerRemoveKeyButton")
 					} else {
@@ -257,6 +265,7 @@ struct ServerEntrySettingsView: View {
 			apiKey = ""
 			keyError = nil
 			if check.isKeyProblem { check = .idle }
+			handKeyToMacLink()
 		} catch {
 			keyError = error.localizedDescription
 		}

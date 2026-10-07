@@ -6,7 +6,7 @@ import WhisperKit
 /// by WhisperKit inside the helper so phones can transcribe while Whispera itself is quit.
 ///
 /// Never downloads anything: with no installed model it reports none and the voice server answers
-/// `upstream_unconfigured`. The model loads on the first request and unloads after five idle minutes.
+/// `model_not_ready`. The model loads on the first request and unloads after five idle minutes.
 final class WhisperKitSpeechEngine: LocalSpeechEngine, @unchecked Sendable {
 	static let idleUnload: TimeInterval = 300
 	private static let preferred = [
@@ -18,9 +18,12 @@ final class WhisperKitSpeechEngine: LocalSpeechEngine, @unchecked Sendable {
 	private let base: URL
 	private let modelsRoot: URL
 	private let explicitModel: String?
+	private let appDomain: String
+	var engineName: String { "WhisperKit" }
 	private let runner = Runner()
 
-	init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+	init(appDomain: String, environment: [String: String] = ProcessInfo.processInfo.environment) {
+		self.appDomain = environment["WHISPERA_LINK_APP_DEFAULTS"].flatMap { $0.isEmpty ? nil : $0 } ?? appDomain
 		let support =
 			FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
 			?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
@@ -41,9 +44,11 @@ final class WhisperKitSpeechEngine: LocalSpeechEngine, @unchecked Sendable {
 	/// The app's chosen model when it is a WhisperKit model on disk, else the first installed one.
 	func currentModel() -> String? {
 		if let explicitModel { return isInstalled(explicitModel) ? explicitModel : nil }
-		let app = UserDefaults(suiteName: "com.macwhisper.app")
+		CFPreferencesAppSynchronize(appDomain as CFString)
 		for key in ["selectedModel", "lastUsedModel"] {
-			if let name = app?.string(forKey: key), !name.contains("/"), isInstalled(name) { return name }
+			if let name = CFPreferencesCopyAppValue(key as CFString, appDomain as CFString) as? String,
+				!name.contains("/"), isInstalled(name)
+			{ return name }
 		}
 		if let name = Self.preferred.first(where: isInstalled) { return name }
 		let installed = (try? FileManager.default.contentsOfDirectory(atPath: modelsRoot.path)) ?? []
@@ -56,7 +61,7 @@ final class WhisperKitSpeechEngine: LocalSpeechEngine, @unchecked Sendable {
 		-> LocalTranscript
 	{
 		guard let model = currentModel() else {
-			throw APIError(503, "upstream_unconfigured", "no speech model is installed")
+			throw APIError(503, "model_not_ready", SpeechService.noModelReady)
 		}
 		let config = WhisperKitConfig(
 			model: model, downloadBase: base, modelFolder: modelsRoot.appendingPathComponent(model).path,
@@ -89,7 +94,9 @@ final class WhisperKitSpeechEngine: LocalSpeechEngine, @unchecked Sendable {
 				kit = try await WhisperKit(config)
 				loadedModel = model
 			}
-			guard let kit else { throw APIError(503, "upstream_unconfigured", "the speech model did not load") }
+			guard let kit else {
+				throw APIError(503, "model_not_ready", "The speech model on the Mac did not load.")
+			}
 			var decoding = options
 			if let prompt, let tokenizer = kit.tokenizer {
 				decoding.promptTokens = tokenizer.encode(text: " " + prompt).filter {
