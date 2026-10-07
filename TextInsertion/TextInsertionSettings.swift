@@ -25,7 +25,7 @@ enum PasteMethod: String, CaseIterable, Identifiable, Sendable {
 
 	var displayName: String {
 		switch self {
-		case .commandV: return String(localized: "Paste (Cmd-V)")
+		case .commandV: return String(localized: "Paste (⌘V)")
 		case .typeCharacters: return String(localized: "Type characters")
 		case .copyOnly: return String(localized: "Copy to clipboard only")
 		case .externalScript: return String(localized: "Run script")
@@ -34,7 +34,7 @@ enum PasteMethod: String, CaseIterable, Identifiable, Sendable {
 
 	var summary: String {
 		switch self {
-		case .commandV: return String(localized: "Puts the transcript on the clipboard and presses Cmd-V")
+		case .commandV: return String(localized: "Puts the transcript on the clipboard and presses ⌘V")
 		case .typeCharacters: return String(localized: "Types the text key by key, for apps that block pasting")
 		case .copyOnly: return String(localized: "Leaves the transcript on the clipboard without inserting it")
 		case .externalScript: return String(localized: "Runs a script you choose and passes it the transcript on standard input")

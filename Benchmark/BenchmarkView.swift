@@ -167,17 +167,14 @@ struct BenchmarkView: View {
 
 	private var resultsSection: some View {
 		GroupBox("Results") {
-			ScrollView {
-				VStack(alignment: .leading, spacing: 8) {
-					ForEach(runner.results) { result in
-						ResultRow(result: result)
-						if result.id != runner.results.last?.id {
-							Divider()
-						}
+			VStack(alignment: .leading, spacing: 8) {
+				ForEach(runner.results) { result in
+					ResultRow(result: result)
+					if result.id != runner.results.last?.id {
+						Divider()
 					}
 				}
 			}
-			.frame(maxHeight: 200)
 		}
 	}
 

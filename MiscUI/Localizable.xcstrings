@@ -1726,6 +1726,29 @@
         }
       }
     },
+    "Agent": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        }
+      }
+    },
     "Agent (claimed by requester)": {
       "extractionState": "manual",
       "localizations": {
@@ -1745,6 +1768,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Agent (selon le demandeur)"
+          }
+        }
+      }
+    },
+    "Agent and Mac are what the requester claims.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent und Mac sind Angaben des Anfragenden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El agente y el Mac son los que declara el solicitante."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’agent et le Mac sont ceux déclarés par le demandeur."
           }
         }
       }
@@ -9270,6 +9316,29 @@
         }
       }
     },
+    "History keeps recent transcripts on this Mac. Audio is saved only if enabled. Change it in Settings > History.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Verlauf speichert die letzten Transkripte auf diesem Mac. Audio wird nur gespeichert, wenn du es aktivierst. Ändere dies unter Einstellungen > Verlauf."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El historial guarda las transcripciones recientes en este Mac. El audio solo se guarda si lo activas. Cámbialo en Ajustes > Historial."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’historique garde les transcriptions récentes sur ce Mac. L’audio n’est enregistré que si vous l’activez. Modifiez ce choix dans Réglages > Historique."
+          }
+        }
+      }
+    },
     "Hold Threshold": {
       "extractionState": "manual",
       "localizations": {
@@ -11041,6 +11110,52 @@
         }
       }
     },
+    "Live transcription is off, so the recording is transcribed after you stop speaking.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live-Transkription ist ausgeschaltet. Die Aufnahme wird transkribiert, sobald du aufhörst zu sprechen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcripción en directo está desactivada: la grabación se transcribe cuando dejas de hablar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcription en direct est désactivée : l’enregistrement est transcrit quand vous avez fini de parler."
+          }
+        }
+      }
+    },
+    "Live transcription is on, so words appear while you speak.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live-Transkription ist eingeschaltet. Wörter erscheinen, während du sprichst."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcripción en directo está activada: las palabras aparecen mientras hablas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcription en direct est activée : les mots apparaissent pendant que vous parlez."
+          }
+        }
+      }
+    },
     "Load": {
       "extractionState": "manual",
       "localizations": {
@@ -11566,6 +11681,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Basse (128 kbit/s)"
+          }
+        }
+      }
+    },
+    "Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
           }
         }
       }
@@ -12946,6 +13084,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucune app n'a reçu le collage, la transcription est donc restée dans le presse-papiers. Cliquez à l'endroit voulu et appuyez sur Cmd-V."
+          }
+        }
+      }
+    },
+    "No app took the paste, so the transcript was left on the clipboard. Click where the text should go and press ⌘V.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine App hat das Einfügen angenommen, daher bleibt das Transkript in der Zwischenablage. Klicke an die gewünschte Stelle und drücke ⌘V."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguna app recibió el pegado, así que la transcripción quedó en el portapapeles. Haz clic donde debe ir el texto y pulsa ⌘V."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune app n'a reçu le collage, la transcription est donc restée dans le presse-papiers. Cliquez à l'endroit voulu et appuyez sur ⌘V."
           }
         }
       }
@@ -14537,6 +14698,29 @@
         }
       }
     },
+    "Paste (⌘V)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einsetzen (⌘V)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pegar (⌘V)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coller (⌘V)"
+          }
+        }
+      }
+    },
     "Paste a transcript": {
       "extractionState": "manual",
       "localizations": {
@@ -15867,6 +16051,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Place la transcription dans le presse-papiers et appuie sur Cmd-V"
+          }
+        }
+      }
+    },
+    "Puts the transcript on the clipboard and presses ⌘V": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legt das Transkript in die Zwischenablage und drückt ⌘V"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copia la transcripción al portapapeles y pulsa ⌘V"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Place la transcription dans le presse-papiers et appuie sur ⌘V"
           }
         }
       }
@@ -22081,6 +22288,29 @@
         }
       }
     },
+    "The transcript stays on the clipboard at least this long after ⌘V before the previous clipboard returns": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Transkript bleibt nach ⌘V mindestens so lange in der Zwischenablage, bevor der vorherige Inhalt zurückkehrt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcripción permanece en el portapapeles al menos este tiempo después de ⌘V antes de que vuelva el contenido anterior"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcription reste dans le presse-papiers au moins aussi longtemps après ⌘V avant que le contenu précédent revienne"
+          }
+        }
+      }
+    },
     "Thick": {
       "extractionState": "manual",
       "localizations": {
@@ -24929,6 +25159,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Délai après l'écriture dans le presse-papiers avant d'envoyer Cmd-V"
+          }
+        }
+      }
+    },
+    "Wait after writing the clipboard before sending ⌘V": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartezeit nach dem Schreiben in die Zwischenablage, bevor ⌘V gesendet wird"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espera tras escribir en el portapapeles antes de enviar ⌘V"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Délai après l'écriture dans le presse-papiers avant d'envoyer ⌘V"
           }
         }
       }

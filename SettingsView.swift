@@ -1171,8 +1171,8 @@ struct SettingsView: View {
 									.padding(.horizontal, 8)
 									.padding(.vertical, 4)
 									.background(
-										.blue.opacity(0.1),
-										in: RoundedRectangle(cornerRadius: 4)
+										.quaternary,
+										in: RoundedRectangle(cornerRadius: 6)
 									)
 								Button(isRecordingFileShortcut ? "Press keys..." : "Change") {
 									if isRecordingFileShortcut {

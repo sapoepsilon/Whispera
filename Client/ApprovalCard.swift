@@ -362,10 +362,13 @@ struct ApprovalCardView: View {
 				row("Secret", request.secret)
 				if request.summary != request.secret { row("Request", request.summary) }
 				if !request.project.isEmpty { row("Project", request.project) }
-				row("Agent (claimed by requester)", request.caller)
-				row("Mac (claimed by requester)", request.host)
+				row("Agent", request.caller)
+				row("Mac", request.host)
 			}
 			.font(.callout)
+			Text("Agent and Mac are what the requester claims.")
+				.font(.caption)
+				.foregroundStyle(.secondary)
 			footer
 		}
 		.padding(16)
@@ -408,7 +411,7 @@ struct ApprovalCardView: View {
 		return GridRow(alignment: .firstTextBaseline) {
 			Text(label)
 				.foregroundColor(.secondary)
-				.frame(width: 180, alignment: .leading)
+				.frame(width: 72, alignment: .leading)
 				.fixedSize(horizontal: false, vertical: true)
 			Text(verbatim: shown.isEmpty ? "—" : shown)
 				.fixedSize(horizontal: false, vertical: true)

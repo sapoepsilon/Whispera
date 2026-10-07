@@ -113,7 +113,7 @@ struct TextInsertionSettingsView: View {
 				SettingsSection("Advanced") {
 					SettingRow(
 						"Delay Before Paste",
-						description: "Wait after writing the clipboard before sending Cmd-V"
+						description: "Wait after writing the clipboard before sending ⌘V"
 					) {
 						delayStepper(value: $pasteDelayBeforeMs)
 					}
@@ -129,7 +129,7 @@ struct TextInsertionSettingsView: View {
 					SettingRow(
 						"Minimum Hold After Paste",
 						description:
-							"The transcript stays on the clipboard at least this long after Cmd-V before the previous clipboard returns"
+							"The transcript stays on the clipboard at least this long after ⌘V before the previous clipboard returns"
 					) {
 						Stepper(
 							value: Binding(

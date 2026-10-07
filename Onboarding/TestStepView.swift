@@ -43,7 +43,7 @@ struct TestStepView: View {
 						Circle()
 							.fill(audioManager.isRecording ? Color.red : Color.blue)
 							.frame(width: 64, height: 64)
-							.scaleEffect(pulseRecord ? 1.08 : 1.0)
+							.scaleEffect(pulseRecord && !reduceMotion ? 1.08 : 1.0)
 							.shadow(
 								color: (audioManager.isRecording ? Color.red : Color.blue)
 									.opacity(0.3),
@@ -62,7 +62,7 @@ struct TestStepView: View {
 					withAnimation(
 						pulse
 							? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
-							: .default
+							: (reduceMotion ? nil : .default)
 					) {
 						pulseRecord = pulse
 					}
@@ -124,6 +124,9 @@ struct TestStepView: View {
 						.font(.caption)
 				}
 			}
+		}
+		.onChange(of: reduceMotion) { _, reduced in
+			pulseRecord = audioManager.isRecording && !reduced
 		}
 		.animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: audioManager.isRecording)
 		.animation(

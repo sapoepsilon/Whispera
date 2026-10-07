@@ -80,9 +80,6 @@ struct MenuBarView: View {
 		.frame(maxHeight: .infinity, alignment: .top)
 		.background(AdaptiveMaterialBackground(style: materialStyle))
 		.overlay(dropZoneOverlay)
-		.overlay(alignment: .bottom) {
-			ToastOverlay(toastCenter: toastCenter)
-		}
 		.onAppear { registerOpenSettings { openSettings() } }
 		.onChange(of: audioManager.transcriptionError) { _, newValue in
 			if let error = newValue {
@@ -242,6 +239,8 @@ struct MenuBarView: View {
 				}
 			}
 			.animation(reduceMotion ? nil : Motion.reveal, value: layout.hasResult)
+
+			ToastOverlay(toastCenter: toastCenter)
 
 		}
 		.frame(width: PopoverMetrics.width)
@@ -791,7 +790,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 						.scaleEffect(configuration.isPressed && !reduceMotion ? Motion.pressScale : 1.0)
 				)
 				.opacity(isEnabled ? 1.0 : 0.5)
-				.animation(Motion.press, value: configuration.isPressed)
+				.animation(reduceMotion ? nil : Motion.press, value: configuration.isPressed)
 		}
 	}
 }
@@ -819,7 +818,7 @@ struct SecondaryButtonStyle: ButtonStyle {
 						.opacity(configuration.isPressed ? 0.7 : 1.0)
 						.scaleEffect(configuration.isPressed && !reduceMotion ? Motion.pressScale : 1.0)
 				)
-				.animation(Motion.press, value: configuration.isPressed)
+				.animation(reduceMotion ? nil : Motion.press, value: configuration.isPressed)
 		}
 	}
 }
@@ -1236,8 +1235,8 @@ final class ToastCenter {
 	}
 }
 
-// Bottom overlay for the single toast. Observes only the ToastCenter and drives a
-// single combined-value animation so success and error share one motion language.
+// The toast participates in the measured content height so it never covers controls.
+// Success and error share one motion language.
 struct ToastOverlay: View {
 	let toastCenter: ToastCenter
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion

@@ -28,7 +28,7 @@ struct WelcomeStepView: View {
 						.scaleEffect(animateRings ? 1.0 + CGFloat(index + 1) * 0.05 : 1.0)
 						.opacity(animateRings ? 0.6 : 1.0)
 						.animation(
-							.easeInOut(duration: 2.0 + Double(index) * 0.5)
+							reduceMotion ? nil : .easeInOut(duration: 2.0 + Double(index) * 0.5)
 								.repeatForever(autoreverses: true)
 								.delay(Double(index) * 0.3),
 							value: animateRings
@@ -71,6 +71,9 @@ struct WelcomeStepView: View {
 		}
 		.onAppear {
 			animateRings = !reduceMotion
+		}
+		.onChange(of: reduceMotion) { _, reduced in
+			animateRings = !reduced
 		}
 	}
 }
