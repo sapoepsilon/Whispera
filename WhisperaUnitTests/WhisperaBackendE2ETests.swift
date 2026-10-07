@@ -161,7 +161,9 @@ struct WhisperaBackendE2ETests {
 		let recipeStore = Whispera.RecipeStore(fileURL: recipeURL)
 		await recipeStore.create(created)
 
-		let coordinator = DictationCoordinator(store: recipeStore, defaultCommandId: { created.id }) {
+		let coordinator = DictationCoordinator(
+			store: recipeStore, isEnabled: { true }, defaultCommandId: { created.id }
+		) {
 			recipe, input in
 			try await BackendExecutor(api: api).run(recipe: recipe, input: input)
 		}

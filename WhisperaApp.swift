@@ -180,8 +180,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		// per-mode keys exactly once, keyed off the engine it was typed for.
 		TranscriptionServerURLMigration.migrateIfNeeded(in: .standard)
 		Task { @MainActor in MacLinkHelper.shared.applyAtLaunch() }
+		#if DEBUG
+			Task { @MainActor in ApprovalCardCenter.shared.showDemoIfRequested() }
+		#endif
 
 		Task { @MainActor in
+			// Before the first dictation can run a recipe: installs from before the
+			// recipes switch decide it once, off unless the user set one up.
+			RecipeEnablementMigration.migrateIfNeeded(in: .standard, recipes: RecipeStore.shared.recipes)
 			audioManager = AudioManager()
 			let coordinator = DictationCoordinator.shared
 			audioManager.dictationProcessor = { text in await coordinator.process(text) }

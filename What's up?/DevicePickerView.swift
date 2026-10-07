@@ -391,6 +391,7 @@ struct PillControlsView: View {
 				revealRow(index + 2) {
 					optionRow(icon: "list.clipboard", title: recipe.name.isEmpty ? "Untitled" : recipe.name, selected: defaultCommandId == recipe.id) {
 						defaultCommandId = recipe.id
+						WhisperaSettings.didPickDefaultCommand(recipe.id)
 						back()
 					}
 				}

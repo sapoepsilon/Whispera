@@ -3,10 +3,12 @@
 
 import Foundation
 import SwiftUI
+import WhisperaOpenAI
 
 /// Glue between transcription and the recipe engine. Given transcribed text, it
-/// runs the matching recipe (if any) and returns what should be pasted. With no
-/// match, the raw transcription is returned unchanged. See WHI-41.
+/// runs the matching recipe (if any) and returns what should be pasted. With
+/// recipes switched off, or no match, the raw transcription is returned
+/// unchanged. See WHI-41.
 @MainActor
 @Observable
 final class DictationCoordinator {
@@ -14,28 +16,26 @@ final class DictationCoordinator {
 
 	private(set) var isRunning = false
 	private(set) var runningRecipeName: String?
-	var lastError: String?
-	/// Short-lived message for the dictation overlay; auto-clears so the HUD
-	/// doesn't linger after a failed/empty recipe run.
-	private(set) var overlayError: String?
 
 	private let store: RecipeStore
+	private let health: RecipeRunHealth
 	private let run: (Recipe, String) async throws -> String
-	private let errorDisplaySeconds: Double
+	private let isEnabled: () -> Bool
 	private let defaultCommandId: () -> String
 	private var currentTask: Task<String?, Never>?
-	private var clearErrorTask: Task<Void, Never>?
 
 	init(
 		store: RecipeStore = .shared,
-		errorDisplaySeconds: Double = 3,
+		health: RecipeRunHealth = .shared,
+		isEnabled: @escaping () -> Bool = { WhisperaSettings.recipesEnabled },
 		defaultCommandId: @escaping () -> String = { WhisperaSettings.defaultCommandId },
 		run: @escaping (Recipe, String) async throws -> String = { recipe, input in
 			try await RecipeRouter.shared.run(recipe: recipe, input: input)
 		}
 	) {
 		self.store = store
-		self.errorDisplaySeconds = errorDisplaySeconds
+		self.health = health
+		self.isEnabled = isEnabled
 		self.defaultCommandId = defaultCommandId
 		self.run = run
 	}
@@ -48,8 +48,24 @@ final class DictationCoordinator {
 		return store.recipes.first { $0.id == id }
 	}
 
-	/// Returns the text to paste, or `nil` if nothing should be pasted (recipe
-	/// produced an empty result). A new call cancels any in-flight recipe.
+	/// The recipe this dictation should run, if any. Nothing runs unless the
+	/// user switched recipes on; then a trigger phrase wins over the default.
+	private func selectRecipe(for transcription: String) -> (recipe: Recipe, input: String)? {
+		guard isEnabled() else { return nil }
+		if let match = RecipeMatcher.match(text: transcription, recipes: store.recipes) {
+			return (match.recipe, match.remainder)
+		}
+		return defaultCommand().map { ($0, transcription) }
+	}
+
+	/// Returns the text to paste, or `nil` if nothing should be pasted (empty
+	/// dictation, or a superseded run). A new call cancels any in-flight recipe.
+	///
+	/// A recipe that fails — unreachable server, 401/403, 5xx, timeout, empty
+	/// answer — pastes the raw transcription without a word on the HUD: a
+	/// warning per dictation is noise the user can do nothing about mid-sentence.
+	/// The reason goes to `RecipeRunHealth`, which Settings shows until the next
+	/// run succeeds.
 	func process(_ transcription: String) async -> String? {
 		currentTask?.cancel()
 
@@ -58,23 +74,9 @@ final class DictationCoordinator {
 			return nil
 		}
 
-		// Trigger phrase wins; otherwise fall back to the default command; if
-		// neither applies, paste the raw transcription unchanged.
-		let recipe: Recipe
-		let input: String
-		if let match = RecipeMatcher.match(text: transcription, recipes: store.recipes) {
-			recipe = match.recipe
-			input = match.remainder
-		} else if let fallback = defaultCommand() {
-			recipe = fallback
-			input = transcription
-		} else {
-			return transcription
-		}
+		guard let selected = selectRecipe(for: transcription) else { return transcription }
+		let (recipe, input) = selected
 
-		lastError = nil
-		overlayError = nil
-		clearErrorTask?.cancel()
 		isRunning = true
 		runningRecipeName = recipe.name
 		defer {
@@ -82,23 +84,25 @@ final class DictationCoordinator {
 			runningRecipeName = nil
 		}
 
+		let health = self.health
 		let task = Task { () -> String? in
 			do {
 				let output = try await run(recipe, input)
 				if Task.isCancelled { return nil }
 				guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-					self.flashError("“\(recipe.name)” returned nothing.")
-					return nil
+					health.recordFailure(recipeName: recipe.name, reason: "The model returned an empty response.")
+					return transcription
 				}
+				health.recordSuccess()
 				return output
 			} catch is CancellationError {
 				return nil
 			} catch {
-				// Don't lose the user's words: fall back to the raw transcription,
-				// and say so — the HUD message must match what actually happens.
-				let reason =
-					(error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-				self.flashError("\(reason) Pasted your words unchanged.")
+				if Task.isCancelled { return nil }
+				let reason = RecipeRunHealth.condense(
+					(error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+				AppLogger.shared.network.error("Recipe \"\(recipe.name)\" failed, pasted the raw transcript: \(reason)")
+				health.recordFailure(recipeName: recipe.name, reason: reason)
 				return transcription
 			}
 		}
@@ -111,17 +115,75 @@ final class DictationCoordinator {
 		isRunning = false
 		runningRecipeName = nil
 	}
+}
 
-	/// Sets `lastError` and a self-clearing `overlayError` for the HUD.
-	private func flashError(_ message: String) {
-		lastError = message
-		overlayError = message
-		clearErrorTask?.cancel()
-		let seconds = errorDisplaySeconds
-		clearErrorTask = Task { [weak self] in
-			try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-			guard !Task.isCancelled else { return }
-			self?.overlayError = nil
+/// The outcome of the last recipe run, for Settings → Recipes. Only a failure
+/// is kept: it is shown there once ("used the raw transcript") and cleared by
+/// the next run that succeeds. Persisted so a failure from a dictation is still
+/// there when the user gets round to opening Settings after a relaunch.
+@MainActor
+@Observable
+final class RecipeRunHealth {
+	static let shared = RecipeRunHealth()
+
+	struct Failure: Equatable {
+		let recipeName: String
+		let reason: String
+		let date: Date
+	}
+
+	private(set) var lastFailure: Failure?
+
+	@ObservationIgnored private let defaults: UserDefaults
+
+	private enum Key {
+		static let recipeName = "whisperaRecipeLastFailureRecipe"
+		static let reason = "whisperaRecipeLastFailureReason"
+		static let date = "whisperaRecipeLastFailureDate"
+	}
+
+	/// Long server bodies (an HTML 503 page) would swamp a settings row.
+	static let maxReasonLength = 200
+
+	init(defaults: UserDefaults = .standard) {
+		self.defaults = defaults
+		if let reason = defaults.string(forKey: Key.reason) {
+			lastFailure = Failure(
+				recipeName: defaults.string(forKey: Key.recipeName) ?? "",
+				reason: reason,
+				date: defaults.object(forKey: Key.date) as? Date ?? Date())
 		}
+	}
+
+	func recordFailure(recipeName: String, reason: String, at date: Date = Date()) {
+		let failure = Failure(recipeName: recipeName, reason: Self.condense(reason), date: date)
+		lastFailure = failure
+		defaults.set(failure.recipeName, forKey: Key.recipeName)
+		defaults.set(failure.reason, forKey: Key.reason)
+		defaults.set(failure.date, forKey: Key.date)
+	}
+
+	func recordSuccess() {
+		guard lastFailure != nil else { return }
+		clear()
+	}
+
+	func clear() {
+		lastFailure = nil
+		defaults.removeObject(forKey: Key.recipeName)
+		defaults.removeObject(forKey: Key.reason)
+		defaults.removeObject(forKey: Key.date)
+	}
+
+	/// One line, capped and redacted: the row is a pointer to the problem, not
+	/// a log viewer, and an unreachable-server reason quotes the base URL, which
+	/// may carry a key in its query.
+	static func condense(_ reason: String) -> String {
+		let oneLine = OpenAIRedactor.redactSecrets(reason).split(whereSeparator: \.isNewline)
+			.map { $0.trimmingCharacters(in: .whitespaces) }
+			.filter { !$0.isEmpty }
+			.joined(separator: " ")
+		guard oneLine.count > maxReasonLength else { return oneLine }
+		return String(oneLine.prefix(maxReasonLength - 1)) + "…"
 	}
 }

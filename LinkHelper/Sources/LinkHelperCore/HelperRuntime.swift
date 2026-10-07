@@ -7,10 +7,30 @@ final class HelperXPCService: NSObject, NSXPCListenerDelegate, LinkHelperXPCProt
 	private let daemon: LinkDaemon
 	private let requireSignedClient: Bool
 	private var listener: NSXPCListener?
+	private let lock = NSLock()
+	private var watchers: [ObjectIdentifier: NSXPCConnection] = [:]
 
 	init(daemon: LinkDaemon, requireSignedClient: Bool) {
 		self.daemon = daemon
 		self.requireSignedClient = requireSignedClient
+		super.init()
+		daemon.approvals.onChange { [weak self] in self?.notifyWatchers() }
+	}
+
+	/// True while a Whispera app is connected and watching for approvals.
+	var isWatched: Bool {
+		lock.lock()
+		defer { lock.unlock() }
+		return !watchers.isEmpty
+	}
+
+	private func notifyWatchers() {
+		lock.lock()
+		let connections = Array(watchers.values)
+		lock.unlock()
+		for connection in connections {
+			(connection.remoteObjectProxyWithErrorHandler { _ in } as? LinkHelperAppXPCProtocol)?.approvalsChanged()
+		}
 	}
 
 	func start() {
@@ -24,6 +44,14 @@ final class HelperXPCService: NSObject, NSXPCListenerDelegate, LinkHelperXPCProt
 	func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
 		connection.exportedInterface = NSXPCInterface(with: LinkHelperXPCProtocol.self)
 		connection.exportedObject = self
+		connection.remoteObjectInterface = NSXPCInterface(with: LinkHelperAppXPCProtocol.self)
+		let id = ObjectIdentifier(connection)
+		connection.invalidationHandler = { [weak self] in
+			guard let self else { return }
+			self.lock.lock()
+			self.watchers[id] = nil
+			self.lock.unlock()
+		}
 		connection.resume()
 		return true
 	}
@@ -67,13 +95,39 @@ final class HelperXPCService: NSObject, NSXPCListenerDelegate, LinkHelperXPCProt
 			}
 		}
 	}
+
+	func watchApprovals(reply: @escaping (Data) -> Void) {
+		if let connection = NSXPCConnection.current() {
+			lock.lock()
+			watchers[ObjectIdentifier(connection)] = connection
+			lock.unlock()
+		}
+		reply(daemon.pendingApprovalsJSON())
+	}
+
+	func approval(_ requestID: String, reply: @escaping (Data) -> Void) { reply(daemon.approvalJSON(requestID)) }
+
+	func decide(_ requestID: String, decision: String, signature: String?, reply: @escaping (Data) -> Void) {
+		DispatchQueue.global(qos: .userInitiated).async { [daemon] in
+			reply(daemon.decideFromMacJSON(requestID, decision: decision, signature: signature))
+		}
+	}
+
+	func enrollMacApprover(_ request: Data, reply: @escaping (Data) -> Void) {
+		reply(daemon.enrollMacApproverJSON(request))
+	}
+
+	func macApprover(reply: @escaping (Data) -> Void) { reply(daemon.macApproverJSON()) }
 }
 
 /// `WhisperaLinkHelper serve`: the helper's whole life. Launched by launchd as a login item it
 /// runs this with no arguments; the e2e scripts run it the same way with `WHISPERA_LINK_*` set.
 public enum HelperRuntime {
+	/// - Parameter launchApp: opens Whispera in the background so it can show the approval card;
+	///   nil where there is no app to open (the e2e `link-helper-serve`).
 	public static func serve(
-		engine: LocalSpeechEngine?, environment: [String: String] = ProcessInfo.processInfo.environment
+		engine: LocalSpeechEngine?, environment: [String: String] = ProcessInfo.processInfo.environment,
+		launchApp: (() -> Void)? = nil
 	) -> Int32 {
 		let config = HelperConfig.load(environment: environment) {
 			FileHandle.standardError.write(Data(("whispera-link: " + $0 + "\n").utf8))
@@ -106,7 +160,10 @@ public enum HelperRuntime {
 		#else
 			let xpcOff = false
 		#endif
-		if !xpcOff { xpc.start() }
+		if !xpcOff {
+			xpc.start()
+			daemon.macCard.configure(watching: { [weak xpc] in xpc?.isWatched ?? false }, launch: launchApp)
+		}
 
 		signal(SIGTERM, SIG_IGN)
 		signal(SIGINT, SIG_IGN)

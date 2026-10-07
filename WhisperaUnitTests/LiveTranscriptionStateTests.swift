@@ -619,7 +619,6 @@ struct LiveTranscriptionFinalizePassTests {
 	) -> Bool {
 		state.isSessionActive && state.shouldShowLiveTranscriptionWindow
 			&& DictationHUDContent.hasSomethingToSay(
-				overlayError: nil,
 				isWaitingForModel: state.isWaitingForModel,
 				waitingStatusText: state.waitingForModelStatusText,
 				displayText: state.stableDisplayText,

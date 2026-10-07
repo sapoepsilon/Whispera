@@ -9,11 +9,17 @@ struct RecipesView: View {
 	@State private var store = RecipeStore.shared
 	@State private var editing: Recipe?
 	@State private var isCreating = false
-	@AppStorage("whisperaDefaultCommandId") private var defaultCommandId = ""
+	@State private var health = RecipeRunHealth.shared
+	@AppStorage(WhisperaSettings.defaultCommandIdKey) private var defaultCommandId = ""
+	@AppStorage(WhisperaSettings.recipesEnabledKey) private var recipesEnabled = false
 
 	var body: some View {
 		VStack(spacing: 0) {
 			header
+			enableRow
+			if recipesEnabled, let failure = health.lastFailure {
+				failureRow(failure)
+			}
 
 			if store.recipes.isEmpty {
 				emptyState
@@ -48,6 +54,7 @@ struct RecipesView: View {
 		// Solid content background so the header isn't the window's gray material.
 		.background(Color(nsColor: .textBackgroundColor))
 		.task { await store.reload() }
+		.onChange(of: defaultCommandId) { _, id in WhisperaSettings.didPickDefaultCommand(id) }
 		.sheet(isPresented: $isCreating) {
 			RecipeEditor(
 				recipe: Recipe(name: "", steps: [RecipeStep(config: LLMStepConfig(prompt: "{{input}}"))])
@@ -76,6 +83,39 @@ struct RecipesView: View {
 			}
 		}
 		.padding(20)
+	}
+
+	/// Recipes send dictation to an LLM server, so nothing runs until the user
+	/// says so — the starter set included.
+	private var enableRow: some View {
+		VStack(alignment: .leading, spacing: 2) {
+			Toggle("Run recipes on dictation", isOn: $recipesEnabled)
+				.toggleStyle(.switch)
+			Text("When off, dictation is pasted exactly as you said it.")
+				.font(.caption)
+				.foregroundColor(.secondary)
+		}
+		.frame(maxWidth: .infinity, alignment: .leading)
+		.padding(.horizontal, 20)
+		.padding(.bottom, 10)
+	}
+
+	/// The one place a failed recipe run is reported: the dictation itself
+	/// pasted the raw transcript without a word. Cleared by the next success.
+	private func failureRow(_ failure: RecipeRunHealth.Failure) -> some View {
+		Label {
+			Text("Last recipe run failed: \(failure.reason) — used the raw transcript")
+				.font(.caption)
+				.fixedSize(horizontal: false, vertical: true)
+				.textSelection(.enabled)
+		} icon: {
+			Image(systemName: "exclamationmark.triangle.fill")
+				.foregroundColor(.orange)
+		}
+		.frame(maxWidth: .infinity, alignment: .leading)
+		.padding(.horizontal, 20)
+		.padding(.bottom, 10)
+		.accessibilityIdentifier("recipeLastFailure")
 	}
 
 	private var defaultPicker: some View {
