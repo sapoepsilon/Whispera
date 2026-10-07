@@ -760,6 +760,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		onboardingWindow?.titlebarAppearsTransparent = true
 		onboardingWindow?.isOpaque = false
 		onboardingWindow?.backgroundColor = .clear
+		onboardingWindow?.isReleasedWhenClosed = false
+		onboardingWindow?.delegate = self
 		onboardingWindow?.contentViewController = hostingController
 		onboardingWindow?.center()
 		if let window = onboardingWindow, let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
@@ -790,6 +792,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 				self.onboardingWindow = nil
 				self.applyStoredModel()
 			}
+		}
+	}
+
+	// Teardown lives here rather than in the completion observer so the title bar
+	// close button is covered too. close() on its own leaves the hosting
+	// controller alive, and with it the whole SwiftUI tree: its schedules and
+	// animations keep driving the update loop off-screen for the rest of the
+	// launch, so the app never returns to its idle baseline.
+	func windowWillClose(_ notification: Notification) {
+		guard let closing = notification.object as? NSWindow, closing === onboardingWindow else {
+			return
+		}
+		MainActor.assumeIsolated { onboardingMagnet?.detach() }
+		onboardingWindow = nil
+		// OnboardingCompleted is posted synchronously from a button action, so the
+		// hosting view is mid-event-dispatch here; release it next runloop turn
+		DispatchQueue.main.async {
+			closing.delegate = nil
+			closing.contentViewController = nil
 		}
 	}
 

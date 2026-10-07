@@ -213,9 +213,9 @@ struct Constants {
 	public static let autoDetectLanguageFromKeyboardDefault = false
 
 	// Helper to get sorted language names for UI
-	public static var sortedLanguageNames: [String] {
-		return Array(languages.keys).sorted()
-	}
+	// languages is a let with unique keys, so this sort is invariant; computing it
+	// per access re-sorted ~100 strings on every body pass that read it
+	public static let sortedLanguageNames: [String] = Array(languages.keys).sorted()
 
 	/// The Whisper language name shown in the app's UI language, e.g. "german" -> "Deutsch".
 	public static func localizedLanguageName(for languageName: String, locale: Locale = .current) -> String {
