@@ -23,6 +23,7 @@ struct SettingRowView: View {
 					.font(.system(size: 18))
 					.foregroundColor(.blue)
 			}
+			.accessibilityHidden(true)
 
 			VStack(alignment: .leading, spacing: 4) {
 				Text(LocalizedStringKey(title))
@@ -34,7 +35,7 @@ struct SettingRowView: View {
 
 			Spacer()
 
-			Toggle("", isOn: $isOn)
+			Toggle(LocalizedStringKey(title), isOn: $isOn)
 				.labelsHidden()
 		}
 	}

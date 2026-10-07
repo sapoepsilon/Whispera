@@ -23,11 +23,39 @@ struct AccountSettingsView: View {
 	}
 
 	var body: some View {
-		ScrollView {
-			content
-				.frame(maxWidth: .infinity, alignment: .leading)
-				.padding(20)
+		Form {
+			if !confirmations.visible.isEmpty {
+				confirmSection
+			}
+			Section {
+				if model.isSignedIn {
+					signedIn
+				} else {
+					signedOut
+				}
+			} header: {
+				Text("Account")
+			} footer: {
+				Group {
+					if model.isSignedIn {
+						Text(verbatim: model.helperSummary)
+					} else {
+						Text("Sign in on this Mac and on your iPhone with the same account, and they find each other — no pairing code.")
+					}
+				}
+				.font(.caption)
+				.foregroundStyle(.secondary)
+			}
+			if model.isSignedIn {
+				Section {
+					devices
+				} header: {
+					Text("Devices")
+				}
+			}
+			serverSection
 		}
+		.formStyle(.grouped)
 		.task {
 			guard live else { return }
 			await model.load()
@@ -39,140 +67,105 @@ struct AccountSettingsView: View {
 		.modifier(AccountAlerts(model: model, confirmations: confirmations))
 	}
 
-	private var content: some View {
-		VStack(alignment: .leading, spacing: 24) {
-			if !confirmations.visible.isEmpty {
-				confirmSection
-				Divider()
-			}
-			SettingsSection("Account") {
-				if model.isSignedIn {
-					signedIn
-				} else {
-					signedOut
-				}
-			}
-			if model.isSignedIn {
-				Divider()
-				SettingsSection("Devices") {
-					devices
-				}
-			}
-			Divider()
-			serverSection
-		}
-	}
-
 	private var confirmSection: some View {
-		SettingsSection("Confirm iPhones") {
+		Section {
 			ForEach(confirmations.visible) { item in
 				ApproveConfirmCard(
 					item: item, isConfirming: confirmations.confirmingID == item.deviceID,
 					confirm: { Task { await confirmations.confirm(item) } },
 					notNow: { confirmations.notNow(item) })
 			}
+		} header: {
+			Text("Confirm iPhones")
 		}
 	}
 
 	private var serverSection: some View {
-		SettingsSection("Server") {
-			VStack(alignment: .leading, spacing: 6) {
-				Text("Backend URL")
-					.font(.subheadline)
-				TextField(AccountSettingsKeys.defaultBackendURL, text: $model.backendURL)
-					.textFieldStyle(.roundedBorder)
-					.autocorrectionDisabled()
-					.disabled(model.isSignedIn)
-				Text("Where your account's devices meet. Self-hosters point this at their own server.")
-					.font(.caption)
-					.foregroundColor(.secondary)
-			}
+		Section {
+			TextField(
+				"Backend URL", text: $model.backendURL, prompt: Text(verbatim: AccountSettingsKeys.defaultBackendURL)
+			)
+			.autocorrectionDisabled()
+			.disabled(model.isSignedIn)
+		} header: {
+			Text("Server")
+		} footer: {
+			Text("Where your account's devices meet. Self-hosters point this at their own server.")
+				.font(.caption)
+				.foregroundStyle(.secondary)
 		}
 	}
 
 	// MARK: Signed in
 
 	private var signedIn: some View {
-		VStack(alignment: .leading, spacing: 8) {
-			HStack {
-				Image(systemName: "person.crop.circle.fill")
-					.font(.title2)
-					.foregroundColor(.accentColor)
-				VStack(alignment: .leading, spacing: 2) {
-					Text("Signed in as")
-						.font(.caption)
-						.foregroundColor(.secondary)
-					Text(verbatim: model.accountLabel)
-						.font(.headline)
-				}
-				Spacer()
-				Button("Sign Out") { Task { await model.signOut() } }
-					.disabled(model.isWorking)
+		HStack {
+			Image(systemName: "person.crop.circle.fill")
+				.font(.title2)
+				.foregroundColor(.accentColor)
+			VStack(alignment: .leading, spacing: 2) {
+				Text("Signed in as")
+					.font(.caption)
+					.foregroundColor(.secondary)
+				Text(verbatim: model.accountLabel)
+					.font(.headline)
 			}
-			Text(verbatim: model.helperSummary)
-				.font(.caption)
-				.foregroundColor(.secondary)
+			Spacer()
+			Button("Sign Out") { Task { await model.signOut() } }
+				.disabled(model.isWorking)
 		}
 	}
 
 	// MARK: Signed out
 
+	@ViewBuilder
 	private var signedOut: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			Text("Sign in on this Mac and on your iPhone with the same account, and they find each other — no pairing code.")
+		Picker("Sign in with", selection: $model.provider) {
+			ForEach(AccountProvider.allCases) { provider in
+				Text(verbatim: provider.title).tag(provider)
+			}
+		}
+		.pickerStyle(.segmented)
+
+		switch model.provider {
+		case .hosted:
+			if !model.hostedSignInAvailable {
+				Text("Hosted sign-in isn't set up in this build. Use a custom issuer or a server token.")
+					.font(.caption)
+					.foregroundColor(.secondary)
+			}
+		case .custom:
+			TextField(text: $model.customIssuer, prompt: Text("Issuer (https://auth.example.com)")) {
+				Text("Issuer (https://auth.example.com)")
+			}
+			.labelsHidden()
+			.autocorrectionDisabled()
+			TextField("Client ID", text: $model.customClientID)
+				.autocorrectionDisabled()
+			Text("Register whispera-mac://auth/callback as a redirect URI with your provider.")
 				.font(.caption)
 				.foregroundColor(.secondary)
-			Picker("Sign in with", selection: $model.provider) {
-				ForEach(AccountProvider.allCases) { provider in
-					Text(verbatim: provider.title).tag(provider)
-				}
-			}
-			.pickerStyle(.segmented)
-			.labelsHidden()
+		case .serverToken:
+			SecureField("Server token", text: $model.serverToken)
+			Text("A token your self-hosted server accepts. It is kept in the Keychain.")
+				.font(.caption)
+				.foregroundColor(.secondary)
+		}
 
-			switch model.provider {
-			case .hosted:
-				if !model.hostedSignInAvailable {
-					Text("Hosted sign-in isn't set up in this build. Use a custom issuer or a server token.")
-						.font(.caption)
-						.foregroundColor(.secondary)
-				}
-			case .custom:
-				VStack(alignment: .leading, spacing: 6) {
-					TextField("Issuer (https://auth.example.com)", text: $model.customIssuer)
-						.textFieldStyle(.roundedBorder)
-						.autocorrectionDisabled()
-					TextField("Client ID", text: $model.customClientID)
-						.textFieldStyle(.roundedBorder)
-						.autocorrectionDisabled()
-					Text("Register whispera-mac://auth/callback as a redirect URI with your provider.")
-						.font(.caption)
-						.foregroundColor(.secondary)
-				}
-			case .serverToken:
-				VStack(alignment: .leading, spacing: 6) {
-					SecureField("Server token", text: $model.serverToken)
-						.textFieldStyle(.roundedBorder)
-					Text("A token your self-hosted server accepts. It is kept in the Keychain.")
-						.font(.caption)
-						.foregroundColor(.secondary)
-				}
+		HStack {
+			Spacer()
+			if model.isWorking {
+				ProgressView().controlSize(.small)
 			}
-
-			HStack {
-				Button {
-					Task { await model.signInTapped() }
-				} label: {
-					Label(
-						model.provider == .serverToken ? LocalizedStringKey("Use Server Token") : LocalizedStringKey("Sign In"),
-						systemImage: "person.crop.circle")
-				}
-				.buttonStyle(.borderedProminent)
-				.disabled(!model.canSignIn)
-				if model.isWorking {
-					ProgressView().controlSize(.small)
-				}
+			Button {
+				Task { await model.signInTapped() }
+			} label: {
+				Label(
+					model.provider == .serverToken ? LocalizedStringKey("Use Server Token") : LocalizedStringKey("Sign In"),
+					systemImage: "person.crop.circle")
 			}
+			.buttonStyle(.borderedProminent)
+			.disabled(!model.canSignIn)
 		}
 	}
 
@@ -185,15 +178,10 @@ struct AccountSettingsView: View {
 				.font(.caption)
 				.foregroundColor(.secondary)
 		} else {
-			VStack(spacing: 0) {
-				ForEach(model.devices) { row in
-					AccountDeviceRowView(
-						row: row, revoke: { Task { await model.revoke(row) } }, disabled: model.isWorking)
-					if row.id != model.devices.last?.id { Divider() }
-				}
+			ForEach(model.devices) { row in
+				AccountDeviceRowView(
+					row: row, revoke: { Task { await model.revoke(row) } }, disabled: model.isWorking)
 			}
-			.background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
-			.overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
 		}
 	}
 }
@@ -255,8 +243,7 @@ struct AccountDeviceRowView: View {
 					.disabled(disabled)
 			}
 		}
-		.padding(.horizontal, 12)
-		.padding(.vertical, 8)
+		.padding(.vertical, 2)
 	}
 }
 
@@ -320,13 +307,19 @@ struct ApproveConfirmCard: View {
 			}
 			HStack {
 				Spacer()
-				Button("Not Now", action: notNow)
-					.disabled(isConfirming)
-				Button(action: confirm) {
-					Label("Numbers Match — Confirm with Touch ID", systemImage: "touchid")
+				if item.keyChanged {
+					Button("Not Now", action: notNow)
+						.buttonStyle(.borderedProminent)
+						.keyboardShortcut(.cancelAction)
+						.disabled(isConfirming)
+					confirmButton
+						.buttonStyle(.bordered)
+				} else {
+					Button("Not Now", action: notNow)
+						.disabled(isConfirming)
+					confirmButton
+						.buttonStyle(.borderedProminent)
 				}
-				.buttonStyle(.borderedProminent)
-				.disabled(isConfirming || item.safetyNumber == nil)
 			}
 		}
 		.padding(14)
@@ -335,6 +328,13 @@ struct ApproveConfirmCard: View {
 		)
 		.overlay(
 			RoundedRectangle(cornerRadius: 10).stroke((item.keyChanged ? Color.red : Color.orange).opacity(0.35)))
+	}
+
+	private var confirmButton: some View {
+		Button(action: confirm) {
+			Label("Numbers Match — Confirm with Touch ID", systemImage: "touchid")
+		}
+		.disabled(isConfirming || item.safetyNumber == nil)
 	}
 }
 

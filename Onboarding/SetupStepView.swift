@@ -123,7 +123,7 @@ struct SetupStepView: View {
 			}
 
 			Text(
-				"Base is fast and accurate for most use cases, small provides better accuracy for complex speech."
+				"Larger models are more accurate but slower and use more memory. You can change this later in Settings."
 			)
 			.font(.caption)
 			.foregroundColor(.secondary)
@@ -141,8 +141,7 @@ struct SetupStepView: View {
 				shortcutRow(
 					label: "Recording",
 					shortcut: $customShortcut,
-					showingCapture: $showingShortcutCapture,
-					tint: .purple
+					showingCapture: $showingShortcutCapture
 				)
 
 				if showingShortcutCapture {
@@ -159,8 +158,7 @@ struct SetupStepView: View {
 				shortcutRow(
 					label: "File transcription",
 					shortcut: $fileSelectionShortcut,
-					showingCapture: $showingFileShortcutCapture,
-					tint: .blue
+					showingCapture: $showingFileShortcutCapture
 				)
 
 				if showingFileShortcutCapture {
@@ -197,6 +195,7 @@ struct SetupStepView: View {
 			Image(systemName: icon)
 				.font(.system(size: 12, weight: .semibold))
 				.foregroundColor(.blue)
+				.accessibilityHidden(true)
 			Text(LocalizedStringKey(title))
 				.font(.system(.subheadline, design: .rounded, weight: .semibold))
 		}
@@ -205,8 +204,7 @@ struct SetupStepView: View {
 	private func shortcutRow(
 		label: String,
 		shortcut: Binding<String>,
-		showingCapture: Binding<Bool>,
-		tint: Color
+		showingCapture: Binding<Bool>
 	) -> some View {
 		HStack {
 			Text(LocalizedStringKey(label))
@@ -216,15 +214,15 @@ struct SetupStepView: View {
 			Spacer()
 
 			Text(ShortcutDisplay.text(for: shortcut.wrappedValue))
-				.font(.system(.body, design: .monospaced, weight: .semibold))
-				.padding(.horizontal, 12)
-				.padding(.vertical, 6)
-				.background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+				.font(.system(.body, design: .monospaced, weight: .medium))
+				.padding(.horizontal, 8)
+				.padding(.vertical, 4)
+				.background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
 
 			Button("Change") {
 				showingCapture.wrappedValue.toggle()
 			}
-			.buttonStyle(SecondaryButtonStyle())
+			.buttonStyle(.bordered)
 			.controlSize(.small)
 		}
 	}

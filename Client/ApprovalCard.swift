@@ -340,9 +340,16 @@ struct ApprovalCardView: View {
 				}
 				Spacer()
 				if !state.isFinished {
-					Text(String(format: String(localized: "%@ left"), clock))
-						.font(.caption.monospacedDigit())
-						.foregroundColor(state.secondsLeft(now: session.now) <= 30 ? .orange : .secondary)
+					HStack(spacing: 4) {
+						if state.secondsLeft(now: session.now) <= 30 {
+							Image(systemName: "exclamationmark.triangle.fill")
+								.foregroundStyle(.orange)
+								.accessibilityHidden(true)
+						}
+						Text(String(format: String(localized: "%@ left"), clock))
+							.foregroundStyle(.secondary)
+					}
+					.font(.caption.monospacedDigit())
 				}
 			}
 			// What the broker will do, and with which token: a read that asks for the write token
@@ -362,10 +369,13 @@ struct ApprovalCardView: View {
 				row("Secret", request.secret)
 				if request.summary != request.secret { row("Request", request.summary) }
 				if !request.project.isEmpty { row("Project", request.project) }
-				row("Agent (claimed by requester)", request.caller)
-				row("Mac (claimed by requester)", request.host)
+				row("Agent", request.caller)
+				row("Mac", request.host)
 			}
 			.font(.callout)
+			Text("Agent and Mac are what the requester claims.")
+				.font(.caption)
+				.foregroundStyle(.secondary)
 			footer
 		}
 		.padding(16)
@@ -394,13 +404,14 @@ struct ApprovalCardView: View {
 			text
 		} icon: {
 			Image(systemName: systemImage)
+				.foregroundStyle(emphasised ? Color.orange : Color.primary)
 		}
 		.labelStyle(.titleAndIcon)
 		.font(.callout.weight(emphasised ? .bold : .medium))
-		.foregroundStyle(emphasised ? Color.white : Color.primary)
+		.foregroundStyle(Color.primary)
 		.padding(.horizontal, 8)
 		.padding(.vertical, 3)
-		.background(Capsule().fill(emphasised ? Color.orange : Color.primary.opacity(0.08)))
+		.background(Capsule().fill(emphasised ? Color.orange.opacity(0.16) : Color.primary.opacity(0.08)))
 	}
 
 	private func row(_ label: LocalizedStringKey, _ value: String) -> some View {
@@ -408,7 +419,7 @@ struct ApprovalCardView: View {
 		return GridRow(alignment: .firstTextBaseline) {
 			Text(label)
 				.foregroundColor(.secondary)
-				.frame(width: 118, alignment: .leading)
+				.frame(width: 72, alignment: .leading)
 				.fixedSize(horizontal: false, vertical: true)
 			Text(verbatim: shown.isEmpty ? "—" : shown)
 				.fixedSize(horizontal: false, vertical: true)
@@ -420,9 +431,16 @@ struct ApprovalCardView: View {
 	@ViewBuilder private var footer: some View {
 		switch state.phase {
 		case .finished(let outcome):
-			Text(outcomeText(outcome))
-				.font(.callout.weight(.medium))
-				.foregroundColor(outcomeIsApproval(outcome) ? .green : .secondary)
+			HStack(spacing: 6) {
+				if outcomeIsApproval(outcome) {
+					Image(systemName: "checkmark.circle.fill")
+						.foregroundStyle(.green)
+						.accessibilityHidden(true)
+				}
+				Text(outcomeText(outcome))
+					.foregroundStyle(.primary)
+			}
+			.font(.callout.weight(.medium))
 		default:
 			VStack(alignment: .leading, spacing: 6) {
 				HStack {
@@ -530,9 +548,9 @@ struct ApprovalCardButtonStyle: ButtonStyle {
 		}
 
 		private var fill: Color {
-			// The owner's system accent colour, whatever the window's state.
+			// The app's fixed primary blue: a Graphite accent would read as disabled.
 			if prominent {
-				return Color(nsColor: .controlAccentColor).opacity(configuration.isPressed ? 0.75 : 1)
+				return Color.primaryAction.opacity(configuration.isPressed ? 0.75 : 1)
 			}
 			return Color.primary.opacity(configuration.isPressed ? 0.16 : 0.08)
 		}

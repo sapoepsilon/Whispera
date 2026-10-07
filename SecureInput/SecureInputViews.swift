@@ -78,7 +78,8 @@ struct SecureInputSettingsRows: View {
 			description:
 				"Password fields and Terminal's Secure Keyboard Entry hide keystrokes from Whispera. This registers the dictation shortcut as a system hotkey while that lasts. Dictations made during Secure Input are pasted as spoken: they skip post-processing and are not saved to history."
 		) {
-			Toggle("", isOn: $fallbackEnabled)
+			Toggle("Secure Input Fallback", isOn: $fallbackEnabled)
+				.labelsHidden()
 				.onChange(of: fallbackEnabled) {
 					monitor.reconcileFallback()
 				}

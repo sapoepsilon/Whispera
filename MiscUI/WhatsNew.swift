@@ -213,7 +213,8 @@ struct WhatsNewSettingRow: View {
 				}
 				.buttonStyle(.bordered)
 				.controlSize(.small)
-				Toggle("", isOn: $showOnUpdate)
+				Toggle("What's New After Updates", isOn: $showOnUpdate)
+					.labelsHidden()
 			}
 		}
 	}

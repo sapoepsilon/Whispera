@@ -140,7 +140,7 @@ enum InsertionProblem: Equatable, Sendable {
 		case .notPasted(true):
 			return String(
 				localized:
-					"No app took the paste, so the transcript was left on the clipboard. Click where the text should go and press Cmd-V."
+					"No app took the paste, so the transcript was left on the clipboard. Click where the text should go and press ⌘V."
 			)
 		case .notPasted(false):
 			return String(

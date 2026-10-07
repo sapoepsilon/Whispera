@@ -104,8 +104,8 @@ struct ServersSettingsView: View {
 				} footer: {
 					Text(
 						enableStreaming
-							? "Live transcription is on, so words appear while you speak. Turning it off under General → Live Transcription Mode makes Whispera record first and transcribe at the end."
-							: "Live Transcription Mode is off, so nothing appears until you stop speaking and the whole recording is transcribed. Turn it on under General to see words as you say them."
+							? "Live transcription is on, so words appear while you speak."
+							: "Live transcription is off, so the recording is transcribed after you stop speaking."
 					)
 					.font(.caption)
 					.foregroundStyle(.secondary)

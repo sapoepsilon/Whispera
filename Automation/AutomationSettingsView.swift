@@ -39,8 +39,7 @@ struct AutomationSettingsView: View {
 				description:
 					"Lets Stream Deck, launchers and scripts control dictation. Links that start dictation, switch the model or language, open or copy from history, or add words must carry this Mac's private token, so web pages cannot open the mic or read your transcripts. Stop and cancel links need no token and work even while this is off, since they only end a dictation you started: stop pastes what was heard so far, cancel discards it."
 			) {
-				Toggle("", isOn: $urlSchemeEnabled)
-					.toggleStyle(.switch)
+				Toggle("Allow whispera:// links", isOn: $urlSchemeEnabled)
 					.labelsHidden()
 			}
 

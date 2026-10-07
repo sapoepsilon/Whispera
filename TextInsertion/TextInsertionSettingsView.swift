@@ -31,13 +31,13 @@ struct TextInsertionSettingsView: View {
 			VStack(spacing: 24) {
 				SettingsSection("Insertion") {
 					SettingRow("Insert Text By", description: pasteMethod.summary) {
-						Picker("", selection: $pasteMethod) {
+						Picker("Insert Text By", selection: $pasteMethod) {
 							ForEach(PasteMethod.allCases) { method in
 								Text(method.displayName).tag(method)
 							}
 						}
 						.labelsHidden()
-						.frame(width: 240)
+						.frame(width: 240, alignment: .trailing)
 					}
 
 					if pasteMethod == .externalScript {
@@ -64,7 +64,8 @@ struct TextInsertionSettingsView: View {
 						description:
 							"Add a space after each transcript so the next one does not run into it"
 					) {
-						Toggle("", isOn: $appendTrailingSpace)
+						Toggle("Append Trailing Space", isOn: $appendTrailingSpace)
+							.labelsHidden()
 					}
 
 					SettingRow(
@@ -72,18 +73,19 @@ struct TextInsertionSettingsView: View {
 						description:
 							"Press a key after inserting so chat boxes send the message."
 					) {
-						Toggle("", isOn: $autoSubmit)
+						Toggle("Auto-Submit", isOn: $autoSubmit)
+							.labelsHidden()
 					}
 
 					if autoSubmit {
 						SettingRow("Submit With") {
-							Picker("", selection: $autoSubmitKey) {
+							Picker("Submit With", selection: $autoSubmitKey) {
 								ForEach(AutoSubmitKey.allCases) { key in
 									Text(key.displayName).tag(key)
 								}
 							}
 							.labelsHidden()
-							.frame(width: 240)
+							.frame(width: 240, alignment: .trailing)
 						}
 					}
 				}
@@ -96,13 +98,13 @@ struct TextInsertionSettingsView: View {
 						description:
 							"Restore puts back what you had copied once the transcript is pasted. Exceptions: passwords and other concealed items are cleared rather than restored, anything larger than 16 MB per item or 32 MB in total is lost and the transcript stays, and files or images another app only promised to provide may come back incomplete."
 					) {
-						Picker("", selection: $clipboardHandling) {
+						Picker("After Inserting", selection: $clipboardHandling) {
 							ForEach(ClipboardHandling.allCases) { handling in
 								Text(handling.displayName).tag(handling)
 							}
 						}
 						.labelsHidden()
-						.frame(width: 240)
+						.frame(width: 240, alignment: .trailing)
 					}
 				}
 
@@ -111,7 +113,7 @@ struct TextInsertionSettingsView: View {
 				SettingsSection("Advanced") {
 					SettingRow(
 						"Delay Before Paste",
-						description: "Wait after writing the clipboard before sending Cmd-V"
+						description: "Wait after writing the clipboard before sending ⌘V"
 					) {
 						delayStepper(value: $pasteDelayBeforeMs)
 					}
@@ -127,7 +129,7 @@ struct TextInsertionSettingsView: View {
 					SettingRow(
 						"Minimum Hold After Paste",
 						description:
-							"The transcript stays on the clipboard at least this long after Cmd-V before the previous clipboard returns"
+							"The transcript stays on the clipboard at least this long after ⌘V before the previous clipboard returns"
 					) {
 						Stepper(
 							value: Binding(

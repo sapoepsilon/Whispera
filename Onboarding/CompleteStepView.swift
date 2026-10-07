@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CompleteStepView: View {
 	@AppStorage(ShortcutDefaults.dictationKey) private var globalShortcut = ShortcutDefaults.dictation
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var floatStart = Date()
 
 	private static let floatDistance: CGFloat = -6
@@ -18,14 +19,19 @@ struct CompleteStepView: View {
 				"menubar.arrow.up.rectangle", String(localized: "Menu bar access"),
 				String(localized: "Find Whispera in your menu bar")
 			),
-			("lock.shield", String(localized: "Private by design"), String(localized: "All processing stays on your Mac")),
+			(
+				"lock.shield", String(localized: "Private by default"),
+				String(localized: "Speech stays on your Mac unless you add a server")
+			),
 		]
 	}
 
 	var body: some View {
 		ZStack {
-			ConfettiView()
-				.frame(maxWidth: .infinity, maxHeight: .infinity)
+			if !reduceMotion {
+				ConfettiView()
+					.frame(maxWidth: .infinity, maxHeight: .infinity)
+			}
 
 			VStack(spacing: 24) {
 				Spacer()
@@ -34,20 +40,21 @@ struct CompleteStepView: View {
 				// refresh for as long as this step is open; the 12pt round trip
 				// over 4s moves under a third of a pixel per 30Hz tick, so a
 				// capped schedule is the same motion at a quarter of the ticks
-				TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+				TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
 					Image(nsImage: NSApp.applicationIconImage)
 						.resizable()
 						.frame(width: 80, height: 80)
 						.clipShape(RoundedRectangle(cornerRadius: 18))
 						.offset(
-							y: Self.floatOffset(
-								at: timeline.date.timeIntervalSince(floatStart)))
+							y: reduceMotion
+								? 0 : Self.floatOffset(at: timeline.date.timeIntervalSince(floatStart)))
 				}
 				.frame(width: 80, height: 80)
+				.accessibilityHidden(true)
 
 				VStack(spacing: 8) {
 					Text("You're Ready")
-						.font(.system(.largeTitle, design: .rounded, weight: .bold))
+						.font(.system(.title2, design: .rounded, weight: .bold))
 
 					Text("Whispera is configured and ready to use.")
 						.font(.body)
@@ -85,6 +92,7 @@ struct CompleteStepView: View {
 					.font(.system(size: 14, weight: .semibold))
 					.foregroundColor(.blue)
 			}
+			.accessibilityHidden(true)
 
 			VStack(alignment: .leading, spacing: 2) {
 				Text(title)
