@@ -67,79 +67,88 @@ struct ServersSettingsView: View {
 	}
 
 	var body: some View {
-		ScrollView {
-			VStack(spacing: 24) {
-				SettingsSection("Speech Servers") {
-					enginePicker
+		Form {
+			Section {
+				enginePicker
+				engineDescription
+				if selectedEngine == .auto { autoCaption }
+			} header: {
+				Text("Speech")
+			}
 
-					switch selectedEngine {
-					case .auto:
-						autoCaption
-						backendServerConfig
-					case .whisperaStreaming:
-						Text(
-							"Streams audio to a Whispera transcription server over a WebSocket. Leave the server blank to use the backend's own default."
-						)
-						.font(.caption)
-						.foregroundColor(.secondary)
-						backendServerConfig
-					case .realtimeDirect:
-						Text(
-							"Streams audio straight to an OpenAI-Realtime engine, with no Whispera backend in between. The engine holds its own credentials, so use this only on a network you trust."
-						)
-						.font(.caption)
-						.foregroundColor(.secondary)
-						speechServerConfig
-					case .whisperKit:
-						Text(
-							"Runs entirely on this Mac with the model chosen under General → Whisper Model. No server and no network involved."
-						)
-						.font(.caption)
-						.foregroundColor(.secondary)
-					case .whisperViaBYOK:
-						Text(
-							"Uploads each finished recording to the speech server below and pastes what comes back. Any OpenAI-compatible transcription endpoint works — a cloud with your own key, or a server on your own network."
-						)
-						.font(.caption)
-						.foregroundColor(.secondary)
-						speechServerConfig
-					}
-
-					// `auto` is included alongside the server engines: it may resolve to
-					// one, and the wording below is already engine-agnostic — the
-					// caveat is exactly as true when `auto` lands on WhisperKit.
-					if selectedEngine.streamsFromAServer || selectedEngine == .auto {
-						finalPassRow
-						InfoBox(style: .info) {
-							Text(
-								enableStreaming
-									? "Live transcription is on, so words appear while you speak. Turning it off under General → Live Transcription Mode makes Whispera record first and transcribe at the end."
-									: "Live Transcription Mode is off, so nothing appears until you stop speaking and the whole recording is transcribed. Turn it on under General to see words as you say them."
-							)
-							.font(.caption)
-							.foregroundColor(.secondary)
-						}
-					}
-				}
-
-				Divider()
-
-				SettingsSection("LLM Servers") {
-					Text(
-						"Where recipe steps run when a dictation matches a recipe or a default command post-processes it. Any OpenAI-compatible server: a local runtime (ollama, llama-server, vLLM, LM Studio) or a cloud with your own key."
-					)
-					.font(.caption)
-					.foregroundColor(.secondary)
-					ServerEntrySettingsView(capability: .llm)
-				}
-
-				Divider()
-
-				SettingsSection("Mac Link") {
-					MacLinkSettingsSection()
+			if usesBackendServers {
+				Section {
+					backendServerConfig
+				} header: {
+					Text("Whispera server")
 				}
 			}
-			.padding(20)
+
+			if selectedEngine == .realtimeDirect || selectedEngine == .whisperViaBYOK {
+				Section {
+					ServerEntrySettingsView(capability: .speech)
+				} header: {
+					Text("Speech server")
+				} footer: {
+					Text("Any OpenAI-compatible speech-to-text server, such as speaches or whisper.cpp. The base URL ends in /v1.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
+			}
+
+			// `auto` is included alongside the server engines: it may resolve to
+			// one, and the wording below is already engine-agnostic.
+			if selectedEngine.streamsFromAServer || selectedEngine == .auto {
+				Section {
+					finalPassRow
+				} footer: {
+					Text(
+						enableStreaming
+							? "Live transcription is on, so words appear while you speak. Turning it off under General → Live Transcription Mode makes Whispera record first and transcribe at the end."
+							: "Live Transcription Mode is off, so nothing appears until you stop speaking and the whole recording is transcribed. Turn it on under General to see words as you say them."
+					)
+					.font(.caption)
+					.foregroundStyle(.secondary)
+				}
+			}
+
+			Section {
+				ServerEntrySettingsView(capability: .llm)
+			} header: {
+				Text("LLM server")
+			} footer: {
+				Text("Where recipes run, Clean up included. Any OpenAI-compatible server: a local runtime (ollama, llama-server, LM Studio) or a cloud with your own key.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
+
+			Section {
+				MacLinkSettingsSection()
+			} header: {
+				Text("Mac Link")
+			}
+		}
+		.formStyle(.grouped)
+	}
+
+	@ViewBuilder
+	private var engineDescription: some View {
+		let text: String? =
+			switch selectedEngine {
+			case .auto: nil
+			case .whisperaStreaming:
+				"Streams audio to a Whispera transcription server over a WebSocket. Leave the server blank to use the backend's own default."
+			case .realtimeDirect:
+				"Streams audio straight to an OpenAI-Realtime engine, with no Whispera backend in between. The engine holds its own credentials, so use this only on a network you trust."
+			case .whisperKit:
+				"Runs entirely on this Mac with the model chosen under General → Whisper Model. No server and no network involved."
+			case .whisperViaBYOK:
+				"Uploads each finished recording to the speech server below and pastes what comes back. Any OpenAI-compatible transcription endpoint works — a cloud with your own key, or a server on your own network."
+			}
+		if let text {
+			Text(LocalizedStringKey(text))
+				.font(.caption)
+				.foregroundStyle(.secondary)
 		}
 	}
 
@@ -149,38 +158,37 @@ struct ServersSettingsView: View {
 	/// streaming engine's low-latency draft, while the on-device engine already
 	/// re-reads its whole buffer as it goes and has nothing to gain from one.
 	private var finalPassRow: some View {
-		SettingRow(
-			"Final pass",
-			description: "More accurate paste, adds a short wait after you stop."
-		) {
-			Picker("Final pass", selection: $twoPassFinalizerRaw) {
-				ForEach(TwoPassFinalizerMode.allCases, id: \.rawValue) { mode in
-					Text(mode.displayName).tag(mode.rawValue)
-				}
+		Picker(selection: $twoPassFinalizerRaw) {
+			ForEach(TwoPassFinalizerMode.allCases, id: \.rawValue) { mode in
+				Text(mode.displayName).tag(mode.rawValue)
 			}
-			.labelsHidden()
-			.frame(width: 240)
-			.accessibilityIdentifier("twoPassFinalizerPicker")
+		} label: {
+			VStack(alignment: .leading, spacing: 2) {
+				Text("Final pass")
+				Text("More accurate paste, adds a short wait after you stop.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
 		}
-		.animation(.easeInOut(duration: 0.2), value: twoPassFinalizerRaw)
+		.accessibilityIdentifier("twoPassFinalizerPicker")
 	}
 
 	// MARK: - Engine picker
 
 	private var enginePicker: some View {
-		SettingRow(
-			"Engine",
-			description: "Where speech-to-text runs. On-device needs no network."
-		) {
-			Picker("Transcription engine", selection: engineSelection) {
-				ForEach(TranscriptionEngine.allCases, id: \.rawValue) { engine in
-					Text(engine.displayName).tag(engine.rawValue)
-				}
+		Picker(selection: engineSelection) {
+			ForEach(TranscriptionEngine.allCases, id: \.rawValue) { engine in
+				Text(engine.displayName).tag(engine.rawValue)
 			}
-			.labelsHidden()
-			.frame(width: 240)
-			.accessibilityIdentifier("transcriptionEnginePicker")
+		} label: {
+			VStack(alignment: .leading, spacing: 2) {
+				Text("Engine")
+				Text("Where speech-to-text runs. On-device needs no network.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
 		}
+		.accessibilityIdentifier("transcriptionEnginePicker")
 	}
 
 	/// Writes the engine and nothing else.
@@ -224,33 +232,16 @@ struct ServersSettingsView: View {
 		}
 	}
 
-	// MARK: - Speech server (realtimeDirect + whisperViaBYOK)
-
-	/// One entry for both, because they are one address. Batch upload used to
-	/// carry its own `https://api.openai.com/v1/audio/transcriptions`, pinned as
-	/// an initialiser default with no settings key and no UI behind it, so it
-	/// could never point at speaches, whisper.cpp or LM Studio (WHI-92).
-	private var speechServerConfig: some View {
-		VStack(alignment: .leading, spacing: 8) {
-			ServerEntrySettingsView(capability: .speech)
-			Text(
-				"The URL is the server's OpenAI-compatible base, ending in /v1. Refresh lists the speech-to-text models it has installed; type one directly if it cannot be reached right now."
-			)
-			.font(.caption)
-			.foregroundColor(.secondary)
-		}
-	}
-
 	// MARK: - Backend engines (auto + whisperaStreaming)
 
 	private var backendServerConfig: some View {
 		VStack(alignment: .leading, spacing: 8) {
 			HStack(spacing: 8) {
 				TextField(
-					WhisperaSettings.serverURLString + " (leave blank to reuse the account server)",
-					text: $backendURL
+					"Server",
+					text: $backendURL,
+					prompt: Text(verbatim: WhisperaSettings.serverURLString)
 				)
-				.textFieldStyle(.roundedBorder)
 				.autocorrectionDisabled()
 				.onSubmit { refreshDiscoveredServers() }
 				.accessibilityIdentifier("transcriptionServerURLField")

@@ -3,6 +3,21 @@ import Darwin
 import Foundation
 import Security
 
+enum KeychainError: LocalizedError, Equatable {
+	case unexpectedStatus(OSStatus)
+	case invalidData
+
+	var errorDescription: String? {
+		switch self {
+		case .unexpectedStatus(let status):
+			let message = SecCopyErrorMessageString(status, nil) as String? ?? "unknown"
+			return "Keychain error \(status): \(message)"
+		case .invalidData:
+			return "Keychain item could not be decoded"
+		}
+	}
+}
+
 /// Holds the secret that signs script approvals. It lives in the Keychain so a process that can
 /// only write Whispera's preferences (`defaults write`) cannot mint a valid approval.
 protocol ScriptApprovalKeyStore: Sendable {

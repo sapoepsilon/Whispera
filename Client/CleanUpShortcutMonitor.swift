@@ -1,10 +1,10 @@
 import AppKit
 import Foundation
 
-/// Second global hotkey: dictate and run the result through the post-processing provider.
-/// Installed only while post-processing is enabled so the default binding never steals a key
+/// Second global hotkey: dictate and run the Clean up recipe on that dictation.
+/// Installed only while the Clean up shortcut is on so the default binding never steals a key
 /// from users who have not opted in.
-final class PostProcessShortcutMonitor {
+final class CleanUpShortcutMonitor {
 	private var globalMonitor: Any?
 	private var localMonitor: Any?
 	private weak var audioManager: AudioManager?
@@ -13,14 +13,14 @@ final class PostProcessShortcutMonitor {
 	private let carbonHotKey = CarbonHotKey()
 	@MainActor private var activation = ActivationStateMachine(
 		mode: .toggle, holdThreshold: TimeInterval(RecordingControlSettings.defaultHoldThresholdMs) / 1000)
-	private let settings: PostProcessingSettings
+	private let settings: CleanUpSettings
 	private let logger = AppLogger.shared.general
 
-	init(settings: PostProcessingSettings = PostProcessingSettings()) {
+	init(settings: CleanUpSettings = CleanUpSettings()) {
 		self.settings = settings
 		defaultsObserver = DefaultsKeyObserver(
 			defaults: settings.defaults,
-			keys: [PostProcessingSettings.Key.enabled, PostProcessingSettings.Key.shortcut]
+			keys: [CleanUpSettings.Key.onRequestEnabled, CleanUpSettings.Key.shortcut]
 		) { [weak self] in
 			self?.reinstallIfChanged()
 		}
@@ -46,7 +46,7 @@ final class PostProcessShortcutMonitor {
 		ShortcutCombo(shortcut) != nil
 	}
 
-	/// The other Whispera shortcut that is the same key combination, if any. The post-processing
+	/// The other Whispera shortcut that is the same key combination, if any. The Clean up
 	/// hotkey swallows its keystroke, so a clash would take over the dictation or file shortcut.
 	static func conflictingShortcut(for shortcut: String, defaults: UserDefaults = .standard) -> String? {
 		guard let combo = ShortcutCombo(shortcut) else { return nil }
@@ -66,20 +66,20 @@ final class PostProcessShortcutMonitor {
 		let needsKeyRelease = RecordingControlSettings().activationMode.needsKeyRelease
 		let conflict = Self.conflictingShortcut(for: shortcut, defaults: settings.defaults)
 		let signature =
-			"\(settings.isEnabled)|\(shortcut)|\(AXIsProcessTrusted())|\(needsKeyRelease)|\(conflict ?? "")"
+			"\(settings.isOnRequestEnabled)|\(shortcut)|\(AXIsProcessTrusted())|\(needsKeyRelease)|\(conflict ?? "")"
 		guard signature != installedSignature, audioManager != nil else { return }
 		installedSignature = signature
 		removeMonitors()
 		// A release in flight is lost when the monitors are replaced
 		Task { @MainActor [weak self] in self?.activation.reset() }
 
-		guard settings.isEnabled else { return }
+		guard settings.isOnRequestEnabled else { return }
 		guard let combo = ShortcutCombo(shortcut) else {
-			logger.error("Post-processing shortcut '\(shortcut)' names an unknown key; not installed")
+			logger.error("Clean up shortcut '\(shortcut)' names an unknown key; not installed")
 			return
 		}
 		if let conflict {
-			logger.error("Post-processing shortcut \(shortcut) is the same as \(conflict); not installed")
+			logger.error("Clean up shortcut \(shortcut) is the same as \(conflict); not installed")
 			return
 		}
 		let (modifiers, keyCode) = (combo.modifiers, combo.keyCode)
@@ -90,10 +90,10 @@ final class PostProcessShortcutMonitor {
 			carbonHotKey.action = { [weak self] in self?.handlePress(isRepeat: false) }
 			carbonHotKey.releaseAction = { [weak self] in self?.handleRelease() }
 			if carbonHotKey.register(spec) {
-				logger.info("Post-processing shortcut registered as a system hotkey for \(shortcut)")
+				logger.info("Clean up shortcut registered as a system hotkey for \(shortcut)")
 				return
 			}
-			logger.error("Post-processing system hotkey unavailable, using event monitors")
+			logger.error("Clean up system hotkey unavailable, using event monitors")
 		}
 
 		let matches: (NSEvent) -> Bool = { event in
@@ -121,7 +121,7 @@ final class PostProcessShortcutMonitor {
 			self?.handlePress(isRepeat: event.isARepeat)
 			return nil
 		}
-		logger.info("Post-processing shortcut installed for \(shortcut)")
+		logger.info("Clean up shortcut installed for \(shortcut)")
 	}
 
 	/// Follows the same activation mode as the dictation shortcut, so push-to-talk and
@@ -129,7 +129,7 @@ final class PostProcessShortcutMonitor {
 	private func handlePress(isRepeat: Bool) {
 		let pressedAt = Date()
 		if !isRepeat {
-			logger.info("Post-processing shortcut detected")
+			logger.info("Clean up shortcut detected")
 		}
 		Task { @MainActor [weak self] in
 			guard let self, let audioManager = self.audioManager, !ShortcutRecorderGate.shared.isRecording else {
@@ -175,5 +175,25 @@ final class PostProcessShortcutMonitor {
 		globalMonitor = nil
 		localMonitor = nil
 		carbonHotKey.unregister()
+	}
+}
+
+enum ShortcutDisplayFormatter {
+	/// Produces the symbol string `ShortcutCombo` reads back to the same key code. The key is
+	/// named from its key code, so Shift never turns "1" into "!" and F-keys keep their names.
+	/// Nil when there are no modifiers or the key has no name.
+	static func format(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> String? {
+		let flags = modifiers.intersection(ShortcutCombo.relevantModifiers)
+		guard !flags.isEmpty, let key = ShortcutKeyCodes.keyName(forKeyCode: keyCode) else { return nil }
+		return format(modifiers: flags, key: key)
+	}
+
+	static func format(modifiers: NSEvent.ModifierFlags, key: String) -> String {
+		var parts = ""
+		if modifiers.contains(.command) { parts += "⌘" }
+		if modifiers.contains(.option) { parts += "⌥" }
+		if modifiers.contains(.control) { parts += "⌃" }
+		if modifiers.contains(.shift) { parts += "⇧" }
+		return parts + key
 	}
 }

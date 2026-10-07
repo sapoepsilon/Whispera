@@ -89,14 +89,14 @@ enum SettingsRouting {
 	}
 
 	static func destination(in userInfo: [AnyHashable: Any]?) -> SettingsDestination? {
-		(userInfo?[destinationKey] as? String).flatMap(SettingsDestination.init(rawValue:))
+		(userInfo?[destinationKey] as? String).flatMap(SettingsDestination.named)
 	}
 
 	/// The pane requested before Settings was on screen, consumed once by the sidebar.
 	static func takeRequestedDestination(defaults: UserDefaults = .standard) -> SettingsDestination? {
 		guard let raw = defaults.string(forKey: selectedTabDefaultsKey) else { return nil }
 		defaults.removeObject(forKey: selectedTabDefaultsKey)
-		return SettingsDestination(rawValue: raw)
+		return SettingsDestination.named(raw)
 	}
 }
 
@@ -188,9 +188,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			// Before the first dictation can run a recipe: installs from before the
 			// recipes switch decide it once, off unless the user set one up.
 			RecipeEnablementMigration.migrateIfNeeded(in: .standard, recipes: RecipeStore.shared.recipes)
+			// After it: Post-Processing turns into the Clean up recipe, and a user
+			// who post-processed every dictation turns recipes on with it.
+			await PostProcessingMigration.migrateIfNeeded(in: .standard, store: RecipeStore.shared)
 			audioManager = AudioManager()
 			let coordinator = DictationCoordinator.shared
-			audioManager.dictationProcessor = { text in await coordinator.process(text) }
+			audioManager.dictationProcessor = { text, cleanUp in
+				await coordinator.processDictation(text, cleanUp: cleanUp)
+			}
 			shortcutManager = GlobalShortcutManager()
 			fileTranscriptionManager = FileTranscriptionManager()
 			networkDownloader = NetworkFileDownloader()

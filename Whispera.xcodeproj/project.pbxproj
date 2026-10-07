@@ -243,7 +243,6 @@
 		D6RCTL012F30000000000001 /* RecordingControl */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = RecordingControl; sourceTree = "<group>"; };
 		D6A5E71000000000000000A1 /* TextInsertion */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = TextInsertion; sourceTree = "<group>"; };
 		D6A5E71000000000000000A2 /* SecureInput */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SecureInput; sourceTree = "<group>"; };
-		D6POSTPROC2F0000000000001 /* PostProcessing */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = PostProcessing; sourceTree = "<group>"; };
 		D6MISCUI12F0000000000001 /* MiscUI */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = MiscUI; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
@@ -303,7 +302,6 @@
 				D6MDLENG2F30000000000000 /* ModelEngines */,
 				D6BENCH032F0000000000000 /* Benchmark */,
 				D6A15700000000000000A001 /* History */,
-				D6POSTPROC2F0000000000001 /* PostProcessing */,
 				D6MISCUI12F0000000000001 /* MiscUI */,
 				D6F9D7872ED6C4B500959822 /* AudioManager */,
 				D6RCTL012F30000000000001 /* RecordingControl */,
@@ -536,7 +534,6 @@
 				D6A5E71000000000000000A1 /* TextInsertion */,
 				D6A5E71000000000000000A2 /* SecureInput */,
 				D6TXTPROC2F00000000000001 /* TextProcessing */,
-				D6POSTPROC2F0000000000001 /* PostProcessing */,
 				D6AUTO0012F0000000000001 /* Automation */,
 				D6MISCUI12F0000000000001 /* MiscUI */,
 				D6CLIENTSYNCGRP000000001 /* Client */,

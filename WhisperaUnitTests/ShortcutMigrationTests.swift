@@ -77,6 +77,6 @@ struct LegacyShortcutTests {
 		#expect(ShortcutDefaults.fileSelection(in: defaults) == "⌃F")
 		AppDelegate.registerInitialDefaults(in: defaults)
 		#expect(defaults.string(forKey: ShortcutDefaults.dictationKey) == ShortcutDefaults.dictation)
-		#expect(PostProcessShortcutMonitor.conflictingShortcut(for: "⌥⌘R", defaults: defaults) == "⌥⌘R")
+		#expect(CleanUpShortcutMonitor.conflictingShortcut(for: "⌥⌘R", defaults: defaults) == "⌥⌘R")
 	}
 }

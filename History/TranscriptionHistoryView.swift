@@ -76,7 +76,7 @@ struct TranscriptionHistoryView: View {
 	@AppStorage(HistorySettings.retentionKey) private var retentionRaw = HistorySettings.defaultRetention
 		.rawValue
 	@AppStorage(HistorySettings.limitKey) private var historyLimit = HistorySettings.defaultLimit
-	@AppStorage(PostProcessingSettings.Key.enabled) private var postProcessingEnabled = false
+	@AppStorage(ServerEntry.Capability.llm.urlKey) private var llmServerURL = ""
 
 	private var filteredEntries: [TranscriptionHistoryEntry] {
 		TranscriptionHistoryStore.filter(store.entries, query: searchText, starredOnly: starredOnly)
@@ -293,7 +293,7 @@ struct TranscriptionHistoryView: View {
 					isPlaying: player.playingID == entry.id,
 					isRetranscribing: store.retranscribingIDs.contains(entry.id),
 					justCopied: copiedID == entry.id,
-					canPostProcess: postProcessingEnabled,
+					canPostProcess: ServerURLNormalizer.normalize(llmServerURL) != nil,
 					onPlay: { play(entry) },
 					onCopy: { copy(entry.text, id: entry.id) },
 					onCopyOriginal: { copy(entry.transcriptText, id: entry.id) },
@@ -344,7 +344,7 @@ struct TranscriptionHistoryView: View {
 			do {
 				try await store.reprocess(entry)
 			} catch {
-				errorMessage = String(localized: "Post-processing failed: \(error.localizedDescription)")
+				errorMessage = String(localized: "Clean up failed: \(error.localizedDescription)")
 			}
 		}
 	}
@@ -420,7 +420,7 @@ private struct HistoryEntryRow: View {
 			Button(entry.isStarred ? "Unstar" : "Star", action: onStar)
 			Button(entry.didFail ? "Retry" : "Re-transcribe", action: onRetranscribe)
 				.disabled(!hasAudio || isRetranscribing)
-			Button("Post-process Again", action: onPostProcess)
+			Button("Clean Up Again", action: onPostProcess)
 				.disabled(!canPostProcess || entry.transcriptText.isEmpty || isRetranscribing)
 			Button("Show Recording in Finder", action: onReveal).disabled(!hasAudio)
 			Divider()
@@ -431,7 +431,7 @@ private struct HistoryEntryRow: View {
 	@ViewBuilder
 	private var postProcessingDetails: some View {
 		if let error = entry.postProcessError {
-			Label("Post-processing failed: \(error)", systemImage: "exclamationmark.triangle")
+			Label("Recipe failed: \(error)", systemImage: "exclamationmark.triangle")
 				.font(.caption)
 				.foregroundColor(.orange)
 		}
@@ -444,7 +444,7 @@ private struct HistoryEntryRow: View {
 					.frame(maxWidth: .infinity, alignment: .leading)
 			} label: {
 				Label(
-					"Original transcript, post-processed with \(entry.postProcessPromptName ?? "")",
+					"Original transcript, rewritten by \(entry.postProcessPromptName ?? "")",
 					systemImage: "wand.and.stars"
 				)
 				.font(.caption)

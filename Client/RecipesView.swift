@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025-2026 Ismatulla Mansurov
 
+import AppKit
 import SwiftUI
 
 /// Settings tab for managing recipes. Create / edit / delete, and
-/// load the starter set. See WHI-30.
+/// load the starter set. See WHI-30. The built-in Clean up recipe (what used
+/// to be the Post-Processing pane) lives here too, with its shortcut.
 struct RecipesView: View {
 	@State private var store = RecipeStore.shared
 	@State private var editing: Recipe?
@@ -12,49 +14,110 @@ struct RecipesView: View {
 	@State private var health = RecipeRunHealth.shared
 	@AppStorage(WhisperaSettings.defaultCommandIdKey) private var defaultCommandId = ""
 	@AppStorage(WhisperaSettings.recipesEnabledKey) private var recipesEnabled = false
+	@AppStorage(CleanUpSettings.Key.onRequestEnabled) private var cleanUpOnRequest = false
+	@AppStorage(CleanUpSettings.Key.shortcut) private var cleanUpShortcut = CleanUpSettings.defaultShortcut
+	@State private var isRecordingShortcut = false
+	@State private var shortcutMonitor: Any?
+	@State private var recorderToken: UUID?
+	@State private var alert: RecipesAlert?
+	@Environment(\.settingsPaneIsActive) private var isActivePane
+	@State private var tryInput = ""
+	@State private var tryOutput: String?
+	@State private var isTrying = false
 
 	var body: some View {
-		VStack(spacing: 0) {
-			header
-			enableRow
-			if recipesEnabled, let failure = health.lastFailure {
-				failureRow(failure)
-			}
-
-			if store.recipes.isEmpty {
-				emptyState
-			} else {
-				defaultPicker
-				List {
-					ForEach(store.recipes) { recipe in
-						Button {
-							editing = recipe
-						} label: {
-							recipeRow(recipe)
-						}
-						.buttonStyle(.plain)
-					}
-					.onDelete { offsets in
-						let targets = offsets.map { store.recipes[$0] }
-						Task { for r in targets { await store.delete(r) } }
+		Form {
+			Section {
+				Toggle(isOn: $recipesEnabled) {
+					VStack(alignment: .leading, spacing: 2) {
+						Text("Run recipes on dictation")
+						Text("When off, dictation is pasted exactly as you said it.")
+							.font(.caption)
+							.foregroundStyle(.secondary)
 					}
 				}
-				.scrollContentBackground(.hidden)
+				.toggleStyle(.switch)
+				Picker("Runs on every dictation", selection: $defaultCommandId) {
+					Text("None").tag("")
+					ForEach(store.recipes) { recipe in
+						Text(verbatim: recipe.name.isEmpty ? String(localized: "Untitled") : recipe.name)
+							.tag(recipe.id)
+					}
+				}
+				.accessibilityIdentifier("recipeDefaultPicker")
+				if recipesEnabled || cleanUpOnRequest, let failure = health.lastFailure {
+					failureRow(failure)
+				}
 			}
 
-			if let error = store.lastError {
-				Text(error)
-					.font(.caption)
-					.foregroundColor(.red)
-					.padding(.horizontal, 20)
-					.padding(.bottom, 8)
-					.frame(maxWidth: .infinity, alignment: .leading)
+			Section {
+				Toggle(isOn: $cleanUpOnRequest) {
+					VStack(alignment: .leading, spacing: 2) {
+						Text("Clean up with a shortcut")
+						Text("Dictate with this shortcut to run Clean up on that dictation only. Always uses text mode.")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+					}
+				}
+				.toggleStyle(.switch)
+				.accessibilityIdentifier("cleanUpShortcutToggle")
+				LabeledContent("Shortcut") {
+					Button(isRecordingShortcut ? String(localized: "Press keys...") : cleanUpShortcut) {
+						isRecordingShortcut ? stopRecordingShortcut() : startRecordingShortcut()
+					}
+					.disabled(!cleanUpOnRequest)
+					.accessibilityIdentifier("cleanUpShortcutButton")
+				}
+				tryCleanUpRows
+			} header: {
+				Text("Clean up")
+			}
+
+			Section {
+				if store.recipes.isEmpty {
+					Text("A recipe runs an AI step on your dictation when you say its trigger phrase.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
+				ForEach(store.recipes) { recipe in
+					recipeRow(recipe)
+				}
+				if let error = store.lastError {
+					Text(error)
+						.font(.caption)
+						.foregroundStyle(.red)
+				}
+			} header: {
+				HStack {
+					Text("Your recipes")
+					Spacer()
+					Button("Load Starter Set") { Task { await store.loadDefaults() } }
+						.controlSize(.small)
+					Button {
+						isCreating = true
+					} label: {
+						Label("New", systemImage: "plus")
+					}
+					.controlSize(.small)
+					.accessibilityIdentifier("recipeNewButton")
+				}
 			}
 		}
-		// Solid content background so the header isn't the window's gray material.
-		.background(Color(nsColor: .textBackgroundColor))
+		.formStyle(.grouped)
 		.task { await store.reload() }
 		.onChange(of: defaultCommandId) { _, id in WhisperaSettings.didPickDefaultCommand(id) }
+		.onChange(of: isActivePane) { _, isActive in
+			if !isActive { stopRecordingShortcut() }
+		}
+		.onDisappear(perform: stopRecordingShortcut)
+		.alert(
+			alert?.title ?? "", isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } }),
+			presenting: alert
+		) { _ in
+			Button("OK", role: .cancel) {}
+		} message: { alert in
+			Text(alert.message)
+		}
 		.sheet(isPresented: $isCreating) {
 			RecipeEditor(
 				recipe: Recipe(name: "", steps: [RecipeStep(config: LLMStepConfig(prompt: "{{input}}"))])
@@ -69,35 +132,75 @@ struct RecipesView: View {
 		}
 	}
 
-	private var header: some View {
-		HStack {
-			Text("Recipes")
-				.font(.headline)
-			if store.isSyncing { ProgressView().scaleEffect(0.6) }
-			Spacer()
-			Button("Load Starter Set") { Task { await store.loadDefaults() } }
-			Button {
-				isCreating = true
-			} label: {
-				Label("New", systemImage: "plus")
-			}
+	/// Runs Clean up exactly as a dictation would — same pipeline, same quiet
+	/// fallback to the input and the same failure report above.
+	@ViewBuilder
+	private var tryCleanUpRows: some View {
+		VStack(alignment: .leading, spacing: 6) {
+			Text("Try it")
+			TextField("Try it", text: $tryInput, prompt: Text("Paste a transcript"), axis: .vertical)
+				.labelsHidden()
+				.textFieldStyle(.roundedBorder)
+				.lineLimit(2...5)
+				.accessibilityIdentifier("cleanUpTryInput")
 		}
-		.padding(20)
+		HStack {
+			if let tryOutput {
+				Text(verbatim: tryOutput)
+					.textSelection(.enabled)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.accessibilityIdentifier("cleanUpTryOutput")
+			} else {
+				Spacer()
+			}
+			if isTrying { ProgressView().controlSize(.small) }
+			Button("Run Clean up") {
+				let input = tryInput
+				isTrying = true
+				tryOutput = nil
+				Task {
+					tryOutput = await DictationCoordinator.shared.processDictation(input, cleanUp: true)?.text
+					isTrying = false
+				}
+			}
+			.disabled(isTrying || tryInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+			.accessibilityIdentifier("cleanUpTryButton")
+		}
 	}
 
-	/// Recipes send dictation to an LLM server, so nothing runs until the user
-	/// says so — the starter set included.
-	private var enableRow: some View {
-		VStack(alignment: .leading, spacing: 2) {
-			Toggle("Run recipes on dictation", isOn: $recipesEnabled)
-				.toggleStyle(.switch)
-			Text("When off, dictation is pasted exactly as you said it.")
-				.font(.caption)
-				.foregroundColor(.secondary)
+	private func startRecordingShortcut() {
+		isRecordingShortcut = true
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = ShortcutRecorderGate.shared.begin()
+		shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+			guard isRecordingShortcut else { return event }
+			let modifiers = event.modifierFlags.intersection(ShortcutCombo.relevantModifiers)
+			guard !modifiers.isEmpty else { return nil }
+			stopRecordingShortcut()
+			guard let formatted = ShortcutDisplayFormatter.format(keyCode: event.keyCode, modifiers: modifiers)
+			else {
+				alert = RecipesAlert(
+					title: String(localized: "Shortcut not available"),
+					message: String(localized: "That key can't be used in a shortcut. Try a letter, number or F-key."))
+				return nil
+			}
+			if let conflict = CleanUpShortcutMonitor.conflictingShortcut(for: formatted) {
+				alert = RecipesAlert(
+					title: String(localized: "Shortcut not available"),
+					message: String(localized: "\(formatted) is already used by another Whispera shortcut (\(conflict))."))
+				return nil
+			}
+			cleanUpShortcut = formatted
+			return nil
 		}
-		.frame(maxWidth: .infinity, alignment: .leading)
-		.padding(.horizontal, 20)
-		.padding(.bottom, 10)
+	}
+
+	private func stopRecordingShortcut() {
+		isRecordingShortcut = false
+		ShortcutRecorderGate.shared.end(recorderToken)
+		recorderToken = nil
+		if let shortcutMonitor { NSEvent.removeMonitor(shortcutMonitor) }
+		shortcutMonitor = nil
 	}
 
 	/// The one place a failed recipe run is reported: the dictation itself
@@ -112,66 +215,49 @@ struct RecipesView: View {
 			Image(systemName: "exclamationmark.triangle.fill")
 				.foregroundColor(.orange)
 		}
-		.frame(maxWidth: .infinity, alignment: .leading)
-		.padding(.horizontal, 20)
-		.padding(.bottom, 10)
 		.accessibilityIdentifier("recipeLastFailure")
 	}
 
-	private var defaultPicker: some View {
-		HStack {
-			Text("Runs on every dictation")
-				.font(.subheadline)
-			Spacer()
-			Picker("", selection: $defaultCommandId) {
-				Text("None").tag("")
-				ForEach(store.recipes) { recipe in
-					Text(recipe.name.isEmpty ? "Untitled" : recipe.name).tag(recipe.id)
-				}
-			}
-			.labelsHidden()
-			.frame(maxWidth: 220)
-		}
-		.padding(.horizontal, 20)
-		.padding(.bottom, 10)
-	}
-
-	private var emptyState: some View {
-		VStack(spacing: 8) {
-			Image(systemName: "wand.and.stars")
-				.font(.largeTitle)
-				.foregroundColor(.secondary)
-			Text("No recipes yet")
-				.font(.headline)
-			Text("A recipe runs an AI step on your dictation when you say its trigger phrase.")
-				.font(.caption)
-				.foregroundColor(.secondary)
-				.multilineTextAlignment(.center)
-		}
-		.frame(maxWidth: .infinity, maxHeight: .infinity)
-		.padding(40)
-	}
-
 	private func recipeRow(_ recipe: Recipe) -> some View {
-		VStack(alignment: .leading, spacing: 2) {
-			Text(recipe.name.isEmpty ? "Untitled" : recipe.name)
-				.font(.subheadline.weight(.medium))
-			if recipe.id == defaultCommandId {
-				Text("Default · runs on every dictation")
-					.font(.caption)
-					.foregroundColor(.blue)
-			} else if let trigger = recipe.triggerPhrase, !trigger.isEmpty {
-				Text("“\(trigger)”")
-					.font(.caption)
-					.foregroundColor(.secondary)
-			} else {
-				Text("No trigger — set as default to use")
-					.font(.caption)
-					.foregroundColor(.secondary)
+		HStack {
+			VStack(alignment: .leading, spacing: 2) {
+				HStack(spacing: 6) {
+					Text(verbatim: recipe.name.isEmpty ? String(localized: "Untitled") : recipe.name)
+					if CleanUpRecipe.isBuiltIn(recipe) {
+						Text("Built-in")
+							.font(.caption2)
+							.padding(.horizontal, 5)
+							.padding(.vertical, 1)
+							.background(Capsule().fill(Color.secondary.opacity(0.15)))
+							.foregroundStyle(.secondary)
+					}
+				}
+				Group {
+					if recipe.id == defaultCommandId {
+						Text("Runs on every dictation").foregroundStyle(.blue)
+					} else if let trigger = recipe.triggerPhrase, !trigger.isEmpty {
+						Text(verbatim: "“\(trigger)”")
+					} else if CleanUpRecipe.isBuiltIn(recipe) {
+						Text("Set it to run on every dictation, or use its shortcut")
+					} else {
+						Text("No trigger phrase")
+					}
+				}
+				.font(.caption)
+				.foregroundStyle(.secondary)
+			}
+			Spacer()
+			Button("Edit") { editing = recipe }
+				.controlSize(.small)
+		}
+		.contentShape(Rectangle())
+		.contextMenu {
+			Button("Edit") { editing = recipe }
+			if !CleanUpRecipe.isBuiltIn(recipe) {
+				Button("Delete", role: .destructive) { Task { await store.delete(recipe) } }
 			}
 		}
-		.frame(maxWidth: .infinity, alignment: .leading)
-		.contentShape(Rectangle())
+		.accessibilityIdentifier("recipeRow.\(recipe.name)")
 	}
 }
 
@@ -248,4 +334,10 @@ private struct RecipeEditor: View {
 			get: { draft.triggerPhrase ?? "" },
 			set: { draft.triggerPhrase = $0.isEmpty ? nil : $0 })
 	}
+}
+
+private struct RecipesAlert: Identifiable {
+	let id = UUID()
+	let title: String
+	let message: String
 }

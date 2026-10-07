@@ -18,7 +18,7 @@ class GlobalShortcutManager: ObservableObject {
 	private var networkDownloader: NetworkFileDownloader?
 	private var queueManager: TranscriptionQueueManager?
 	private var isProcessingFileOperation = false
-	private let postProcessShortcutMonitor = PostProcessShortcutMonitor()
+	private let cleanUpShortcutMonitor = CleanUpShortcutMonitor()
 	private var requestedBackend = HotkeyBackend.preferred()
 	private var activeBackend = HotkeyBackend.eventMonitor
 	private let logger = AppLogger.shared.general
@@ -84,7 +84,7 @@ class GlobalShortcutManager: ObservableObject {
 	func setAudioManager(_ manager: AudioManager) {
 		self.audioManager = manager
 		logger.info("AudioManager set, checking accessibility status...")
-		postProcessShortcutMonitor.attach(audioManager: manager)
+		cleanUpShortcutMonitor.attach(audioManager: manager)
 		checkAccessibilityStatus()
 		observeRecordingStateForCancel()
 	}
@@ -180,7 +180,7 @@ class GlobalShortcutManager: ObservableObject {
 			self?.modifierMachine?.reset()
 			self?.modifierPressSession = nil
 		}
-		postProcessShortcutMonitor.reinstall()
+		cleanUpShortcutMonitor.reinstall()
 		monitorsKeyRelease = RecordingControlSettings().activationMode.needsKeyRelease
 
 		if let modifierKey = ModifierOnlyShortcut(stored: currentShortcut) {
