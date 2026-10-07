@@ -47,6 +47,7 @@ final class HerdrCLI: @unchecked Sendable {
 	struct Machine: Equatable {
 		var id: String
 		var label: String
+		var target: String? = nil
 	}
 
 	static let listTimeout: TimeInterval = 8
@@ -191,7 +192,7 @@ final class HerdrCLI: @unchecked Sendable {
 					!found.contains(where: { $0.id == id })
 				else { continue }
 				let label = (item["label"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(64)) } ?? id
-				found.append(Machine(id: id, label: label))
+				found.append(Machine(id: id, label: label, target: item["target"] as? String))
 			}
 		}
 		lock.lock()
@@ -417,6 +418,34 @@ final class AgentDirectory: @unchecked Sendable {
 			machine: machine.id,
 			["agent", "read", pane, "--source", source, "--lines", String(lines), "--format", "text"])
 		return ["id": id, "source": source, "text": text, "revision": NSNull(), "truncated": false]
+	}
+
+	/// Copy selected images to the saved SSH machine before submitting its prompt. The
+	/// phone cannot choose a host or destination path: both come from trusted Mac state.
+	func imagePaths(_ id: String, paths: [String], device: String) throws -> [String] {
+		guard !paths.isEmpty, case .remote(let machineID, _) = AgentRef(id) else { return paths }
+		let machine = try machine(machineID)
+		guard let target = machine.target, !target.isEmpty, !target.hasPrefix("-"),
+			target.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "@._-:[]".unicodeScalars.contains($0)) }),
+			device.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "_-".unicodeScalars.contains($0)) }) else {
+			throw APIError(503, "image_transfer_failed", "The agent's saved SSH machine needs a valid address before images can be sent.")
+		}
+		let relative = ".cache/whispera-link/images/" + device
+		let command = "umask 077; mkdir -p \"$HOME/" + relative + "\" && chmod 700 \"$HOME/.cache/whispera-link\" \"$HOME/.cache/whispera-link/images\" \"$HOME/" + relative + "\" && printf '%s/" + relative + "' \"$HOME\""
+		let prepared = try HerdrCLI.spawn("/usr/bin/ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "--", target, command], timeout: 8)
+		let destination = String(decoding: prepared.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+		guard prepared.status == 0, destination.hasPrefix("/"),
+			destination.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "/._-".unicodeScalars.contains($0)) }) else {
+			throw APIError(503, "image_transfer_failed", "Couldn't transfer images to the agent's Mac over SSH. Nothing was sent to the agent; check that machine's connection and retry.")
+		}
+		var remote: [String] = []
+		for path in paths {
+			let file = URL(fileURLWithPath: path).lastPathComponent
+			let copy = try HerdrCLI.spawn("/usr/bin/scp", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "--", path, target + ":" + destination + "/" + file], timeout: 20)
+			guard copy.status == 0 else { throw APIError(503, "image_transfer_failed", "Couldn't transfer an image to the agent's Mac. Nothing was sent to the agent; retry when that Mac is reachable.") }
+			remote.append(destination + "/" + file)
+		}
+		return remote
 	}
 
 	func prompt(_ id: String, text: String, wait: (until: [String], timeoutMS: Int)?) throws -> [String: Any] {

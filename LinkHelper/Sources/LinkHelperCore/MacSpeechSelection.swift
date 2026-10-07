@@ -91,6 +91,12 @@ public struct AppSpeechSelection: MacSpeechSelecting {
 	/// - `auto`, `whisperaStreaming`: the speech server when one is set up, else on-device. A
 	///   phone upload is one batch request, so the streaming backend itself is not involved.
 	public static func route(engine: String?, speechURL: String, speechModel: String) -> MacSpeechRoute {
+		if let address = normalize(speechURL), let url = URL(string: address), url.port == nil,
+			let host = url.host, host.split(separator: ".").count == 4,
+			host.split(separator: ".").allSatisfy({ Int($0).map { (0...255).contains($0) } ?? false }),
+			["auto", "whisperaStreaming", "whisperViaBYOK", "realtimeDirect"].contains(engine ?? "") {
+			return .unavailable("The Mac's speech server address needs a port. Open Whispera ▸ Settings ▸ Servers and enter the full address, for example http://192.168.0.10:8000/v1.")
+		}
 		let server = normalize(speechURL).map { RemoteSpeechServer(baseURL: $0, model: speechModel) }
 		switch engine ?? "" {
 		case "whisperViaBYOK", "realtimeDirect":
@@ -103,6 +109,7 @@ public struct AppSpeechSelection: MacSpeechSelecting {
 	}
 
 	/// Whispera's `ServerURLNormalizer.normalize`: a bare host gets `http://`, the path gets `/v1`.
+	/// A bare IP without a port is incomplete (local engines usually listen on :8000).
 	/// Nil when the field cannot address a server yet.
 	public static func normalize(_ raw: String) -> String? {
 		let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
