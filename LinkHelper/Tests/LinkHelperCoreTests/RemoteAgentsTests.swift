@@ -17,7 +17,8 @@ final class FakeHerdrRig {
 	let cliLog: String
 	private var processes: [Process] = []
 
-	init() throws {
+	/// `localAgents` / `remoteAgents`: serve that many generated agents instead of the presets.
+	init(localAgents: Int? = nil, remoteAgents: Int? = nil) throws {
 		// Short: AF_UNIX paths are limited to 104 bytes.
 		directory = URL(fileURLWithPath: "/tmp/wlr-\(UUID().uuidString.prefix(8))")
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -25,8 +26,10 @@ final class FakeHerdrRig {
 		remoteSocket = directory.appendingPathComponent("r.sock").path
 		cli = directory.appendingPathComponent("herdr").path
 		cliLog = directory.appendingPathComponent("cli.jsonl").path
-		try launch(["--socket", localSocket])
-		try launch(["--socket", remoteSocket, "--preset", "remote"])
+		try launch(["--socket", localSocket] + (localAgents.map { ["--agents", String($0)] } ?? []))
+		try launch(
+			["--socket", remoteSocket, "--preset", "remote"]
+				+ (remoteAgents.map { ["--agents", String($0), "--prefix", "r"] } ?? []))
 		let config: [String: Any] = [
 			"local_socket": localSocket, "log": cliLog,
 			"machines": [

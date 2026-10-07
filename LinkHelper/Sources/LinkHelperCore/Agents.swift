@@ -395,12 +395,28 @@ final class AgentDirectory: @unchecked Sendable {
 			return try local.read(pane, source: source, lines: lines)
 		case .remote(let machineID, let pane):
 			let machine = try machine(machineID)
-			// `agent read` prints the text itself, not JSON; errors still come as JSON.
-			let text = try cli.text(
-				machine: machine.id,
-				["agent", "read", pane, "--source", source, "--lines", String(lines), "--format", "text"])
-			return ["id": id, "source": source, "text": text, "revision": NSNull(), "truncated": false]
+			do {
+				return try readRemote(id, machine: machine, pane: pane, source: source, lines: lines)
+			} catch let error as APIError
+				where source != HerdrClient.visibleSource && HerdrClient.isBusyRead(error)
+			{
+				// Same refusal as the local socket's while the agent works (HerdrClient.read).
+				var answer = try readRemote(
+					id, machine: machine, pane: pane, source: HerdrClient.visibleSource, lines: lines)
+				answer["truncated"] = true
+				return answer
+			}
 		}
+	}
+
+	private func readRemote(_ id: String, machine: HerdrCLI.Machine, pane: String, source: String, lines: Int) throws
+		-> [String: Any]
+	{
+		// `agent read` prints the text itself, not JSON; errors still come as JSON.
+		let text = try cli.text(
+			machine: machine.id,
+			["agent", "read", pane, "--source", source, "--lines", String(lines), "--format", "text"])
+		return ["id": id, "source": source, "text": text, "revision": NSNull(), "truncated": false]
 	}
 
 	func prompt(_ id: String, text: String, wait: (until: [String], timeoutMS: Int)?) throws -> [String: Any] {

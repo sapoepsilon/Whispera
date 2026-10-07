@@ -20,6 +20,9 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 	private var queues: [String: [RelayMessage]] = [:]
 	private var seq: Int64 = 0
 	private(set) var sendCount = 0
+	/// The largest ciphertext accepted by `POST /v1/relay/send`, bytes.
+	private(set) var largestCiphertext = 0
+	static let maxCiphertextBytes = 64 * 1024
 	private(set) var registerCount = 0
 	private var notifies: [NotifyRequest] = []
 	/// What `POST /v1/notify` answers per device id (default `sent`).
@@ -186,6 +189,11 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 			guard let req = try? JSONDecoder().decode(RelaySendRequest.self, from: body) else {
 				return error(400, "bad_request")
 			}
+			// The relay's RelayLimits.max_ciphertext_bytes.
+			guard let blob = Data(base64Encoded: req.ciphertext), blob.count <= Self.maxCiphertextBytes else {
+				return error(413, "too_large")
+			}
+			largestCiphertext = max(largestCiphertext, blob.count)
 			guard let target = devices[req.to], target.account == me.account, !target.device.isRevoked else {
 				return error(403, "forbidden")
 			}
