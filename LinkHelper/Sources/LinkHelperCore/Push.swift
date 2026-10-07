@@ -87,3 +87,38 @@ public final class RelayPush: PushNotifier, @unchecked Sendable {
 		var value: String?
 	}
 }
+
+/// The notifier the daemon hands out, whose backend can change while it runs: unconfigured until
+/// the Mac joins an account, then the relay (step 11), unconfigured again after sign-out.
+public final class SwitchablePush: PushNotifier, @unchecked Sendable {
+	private let lock = NSLock()
+	private var inner: PushNotifier
+
+	public init(_ inner: PushNotifier = UnconfiguredPush()) {
+		self.inner = inner
+	}
+
+	public func replace(with notifier: PushNotifier) {
+		lock.lock()
+		inner = notifier
+		lock.unlock()
+	}
+
+	private var current: PushNotifier {
+		lock.lock()
+		defer { lock.unlock() }
+		return inner
+	}
+
+	public var isConfigured: Bool { current.isConfigured }
+
+	public func notifyApproval(requestID: String, expiresAt: Int, preferDevice: String?, devices: [DeviceRecord])
+		-> String
+	{
+		current.notifyApproval(requestID: requestID, expiresAt: expiresAt, preferDevice: preferDevice, devices: devices)
+	}
+
+	public func notifyResolved(requestID: String, devices: [DeviceRecord]) {
+		current.notifyResolved(requestID: requestID, devices: devices)
+	}
+}

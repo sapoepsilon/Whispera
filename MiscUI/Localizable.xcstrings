@@ -300,6 +300,29 @@
         }
       }
     },
+    "%@ wants to approve secrets on this Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ möchte Geheimnisse auf diesem Mac freigeben"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ quiere aprobar secretos en este Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ souhaite approuver des secrets sur ce Mac"
+          }
+        }
+      }
+    },
     "%lld completed, %lld failed": {
       "extractionState": "manual",
       "localizations": {
@@ -806,6 +829,29 @@
         }
       }
     },
+    "A token your self-hosted server accepts. It is kept in the Keychain.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein Token, das dein eigener Server akzeptiert. Es wird im Schlüsselbund gespeichert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un token que acepta tu servidor propio. Se guarda en el llavero."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un jeton accepté par votre serveur auto-hébergé. Il est conservé dans le trousseau."
+          }
+        }
+      }
+    },
     "AI Model": {
       "extractionState": "manual",
       "localizations": {
@@ -1009,6 +1055,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Accès à l'accessibilité requis"
+          }
+        }
+      }
+    },
+    "Account": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konto"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuenta"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte"
           }
         }
       }
@@ -1887,6 +1956,29 @@
         }
       }
     },
+    "An iPhone is waiting for you to confirm it in Settings > Account.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein iPhone wartet unter Einstellungen > Konto auf deine Bestätigung."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un iPhone espera tu confirmación en Ajustes > Cuenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un iPhone attend votre confirmation dans Réglages > Compte."
+          }
+        }
+      }
+    },
     "An unknown error occurred": {
       "extractionState": "manual",
       "localizations": {
@@ -2665,6 +2757,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Retour"
+          }
+        }
+      }
+    },
+    "Backend URL": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backend-URL"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL del backend"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL du serveur"
           }
         }
       }
@@ -3888,6 +4003,29 @@
         }
       }
     },
+    "Client ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client-ID"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID de cliente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID client"
+          }
+        }
+      }
+    },
     "Clipboard": {
       "extractionState": "manual",
       "localizations": {
@@ -4206,6 +4344,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Configurez la langue et testez la transcription vocale."
+          }
+        }
+      }
+    },
+    "Confirm iPhones": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhones bestätigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar iPhones"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmer des iPhone"
+          }
+        }
+      }
+    },
+    "Confirm with Touch ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Touch ID bestätigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar con Touch ID"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmer avec Touch ID"
           }
         }
       }
@@ -4854,6 +5038,29 @@
         }
       }
     },
+    "Couldn't confirm the iPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das iPhone konnte nicht bestätigt werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo confirmar el iPhone"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de confirmer l’iPhone"
+          }
+        }
+      }
+    },
     "Couldn't switch accelerator": {
       "extractionState": "manual",
       "localizations": {
@@ -5103,6 +5310,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mots personnalisés"
+          }
+        }
+      }
+    },
+    "Custom issuer": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigener Anbieter"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emisor personalizado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Émetteur personnalisé"
           }
         }
       }
@@ -5540,6 +5770,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Détecte automatiquement la langue parlée parmi 25 langues européennes ; le réglage Langue source est ignoré."
+          }
+        }
+      }
+    },
+    "Devices": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geräte"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dispositivos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appareils"
           }
         }
       }
@@ -6414,6 +6667,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Saisissez une URL YouTube..."
+          }
+        }
+      }
+    },
+    "Enter a valid backend URL.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gib eine gültige Backend-URL ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduce una URL de backend válida."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez une URL de serveur valide."
           }
         }
       }
@@ -7361,6 +7637,29 @@
         }
       }
     },
+    "Fingerprint": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fingerabdruck"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Huella"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empreinte"
+          }
+        }
+      }
+    },
     "Finish Setup": {
       "extractionState": "manual",
       "localizations": {
@@ -8166,6 +8465,29 @@
         }
       }
     },
+    "Hosted sign-in isn't set up in this build. Use a custom issuer or a server token.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die gehostete Anmeldung ist in diesem Build nicht eingerichtet. Verwende einen eigenen Anbieter oder ein Server-Token."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El inicio de sesión alojado no está configurado en esta versión. Usa un emisor personalizado o un token del servidor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion hébergée n’est pas configurée dans cette version. Utilisez un émetteur personnalisé ou un jeton du serveur."
+          }
+        }
+      }
+    },
     "How much detail is written to the log file": {
       "extractionState": "manual",
       "localizations": {
@@ -8599,6 +8921,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "Invalide tous les liens et scripts qui contiennent le jeton actuel"
+          }
+        }
+      }
+    },
+    "Issuer (https://auth.example.com)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anbieter (https://auth.example.com)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emisor (https://auth.example.com)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Émetteur (https://auth.example.com)"
+          }
+        }
+      }
+    },
+    "It joined your account. Check the fingerprint matches the one on the iPhone before you confirm.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es ist deinem Konto beigetreten. Prüfe vor dem Bestätigen, ob der Fingerabdruck mit dem auf dem iPhone übereinstimmt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se unió a tu cuenta. Comprueba que la huella coincide con la del iPhone antes de confirmar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il a rejoint votre compte. Vérifiez que l’empreinte correspond à celle de l’iPhone avant de confirmer."
+          }
+        }
+      }
+    },
+    "Its keys don't match what the server lists. Don't trust this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seine Schlüssel stimmen nicht mit den Angaben des Servers überein. Vertraue diesem Gerät nicht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sus claves no coinciden con las que muestra el servidor. No confíes en este dispositivo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses clés ne correspondent pas à celles du serveur. Ne faites pas confiance à cet appareil."
           }
         }
       }
@@ -11501,6 +11892,29 @@
         }
       }
     },
+    "No devices yet. Sign in on your iPhone with the same account.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch keine Geräte. Melde dich auf deinem iPhone mit demselben Konto an."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no hay dispositivos. Inicia sesión en tu iPhone con la misma cuenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun appareil pour l’instant. Connectez-vous sur votre iPhone avec le même compte."
+          }
+        }
+      }
+    },
     "No effect in Live Transcription Mode: WhisperKit opens the microphone for each recording. Turn Live Transcription Mode off to use this.": {
       "extractionState": "manual",
       "localizations": {
@@ -11984,6 +12398,29 @@
         }
       }
     },
+    "Not Now": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht jetzt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora no"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus tard"
+          }
+        }
+      }
+    },
     "Not a dictation command": {
       "extractionState": "manual",
       "localizations": {
@@ -12072,6 +12509,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun enregistrement en cours"
+          }
+        }
+      }
+    },
+    "Not signed in": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht angemeldet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin sesión iniciada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non connecté"
           }
         }
       }
@@ -12601,6 +13061,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transcription d'origine, post-traitée avec %@"
+          }
+        }
+      }
+    },
+    "Other": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Andere"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Otro"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autre"
           }
         }
       }
@@ -14859,6 +15342,29 @@
         }
       }
     },
+    "Register whispera-mac://auth/callback as a redirect URI with your provider.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trage whispera-mac://auth/callback bei deinem Anbieter als Weiterleitungs-URI ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registra whispera-mac://auth/callback como URI de redirección en tu proveedor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrez whispera-mac://auth/callback comme URI de redirection chez votre fournisseur."
+          }
+        }
+      }
+    },
     "RegisterEventHotKey failed (%lld)": {
       "extractionState": "manual",
       "localizations": {
@@ -15591,6 +16097,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Afficher dans le Finder"
+          }
+        }
+      }
+    },
+    "Revoke": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widerrufen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revocar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Révoquer"
+          }
+        }
+      }
+    },
+    "Revoked": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widerrufen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revocado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Révoqué"
           }
         }
       }
@@ -16423,6 +16975,52 @@
         }
       }
     },
+    "Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur"
+          }
+        }
+      }
+    },
+    "Server token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Token"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token del servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeton du serveur"
+          }
+        }
+      }
+    },
     "Servers": {
       "extractionState": "manual",
       "localizations": {
@@ -17132,6 +17730,144 @@
           "stringUnit": {
             "state": "translated",
             "value": "Afficher l'horodatage"
+          }
+        }
+      }
+    },
+    "Sign In": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmelden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter"
+          }
+        }
+      }
+    },
+    "Sign Out": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abmelden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar sesión"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se déconnecter"
+          }
+        }
+      }
+    },
+    "Sign in on this Mac and on your iPhone with the same account, and they find each other — no pairing code.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melde dich auf diesem Mac und deinem iPhone mit demselben Konto an, dann finden sie sich – ohne Kopplungscode."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicia sesión en este Mac y en tu iPhone con la misma cuenta y se encontrarán solos, sin código de emparejamiento."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connectez-vous sur ce Mac et sur votre iPhone avec le même compte : ils se trouvent seuls, sans code de jumelage."
+          }
+        }
+      }
+    },
+    "Sign in with": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmelden mit"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión con"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter avec"
+          }
+        }
+      }
+    },
+    "Signed in": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angemeldet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesión iniciada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté"
+          }
+        }
+      }
+    },
+    "Signed in as": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angemeldet als"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesión iniciada como"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté en tant que"
           }
         }
       }
@@ -18723,6 +19459,29 @@
         }
       }
     },
+    "The Mac link didn't accept the confirmation. Try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Mac-Verbindung hat die Bestätigung nicht angenommen. Versuche es erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El enlace del Mac no aceptó la confirmación. Inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le lien Mac n’a pas accepté la confirmation. Réessayez."
+          }
+        }
+      }
+    },
     "The Mac link is starting…": {
       "extractionState": "manual",
       "localizations": {
@@ -18742,6 +19501,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le lien avec le Mac démarre…"
+          }
+        }
+      }
+    },
+    "The Mac link isn't running.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Mac-Verbindung läuft nicht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El enlace del Mac no está en marcha."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le lien Mac n’est pas actif."
           }
         }
       }
@@ -19321,6 +20103,29 @@
         }
       }
     },
+    "This Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Mac"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce Mac"
+          }
+        }
+      }
+    },
     "This Mac does not support Apple Intelligence": {
       "extractionState": "manual",
       "localizations": {
@@ -19340,6 +20145,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce Mac ne prend pas en charge Apple Intelligence"
+          }
+        }
+      }
+    },
+    "This Mac hasn't joined your account yet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Mac ist deinem Konto noch nicht beigetreten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac aún no se ha unido a tu cuenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce Mac n’a pas encore rejoint votre compte."
+          }
+        }
+      }
+    },
+    "This Mac is on your account.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Mac ist mit deinem Konto verbunden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac está en tu cuenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce Mac est associé à votre compte."
+          }
+        }
+      }
+    },
+    "This Mac was removed from your account. Sign in again to add it back.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Mac wurde aus deinem Konto entfernt. Melde dich erneut an, um ihn wieder hinzuzufügen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac se quitó de tu cuenta. Vuelve a iniciar sesión para añadirlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce Mac a été retiré de votre compte. Reconnectez-vous pour l’ajouter à nouveau."
           }
         }
       }
@@ -19777,6 +20651,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Total : %@"
+          }
+        }
+      }
+    },
+    "Touch ID didn't match.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID wurde nicht erkannt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID no coincide."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID n’a pas reconnu votre empreinte."
+          }
+        }
+      }
+    },
+    "Touch ID isn't available.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID ist nicht verfügbar."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID no está disponible."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID n’est pas disponible."
           }
         }
       }
@@ -21460,6 +22380,29 @@
         }
       }
     },
+    "Use Server Token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Token verwenden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar token del servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser le jeton du serveur"
+          }
+        }
+      }
+    },
     "Use a different microphone while your Mac runs in clamshell mode": {
       "extractionState": "manual",
       "localizations": {
@@ -22035,6 +22978,29 @@
         }
       }
     },
+    "Where your account's devices meet. Self-hosters point this at their own server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hier finden sich die Geräte deines Kontos. Wer selbst hostet, trägt den eigenen Server ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donde se encuentran los dispositivos de tu cuenta. Si lo alojas tú, apunta a tu propio servidor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Là où les appareils de votre compte se retrouvent. En auto-hébergement, indiquez votre propre serveur."
+          }
+        }
+      }
+    },
     "Which hardware runs the speech model. Changing it reloads the model.": {
       "extractionState": "manual",
       "localizations": {
@@ -22330,6 +23296,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Réglages de Whispera"
+          }
+        }
+      }
+    },
+    "Whispera account": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera-Konto"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuenta de Whispera"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte Whispera"
           }
         }
       }
@@ -22997,6 +23986,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Votre voix, transcrite localement"
+          }
+        }
+      }
+    },
+    "allow %@ to approve secrets on this Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ erlauben, Geheimnisse auf diesem Mac freizugeben"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "permitir que %@ apruebe secretos en este Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "autoriser %@ à approuver des secrets sur ce Mac"
           }
         }
       }

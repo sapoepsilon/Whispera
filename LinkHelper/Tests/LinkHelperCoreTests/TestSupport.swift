@@ -8,13 +8,18 @@ import XCTest
 /// A phone made of software keys, talking to an in-process helper over real HTTP.
 final class SoftPhone {
 	let baseURL: URL
-	let linkKey = SoftwareSigningKey()
-	let approveKey = SoftwareSigningKey()
+	let linkKey: SoftwareSigningKey
+	let approveKey: SoftwareSigningKey
 	var deviceID = ""
 	var sttKey = ""
 
-	init(baseURL: URL) {
+	init(
+		baseURL: URL, linkKey: SoftwareSigningKey = SoftwareSigningKey(),
+		approveKey: SoftwareSigningKey = SoftwareSigningKey()
+	) {
 		self.baseURL = baseURL
+		self.linkKey = linkKey
+		self.approveKey = approveKey
 	}
 
 	struct Response {
@@ -76,7 +81,11 @@ final class TestDaemon {
 	let daemon: LinkDaemon
 	let port: Int
 
-	init(engine: LocalSpeechEngine? = nil, upstream: String = "", herdrSocket: String? = nil) throws {
+	init(
+		engine: LocalSpeechEngine? = nil, upstream: String = "", accountTransport: LinkTransport? = nil,
+		herdrSocket: String? = nil,
+		configure: (inout HelperConfig) -> Void = { _ in }
+	) throws {
 		directory = FileManager.default.temporaryDirectory.appendingPathComponent(
 			"wlh-\(UUID().uuidString.prefix(8))")
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -90,7 +99,9 @@ final class TestDaemon {
 		config.bonjour = false
 		config.herdrSocket = herdrSocket ?? directory.appendingPathComponent("no-herdr.sock").path
 		config.sttUpstreamBaseURL = upstream
-		daemon = try LinkDaemon(config: config, engine: engine)
+		configure(&config)
+		daemon = try LinkDaemon(
+			config: config, engine: engine, accountTransport: accountTransport ?? URLSessionLinkTransport())
 		port = try daemon.start()
 	}
 

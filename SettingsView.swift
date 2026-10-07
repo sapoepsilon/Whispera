@@ -860,6 +860,8 @@ struct SettingsView: View {
 			}
 		case .servers:
 			ServersSettingsView()
+		case .account:
+			AccountSettingsView()
 		case .recipes:
 			RecipesView()
 		case .textInsertion:

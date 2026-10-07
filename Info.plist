@@ -26,6 +26,16 @@
 				<string>whispera</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.macwhisper.app.account-callback</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>whispera-mac</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleShortVersionString</key>
 	<string>1.4.0</string>
@@ -53,5 +63,10 @@
 	<string>https://raw.githubusercontent.com/sapoepsilon/Whispera/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>GbHOfW9t2r/mOlDit7usEnhy2upMdDdzNhFvHiKD7qU=</string>
+	<key>WhisperaClerkClientID</key>
+	<!-- The hosted account's Clerk OAuth client id (public PKCE client, no secret),
+	     from the WHISPERA_CLERK_CLIENT_ID build setting; empty means hosted sign-in
+	     is unavailable and only a custom issuer or a server token can be used. -->
+	<string>$(WHISPERA_CLERK_CLIENT_ID)</string>
 </dict>
 </plist>
