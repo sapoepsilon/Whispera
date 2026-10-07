@@ -18,6 +18,11 @@ final class LinkAPI: @unchecked Sendable {
 
 	static let agentStatuses: Set<String> = ["idle", "working", "blocked", "done", "unknown"]
 	static let interruptKeys: Set<String> = ["esc", "ctrl+c"]
+	/// Background traffic: these signed routes do not make their device the `last_device`.
+	static let backgroundRoutes: Set<String> = ["events", "devices.apns", "devices.push"]
+	/// All an authenticated device the owner has not confirmed yet may do: read its own record
+	/// (to learn it is unconfirmed) and unpair itself.
+	static let unconfirmedRoutes: Set<String> = ["devices.me", "devices.delete"]
 
 	private unowned let daemon: LinkDaemon
 	private let verifier: RequestVerifier
@@ -41,12 +46,16 @@ final class LinkAPI: @unchecked Sendable {
 		switch (method, rest.count, rest[0]) {
 		case ("GET", 1, "health"): return Route(name: "health", auth: .none, body: .json)
 		case ("POST", 1, "pair"): return Route(name: "pair", auth: .none, body: .json)
+		case ("POST", 2, "pair") where rest[1] == "commit":
+			return Route(name: "pair.commit", auth: .none, body: .json)
 		case ("GET", 2, "devices") where rest[1] == "me":
 			return Route(name: "devices.me", auth: .signed, body: .json)
 		case ("DELETE", 2, "devices") where rest[1] == "me":
 			return Route(name: "devices.delete", auth: .signed, body: .json)
 		case ("PUT", 3, "devices") where rest[1] == "me" && rest[2] == "apns":
 			return Route(name: "devices.apns", auth: .signed, body: .json)
+		case ("PUT", 3, "devices") where rest[1] == "me" && rest[2] == "push":
+			return Route(name: "devices.push", auth: .signed, body: .json)
 		case ("GET", 1, "agents"): return Route(name: "agents.list", auth: .signed, body: .json)
 		case ("POST", 1, "agents"): return Route(name: "agents.start", auth: .signed, body: .json)
 		case ("GET", 2, "agents") where !rest[1].isEmpty:
@@ -58,6 +67,7 @@ final class LinkAPI: @unchecked Sendable {
 			case ("POST", "prompt"): route = "agents.prompt"
 			case ("POST", "keys"): route = "agents.keys"
 			case ("POST", "interrupt"): route = "agents.interrupt"
+			case ("POST", "stop"): route = "agents.stop"
 			default: return nil
 			}
 			return Route(name: route, auth: .signed, body: .json, agentID: rest[1])
@@ -77,28 +87,49 @@ final class LinkAPI: @unchecked Sendable {
 
 	// MARK: Dispatch
 
-	func handle(_ exchange: HTTPExchange) {
+	func handle(_ exchange: LinkExchange) {
 		let requestID = LinkCrypto.hex(LinkCrypto.randomBytes(8))
 		let started = Date()
 		var deviceID = "-"
 		let matched = Self.match(exchange.method, exchange.path)
 		let route = matched ?? Route(name: "unknown", auth: .signed, body: .json)
+		let relaySender = exchange.relaySender
 		defer {
-			daemon.log(
-				"http",
-				[
-					"device": deviceID, "route": route.name, "status": exchange.status,
-					"ms": Int(Date().timeIntervalSince(started) * 1000), "request_id": requestID,
-				])
+			var fields: [String: Any?] = [
+				"device": deviceID, "route": route.name, "status": exchange.status,
+				"ms": Int(Date().timeIntervalSince(started) * 1000), "request_id": requestID,
+			]
+			if relaySender != nil { fields["via"] = "relay" }
+			daemon.log("http", fields)
 		}
 		do {
 			let limit = route.body == .audio ? daemon.config.sttMaxUploadBytes : daemon.config.maxJSONBytes
+			// Over the relay only health and the signed routes exist: pairing needs the code
+			// on the LAN, and speech has its own bearer path.
+			if relaySender != nil, matched != nil, route.name != "health", route.auth != .signed {
+				throw APIError(404, "not_found", "not available over the relay")
+			}
 			if route.auth == .none {
-				let body = try readBody(exchange, limit: limit)
 				if route.name == "health" {
+					_ = try readBody(exchange, limit: limit)
 					return send(exchange, 200, health(), requestID: requestID)
 				}
-				let (out, signature) = try daemon.pairing.handlePair(body)
+				if rateLimiter.isBlocked(exchange.remoteHost) {
+					throw APIError(429, "rate_limited", "too many failed attempts; retry in 60 s")
+				}
+				let out: Data
+				let signature: String
+				do {
+					let body = try readBody(exchange, limit: limit)
+					if route.name == "pair.commit" {
+						(out, signature) = try daemon.pairing.handleCommit(body, from: exchange.remoteHost)
+					} else {
+						(out, signature) = try daemon.pairing.handlePair(body, from: exchange.remoteHost)
+					}
+				} catch let error as APIError where (400..<500).contains(error.status) {
+					rateLimiter.fail(exchange.remoteHost)
+					throw error
+				}
 				return exchange.respond(
 					201,
 					headers: [
@@ -111,6 +142,11 @@ final class LinkAPI: @unchecked Sendable {
 			var body: Data?
 			let device: DeviceRecord
 			do {
+				// The envelope already proves who sent a relayed request; it must be the device
+				// that signed it.
+				if let relaySender, exchange.header(SignedHeaders.deviceHeader) != relaySender {
+					throw APIError(401, "auth_unknown_device", "X-WL-Device is not the relay sender")
+				}
 				if route.auth == .speech, exchange.header(SignedHeaders.deviceHeader) == nil,
 					let bearer = Self.bearer(exchange)
 				{
@@ -128,10 +164,19 @@ final class LinkAPI: @unchecked Sendable {
 				throw error
 			}
 			deviceID = device.deviceID
-			daemon.lastDevice.record(device.deviceID)
 			guard matched != nil else { throw APIError(404, "not_found", "no such route") }
+			// Re-read: a confirmation or a key change since the lookup counts.
+			let current = daemon.devices.get(device.deviceID) ?? device
+			if !current.approveConfirmed, !Self.unconfirmedRoutes.contains(route.name) {
+				throw APIError(
+					403, "device_unconfirmed",
+					"confirm this device on the Mac (compare the safety number) before it can be used")
+			}
+			if current.approveConfirmed, !Self.backgroundRoutes.contains(route.name) {
+				daemon.lastDevice.record(device.deviceID)
+			}
 			if body == nil { body = try readBody(exchange, limit: limit) }
-			try serve(route, exchange: exchange, device: device, body: body ?? Data(), requestID: requestID)
+			try serve(route, exchange: exchange, device: current, body: body ?? Data(), requestID: requestID)
 		} catch let error as APIError {
 			exchange.respond(error.status, headers: [("X-WL-Request-Id", requestID)], body: error.envelope)
 		} catch is HTTPExchange.ConnectionGone {
@@ -150,11 +195,11 @@ final class LinkAPI: @unchecked Sendable {
 		}
 	}
 
-	private func send(_ exchange: HTTPExchange, _ status: Int, _ object: [String: Any], requestID: String) {
+	private func send(_ exchange: LinkExchange, _ status: Int, _ object: [String: Any], requestID: String) {
 		exchange.respond(status, headers: [("X-WL-Request-Id", requestID)], body: WireJSON.encode(object))
 	}
 
-	static func bearer(_ exchange: HTTPExchange) -> String? {
+	static func bearer(_ exchange: LinkExchange) -> String? {
 		guard let value = exchange.header("Authorization"), value.count > 7,
 			value.prefix(7).lowercased() == "bearer "
 		else {
@@ -164,7 +209,7 @@ final class LinkAPI: @unchecked Sendable {
 	}
 
 	/// §5.0 body rules: no chunked bodies, `Content-Length` required on POST/PUT, route limits.
-	private func readBody(_ exchange: HTTPExchange, limit: Int) throws -> Data {
+	private func readBody(_ exchange: LinkExchange, limit: Int) throws -> Data {
 		if let encoding = exchange.header("Transfer-Encoding"), encoding.lowercased() != "identity" {
 			throw APIError(411, "length_required", "chunked bodies are not accepted; send Content-Length")
 		}
@@ -188,7 +233,7 @@ final class LinkAPI: @unchecked Sendable {
 	}
 
 	/// §4.3 steps 1–3, before any body byte is read.
-	private func precheck(_ exchange: HTTPExchange) throws {
+	private func precheck(_ exchange: LinkExchange) throws {
 		let names = [
 			SignedHeaders.deviceHeader, SignedHeaders.timestampHeader, SignedHeaders.nonceHeader,
 			SignedHeaders.signatureHeader,
@@ -215,7 +260,7 @@ final class LinkAPI: @unchecked Sendable {
 	}
 
 	/// §4.3 steps 5–7.
-	private func verify(_ exchange: HTTPExchange, body: Data) throws -> DeviceRecord {
+	private func verify(_ exchange: LinkExchange, body: Data) throws -> DeviceRecord {
 		guard LinkCrypto.isValidNonce(exchange.header(SignedHeaders.nonceHeader) ?? "") else {
 			throw APIError(401, "auth_bad_signature", "request signature does not verify")
 		}
@@ -255,7 +300,7 @@ final class LinkAPI: @unchecked Sendable {
 		]
 	}
 
-	private func serve(_ route: Route, exchange: HTTPExchange, device: DeviceRecord, body: Data, requestID: String)
+	private func serve(_ route: Route, exchange: LinkExchange, device: DeviceRecord, body: Data, requestID: String)
 		throws
 	{
 		let json = { (object: [String: Any]) in self.send(exchange, 200, object, requestID: requestID) }
@@ -287,10 +332,18 @@ final class LinkAPI: @unchecked Sendable {
 			daemon.devices.revoke(device.deviceID)
 			daemon.log("device.revoked", ["device": device.deviceID, "detail": "self"])
 			json(["revoked": true])
+		case "devices.push":
+			let request = try parseJSON(body)
+			guard let text = request["text"] as? String, let mode = PushTextMode(rawValue: text) else {
+				throw APIError(400, "bad_request", "text must be named or generic")
+			}
+			let record = try daemon.devices.setPushText(device.deviceID, mode)
+			daemon.log("device.push_text", ["device": device.deviceID, "detail": "text=\(mode.rawValue)"])
+			json(["device": (record ?? device).publicJSON, "push_text": mode.rawValue])
 		case "agents.list":
-			json(try daemon.herdr.listAgents())
+			json(try daemon.agents.list())
 		case "agents.get":
-			json(try daemon.herdr.getAgent(try agentID(route)))
+			json(try daemon.agents.get(try agentID(route)))
 		case "agents.output":
 			let id = try agentID(route)
 			let query = try Self.parseQuery(exchange.query)
@@ -304,7 +357,7 @@ final class LinkAPI: @unchecked Sendable {
 			guard linesText.allSatisfy(\.isASCII), linesText.allSatisfy(\.isNumber), let lines = Int(linesText),
 				(1...2000).contains(lines)
 			else { throw APIError(400, "bad_request", "lines must be 1-2000") }
-			json(try daemon.herdr.read(id, source: source, lines: lines))
+			json(try daemon.agents.read(id, source: source, lines: lines))
 		case "agents.prompt":
 			let id = try agentID(route)
 			let request = try parseJSON(body)
@@ -329,7 +382,7 @@ final class LinkAPI: @unchecked Sendable {
 				wait = (until, min(timeout, 30_000))
 			}
 			daemon.log("agent.prompt", ["device": device.deviceID, "detail": "len=\(text.unicodeScalars.count)"])
-			json(try daemon.herdr.prompt(id, text: text, wait: wait))
+			json(try daemon.agents.prompt(id, text: text, wait: wait))
 		case "agents.keys":
 			let id = try agentID(route)
 			let request = try parseJSON(body)
@@ -339,7 +392,7 @@ final class LinkAPI: @unchecked Sendable {
 				throw APIError(400, "bad_request", "keys must list 1-32 key names such as esc, enter or ctrl+c")
 			}
 			daemon.log("agent.keys", ["device": device.deviceID, "detail": "count=\(keys.count)"])
-			json(try daemon.herdr.sendKeys(id, keys: keys))
+			json(try daemon.agents.sendKeys(id, keys: keys))
 		case "agents.interrupt":
 			let id = try agentID(route)
 			let request = body.isEmpty ? [:] : try parseJSON(body)
@@ -348,36 +401,22 @@ final class LinkAPI: @unchecked Sendable {
 				throw APIError(400, "bad_request", "key must be esc or ctrl+c")
 			}
 			daemon.log("agent.interrupt", ["device": device.deviceID, "detail": "key=\(key)"])
-			json(try daemon.herdr.sendKeys(id, keys: [key]))
+			json(try daemon.agents.sendKeys(id, keys: [key]))
+		case "agents.stop":
+			let id = try agentID(route)
+			daemon.log("agent.stop", ["device": device.deviceID, "detail": "id=\(id)"])
+			_ = try daemon.agents.sendKeys(id, keys: ["ctrl+c", "ctrl+c"])
+			json(["id": id, "stopped": true])
 		case "agents.start":
-			let request = try parseJSON(body)
-			guard let name = request["name"] as? String, Self.isValidName(name) else {
-				throw APIError(400, "bad_request", "name must be 1-64 letters, digits, '.', '_' or '-'")
-			}
-			guard let kind = request["kind"] as? String, (1...32).contains(kind.count),
-				kind.unicodeScalars.allSatisfy({
-					CharacterSet.lowercaseLetters.contains($0) || CharacterSet.decimalDigits.contains($0)
-						|| $0 == "-" || $0 == "_"
-				})
-			else { throw APIError(400, "bad_request", "kind must be a herdr agent kind such as claude or codex") }
-			guard let pane = request["pane_id"] as? String, Self.isValidAgentID(pane) else {
-				throw APIError(400, "bad_request", "pane_id must be a herdr pane id")
-			}
-			let args =
-				request["args"] == nil || request["args"] is NSNull
-				? [] : (request["args"] as? [String] ?? ["\u{0}"])
-			guard args.count <= 32, args.allSatisfy({ $0.count <= 1000 && !$0.contains("\u{0}") }) else {
-				throw APIError(400, "bad_request", "args must list at most 32 strings")
-			}
-			let timeout = request["timeout_ms"] == nil ? 30_000 : WireJSON.strictInt(request["timeout_ms"])
-			guard let timeout else { throw APIError(400, "bad_request", "timeout_ms must be an integer") }
+			let start = try Self.parseStart(try parseJSON(body))
 			daemon.log(
 				"agent.start",
-				["device": device.deviceID, "detail": "kind=\(kind) pane=\(pane) args=\(args.count)"])
-			json(
-				try daemon.herdr.start(
-					name: name, kind: kind, paneID: pane, args: args,
-					timeoutMS: min(max(timeout, 3001), 60_000)))
+				[
+					"device": device.deviceID,
+					"detail":
+						"kind=\(start.kind) machine=\(start.machine ?? "local") pane=\(start.paneID ?? "new-tab") args=\(start.args.count)",
+				])
+			json(try daemon.agents.start(start))
 		case "events":
 			try events(exchange, device: device, requestID: requestID)
 		case "approvals.pending":
@@ -410,7 +449,7 @@ final class LinkAPI: @unchecked Sendable {
 		}
 	}
 
-	private func events(_ exchange: HTTPExchange, device: DeviceRecord, requestID: String) throws {
+	private func events(_ exchange: LinkExchange, device: DeviceRecord, requestID: String) throws {
 		let (stream, last) = daemon.hub.subscribe(
 			deviceID: device.deviceID, lastEventID: exchange.header("Last-Event-ID"))
 		defer {
@@ -432,10 +471,16 @@ final class LinkAPI: @unchecked Sendable {
 		)
 		let interval = daemon.config.ssePingInterval
 		var nextPing = Date().addingTimeInterval(interval)
+		// A relayed stream can end without a write failing (api_cancel, its lifetime): look
+		// every second. A direct stream ends when a write fails, as before.
+		let relayed = exchange.relaySender != nil
 		while true {
-			switch stream.next(timeout: max(0, nextPing.timeIntervalSinceNow)) {
+			let wait = max(0, nextPing.timeIntervalSinceNow)
+			switch stream.next(timeout: relayed ? min(wait, 1) : wait) {
 			case .closed: return
 			case .timeout:
+				if relayed && !exchange.isAlive { return }
+				guard nextPing.timeIntervalSinceNow <= 0 else { continue }
 				try exchange.write(Data(": ping\n\n".utf8))
 				nextPing = Date().addingTimeInterval(interval)
 			case .frame(let frame):
@@ -466,6 +511,53 @@ final class LinkAPI: @unchecked Sendable {
 			throw APIError(400, "bad_request", "bad request id")
 		}
 		return id
+	}
+
+	/// `POST /v1/agents`: `{"name","kind","machine"?,"pane_id"?,"workspace_id"?,"cwd"?,"args"?,"timeout_ms"?}`.
+	static func parseStart(_ request: [String: Any]) throws -> AgentStart {
+		guard let name = request["name"] as? String, isValidName(name), !name.hasPrefix("-") else {
+			throw APIError(400, "bad_request", "name must be 1-64 letters, digits, '.', '_' or '-'")
+		}
+		guard let kind = request["kind"] as? String, (1...32).contains(kind.count),
+			kind.unicodeScalars.allSatisfy({
+				CharacterSet.lowercaseLetters.contains($0) || CharacterSet.decimalDigits.contains($0)
+					|| $0 == "-" || $0 == "_"
+			}), !kind.hasPrefix("-")
+		else { throw APIError(400, "bad_request", "kind must be a herdr agent kind such as codex or pi") }
+		func optionalString(_ key: String) throws -> String? {
+			guard let raw = request[key], !(raw is NSNull) else { return nil }
+			guard let text = raw as? String else { throw APIError(400, "bad_request", "\(key) must be a string") }
+			return text
+		}
+		let pane = try optionalString("pane_id")
+		if let pane, !isValidAgentID(pane) || pane.hasPrefix("-") {
+			throw APIError(400, "bad_request", "pane_id must be a herdr pane id")
+		}
+		let machine = try optionalString("machine")
+		if let machine, machine != AgentMachine.localID, !HerdrCLI.isValidMachineID(machine) {
+			throw APIError(400, "bad_request", "machine must be local or a herdr machine id")
+		}
+		let workspace = try optionalString("workspace_id")
+		if let workspace, !isValidAgentID(workspace) || workspace.hasPrefix("-") {
+			throw APIError(400, "bad_request", "workspace_id must be a herdr workspace id")
+		}
+		let cwd = try optionalString("cwd")
+		if let cwd {
+			guard (1...1024).contains(cwd.utf8.count), cwd.hasPrefix("/") || cwd.hasPrefix("~"),
+				!cwd.contains("\u{0}"), !cwd.contains("\n")
+			else { throw APIError(400, "bad_request", "cwd must be an absolute path") }
+		}
+		let args =
+			request["args"] == nil || request["args"] is NSNull
+			? [] : (request["args"] as? [String] ?? ["\u{0}"])
+		guard args.count <= 32, args.allSatisfy({ $0.count <= 1000 && !$0.contains("\u{0}") }) else {
+			throw APIError(400, "bad_request", "args must list at most 32 strings")
+		}
+		let timeout = request["timeout_ms"] == nil ? 30_000 : WireJSON.strictInt(request["timeout_ms"])
+		guard let timeout else { throw APIError(400, "bad_request", "timeout_ms must be an integer") }
+		return AgentStart(
+			name: name, kind: kind, machine: machine, paneID: pane, workspaceID: workspace, cwd: cwd, args: args,
+			timeoutMS: min(max(timeout, 3001), 60_000))
 	}
 
 	static func isValidAgentID(_ id: String) -> Bool {

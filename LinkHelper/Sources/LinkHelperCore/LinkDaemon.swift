@@ -15,7 +15,13 @@ public final class LinkDaemon: @unchecked Sendable {
 	let devices: DeviceRegistry
 	let hub: EventHub
 	let herdr: HerdrClient
+	/// Local and remote herdr agents (step 12).
+	let agents: AgentDirectory
+	let remotePoller: RemoteAgentPoller
 	let subscriber: HerdrSubscriber
+	/// LinkAPI requests that arrive over the account relay (step 12).
+	let relayIngress: RelayIngress
+	let pushSealer: PushSealer
 	let approvals: ApprovalsServer
 	let pairing: PairingManager
 	let speech: SpeechService
@@ -76,18 +82,28 @@ public final class LinkDaemon: @unchecked Sendable {
 		let hub = EventHub()
 		self.hub = hub
 		subscriber = HerdrSubscriber(socketPath: config.herdrSocket, emit: { hub.publish($0, $1) }, log: opsLog)
+		let directory = AgentDirectory(local: herdr, cli: HerdrCLI(configured: config.herdrCLI), log: opsLog)
+		agents = directory
+		remotePoller = RemoteAgentPoller(
+			directory: directory, interval: config.remotePollInterval, isListening: { hub.streamCount() > 0 },
+			emit: { hub.publish($0, $1) })
+		let sealer = PushSealer()
+		pushSealer = sealer
 		let switchable = SwitchablePush(Self.relayPush(config: config, log: opsLog) ?? UnconfiguredPush())
 		let notifier: PushNotifier = push ?? switchable
 		self.push = notifier
+		let lastDevice = LastDeviceFile(path: config.paths.lastDevice)
+		self.lastDevice = lastDevice
 		approvals = ApprovalsServer(
 			socketPath: config.paths.approvalsSocket, devices: registry, publish: { hub.publish($0, $1) },
 			push: notifier,
-			log: opsLog, skipApprovePrecheck: config.testSkipApprovePrecheck)
+			log: opsLog, skipApprovePrecheck: config.testSkipApprovePrecheck, lastDevice: { lastDevice.current })
 		speech = SpeechService(
 			upstreamBaseURL: config.sttUpstreamBaseURL, upstreamKeyFile: config.sttUpstreamAPIKeyFile,
 			timeout: config.sttTimeout,
 			engine: engine, log: opsLog)
-		lastDevice = LastDeviceFile(path: config.paths.lastDevice)
+		let ingress = RelayIngress(devices: registry, log: opsLog)
+		relayIngress = ingress
 		let urlBox = URLBox()
 		self.urlBox = urlBox
 		let portBox = URLBox()
@@ -100,7 +116,8 @@ public final class LinkDaemon: @unchecked Sendable {
 		let offerConfig = config
 		account = AccountLink(
 			paths: config.paths, devices: registry, push: switchable, transport: accountTransport,
-			pollWait: config.accountPollWait, log: opsLog,
+			pollWait: config.accountPollWait, log: opsLog, ingress: ingress, pushSealer: sealer,
+			approvalFallback: config.approvalFallback,
 			offerContext: { [portBox] in
 				let port = Int(portBox.value) ?? offerConfig.port
 				return AccountLink.OfferContext(
@@ -108,6 +125,8 @@ public final class LinkDaemon: @unchecked Sendable {
 					daemonPubkeyB64: daemonPubkeyB64, daemonFP: daemonFP, macName: macName)
 			})
 		api = LinkAPI(daemon: self)
+		let api = self.api!
+		ingress.setHandler { api.handle($0) }
 	}
 
 	static func loadOrCreateDaemonKey(_ path: String, log: OpsLog) throws -> SoftwareSigningKey {
@@ -128,7 +147,9 @@ public final class LinkDaemon: @unchecked Sendable {
 			let pem = try? String(contentsOfFile: config.paths.relayKey, encoding: .utf8),
 			let key = try? SoftwareSigningKey(pkcs8PEM: pem)
 		else { return nil }
-		return RelayPush(client: RelayClient(baseURL: base, deviceID: config.relayDeviceID, linkKey: key), log: log)
+		return RelayPush(
+			client: RelayClient(baseURL: base, deviceID: config.relayDeviceID, linkKey: key),
+			fallbackAfter: config.approvalFallback, log: log)
 	}
 
 	public var publicURL: String { urlBox.value }
@@ -179,6 +200,7 @@ public final class LinkDaemon: @unchecked Sendable {
 		try admin.start()
 		self.admin = admin
 		subscriber.start()
+		remotePoller.start()
 		Task { [account] in await account.start() }
 		if !config.accountBearer.isEmpty, let backend = URL(string: config.accountBackendURL.isEmpty ? config.relayBaseURL : config.accountBackendURL) {
 			// Standalone/e2e: join the account from the environment, as the app's XPC call would.
@@ -204,6 +226,7 @@ public final class LinkDaemon: @unchecked Sendable {
 		admin?.stop()
 		approvals.stop()
 		subscriber.stop()
+		remotePoller.stop()
 		log("stop")
 	}
 
@@ -263,7 +286,15 @@ public final class LinkDaemon: @unchecked Sendable {
 	}
 
 	func accountStatus() -> [String: Any] {
-		(try? blocking(5) { [account] in await account.statusObject() }) ?? ["ok": false]
+		guard var status = try? blocking(5, { [account] in await account.statusObject() }) else { return ["ok": false] }
+		let last = lastDevice.current
+		status["last_device"] = last ?? NSNull()
+		// Per iPhone: what its approval pushes say and whether it made the latest request.
+		status["phone_details"] = devices.active().filter { $0.origin == .account }.map {
+			["device_id": $0.deviceID, "push_text": $0.pushText.rawValue, "last_used": $0.deviceID == last]
+				as [String: Any]
+		}
+		return status
 	}
 
 	func accountClear() -> [String: Any] {
@@ -275,17 +306,25 @@ public final class LinkDaemon: @unchecked Sendable {
 			let report = try await account.syncNow()
 			return [
 				"ok": true, "pinned": report.pinned, "offered": report.offered, "dropped": report.dropped,
-				"untrusted": report.untrusted,
+				"untrusted": report.untrusted, "key_changed": report.keyChanged,
 			]
 		}
 	}
 
 	func approvePending() -> [String: Any] {
-		["ok": true, "devices": devices.pendingApproveConfirmations().map(AccountLink.confirmationObject)]
+		let macLink = account.macLinkKey()
+		return [
+			"ok": true,
+			"devices": devices.pendingApproveConfirmations().map {
+				AccountLink.confirmationObject($0, macLink: macLink)
+			},
+		]
 	}
 
-	func approveConfirm(_ deviceID: String) throws -> [String: Any] {
-		try blocking { [account] in try await account.confirmApprove(deviceID) }
+	/// `safetyNumber` is the one the owner compared; the helper recomputes it from the device's
+	/// current keys and refuses (409 `keys_changed`) when they differ.
+	func approveConfirm(_ deviceID: String, safetyNumber: String) throws -> [String: Any] {
+		try blocking { [account] in try await account.confirmApprove(deviceID, safetyNumber: safetyNumber) }
 	}
 
 	private func adminHandlers() -> [String: AdminServer.Handler] {
@@ -305,7 +344,8 @@ public final class LinkDaemon: @unchecked Sendable {
 						403, "forbidden", "approve.confirm needs WHISPERA_LINK_TEST_ADMIN_CONFIRM=1 (test only)")
 				}
 				log("config.warning", ["detail": "approve confirmed over the admin socket (test flag)"])
-				return try approveConfirm(request["device_id"] as? String ?? "")
+				return try approveConfirm(
+					request["device_id"] as? String ?? "", safetyNumber: request["safety_number"] as? String ?? "")
 			},
 			"status": { [unowned self] _ in
 				(try JSONSerialization.jsonObject(with: statusJSON()) as? [String: Any]) ?? ["ok": true]
@@ -331,7 +371,10 @@ public final class LinkDaemon: @unchecked Sendable {
 			},
 			"apns.test": { [unowned self] _ in
 				let status = push.notifyApproval(
-					requestID: "test", expiresAt: now() + 60, preferDevice: nil, devices: devices.active())
+					ApprovalPush(
+						requestID: LinkCrypto.newPrefixedID("apr"), expiresAt: now() + 60,
+						lastDevice: lastDevice.current, summary: "test push"),
+					devices: devices.active().filter(\.approveConfirmed), isPending: { false })
 				return [
 					"ok": true, "apns": push.isConfigured ? "configured" : "unconfigured",
 					"results": ["all": status],

@@ -18,7 +18,7 @@ let package = Package(
 	dependencies: [
 		.package(
 			url: "https://github.com/sapoepsilon/whispera-components",
-			revision: "be360c01892c1a0fc220f242e341924ddf8ae86f")
+			revision: "ddd9fed7e101e1c606bf5e23eb010821a919db42")
 	],
 	targets: [
 		.target(name: "LinkHelperXPC"),
@@ -33,6 +33,11 @@ let package = Package(
 		// The helper without the speech engine, for `swift run` and the e2e scripts on a machine
 		// that has not built the app. The shipped helper is the login-item app target.
 		.executableTarget(name: "link-helper-serve", dependencies: ["LinkHelperCore"]),
+		// A software-key phone for the e2e scripts: pairing v2 (commit, then reveal) and WL1-signed
+		// calls against a standalone helper. Never the app's or the iPhone's keys.
+		.executableTarget(
+			name: "link-soft-phone",
+			dependencies: [.product(name: "WhisperaLink", package: "whispera-components")]),
 		.testTarget(name: "LinkHelperCoreTests", dependencies: ["LinkHelperCore"]),
 	]
 )

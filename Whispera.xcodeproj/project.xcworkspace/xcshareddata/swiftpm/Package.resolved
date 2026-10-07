@@ -105,7 +105,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sapoepsilon/whispera-components",
       "state" : {
-        "revision" : "be360c01892c1a0fc220f242e341924ddf8ae86f"
+        "revision" : "ddd9fed7e101e1c606bf5e23eb010821a919db42"
       }
     },
     {

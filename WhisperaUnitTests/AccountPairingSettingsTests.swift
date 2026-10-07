@@ -91,14 +91,19 @@ final class FakeHelperAccountLink: HelperAccountLinking, @unchecked Sendable {
 	var pending: [PendingApproveConfirmation] = []
 	private(set) var handedOff: [(bearer: String, backend: URL)] = []
 	private(set) var confirmed: [String] = []
+	/// The safety numbers the confirmations carried, in order.
+	private(set) var confirmedNumbers: [String] = []
 	private(set) var cleared = 0
 	var confirmSucceeds = true
+	var confirmAnswer: HelperConfirmResult?
 	var registered = false
+	var phoneDetails: [HelperAccountStatus.PhoneDetail]?
 
 	private func status() -> HelperAccountStatus {
 		HelperAccountStatus(
 			ok: true, status: registered ? "registered" : "signed_out", deviceID: registered ? macID : nil,
-			baseURL: nil, lastSyncAt: nil, lastError: nil, phones: [], pendingConfirmations: pending.count, error: nil)
+			baseURL: nil, lastSyncAt: nil, lastError: nil, phones: [], pendingConfirmations: pending.count,
+			phoneDetails: phoneDetails, error: nil)
 	}
 
 	func setAccount(bearer: String, backendURL: URL) async -> HelperAccountStatus? {
@@ -129,20 +134,40 @@ final class FakeHelperAccountLink: HelperAccountLinking, @unchecked Sendable {
 		return pending
 	}
 
-	func confirmApprove(deviceID: String) async -> Bool {
+	func confirmApprove(deviceID: String, safetyNumber: String) async -> HelperConfirmResult {
 		lock.lock()
 		defer { lock.unlock() }
 		confirmed.append(deviceID)
-		guard confirmSucceeds else { return false }
+		confirmedNumbers.append(safetyNumber)
+		if let confirmAnswer { return confirmAnswer }
+		guard confirmSucceeds else { return .failed("internal") }
 		pending.removeAll { $0.deviceID == deviceID }
-		return true
+		return .confirmed
 	}
 }
 
-struct FakeAuthenticator: Authenticator {
+final class FakeAuthenticator: Authenticator, @unchecked Sendable {
 	let result: AuthenticatorResult
+	private let lock = NSLock()
+	private var asked: [String] = []
 
-	func authenticate(reason: String) async -> AuthenticatorResult { result }
+	init(result: AuthenticatorResult) {
+		self.result = result
+	}
+
+	/// The reasons owner authentication was asked with.
+	var reasons: [String] {
+		lock.lock()
+		defer { lock.unlock() }
+		return asked
+	}
+
+	func authenticate(reason: String) async -> AuthenticatorResult {
+		lock.lock()
+		asked.append(reason)
+		lock.unlock()
+		return result
+	}
 }
 
 enum AccountFixtures {
@@ -165,7 +190,11 @@ enum AccountFixtures {
 
 	static let pendingPhone = PendingApproveConfirmation(
 		deviceID: "dev_bbbbbbbbbbbbbbbbbbbbbbbb", name: "Uzi's iPhone", fingerprint: "835d-7c2e-6f8d-1ac5",
-		approveFP: String(repeating: "a", count: 64))
+		approveFP: String(repeating: "a", count: 64), safetyNumber: "4821 0937 5512")
+
+	static let changedPhone = PendingApproveConfirmation(
+		deviceID: "dev_cccccccccccccccccccccccc", name: "Uzi's iPhone", fingerprint: "1f0e-99ab-23cd-7e10",
+		approveFP: String(repeating: "b", count: 64), safetyNumber: "0716 2284 9930", keyChanged: true)
 
 	static func defaults() -> UserDefaults {
 		UserDefaults(suiteName: "AccountPairingSettingsTests.\(UUID().uuidString)")!
@@ -226,8 +255,78 @@ struct ApproveConfirmModelTests {
 		#expect(model.pending.count == 1, "still pending in the helper")
 	}
 
-	@Test func theTouchIDReasonNamesTheIPhone() {
+	@Test func theTouchIDReasonNamesTheIPhone() async {
 		#expect(ApproveConfirmModel.reason(for: AccountFixtures.pendingPhone).contains("Uzi's iPhone"))
+		let helper = FakeHelperAccountLink()
+		helper.pending = [AccountFixtures.pendingPhone]
+		let authenticator = FakeAuthenticator(result: .success)
+		let model = ApproveConfirmModel(helper: helper, authenticator: authenticator)
+		await model.confirm(AccountFixtures.pendingPhone)
+		#expect(authenticator.reasons.count == 1)
+		#expect(authenticator.reasons.first?.contains("Uzi's iPhone") == true)
+	}
+
+	@Test func theConfirmationCarriesTheSafetyNumberTheCardShowed() async {
+		let helper = FakeHelperAccountLink()
+		helper.pending = [AccountFixtures.pendingPhone]
+		let model = ApproveConfirmModel(helper: helper, authenticator: FakeAuthenticator(result: .success))
+		await model.refresh()
+		#expect(await model.confirm(AccountFixtures.pendingPhone))
+		#expect(helper.confirmedNumbers == ["4821 0937 5512"])
+	}
+
+	@Test func keysThatChangedSinceTheCardWasShownAreNotConfirmed() async {
+		let helper = FakeHelperAccountLink()
+		helper.pending = [AccountFixtures.pendingPhone]
+		helper.confirmAnswer = .keysChanged
+		let model = ApproveConfirmModel(helper: helper, authenticator: FakeAuthenticator(result: .success))
+		await model.refresh()
+		#expect(!(await model.confirm(AccountFixtures.pendingPhone)))
+		#expect(model.visible.count == 1)
+		#expect(model.lastError?.contains("safety number") == true)
+	}
+
+	@Test func withoutASafetyNumberNothingIsAskedOrConfirmed() async {
+		var item = AccountFixtures.pendingPhone
+		item.safetyNumber = nil
+		let helper = FakeHelperAccountLink()
+		helper.pending = [item]
+		let authenticator = FakeAuthenticator(result: .success)
+		let model = ApproveConfirmModel(helper: helper, authenticator: authenticator)
+		#expect(!(await model.confirm(item)))
+		#expect(authenticator.reasons.isEmpty)
+		#expect(helper.confirmed.isEmpty)
+	}
+
+	@Test func aCancelledTouchIDNeverReachesTheHelper() async {
+		let helper = FakeHelperAccountLink()
+		helper.pending = [AccountFixtures.changedPhone]
+		let model = ApproveConfirmModel(helper: helper, authenticator: FakeAuthenticator(result: .cancelled))
+		#expect(!(await model.confirm(AccountFixtures.changedPhone)))
+		#expect(helper.confirmed.isEmpty)
+		#expect(helper.confirmedNumbers.isEmpty)
+	}
+
+	@Test func aKeyChangeShowsTheWarningAndAFirstPairingDoesNot() {
+		#expect(ApproveConfirmCard.keyChangeWarning(for: AccountFixtures.changedPhone)?.contains("keys changed") == true)
+		#expect(ApproveConfirmCard.keyChangeWarning(for: AccountFixtures.pendingPhone) == nil)
+	}
+
+	@Test func theHelpersPendingListAndConfirmRepliesDecode() throws {
+		let list = Data(
+			#"{"ok":true,"devices":[{"device_id":"dev_bbbbbbbbbbbbbbbbbbbbbbbb","name":"Uzi's iPhone","platform":"ios","fingerprint":"835d-7c2e-6f8d-1ac5","link_fingerprint":"aaaa-bbbb-cccc-dddd","approve_fp":"aa","created_at":1,"safety_number":"4821 0937 5512","key_changed":true,"key_changed_at":2}]}"#
+				.utf8)
+		let decoded = try #require(PendingApproveConfirmation.decodeList(list))
+		#expect(decoded.first?.safetyNumber == "4821 0937 5512")
+		#expect(decoded.first?.keyChanged == true)
+		let older = Data(
+			#"{"devices":[{"device_id":"dev_b","name":"n","fingerprint":"f","approve_fp":"a"}]}"#.utf8)
+		#expect(PendingApproveConfirmation.decodeList(older)?.first?.keyChanged == false)
+		#expect(HelperConfirmResult.decode(Data(#"{"ok":true,"device":{}}"#.utf8)) == .confirmed)
+		#expect(
+			HelperConfirmResult.decode(Data(#"{"ok":false,"error":{"code":"keys_changed","message":"m"}}"#.utf8))
+				== .keysChanged)
+		#expect(HelperConfirmResult.decode(nil) == .failed(nil))
 	}
 }
 
@@ -328,6 +427,29 @@ struct AccountSettingsModelTests {
 		await model.revoke(try #require(model.devices.first { $0.name == "iPhone" }))
 		#expect(directory.revoked == [phone.device_id])
 		#expect(model.devices.first { $0.name == "iPhone" }?.isRevoked == true)
+	}
+
+	@Test func iPhoneRowsShowTheirPushTextAndWhichWasUsedLast() async throws {
+		let helper = FakeHelperAccountLink()
+		helper.registered = true
+		let mac = try AccountFixtures.device(helper.macID, name: "Studio Mac", platform: .macos)
+		let named = try AccountFixtures.device("dev_cccccccccccccccccccccccc", name: "iPhone", platform: .ios)
+		let generic = try AccountFixtures.device("dev_ffffffffffffffffffffffff", name: "Work iPhone", platform: .ios)
+		helper.phoneDetails = [
+			.init(deviceID: named.device_id, pushText: "named", lastUsed: true),
+			.init(deviceID: generic.device_id, pushText: "generic", lastUsed: false),
+		]
+		let model = AccountSettingsModel(
+			defaults: AccountFixtures.defaults(), signIn: FakeAccountSigningIn(.staticToken("t")),
+			directory: FakeAccountDirectory([mac, named, generic]), helper: helper, hostedClientID: { "" })
+
+		await model.load()
+		let rows = Dictionary(uniqueKeysWithValues: model.devices.map { ($0.name, $0) })
+		#expect(rows["iPhone"]?.pushTextLabel == String(localized: "Push: named"))
+		#expect(rows["iPhone"]?.isLastUsed == true)
+		#expect(rows["Work iPhone"]?.pushTextLabel == String(localized: "Push: generic"))
+		#expect(rows["Work iPhone"]?.isLastUsed == false)
+		#expect(rows["Studio Mac"]?.pushTextLabel == nil)
 	}
 
 	@Test func signingOutRevokesThisMacAndClearsTheHelperAndTheCredential() async throws {
@@ -433,7 +555,14 @@ struct AccountPairingSnapshotTests {
 	@Test func confirmCard() throws {
 		let card = ApproveConfirmCard(item: AccountFixtures.pendingPhone, isConfirming: false, confirm: {}, notNow: {})
 			.padding(20)
-		let url = try Self.render(card, size: CGSize(width: 560, height: 190), name: "mac-confirm-card.png")
+		let url = try Self.render(card, size: CGSize(width: 600, height: 260), name: "mac-confirm-card.png")
+		#expect(FileManager.default.fileExists(atPath: url.path))
+	}
+
+	@Test func confirmCardAfterAKeyChange() throws {
+		let card = ApproveConfirmCard(item: AccountFixtures.changedPhone, isConfirming: false, confirm: {}, notNow: {})
+			.padding(20)
+		let url = try Self.render(card, size: CGSize(width: 600, height: 300), name: "mac-confirm-card-key-changed.png")
 		#expect(FileManager.default.fileExists(atPath: url.path))
 	}
 }

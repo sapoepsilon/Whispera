@@ -36,6 +36,14 @@ public struct HelperConfig: Sendable {
 	public var macName = ""
 	/// Test only: lets the admin socket confirm a device's approve rights without Touch ID.
 	public var testAdminConfirm = false
+	/// The herdr CLI that reaches the other herdr machines (`herdr machine list`,
+	/// `herdr --machine <id> …`). A bare name is looked up on PATH and ~/.local/bin; empty turns
+	/// remote machines off.
+	public var herdrCLI = "herdr"
+	/// Seconds before the other phones are pushed while an approval is still pending.
+	public var approvalFallback: Double = 20
+	/// Seconds between status polls of the remote herdr machines (only while a phone listens).
+	public var remotePollInterval: Double = 10
 	public var paths: Paths
 
 	public struct Paths: Sendable {
@@ -91,7 +99,11 @@ public struct HelperConfig: Sendable {
 			cfg.ssePingInterval = ping
 		}
 		if env["WHISPERA_LINK_BONJOUR"] == "0" { cfg.bonjour = false }
-		cfg.testSkipApprovePrecheck = env["WHISPERA_LINK_TEST_SKIP_APPROVE_PRECHECK"] == "1"
+		#if DEBUG
+			// Test-only switches; a release build never reads them from the environment.
+			cfg.testSkipApprovePrecheck = env["WHISPERA_LINK_TEST_SKIP_APPROVE_PRECHECK"] == "1"
+			cfg.testAdminConfirm = env["WHISPERA_LINK_TEST_ADMIN_CONFIRM"] == "1"
+		#endif
 		if let url = nonEmpty(env["WHISPERA_LINK_RELAY_BASE_URL"]) { cfg.relayBaseURL = url }
 		if let url = nonEmpty(env["WHISPERA_LINK_ACCOUNT_BACKEND_URL"]) { cfg.accountBackendURL = url }
 		if let bearer = nonEmpty(env["WHISPERA_LINK_ACCOUNT_BEARER"]) { cfg.accountBearer = bearer }
@@ -103,7 +115,14 @@ public struct HelperConfig: Sendable {
 				.filter { !$0.isEmpty }
 		}
 		if let name = nonEmpty(env["WHISPERA_LINK_MAC_NAME"]) { cfg.macName = name }
-		cfg.testAdminConfirm = env["WHISPERA_LINK_TEST_ADMIN_CONFIRM"] == "1"
+		if let cli = env["WHISPERA_LINK_HERDR_CLI"] { cfg.herdrCLI = cli }
+		if let seconds = nonEmpty(env["WHISPERA_LINK_APPROVAL_FALLBACK_S"]).flatMap(Double.init), seconds >= 0 {
+			cfg.approvalFallback = seconds
+		}
+		if let seconds = nonEmpty(env["WHISPERA_LINK_REMOTE_POLL_S"]).flatMap(Double.init), seconds > 0 {
+			cfg.remotePollInterval = seconds
+		}
+		if cfg.herdrCLI.hasPrefix("~") { cfg.herdrCLI = expand(cfg.herdrCLI, home) }
 		cfg.herdrSocket = expand(cfg.herdrSocket, home)
 		if !cfg.sttUpstreamAPIKeyFile.isEmpty {
 			cfg.sttUpstreamAPIKeyFile = expand(cfg.sttUpstreamAPIKeyFile, home)
@@ -135,6 +154,9 @@ public struct HelperConfig: Sendable {
 			case "clock_skew_s": if let v = int(key, value) { clockSkew = v }
 			case "pair_code_ttl_s": if let v = int(key, value) { pairCodeTTL = v }
 			case "max_json_bytes": if let v = int(key, value) { maxJSONBytes = v }
+			case "herdr_cli": if let v = string(value) { herdrCLI = v }
+			case "approval_fallback_s": if let v = double(value), v >= 0 { approvalFallback = v }
+			case "remote_poll_s": if let v = double(value), v > 0 { remotePollInterval = v }
 			case "log_debug": if let v = value as? Bool { logDebug = v }
 			case "bonjour": if let v = value as? Bool { bonjour = v }
 			case "stt":

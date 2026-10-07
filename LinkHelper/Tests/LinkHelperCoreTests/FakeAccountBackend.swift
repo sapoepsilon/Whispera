@@ -21,6 +21,9 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 	private var seq: Int64 = 0
 	private(set) var sendCount = 0
 	private(set) var registerCount = 0
+	private var notifies: [NotifyRequest] = []
+	/// What `POST /v1/notify` answers per device id (default `sent`).
+	var notifyResults: [String: String] = [:]
 
 	let baseURL = URL(string: "http://127.0.0.1:18080")!
 
@@ -40,6 +43,42 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 		lock.lock()
 		devices[deviceID] = nil
 		order.removeAll { $0 == deviceID }
+		lock.unlock()
+	}
+
+	/// Gives the listed device `id` all the keys (and KEM record) of the device `donor`
+	/// registered with, and drops `donor`: a reinstall, or a backend substituting keys.
+	func substituteKeys(of id: String, from donor: String) {
+		lock.lock()
+		defer { lock.unlock() }
+		guard var target = devices[id], let source = devices[donor]?.device else { return }
+		target.device.link_pubkey = source.link_pubkey
+		target.device.link_fp = source.link_fp
+		target.device.approve_pubkey = source.approve_pubkey
+		target.device.approve_fp = source.approve_fp
+		target.device.kem_pubkey = source.kem_pubkey
+		devices[id] = target
+		devices[donor] = nil
+		order.removeAll { $0 == donor }
+	}
+
+	/// Replaces only the device's KEM record (`KEMKeyRecord.base64`).
+	func setKEMRecord(of id: String, _ record: String) {
+		lock.lock()
+		devices[id]?.device.kem_pubkey = record
+		lock.unlock()
+	}
+
+	/// Every accepted `POST /v1/notify` body, in order.
+	var notifyCalls: [NotifyRequest] {
+		lock.lock()
+		defer { lock.unlock() }
+		return notifies
+	}
+
+	func setNotifyResult(_ deviceID: String, _ result: String) {
+		lock.lock()
+		notifyResults[deviceID] = result
 		lock.unlock()
 	}
 
@@ -167,7 +206,24 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 			queues[caller]?.removeAll { $0.seq <= req.up_to_seq }
 			return json(200, RelayAckResponse(deleted: UInt64(before - (queues[caller]?.count ?? 0))))
 		case ("POST", "/v1/notify"):
-			return json(200, NotifyResponse(push: "no_token"))
+			// The backend's rules: request_id with every kind, sealed only on approval, no
+			// request_id or sealed without a kind.
+			guard let req = try? JSONDecoder().decode(NotifyRequest.self, from: body),
+				let target = devices[req.device_id], target.account == me.account
+			else { return error(400, "bad_request") }
+			if req.kind == nil {
+				guard req.request_id == nil, req.sealed == nil else { return error(400, "bad_request") }
+			} else {
+				guard ["approval", "approval.resolved"].contains(req.kind!), let rid = req.request_id,
+					LinkCrypto.isValidPrefixedID(rid, prefix: "apr")
+				else { return error(400, "bad_request") }
+				if req.sealed != nil, req.kind != "approval" { return error(400, "bad_request") }
+				if let sealed = req.sealed, sealed.count > 2048 || Data(base64Encoded: sealed) == nil {
+					return error(400, "bad_request")
+				}
+			}
+			notifies.append(req)
+			return json(200, NotifyResponse(push: notifyResults[req.device_id] ?? "sent"))
 		default:
 			return error(404, "not_found")
 		}
@@ -195,6 +251,14 @@ final class AccountPhone {
 			approveKey: approveKey.publicKey, agreementKey: agreementKey.publicKey, transport: backend)
 		deviceID = device.device_id
 		return device
+	}
+
+	/// The safety number the iPhone shows for the Mac `macID`, from the keys the account lists.
+	func safetyNumber(macID: String) throws -> String {
+		guard let mac = backend.device(macID) else { throw RelayError.unknownSender(macID) }
+		return SafetyNumber.compute(
+			macLink: try LinkPublicKey(x963Base64: mac.link_pubkey), phoneLink: linkKey.publicKey,
+			phoneApprove: approveKey.publicKey)
 	}
 
 	var relay: RelayClient {

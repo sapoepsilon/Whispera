@@ -5,9 +5,9 @@ import XCTest
 @testable import LinkHelperCore
 
 /// Account pairing on the helper (step 11) against an in-memory account backend: a phone of the
-/// Mac's account is pinned with approve rights pending and offered the link, revocation drops it,
-/// approvals wait for the owner's confirmation, `unpaired` is honoured and another account's
-/// devices never get in.
+/// Mac's account is pinned unconfirmed and gets nothing until the owner confirms its safety
+/// number, then it is offered the link; revocation drops it, `unpaired` is honoured and another
+/// account's devices never get in.
 final class AccountPairingTests: XCTestCase {
 	var backend: FakeAccountBackend!
 	var helper: TestDaemon!
@@ -33,6 +33,14 @@ final class AccountPairingTests: XCTestCase {
 		return try XCTUnwrap(status["device_id"] as? String)
 	}
 
+	/// The owner confirms `phone` with the safety number the iPhone shows.
+	@discardableResult
+	private func confirm(_ phone: AccountPhone) async throws -> [String: Any] {
+		let id = await account.deviceID
+		let macID = try XCTUnwrap(id)
+		return try await account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+	}
+
 	private func offers(_ messages: [LinkMessage]) -> [LinkOffer] {
 		messages.compactMap { if case .linkOffer(let offer) = $0 { return offer } else { return nil } }
 	}
@@ -45,7 +53,7 @@ final class AccountPairingTests: XCTestCase {
 		return soft
 	}
 
-	func testSyncPinsTheAccountPhoneAsPendingAndSendsItALinkOffer() async throws {
+	func testSyncPinsTheAccountPhoneUnconfirmedAndOffersTheLinkOnlyAfterTheOwnerConfirms() async throws {
 		let phone = AccountPhone(backend: backend)
 		try await phone.register(bearer: "tok-alice", name: "Alice's iPhone")
 		let macID = try await joinAccount()
@@ -55,28 +63,41 @@ final class AccountPairingTests: XCTestCase {
 
 		let report = try await account.syncNow()
 		XCTAssertEqual(report.pinned, [phone.deviceID])
-		XCTAssertEqual(report.offered, [phone.deviceID])
+		XCTAssertEqual(report.offered, [], "nothing goes to a phone the owner has not confirmed")
 		let record = try XCTUnwrap(helper.daemon.devices.get(phone.deviceID))
 		XCTAssertEqual(record.origin, .account)
 		XCTAssertFalse(record.approveConfirmed)
+		XCTAssertEqual(record.sttKeySHA256, "")
 		XCTAssertEqual(record.name, "Alice's iPhone")
 		XCTAssertEqual(record.approvePubkey, phone.approveKey.publicKey.x963Base64)
+		XCTAssertEqual(record.kemPubkey, phone.agreementKey.publicKey.x963Base64)
+		let nothingYet = try await phone.receive()
+		XCTAssertEqual(nothingYet, [])
 
-		let received = offers(try await phone.receive())
-		XCTAssertEqual(received.count, 1)
-		let offer = try XCTUnwrap(received.first)
+		// The card shows the same safety number the iPhone computes from the keys it was given.
+		let pending = await account.pendingConfirmations()
+		XCTAssertEqual(pending.map { $0["device_id"] as? String }, [phone.deviceID])
+		XCTAssertEqual(pending.first?["safety_number"] as? String, try phone.safetyNumber(macID: macID))
+		XCTAssertEqual(pending.first?["key_changed"] as? Bool, false)
+
+		let confirmed = try await confirm(phone)
+		XCTAssertEqual(confirmed["notified"] as? Bool, true)
+		let messages = try await phone.receive()
+		XCTAssertEqual(messages.count, 2)
+		XCTAssertEqual(messages.last, .approveConfirmed(deviceID: phone.deviceID))
+		let offer = try XCTUnwrap(offers(messages).first)
 		XCTAssertEqual(offer.helper_device_id, macID)
 		XCTAssertEqual(offer.base_urls, ["http://127.0.0.1:\(helper.port)"])
 		XCTAssertEqual(offer.stt_base_url, "http://127.0.0.1:\(helper.port)/v1")
 		XCTAssertEqual(try offer.verifiedDaemonKey().fingerprint, helper.daemon.daemonFP)
 		XCTAssertEqual(offer.mac_name, "Test Mac")
-		XCTAssertFalse(offer.approve_confirmed)
+		XCTAssertTrue(offer.approve_confirmed)
 
 		// The offer is enough to talk to the helper: WL1 as the account device id, and its STT key.
 		let soft = httpPhone(phone, sttKey: try XCTUnwrap(offer.stt_key))
 		let me = try await soft.call("GET", "/v1/devices/me")
 		XCTAssertEqual(me.status, 200)
-		XCTAssertEqual((me.json["device"] as? [String: Any])?["approve_confirmed"] as? Bool, false)
+		XCTAssertEqual((me.json["device"] as? [String: Any])?["approve_confirmed"] as? Bool, true)
 		var models = URLRequest(url: helper.baseURL.appendingPathComponent("v1/models"))
 		models.setValue("Bearer \(soft.sttKey)", forHTTPHeaderField: "Authorization")
 		let modelsStatus = try await SoftPhone.send(models).status
@@ -92,9 +113,8 @@ final class AccountPairingTests: XCTestCase {
 		let registrations = backend.registerCount
 		_ = try await joinAccount()
 		XCTAssertEqual(backend.registerCount, registrations, "the Mac registers once")
-
-		let pending = await account.pendingConfirmations()
-		XCTAssertEqual(pending.map { $0["device_id"] as? String }, [phone.deviceID])
+		let none = await account.pendingConfirmations()
+		XCTAssertTrue(none.isEmpty)
 	}
 
 	func testRevokedOrMissingPhonesAreDroppedAndGetNothing() async throws {
@@ -127,35 +147,58 @@ final class AccountPairingTests: XCTestCase {
 		XCTAssertEqual(repinned, [])
 	}
 
-	func testApproveWaitsForTheOwnersConfirmationAndDenyDoesNot() async throws {
+	func testApproveAndDenyWaitForTheOwnersConfirmationAndDenyIsSigned() async throws {
 		let phone = AccountPhone(backend: backend)
 		try await phone.register(bearer: "tok-alice")
 		_ = try await joinAccount()
 		_ = try await account.syncNow()
-		_ = try await phone.receive()
 		let soft = httpPhone(phone)
 		let broker = try FakeBroker(socketPath: helper.daemon.config.paths.approvalsSocket)
 		defer { broker.close() }
 
 		let first = try broker.request()
+		XCTAssertEqual(first.ackDevices, 0, "an unconfirmed phone is not counted or pushed")
 		let refused = try await soft.call(
 			"POST", "/v1/approvals/\(first.id)/decision",
 			json: ["decision": "approve", "signature": try first.signature(phone.approveKey)])
 		XCTAssertEqual(refused.status, 403)
-		XCTAssertEqual(refused.errorCode, "approve_unconfirmed")
-		let denied = try await soft.call("POST", "/v1/approvals/\(first.id)/decision", json: ["decision": "deny"])
-		XCTAssertEqual(denied.status, 200)
-		XCTAssertEqual(denied.json["status"] as? String, "denied")
+		XCTAssertEqual(refused.errorCode, "device_unconfirmed")
+		let deniedEarly = try await soft.call(
+			"POST", "/v1/approvals/\(first.id)/decision",
+			json: ["decision": "deny", "signature": try first.denial(phone.approveKey)])
+		XCTAssertEqual(deniedEarly.status, 403)
+		XCTAssertEqual(deniedEarly.errorCode, "device_unconfirmed")
 
-		let confirmed = try await account.confirmApprove(phone.deviceID)
-		XCTAssertEqual(confirmed["notified"] as? Bool, true)
+		try await confirm(phone)
 		XCTAssertTrue(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
-		let confirmation = try await phone.receive()
-		XCTAssertEqual(confirmation, [.approveConfirmed(deviceID: phone.deviceID)])
 		let pending = await account.pendingConfirmations()
 		XCTAssertTrue(pending.isEmpty)
 
+		// Deny: unsigned, or signed as an approve, is refused; WL1-DENY over the bytes is not.
+		let unsigned = try await soft.call("POST", "/v1/approvals/\(first.id)/decision", json: ["decision": "deny"])
+		XCTAssertEqual(unsigned.status, 422)
+		XCTAssertEqual(unsigned.errorCode, "bad_signature")
+		let approveAsDeny = try await soft.call(
+			"POST", "/v1/approvals/\(first.id)/decision",
+			json: ["decision": "deny", "signature": try first.signature(phone.approveKey)])
+		XCTAssertEqual(approveAsDeny.errorCode, "bad_signature")
+		let wrongKey = try await soft.call(
+			"POST", "/v1/approvals/\(first.id)/decision",
+			json: ["decision": "deny", "signature": try first.denial(phone.linkKey)])
+		XCTAssertEqual(wrongKey.errorCode, "bad_signature")
+		let denial = try first.denial(phone.approveKey)
+		let denied = try await soft.call(
+			"POST", "/v1/approvals/\(first.id)/decision", json: ["decision": "deny", "signature": denial])
+		XCTAssertEqual(denied.status, 200)
+		XCTAssertEqual(denied.json["status"] as? String, "denied")
+		XCTAssertEqual(broker.decisions.last?["signature"] as? String, denial, "the broker gets the signed deny")
+
 		let second = try broker.request()
+		XCTAssertEqual(second.ackDevices, 1)
+		let denyAsApprove = try await soft.call(
+			"POST", "/v1/approvals/\(second.id)/decision",
+			json: ["decision": "approve", "signature": try second.denial(phone.approveKey)])
+		XCTAssertEqual(denyAsApprove.errorCode, "bad_signature")
 		let approved = try await soft.call(
 			"POST", "/v1/approvals/\(second.id)/decision",
 			json: ["decision": "approve", "signature": try second.signature(phone.approveKey)])
@@ -163,7 +206,7 @@ final class AccountPairingTests: XCTestCase {
 		XCTAssertEqual(approved.json["status"] as? String, "approved")
 		XCTAssertEqual(approved.json["broker_outcome"] as? String, "accepted")
 
-		// The confirmation survives a sync, and a later offer says so.
+		// The confirmation survives a sync.
 		_ = try await account.syncNow()
 		XCTAssertTrue(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
 	}
@@ -261,6 +304,7 @@ final class AccountPairingTests: XCTestCase {
 		try await phone.register(bearer: "tok-alice")
 		let macID = try await joinAccount()
 		_ = try await account.syncNow()
+		try await confirm(phone)
 		let registrations = backend.registerCount
 		let sends = backend.sendCount
 
@@ -298,7 +342,10 @@ final class AccountPairingTests: XCTestCase {
 		let pending = try admin(["op": "approve.pending"])
 		XCTAssertEqual((pending["devices"] as? [[String: Any]])?.first?["device_id"] as? String, phone.deviceID)
 
-		let refused = try admin(["op": "approve.confirm", "device_id": phone.deviceID])
+		let refused = try admin([
+			"op": "approve.confirm", "device_id": phone.deviceID,
+			"safety_number": try phone.safetyNumber(macID: XCTUnwrap(joined["device_id"] as? String)),
+		])
 		XCTAssertEqual(refused["ok"] as? Bool, false)
 		XCTAssertEqual((refused["error"] as? [String: Any])?["code"] as? String, "forbidden")
 		XCTAssertFalse(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
@@ -315,9 +362,14 @@ final class AccountPairingTests: XCTestCase {
 		}
 		let phone = AccountPhone(backend: backend)
 		try await phone.register(bearer: "tok-alice")
-		_ = try await joinAccount()
+		let macID = try await joinAccount()
 		_ = try await account.syncNow()
-		let confirmed = try admin(["op": "approve.confirm", "device_id": phone.deviceID])
+		let wrong = try admin(["op": "approve.confirm", "device_id": phone.deviceID, "safety_number": "0000 0000 0000"])
+		XCTAssertEqual((wrong["error"] as? [String: Any])?["code"] as? String, "keys_changed")
+		XCTAssertFalse(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
+		let confirmed = try admin([
+			"op": "approve.confirm", "device_id": phone.deviceID, "safety_number": try phone.safetyNumber(macID: macID),
+		])
 		XCTAssertEqual(confirmed["ok"] as? Bool, true)
 		XCTAssertTrue(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
 	}
@@ -328,38 +380,58 @@ final class FakeBroker {
 	struct Approval {
 		let id: String
 		let canonical: Data
+		/// `devices` in the helper's `approval.ack`: how many devices hear about it.
+		var ackDevices = 0
 
 		func signature(_ key: SoftwareSigningKey) throws -> String {
 			try key.sign(LinkCrypto.approvalMessage(canonical: canonical)).base64EncodedString()
 		}
+
+		func denial(_ key: SoftwareSigningKey) throws -> String {
+			try key.sign(LinkCrypto.denialMessage(canonical: canonical)).base64EncodedString()
+		}
 	}
 
 	private let socketPath: String
+	private let lock = NSLock()
+	private var received: [[String: Any]] = []
+
+	/// Every `approval.decision` the helper forwarded, in order.
+	var decisions: [[String: Any]] {
+		lock.lock()
+		defer { lock.unlock() }
+		return received
+	}
 	private var connections: [UnixConnection] = []
+	private var readers: [DispatchSemaphore] = []
 
 	init(socketPath: String) throws {
 		self.socketPath = socketPath
 	}
 
-	func request() throws -> Approval {
+	/// Opens an approval created at `now` that expires `ttl` seconds later (the broker's
+	/// window is 300 s; 120 keeps older tests as they were).
+	func request(now: Int = Int(Date().timeIntervalSince1970), ttl: Int = 120) throws -> Approval {
 		let connection = try UnixConnection.connect(path: socketPath, timeout: 2)
 		connections.append(connection)
-		let now = Int(Date().timeIntervalSince1970)
 		let id = LinkCrypto.newPrefixedID("apr")
 		let canonical: [String: Any] = [
 			"v": 1, "request_id": id, "nonce": LinkCrypto.makeNonce(), "op": "save", "key": "API_KEY",
 			"summary": "save API_KEY", "project": "demo", "token": "tok", "host": "mac", "caller": "agent",
-			"via": "cli", "broker": "test", "created_at": now, "expires_at": now + 120,
+			"via": "cli", "broker": "test", "created_at": now, "expires_at": now + ttl,
 		]
 		let bytes = try XCTUnwrap(WireJSON.pythonCanonical(canonical))
 		try connection.sendLine([
 			"op": "approval.request", "v": 1, "request_id": id, "canonical_b64": bytes.base64EncodedString(),
-			"expires_at": now + 120,
+			"expires_at": now + ttl,
 		])
-		guard case .line(let ack) = try connection.readLine(timeout: 3),
-			WireJSON.decodeObject(ack)?["op"] as? String == "approval.ack"
+		guard case .line(let ack) = try connection.readLine(timeout: 3), let ackObject = WireJSON.decodeObject(ack),
+			ackObject["op"] as? String == "approval.ack"
 		else { throw NSError(domain: "FakeBroker", code: 1) }
+		let done = DispatchSemaphore(value: 0)
+		readers.append(done)
 		let thread = Thread {
+			defer { done.signal() }
 			while true {
 				guard let result = try? connection.readLine(timeout: 0.2) else { return }
 				switch result {
@@ -368,15 +440,23 @@ final class FakeBroker {
 				case .line(let line):
 					guard let message = WireJSON.decodeObject(line), message["op"] as? String == "approval.decision"
 					else { continue }
+					self.lock.lock()
+					self.received.append(message)
+					self.lock.unlock()
 					try? connection.sendLine(["op": "approval.result", "request_id": id, "outcome": "accepted"])
 				}
 			}
 		}
 		thread.start()
-		return Approval(id: id, canonical: bytes)
+		return Approval(id: id, canonical: bytes, ackDevices: WireJSON.strictInt(ackObject["devices"]) ?? -1)
 	}
 
+	/// Shuts the sockets down and waits for the readers before closing: a reader still polling
+	/// a closed fd number could read the next test's socket once the number is reused.
 	func close() {
+		for connection in connections { shutdown(connection.fd, SHUT_RDWR) }
+		for reader in readers { _ = reader.wait(timeout: .now() + 2) }
+		readers.removeAll()
 		for connection in connections { connection.close() }
 	}
 }

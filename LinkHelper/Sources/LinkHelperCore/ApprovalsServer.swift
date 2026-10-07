@@ -77,6 +77,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 	private let clock: @Sendable () -> Int
 	private let log: OpsLog
 	private let skipApprovePrecheck: Bool
+	private let lastDevice: @Sendable () -> String?
 	private let lock = NSLock()
 	private var approvals: [String: Approval] = [:]
 	private var openConnections = 0
@@ -86,7 +87,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 		socketPath: String, devices: DeviceRegistry, publish: @escaping (String, [String: Any]) -> Void,
 		push: PushNotifier = UnconfiguredPush(),
 		clock: @escaping @Sendable () -> Int = { Int(Date().timeIntervalSince1970) },
-		log: OpsLog = .null, skipApprovePrecheck: Bool = false
+		log: OpsLog = .null, skipApprovePrecheck: Bool = false, lastDevice: @escaping @Sendable () -> String? = { nil }
 	) {
 		listener = UnixListener(path: socketPath)
 		self.devices = devices
@@ -95,6 +96,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 		self.clock = clock
 		self.log = log
 		self.skipApprovePrecheck = skipApprovePrecheck
+		self.lastDevice = lastDevice
 	}
 
 	public func start() throws {
@@ -172,12 +174,31 @@ public final class ApprovalsServer: @unchecked Sendable {
 		guard WireJSON.pythonCanonical(typed) == raw else {
 			throw Malformed("canonical bytes are not in canonical form")
 		}
+		// What every approver parses: no duplicate keys, and no control, bidi, zero-width or
+		// line-break characters that would make a card or push read differently from the bytes.
+		do {
+			_ = try CanonicalApproval(bytes: raw)
+		} catch let refusal as CanonicalApproval.Refusal {
+			switch refusal {
+			case .unsafeCharacters(let field):
+				throw Malformed("unsafe characters in \(field)", code: "unsafe_characters")
+			case .malformed(let detail):
+				throw Malformed("refused by the approval parser: \(detail)")
+			default:
+				throw Malformed("refused by the approval parser")
+			}
+		}
 		return (raw, typed)
 	}
 
 	struct Malformed: Error {
 		let reason: String
-		init(_ reason: String) { self.reason = reason }
+		/// What `approval.error` says to the broker.
+		let code: String
+		init(_ reason: String, code: String = "malformed") {
+			self.reason = reason
+			self.code = code
+		}
 	}
 
 	// MARK: Socket side
@@ -226,15 +247,26 @@ public final class ApprovalsServer: @unchecked Sendable {
 			approvals[rid] = approval
 		} catch {
 			let reason = (error as? Malformed)?.reason ?? "malformed"
+			let code = (error as? Malformed)?.code ?? "malformed"
 			log("approval.malformed", ["request_id": rid ?? "-", "detail": String(reason.prefix(120))])
-			try? connection.sendLine(["op": "approval.error", "request_id": rid ?? NSNull(), "code": "malformed"])
+			try? connection.sendLine([
+				"op": "approval.error", "request_id": rid ?? NSNull(), "code": code,
+				"message": String(reason.prefix(120)),
+			])
 			return nil
 		}
 
-		let active = devices.active()
-		let pushStatus = push.notifyApproval(
+		// Only devices the owner confirmed hear about approvals.
+		let active = devices.active().filter(\.approveConfirmed)
+		func field(_ name: String) -> String { approval.canonical[name] as? String ?? "" }
+		let request = ApprovalPush(
 			requestID: approval.requestID, expiresAt: approval.expiresAt, preferDevice: approval.preferDevice,
-			devices: active)
+			lastDevice: lastDevice(), requester: field("caller"), key: field("key"), summary: field("summary"),
+			project: field("project"))
+		let pushStatus = push.notifyApproval(request, devices: active) { [weak self, weak approval] in
+			guard let self, let approval else { return false }
+			return self.isPending(approval)
+		}
 		try? connection.sendLine([
 			"op": "approval.ack", "request_id": approval.requestID, "devices": active.count, "push": pushStatus,
 		])
@@ -324,6 +356,14 @@ public final class ApprovalsServer: @unchecked Sendable {
 		signalResult(approval)
 	}
 
+	/// Still waiting for a decision (the push fallback asks before waking more phones).
+	private func isPending(_ approval: Approval) -> Bool {
+		checkExpiry(approval)
+		lock.lock()
+		defer { lock.unlock() }
+		return approval.status == "pending"
+	}
+
 	private func checkExpiry(_ approval: Approval) {
 		lock.lock()
 		let due = approval.status == "pending" && clock() >= approval.expiresAt
@@ -358,7 +398,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 		lock.unlock()
 		log("approval.resolved", ["request_id": approval.requestID, "status": status, "detail": detail])
 		publish("approval.resolved", ["request_id": approval.requestID, "status": status])
-		push.notifyResolved(requestID: approval.requestID, devices: devices.active())
+		push.notifyResolved(requestID: approval.requestID)
 		return true
 	}
 
@@ -395,12 +435,12 @@ public final class ApprovalsServer: @unchecked Sendable {
 		guard decision == "approve" || decision == "deny" else {
 			throw APIError(400, "bad_request", "decision must be approve or deny")
 		}
-		// A phone pinned from the account may deny at once, but approves only after the Mac's
-		// owner confirmed its approve key (step 11). The registry is re-read: a confirm that
-		// landed since the request was verified counts.
-		if decision == "approve", !(devices.get(device.deviceID)?.approveConfirmed ?? device.approveConfirmed) {
+		// Only a device the owner confirmed may settle a request, either way. The registry is
+		// re-read: a confirmation or a key change since the request was verified counts, and the
+		// signature is checked against the approve key pinned now.
+		guard let current = devices.get(device.deviceID), !current.isRevoked, current.approveConfirmed else {
 			log("approval.unconfirmed", ["device": device.deviceID, "request_id": requestID])
-			throw APIError(403, "approve_unconfirmed", "confirm this iPhone on the Mac before it can approve")
+			throw APIError(403, "device_unconfirmed", "confirm this iPhone on the Mac before it can decide")
 		}
 		lock.lock()
 		let found = approvals[requestID]
@@ -422,23 +462,29 @@ public final class ApprovalsServer: @unchecked Sendable {
 			"op": "approval.decision", "request_id": requestID, "decision": decision,
 			"device_id": device.deviceID,
 		]
-		if decision == "approve" {
-			guard let signature = signature as? String, !signature.isEmpty else {
-				throw APIError(422, "bad_signature", "approve needs a signature")
-			}
-			if !skipApprovePrecheck {
-				let key = try? LinkPublicKey(x963Base64: device.approvePubkey)
-				let der = Data(base64Encoded: signature) ?? Data()
-				guard let key,
-					LinkSignatures.verifyApproval(
-						canonical: approval.canonicalBytes, signature: der, approveKey: key)
-				else {
-					log("approval.bad_signature", ["device": device.deviceID, "request_id": requestID])
-					throw APIError(422, "bad_signature", "approve signature does not verify")
-				}
-			}
-			message["signature"] = signature
+		// Approve signs `WL1-APPROVE\n` + canonical, deny `WL1-DENY\n` + canonical, both with the
+		// approve key: a captured one can never pass for the other.
+		guard let signature = signature as? String, !signature.isEmpty else {
+			throw APIError(422, "bad_signature", "\(decision) needs a signature")
 		}
+		if !skipApprovePrecheck {
+			let key = try? LinkPublicKey(x963Base64: current.approvePubkey)
+			let der = Data(base64Encoded: signature) ?? Data()
+			let verified =
+				key.map {
+					decision == "approve"
+						? LinkSignatures.verifyApproval(
+							canonical: approval.canonicalBytes, signature: der, approveKey: $0)
+						: LinkSignatures.verifyDenial(canonical: approval.canonicalBytes, signature: der, approveKey: $0)
+				} ?? false
+			guard verified else {
+				log(
+					"approval.bad_signature",
+					["device": device.deviceID, "request_id": requestID, "detail": "decision=\(decision)"])
+				throw APIError(422, "bad_signature", "\(decision) signature does not verify")
+			}
+		}
+		message["signature"] = signature
 
 		lock.lock()
 		if approval.status != "pending" {
@@ -463,6 +509,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 			approval.status = "cancelled"
 			lock.unlock()
 			publish("approval.resolved", ["request_id": requestID, "status": "cancelled"])
+			push.notifyResolved(requestID: requestID)
 			throw APIError(503, "broker_unavailable", "broker connection is gone")
 		}
 		log(
@@ -477,7 +524,7 @@ public final class ApprovalsServer: @unchecked Sendable {
 		let cancelReason = approval.cancelReason
 		lock.unlock()
 		publish("approval.resolved", ["request_id": requestID, "status": finalStatus])
-		push.notifyResolved(requestID: requestID, devices: devices.active())
+		push.notifyResolved(requestID: requestID)
 		if got && outcome == nil {
 			if let cancelReason, cancelReason != "broker_eof" {
 				throw APIError(

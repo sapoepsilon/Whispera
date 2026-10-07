@@ -48,8 +48,8 @@ final class HelperXPCService: NSObject, NSXPCListenerDelegate, LinkHelperXPCProt
 		answer(reply) { [daemon] in daemon.approvePending() }
 	}
 
-	func confirmApprove(_ deviceID: String, reply: @escaping (Data) -> Void) {
-		answer(reply) { [daemon] in try daemon.approveConfirm(deviceID) }
+	func confirmApprove(_ deviceID: String, safetyNumber: String, reply: @escaping (Data) -> Void) {
+		answer(reply) { [daemon] in try daemon.approveConfirm(deviceID, safetyNumber: safetyNumber) }
 	}
 
 	/// Off the XPC queue: account calls wait on the network.
@@ -101,7 +101,12 @@ public enum HelperRuntime {
 		fflush(stdout)
 
 		let xpc = HelperXPCService(daemon: daemon, requireSignedClient: isDeveloperIDSigned())
-		if environment["WHISPERA_LINK_XPC"] != "0" { xpc.start() }
+		#if DEBUG
+			let xpcOff = environment["WHISPERA_LINK_XPC"] == "0"
+		#else
+			let xpcOff = false
+		#endif
+		if !xpcOff { xpc.start() }
 
 		signal(SIGTERM, SIG_IGN)
 		signal(SIGINT, SIG_IGN)

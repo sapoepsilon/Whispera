@@ -36,19 +36,30 @@ final class HelperHTTPTests: XCTestCase {
 		XCTAssertEqual(again.errorCode, "pair_code_invalid")
 	}
 
-	func testFifthWrongCodeBurnsTheLiveCode() async throws {
-		_ = helper.daemon.pairing.begin(ttl: 60)
+	func testFifthWrongCodeLocksOnlyThatAddressNotTheCode() async throws {
+		let begin = helper.daemon.pairing.begin(ttl: 60)
+		let code = (begin["code"] as! String).replacingOccurrences(of: "-", with: "")
+		let guesser = SoftPhone(baseURL: helper.baseURL)
+		let wrong = try guesser.pairingBody(
+			code: "ZZZZZZZZ", daemonFP: helper.daemon.daemonFP, pairID: "pc_x", nonce: LinkCrypto.randomBytes(32))
 		var codes: [String?] = []
-		for _ in 0..<5 {
-			codes.append(
-				try await SoftPhone(baseURL: helper.baseURL).pair(
-					code: "ZZZZZZZZ", daemonFP: helper.daemon.daemonFP
-				).errorCode)
-		}
+		for _ in 0..<5 { codes.append(try await guesser.reveal(wrong).errorCode) }
 		XCTAssertEqual(
 			codes,
 			["pair_code_invalid", "pair_code_invalid", "pair_code_invalid", "pair_code_invalid", "pair_locked"])
-		XCTAssertFalse(helper.daemon.pairing.isLive)
+		XCTAssertTrue(helper.daemon.pairing.isLive, "one peer's guesses must not burn the owner's code")
+
+		// The owner's phone, from another address, still pairs with the live code.
+		let pairing = helper.daemon.pairing
+		let owner = SoftPhone(baseURL: helper.baseURL)
+		let nonce = LinkCrypto.randomBytes(32)
+		let commitment = owner.commitment(code: code, daemonFP: helper.daemon.daemonFP, nonce: nonce)
+		let (ack, _) = try pairing.handleCommit(
+			WireJSON.encode(["v": 2, "commitment": commitment]), from: "192.0.2.10")
+		let pairID = try XCTUnwrap(WireJSON.decodeObject(ack)?["pair_id"] as? String)
+		let body = try owner.pairingBody(code: code, daemonFP: helper.daemon.daemonFP, pairID: pairID, nonce: nonce)
+		let (out, _) = try pairing.handlePair(WireJSON.encode(body), from: "192.0.2.10")
+		XCTAssertNotNil(WireJSON.decodeObject(out)?["device_id"] as? String)
 	}
 
 	func testSignedRequestsAreRefusedInProtocolOrder() async throws {

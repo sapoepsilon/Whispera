@@ -7,6 +7,18 @@ import Testing
 struct NewStringsAreLocalizedTests {
 	/// Strings added for these fixes, which LocalizationCatalogTests then checks are translated.
 	static let keys = [
+		"Push: named",
+		// The account device confirmation card (safety number)
+		"It joined your account. It can't reach this Mac until you confirm it here.",
+		"Not available yet",
+		"Mac fingerprint: %@",
+		"Numbers Match — Confirm with Touch ID",
+		"Safety number — must match the one on your iPhone",
+		"The Mac link didn't send a safety number for this iPhone. Try again.",
+		"This device's keys changed. If you didn't reinstall Whispera on it, don't confirm.",
+		"This iPhone's keys changed while the card was open. Compare the new safety number before you confirm.",
+		"Push: generic",
+		"Last used",
 		"Microphone Access Required",
 		"Whispera needs access to your microphone to transcribe audio. Please grant permission in System Settings > Privacy & Security > Microphone.",
 		"Open System Settings",
