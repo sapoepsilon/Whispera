@@ -222,7 +222,7 @@ struct TranscriptionHistoryView: View {
 	}
 
 	private var settingsSection: some View {
-		SettingsSection("History") {
+		SettingsSection("History", inForm: false) {
 			SettingRow("Save transcription history", description: "Keep each dictation so you can find it later")
 			{
 				Toggle("Save transcription history", isOn: $historyEnabled)

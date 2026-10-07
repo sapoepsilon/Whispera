@@ -26,20 +26,29 @@ enum SupportedFormat: CaseIterable {
 // MARK: - Reusable Components
 struct SettingsSection<Content: View>: View {
 	let title: String
+	let inForm: Bool
 	let content: Content
 
-	init(_ title: String, @ViewBuilder content: () -> Content) {
+	init(_ title: String, inForm: Bool = true, @ViewBuilder content: () -> Content) {
 		self.title = title
+		self.inForm = inForm
 		self.content = content()
 	}
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			Text(LocalizedStringKey(title))
-				.font(.headline)
-			content
+		if inForm {
+			Section {
+				content
+			} header: {
+				Text(LocalizedStringKey(title))
+			}
+		} else {
+			VStack(alignment: .leading, spacing: 12) {
+				Text(LocalizedStringKey(title)).font(.headline)
+				content
+			}
+			.frame(maxWidth: .infinity, alignment: .leading)
 		}
-		.frame(maxWidth: .infinity, alignment: .leading)
 	}
 }
 
@@ -82,7 +91,8 @@ struct SettingRow<Content: View>: View {
 				Text(LocalizedStringKey(label))
 					.font(.body)
 				if let description = description {
-					(descriptionIsVerbatim ? Text(verbatim: description) : Text(LocalizedStringKey(description)))
+					(descriptionIsVerbatim
+						? Text(verbatim: description) : Text(LocalizedStringKey(description)))
 						.font(.caption)
 						.foregroundColor(.secondary)
 						.fixedSize(horizontal: false, vertical: true)
@@ -232,6 +242,7 @@ struct SettingsView: View {
 	@AppStorage(DebugMode.defaultsKey) private var debugModeEnabled = false
 
 	@State private var selectedPane: SettingsPane = .general
+	@State private var searchText = ""
 
 	private var visiblePanes: [SettingsPane] {
 		SettingsPane.visible(debugModeEnabled: debugModeEnabled)
@@ -255,22 +266,40 @@ struct SettingsView: View {
 	}
 
 	var body: some View {
-		HStack(spacing: 0) {
-			List(visiblePanes, selection: sidebarSelection) { pane in
-				Label(pane.title(), systemImage: pane.systemImage)
-					.tag(pane)
-					.accessibilityIdentifier(pane.accessibilityIdentifier)
+		NavigationSplitView {
+			List(selection: sidebarSelection) {
+				ForEach(0..<3) { group in
+					Section {
+						ForEach(visiblePanes.filter { $0.sidebarGroup == group && $0.matches(searchText) })
+						{ pane in
+							Label {
+								Text(pane.title())
+							} icon: {
+								Image(systemName: pane.systemImage)
+									.font(.system(size: 12, weight: .medium))
+									.foregroundStyle(.white)
+									.frame(width: 24, height: 24)
+									.background(pane.iconColor, in: RoundedRectangle(cornerRadius: 6))
+							}
+							.tag(pane)
+							.accessibilityIdentifier(pane.accessibilityIdentifier)
+						}
+					}
+				}
 			}
 			.listStyle(.sidebar)
 			.accessibilityIdentifier("settingsSidebar")
-			.frame(width: sidebarWidth)
-			Divider()
+			.searchable(text: $searchText, placement: .sidebar, prompt: "Search settings")
+			.navigationSplitViewColumnWidth(min: sidebarWidth, ideal: sidebarWidth, max: sidebarWidth + 40)
+		} detail: {
 			SettingsPaneStack(visible: visiblePanes, current: currentPane) { pane in
 				paneContent(pane)
 			}
 			.frame(minWidth: SettingsLayout.minimumDetailWidth, maxWidth: .infinity, maxHeight: .infinity)
+			.background(Color(nsColor: .windowBackgroundColor))
+			.navigationTitle(currentPane.title())
 		}
-		.navigationTitle(currentPane.title())
+		.navigationSplitViewStyle(.balanced)
 		.onChange(of: visiblePanes) { _, panes in
 			// Forget a selection that was hidden, so showing the row again does not jump back to it.
 			if !panes.contains(selectedPane) { selectedPane = currentPane }
@@ -287,7 +316,8 @@ struct SettingsView: View {
 					height: SettingsLayout.minimumHeight),
 				idealSize: NSSize(
 					width: SettingsLayout.idealWindowWidth(sidebarWidth: sidebarWidth),
-					height: SettingsLayout.idealHeight)))
+					height: SettingsLayout.idealHeight))
+		)
 		.frame(
 			minWidth: SettingsLayout.minimumWindowWidth(sidebarWidth: sidebarWidth),
 			idealWidth: SettingsLayout.idealWindowWidth(sidebarWidth: sidebarWidth),
@@ -425,469 +455,465 @@ struct SettingsView: View {
 	private func paneContent(_ pane: SettingsPane) -> some View {
 		switch pane {
 		case .general:
-			ScrollView {
-				VStack(spacing: 24) {
-					// MARK: - App Version Section
-					SettingsSection("Application") {
-						HStack {
-							VStack(alignment: .leading, spacing: 2) {
-								Text("Whispera")
-									.font(.headline)
-								HStack(spacing: 4) {
-									Text(AppVersion.current.versionString)
-										.font(.caption)
+			Form {
+				// MARK: - App Version Section
+				SettingsSection("Application") {
+					HStack {
+						VStack(alignment: .leading, spacing: 2) {
+							Text("Whispera")
+								.font(.headline)
+							HStack(spacing: 4) {
+								Text(AppVersion.current.versionString)
+									.font(.caption)
+									.foregroundColor(.secondary)
+								if let lastCheck = softwareUpdater.lastUpdateCheckDate {
+									Text("• Last checked: \(lastCheck, style: .relative) ago")
+										.font(.caption2)
 										.foregroundColor(.secondary)
-									if let lastCheck = softwareUpdater.lastUpdateCheckDate {
-										Text("• Last checked: \(lastCheck, style: .relative) ago")
-											.font(.caption2)
-											.foregroundColor(.secondary)
-									}
 								}
 							}
-							Spacer()
-							Button("Check for Updates") {
-								softwareUpdater.checkForUpdates()
-							}
-							.buttonStyle(.bordered)
-							.disabled(!softwareUpdater.canCheckForUpdates)
 						}
-
-						SettingRow(
-							"Automatic Updates",
-							description: "Automatically check for updates"
-						) {
-							Toggle("Automatic Updates", isOn: $softwareUpdater.automaticallyChecksForUpdates)
-								.labelsHidden()
+						Spacer()
+						Button("Check for Updates") {
+							softwareUpdater.checkForUpdates()
 						}
-
-						SettingRow(
-							"Auto-download Updates",
-							description: "Download updates in the background"
-						) {
-							Toggle("Auto-download Updates", isOn: $softwareUpdater.automaticallyDownloadsUpdates)
-								.labelsHidden()
-						}
-
-						WhatsNewSettingRow()
+						.buttonStyle(.bordered)
+						.disabled(!softwareUpdater.canCheckForUpdates)
 					}
 
-					Divider()
+					SettingRow(
+						"Automatic Updates",
+						description: "Automatically check for updates"
+					) {
+						Toggle("Automatic Updates", isOn: $softwareUpdater.automaticallyChecksForUpdates)
+							.labelsHidden()
+					}
 
-					SettingsSection("Shortcuts & Feedback") {
-						SettingRow("Global Shortcut") {
-							Button(action: {
-								if isRecordingShortcut {
-									stopRecording()
-								} else {
-									startRecording()
-								}
-							}) {
-								Text(
-									isRecordingShortcut
-										? String(localized: "Press keys...") : ShortcutDisplay.text(for: globalShortcut)
-								)
-								.font(.system(.body, design: .monospaced))
-								.frame(minWidth: 80)
+					SettingRow(
+						"Auto-download Updates",
+						description: "Download updates in the background"
+					) {
+						Toggle(
+							"Auto-download Updates", isOn: $softwareUpdater.automaticallyDownloadsUpdates
+						)
+						.labelsHidden()
+					}
+
+					WhatsNewSettingRow()
+				}
+
+				SettingsSection("Shortcuts & Feedback") {
+					SettingRow("Global Shortcut") {
+						Button(action: {
+							if isRecordingShortcut {
+								stopRecording()
+							} else {
+								startRecording()
 							}
-							.buttonStyle(.bordered)
-							.foregroundColor(isRecordingShortcut ? .red : .primary)
-							.help(
-								String(
-									localized:
-										"Press a key combination, or press and release Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn on its own to dictate with one key."
-								))
+						}) {
+							Text(
+								isRecordingShortcut
+									? String(localized: "Press keys...")
+									: ShortcutDisplay.text(for: globalShortcut)
+							)
+							.font(.system(.body, design: .monospaced))
+							.frame(minWidth: 80)
 						}
-						ModifierOnlyShortcutNotes(shortcut: globalShortcut)
+						.buttonStyle(.bordered)
+						.foregroundColor(isRecordingShortcut ? .red : .primary)
+						.help(
+							String(
+								localized:
+									"Press a key combination, or press and release Right ⌘, Right ⌥, Right ⌃, Right ⇧ or Fn on its own to dictate with one key."
+							))
+					}
+					ModifierOnlyShortcutNotes(shortcut: globalShortcut)
 
-						SecureInputSettingsRows()
+					SecureInputSettingsRows()
 
-						SettingRow("Sound Feedback") {
-							Toggle("Sound Feedback", isOn: $soundFeedback)
-								.labelsHidden()
+					SettingRow("Sound Feedback") {
+						Toggle("Sound Feedback", isOn: $soundFeedback)
+							.labelsHidden()
+					}
+
+					if soundFeedback {
+						SettingRow("Start Sound") {
+							Picker("Start Sound", selection: $startSound) {
+								ForEach(getAvailableSounds(), id: \.self) { sound in
+									Text(Self.soundDisplayName(sound)).tag(sound)
+								}
+							}
+							.labelsHidden()
+							.frame(width: 180, alignment: .trailing)
+							.onChange(of: startSound) {
+								previewSound(start: true)
+							}
 						}
 
-						if soundFeedback {
-							SettingRow("Start Sound") {
-								Picker("Start Sound", selection: $startSound) {
-									ForEach(getAvailableSounds(), id: \.self) { sound in
-										Text(Self.soundDisplayName(sound)).tag(sound)
+						SettingRow("Stop Sound") {
+							Picker("Stop Sound", selection: $stopSound) {
+								ForEach(getAvailableSounds(), id: \.self) { sound in
+									Text(Self.soundDisplayName(sound)).tag(sound)
+								}
+							}
+							.labelsHidden()
+							.frame(width: 180, alignment: .trailing)
+							.onChange(of: stopSound) {
+								previewSound(start: false)
+							}
+						}
+
+						FeedbackSoundSettingsRows()
+					}
+
+					SettingRow(
+						"Haptic Feedback",
+						description: "Trackpad vibration when shortcut is triggered"
+					) {
+						Toggle("Haptic Feedback", isOn: $shortcutHapticFeedback)
+							.labelsHidden()
+					}
+
+					RecordingOverlaySettingRows()
+
+					SettingRow(
+						"Recording Glow",
+						description: "Glow around the screen edges while recording"
+					) {
+						Toggle("Recording Glow", isOn: $enableRecordingGlow)
+							.labelsHidden()
+					}
+
+					if enableRecordingGlow {
+						SettingRow("Glow Color") {
+							ColorPicker(
+								"Glow Color",
+								selection: Binding(
+									get: {
+										RecordingGlowColor.color(fromHex: recordingGlowColorHex)
+									},
+									set: {
+										recordingGlowColorHex = RecordingGlowColor.hex(from: $0)
 									}
-								}
-								.labelsHidden()
-								.frame(width: 180, alignment: .trailing)
-								.onChange(of: startSound) {
-									previewSound(start: true)
-								}
-							}
-
-							SettingRow("Stop Sound") {
-								Picker("Stop Sound", selection: $stopSound) {
-									ForEach(getAvailableSounds(), id: \.self) { sound in
-										Text(Self.soundDisplayName(sound)).tag(sound)
-									}
-								}
-								.labelsHidden()
-								.frame(width: 180, alignment: .trailing)
-								.onChange(of: stopSound) {
-									previewSound(start: false)
-								}
-							}
-
-							FeedbackSoundSettingsRows()
-						}
-
-						SettingRow(
-							"Haptic Feedback",
-							description: "Trackpad vibration when shortcut is triggered"
-						) {
-							Toggle("Haptic Feedback", isOn: $shortcutHapticFeedback)
-								.labelsHidden()
-						}
-
-						RecordingOverlaySettingRows()
-
-						SettingRow(
-							"Recording Glow",
-							description: "Glow around the screen edges while recording"
-						) {
-							Toggle("Recording Glow", isOn: $enableRecordingGlow)
-								.labelsHidden()
-						}
-
-						if enableRecordingGlow {
-							SettingRow("Glow Color") {
-								ColorPicker(
-									"Glow Color",
-									selection: Binding(
-										get: {
-											RecordingGlowColor.color(fromHex: recordingGlowColorHex)
-										},
-										set: {
-											recordingGlowColorHex = RecordingGlowColor.hex(from: $0)
-										}
-									),
-									supportsOpacity: false
-								)
-								.labelsHidden()
-							}
+								),
+								supportsOpacity: false
+							)
+							.labelsHidden()
 						}
 					}
-					Divider()
+				}
 
-					RecordingControlSettingsView()
-					Divider()
+				RecordingControlSettingsView()
 
-					SettingsSection("Microphone") {
-						SettingRow(
+				SettingsSection("Microphone") {
+					SettingRow(
+						"Input Device",
+						description: "Select which microphone to use for recording"
+					) {
+						Picker(
 							"Input Device",
-							description: "Select which microphone to use for recording"
-						) {
-							Picker("Input Device", selection: Binding(
+							selection: Binding(
 								get: { AudioDeviceManager.shared.persistedDeviceUID },
 								set: { newUID in
 									AudioDeviceManager.shared.selectDevice(uid: newUID)
 								}
-							)) {
-								Label("System Default", systemImage: "mic.fill")
-									.tag(AudioDeviceManager.systemDefaultUID)
+							)
+						) {
+							Label("System Default", systemImage: "mic.fill")
+								.tag(AudioDeviceManager.systemDefaultUID)
 
-								ForEach(AudioDeviceManager.shared.availableDevices) { device in
-									Label(device.name, systemImage: device.iconName)
-										.tag(device.uid)
-								}
+							ForEach(AudioDeviceManager.shared.availableDevices) { device in
+								Label(device.name, systemImage: device.iconName)
+									.tag(device.uid)
 							}
-							.labelsHidden()
-							.frame(maxWidth: 200, alignment: .trailing)
 						}
-
-						if AudioDeviceManager.shared.persistedDeviceUID != AudioDeviceManager.systemDefaultUID,
-						   AudioDeviceManager.shared.selectedDevice == nil {
-							HStack(spacing: 6) {
-								Image(systemName: "exclamationmark.triangle.fill")
-									.foregroundColor(.orange)
-									.font(.caption)
-								Text("Selected device is not currently available. Will use system default.")
-									.font(.caption)
-									.foregroundColor(.orange)
-							}
-							.padding(.top, 4)
-						}
-
-						AudioInputSettingsRows()
+						.labelsHidden()
+						.frame(maxWidth: 200, alignment: .trailing)
 					}
-					Divider()
 
-					SettingsSection("Whisper Model") {
-						if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
-							VStack(alignment: .leading, spacing: 8) {
-								HStack(spacing: 8) {
-									ProgressView()
-										.scaleEffect(0.6)
-									Text(getModelStatusText())
-										.font(.caption)
-										.foregroundColor(.secondary)
-									Spacer()
-								}
-
-								if whisperKit.isDownloadingModel {
-									HStack {
-										ProgressView(value: whisperKit.downloadProgress)
-											.frame(height: 4)
-										Text(
-											"\(whisperKit.downloadProgress * 100, specifier: "%.1f")%"
-										)
-										.font(.caption)
-										.foregroundColor(.secondary)
-									}
-								}
-							}
-						} else {
-							SettingRow("Model") {
-								Picker(
-									"Whisper model",
-									selection: Binding(
-										get: { whisperKit.selectedModel ?? selectedModel },
-										set: { newValue in
-											selectedModel = newValue
-											whisperKit.selectedModel = newValue
-										}
-									)
-								) {
-									ForEach(whisperKit.availableModels, id: \.self) { model in
-										Text(WhisperKitTranscriber.getModelDisplayName(for: model))
-											.tag(model)
-									}
-								}
-								.labelsHidden()
-								.frame(width: 200, alignment: .trailing)
-								.accessibilityIdentifier("Whisper model")
-							}
+					if AudioDeviceManager.shared.persistedDeviceUID != AudioDeviceManager.systemDefaultUID,
+						AudioDeviceManager.shared.selectedDevice == nil
+					{
+						HStack(spacing: 6) {
+							Image(systemName: "exclamationmark.triangle.fill")
+								.foregroundColor(.orange)
+								.font(.caption)
+							Text("Selected device is not currently available. Will use system default.")
+								.font(.caption)
+								.foregroundColor(.orange)
 						}
+						.padding(.top, 4)
+					}
 
-						HStack {
-							Text("Status:")
-								.font(.caption)
-								.foregroundColor(.secondary)
-							Image(systemName: getModelStatusIcon())
-								.font(.caption)
-								.foregroundColor(getModelStatusColor())
-								.accessibilityHidden(true)
-							Text(getCurrentModelStatusText())
-								.font(.caption)
-								.foregroundColor(.primary)
-								.accessibilityIdentifier("modelStatusText")
-							Spacer()
-							if let diskSize = currentModelDiskSize {
-								Text("Disk: \(diskSize)")
+					AudioInputSettingsRows()
+				}
+
+				SettingsSection("Whisper Model") {
+					if whisperKit.isDownloadingModel || whisperKit.isModelLoading {
+						VStack(alignment: .leading, spacing: 8) {
+							HStack(spacing: 8) {
+								ProgressView()
+									.scaleEffect(0.6)
+								Text(getModelStatusText())
 									.font(.caption)
 									.foregroundColor(.secondary)
-									.accessibilityIdentifier("modelDiskSizeText")
+								Spacer()
 							}
-							Text("Memory: \(getMemoryUsage()) MB")
-								.font(.caption)
-								.foregroundColor(.secondary)
-						}
 
-						ParakeetSettingsNote(modelID: whisperKit.selectedModel ?? selectedModel)
-
-						Text(
-							"Larger models are more accurate but slower and use more memory. You can change this later in Settings."
-						)
-						.font(.caption)
-						.foregroundColor(.secondary)
-
-						SettingRow("Auto Download") {
-							Toggle("Auto Download", isOn: $autoDownloadModel)
-								.labelsHidden()
-						}
-
-						ModelMemorySettingsView()
-
-						CustomModelsSettingsView(whisperKit: whisperKit)
-					}
-					Divider()
-
-					SettingsSection("Transcription") {
-						// The engine picker and every server field moved to the Servers
-						// tab; this line is the trail for anyone who last saw them here.
-						Text(
-							"The speech engine and its servers are set up in the Servers tab."
-						)
-						.font(.caption)
-						.foregroundColor(.secondary)
-
-						SettingRow(
-							"Streaming Transcription",
-							description:
-								"Process audio in real-time (max 30 minutes) instead of saving to file"
-						) {
-							Toggle("Streaming Transcription", isOn: $useStreamingTranscription)
-								.labelsHidden()
-								.accessibilityIdentifier("streamingTranscriptionToggle")
-						}
-
-						SettingRow(
-							"Translation Mode",
-							description: "Translate speech to English instead of transcribing"
-						) {
-							Toggle("Translation Mode", isOn: $enableTranslation)
-								.labelsHidden()
-						}
-
-						if debugModeEnabled {
-							SettingRow(
-								"Live Transcription Mode",
-								description: "Transcribe speech in real-time with automatic text replacement"
-							) {
-								HStack(spacing: 8) {
-									GlassBetaElement(onTap: {
-										showLiveTranscriptionInfo()
-									})
-									Toggle("Live Transcription Mode", isOn: $enableStreaming)
-										.labelsHidden()
-								}
-							}
-						}
-
-						SettingRow(
-							"Auto-detect from Keyboard",
-							description: "Automatically use keyboard input language when recording starts"
-						) {
-							Toggle("Auto-detect from Keyboard", isOn: $autoDetectLanguageFromKeyboard)
-								.labelsHidden()
-						}
-
-						if !autoDetectLanguageFromKeyboard {
-							SettingRow(
-								"Source Language", description: "Language of the audio to transcribe"
-							) {
-								Picker("Language", selection: $selectedLanguage) {
-									Text("Auto-detect").tag(Constants.autoDetectLanguageName)
-									Divider()
-									ForEach(Constants.localizedSortedLanguageNames(), id: \.self) {
-										language in
-										Text(Constants.localizedLanguageName(for: language)).tag(
-											language)
-									}
-								}
-								.labelsHidden()
-								.frame(width: 180, alignment: .trailing)
-							}
-						} else {
-							InfoBox(style: .info) {
-								VStack(alignment: .leading, spacing: 4) {
+							if whisperKit.isDownloadingModel {
+								HStack {
+									ProgressView(value: whisperKit.downloadProgress)
+										.frame(height: 4)
 									Text(
-										"Language will be detected automatically when you start recording"
+										"\(whisperKit.downloadProgress * 100, specifier: "%.1f")%"
 									)
 									.font(.caption)
 									.foregroundColor(.secondary)
 								}
 							}
 						}
-					}
-					Divider()
-
-					TextProcessingSettingsSection()
-					Divider()
-
-					SettingsSection("Performance") {
-						ComputeUnitSettingsView(whisperKit: whisperKit)
-					}
-
-					Divider()
-
-					SettingsSection("System") {
-						SettingRow("Launch at Login", description: "Start Whispera automatically when you log in") {
-							Toggle("Launch at Login", isOn: $launchAtStartup)
-								.labelsHidden()
-						}
-
-						ThemeSettingRow()
-
-						MenuBarIconSettingRow()
-
-						AppLanguageSettingRow()
-
-						SettingRow(
-							"Window Transparency",
-							description: "Adjust transparency level for all windows"
-						) {
+					} else {
+						SettingRow("Model") {
 							Picker(
-								"Window Transparency",
+								"Whisper model",
 								selection: Binding(
-									get: { materialStyle },
-									set: { newValue in materialStyleRaw = newValue.rawValue }
+									get: { whisperKit.selectedModel ?? selectedModel },
+									set: { newValue in
+										selectedModel = newValue
+										whisperKit.selectedModel = newValue
+									}
 								)
 							) {
-								ForEach(MaterialStyle.allCases) { style in
-									Text(style.displayName).tag(style)
+								ForEach(whisperKit.availableModels, id: \.self) { model in
+									Text(WhisperKitTranscriber.getModelDisplayName(for: model))
+										.tag(model)
 								}
 							}
 							.labelsHidden()
-							.pickerStyle(.menu)
+							.frame(width: 200, alignment: .trailing)
+							.accessibilityIdentifier("Whisper model")
+						}
+					}
+
+					HStack {
+						Text("Status:")
+							.font(.caption)
+							.foregroundColor(.secondary)
+						Image(systemName: getModelStatusIcon())
+							.font(.caption)
+							.foregroundColor(getModelStatusColor())
+							.accessibilityHidden(true)
+						Text(getCurrentModelStatusText())
+							.font(.caption)
+							.foregroundColor(.primary)
+							.accessibilityIdentifier("modelStatusText")
+						Spacer()
+						if let diskSize = currentModelDiskSize {
+							Text("Disk: \(diskSize)")
+								.font(.caption)
+								.foregroundColor(.secondary)
+								.accessibilityIdentifier("modelDiskSizeText")
+						}
+						Text("Memory: \(getMemoryUsage()) MB")
+							.font(.caption)
+							.foregroundColor(.secondary)
+					}
+
+					ParakeetSettingsNote(modelID: whisperKit.selectedModel ?? selectedModel)
+
+					Text(
+						"Larger models are more accurate but slower and use more memory. You can change this later in Settings."
+					)
+					.font(.caption)
+					.foregroundColor(.secondary)
+
+					SettingRow("Auto Download") {
+						Toggle("Auto Download", isOn: $autoDownloadModel)
+							.labelsHidden()
+					}
+
+					ModelMemorySettingsView()
+
+					CustomModelsSettingsView(whisperKit: whisperKit)
+				}
+
+				SettingsSection("Transcription") {
+					// The engine picker and every server field moved to the Servers
+					// tab; this line is the trail for anyone who last saw them here.
+					Text(
+						"The speech engine and its servers are set up in the Servers tab."
+					)
+					.font(.caption)
+					.foregroundColor(.secondary)
+
+					SettingRow(
+						"Streaming Transcription",
+						description:
+							"Process audio in real-time (max 30 minutes) instead of saving to file"
+					) {
+						Toggle("Streaming Transcription", isOn: $useStreamingTranscription)
+							.labelsHidden()
+							.accessibilityIdentifier("streamingTranscriptionToggle")
+					}
+
+					SettingRow(
+						"Translation Mode",
+						description: "Translate speech to English instead of transcribing"
+					) {
+						Toggle("Translation Mode", isOn: $enableTranslation)
+							.labelsHidden()
+					}
+
+					if debugModeEnabled {
+						SettingRow(
+							"Live Transcription Mode",
+							description: "Transcribe speech in real-time with automatic text replacement"
+						) {
+							HStack(spacing: 8) {
+								GlassBetaElement(onTap: {
+									showLiveTranscriptionInfo()
+								})
+								Toggle("Live Transcription Mode", isOn: $enableStreaming)
+									.labelsHidden()
+							}
+						}
+					}
+
+					SettingRow(
+						"Auto-detect from Keyboard",
+						description: "Automatically use keyboard input language when recording starts"
+					) {
+						Toggle("Auto-detect from Keyboard", isOn: $autoDetectLanguageFromKeyboard)
+							.labelsHidden()
+					}
+
+					if !autoDetectLanguageFromKeyboard {
+						SettingRow(
+							"Source Language", description: "Language of the audio to transcribe"
+						) {
+							Picker("Language", selection: $selectedLanguage) {
+								Text("Auto-detect").tag(Constants.autoDetectLanguageName)
+								Divider()
+								ForEach(Constants.localizedSortedLanguageNames(), id: \.self) {
+									language in
+									Text(Constants.localizedLanguageName(for: language)).tag(
+										language)
+								}
+							}
+							.labelsHidden()
 							.frame(width: 180, alignment: .trailing)
 						}
-
-						HStack {
-							Text("Setup")
-								.font(.body)
-							Spacer()
-							Button("Show Onboarding Again") {
-								showOnboardingAgain()
-							}
-							.buttonStyle(.bordered)
-						}
-
-						if permissionManager.needsPermissions {
-							InfoBox(style: .warning) {
-								VStack(alignment: .leading, spacing: 8) {
-									Text("Required Permissions")
-										.font(.headline)
-
-									Text(permissionManager.missingPermissionsDescription)
-										.font(.subheadline)
-
-									if !permissionManager.microphonePermissionGranted {
-										HStack {
-											Text(
-												"• Microphone access required for voice recording"
-											)
-											.font(.caption)
-											Spacer()
-											Button("Open Settings") {
-												permissionManager.openMicrophoneSettings()
-											}
-											.buttonStyle(.bordered)
-											.controlSize(.small)
-										}
-									}
-
-									if !permissionManager.accessibilityPermissionGranted {
-										HStack {
-											Text(
-												"• Accessibility access required for global shortcuts"
-											)
-											.font(.caption)
-											Spacer()
-											Button("Open Settings") {
-												permissionManager.openAccessibilitySettings()
-											}
-											.buttonStyle(.bordered)
-											.controlSize(.small)
-										}
-									}
-
-									Button("Open System Settings") {
-										permissionManager.openSystemSettings()
-									}
-									.buttonStyle(.borderedProminent)
-								}
+					} else {
+						InfoBox(style: .info) {
+							VStack(alignment: .leading, spacing: 4) {
+								Text(
+									"Language will be detected automatically when you start recording"
+								)
+								.font(.caption)
+								.foregroundColor(.secondary)
 							}
 						}
 					}
 				}
-				.padding(20)
+
+				TextProcessingSettingsSection()
+
+				SettingsSection("Performance") {
+					ComputeUnitSettingsView(whisperKit: whisperKit)
+				}
+
+				SettingsSection("System") {
+					SettingRow("Launch at Login", description: "Start Whispera automatically when you log in")
+					{
+						Toggle("Launch at Login", isOn: $launchAtStartup)
+							.labelsHidden()
+					}
+
+					ThemeSettingRow()
+
+					MenuBarIconSettingRow()
+
+					AppLanguageSettingRow()
+
+					SettingRow(
+						"Window Transparency",
+						description: "Adjust transparency level for all windows"
+					) {
+						Picker(
+							"Window Transparency",
+							selection: Binding(
+								get: { materialStyle },
+								set: { newValue in materialStyleRaw = newValue.rawValue }
+							)
+						) {
+							ForEach(MaterialStyle.allCases) { style in
+								Text(style.displayName).tag(style)
+							}
+						}
+						.labelsHidden()
+						.pickerStyle(.menu)
+						.frame(width: 180, alignment: .trailing)
+					}
+
+					HStack {
+						Text("Setup")
+							.font(.body)
+						Spacer()
+						Button("Show Onboarding Again") {
+							showOnboardingAgain()
+						}
+						.buttonStyle(.bordered)
+					}
+
+					if permissionManager.needsPermissions {
+						InfoBox(style: .warning) {
+							VStack(alignment: .leading, spacing: 8) {
+								Text("Required Permissions")
+									.font(.headline)
+
+								Text(permissionManager.missingPermissionsDescription)
+									.font(.subheadline)
+
+								if !permissionManager.microphonePermissionGranted {
+									HStack {
+										Text(
+											"• Microphone access required for voice recording"
+										)
+										.font(.caption)
+										Spacer()
+										Button("Open Settings") {
+											permissionManager.openMicrophoneSettings()
+										}
+										.buttonStyle(.bordered)
+										.controlSize(.small)
+									}
+								}
+
+								if !permissionManager.accessibilityPermissionGranted {
+									HStack {
+										Text(
+											"• Accessibility access required for global shortcuts"
+										)
+										.font(.caption)
+										Spacer()
+										Button("Open Settings") {
+											permissionManager.openAccessibilitySettings()
+										}
+										.buttonStyle(.bordered)
+										.controlSize(.small)
+									}
+								}
+
+								Button("Open System Settings") {
+									permissionManager.openSystemSettings()
+								}
+								.buttonStyle(.borderedProminent)
+							}
+						}
+					}
+				}
 			}
+			.formStyle(.grouped)
 			.settingsSwitches()
 		case .servers:
 			ServersSettingsView()
@@ -899,424 +925,406 @@ struct SettingsView: View {
 			TextInsertionSettingsView()
 				.settingsSwitches()
 		case .storage:
-			ScrollView {
-				VStack(spacing: 24) {
-					// Storage Summary
-					SettingsSection("Storage") {
-						HStack {
-							Text("WhisperKit Models")
-								.font(.body)
-							Spacer()
-							if appLibraryManager.isCalculatingStorage {
-								ProgressView()
-									.scaleEffect(0.7)
-							} else {
-								Button("Refresh") {
-									Task {
-										await appLibraryManager.refreshStorageInfo()
-									}
+			Form {
+				// Storage Summary
+				SettingsSection("Storage") {
+					HStack {
+						Text("WhisperKit Models")
+							.font(.body)
+						Spacer()
+						if appLibraryManager.isCalculatingStorage {
+							ProgressView()
+								.scaleEffect(0.7)
+						} else {
+							Button("Refresh") {
+								Task {
+									await appLibraryManager.refreshStorageInfo()
 								}
-								.buttonStyle(.bordered)
-								.controlSize(.small)
-							}
-						}
-
-						HStack(spacing: 12) {
-							Image(systemName: "internaldrive")
-								.foregroundColor(.blue)
-								.imageScale(.large)
-							VStack(alignment: .leading, spacing: 2) {
-								Text(appLibraryManager.getStorageSummary())
-									.font(.caption)
-									.foregroundColor(.secondary)
-							}
-							Spacer()
-							Button("Show in Finder") {
-								appLibraryManager.openAppLibraryInFinder()
 							}
 							.buttonStyle(.bordered)
 							.controlSize(.small)
-						}
-
-						if appLibraryManager.hasModels {
-							HStack(spacing: 8) {
-								Button("View Details") {
-									showingStorageDetails.toggle()
-								}
-								.buttonStyle(.bordered)
-								.controlSize(.small)
-
-								Button("Clear All Models", role: .destructive) {
-									showingClearAllConfirmation = true
-									confirmationStep = 0
-								}
-								.buttonStyle(.bordered)
-								.controlSize(.small)
-								Spacer()
-							}
-						}
-					}
-					Divider()
-
-					SettingsSection("Application Logs") {
-						HStack {
-							Text("Extended Logging")
-								.font(.body)
-							Spacer()
-							Toggle("Extended Logging", isOn: $enableExtendedLogging)
-								.labelsHidden()
-						}
-
-						HStack(spacing: 12) {
-							Image(systemName: "doc.text")
-								.foregroundColor(.purple)
-								.imageScale(.large)
-							VStack(alignment: .leading, spacing: 2) {
-								Text("Debug Logs")
-									.font(.subheadline)
-									.fontWeight(.medium)
-								Text("Size: \(logsSize)")
-									.font(.caption)
-									.foregroundColor(.secondary)
-							}
-							Spacer()
-							Button("Show in Finder") {
-								appLibraryManager.openLogsInFinder()
-							}
-							.buttonStyle(.bordered)
-							.controlSize(.small)
-
-							Button("Clear Logs", role: .destructive) {
-								showingClearLogsConfirmation = true
-							}
-							.buttonStyle(.bordered)
-							.controlSize(.small)
-						}
-
-						if enableExtendedLogging {
-							VStack(alignment: .leading, spacing: 8) {
-								Divider()
-
-								LogLevelSettingRow()
-
-								SettingRow(
-									"Debug Mode",
-									description: "Show the Debug section with a live log viewer (⇧⌘D)"
-								) {
-									Toggle("Debug Mode", isOn: $debugModeEnabled)
-										.labelsHidden()
-								}
-							}
 						}
 					}
 
+					HStack(spacing: 12) {
+						Image(systemName: "internaldrive")
+							.foregroundColor(.blue)
+							.imageScale(.large)
+						VStack(alignment: .leading, spacing: 2) {
+							Text(appLibraryManager.getStorageSummary())
+								.font(.caption)
+								.foregroundColor(.secondary)
+						}
+						Spacer()
+						Button("Show in Finder") {
+							appLibraryManager.openAppLibraryInFinder()
+						}
+						.buttonStyle(.bordered)
+						.controlSize(.small)
+					}
+
+					if appLibraryManager.hasModels {
+						HStack(spacing: 8) {
+							Button("View Details") {
+								showingStorageDetails.toggle()
+							}
+							.buttonStyle(.bordered)
+							.controlSize(.small)
+
+							Button("Clear All Models", role: .destructive) {
+								showingClearAllConfirmation = true
+								confirmationStep = 0
+							}
+							.buttonStyle(.bordered)
+							.controlSize(.small)
+							Spacer()
+						}
+					}
 				}
-				.padding(20)
+
+				SettingsSection("Application Logs") {
+					HStack {
+						Text("Extended Logging")
+							.font(.body)
+						Spacer()
+						Toggle("Extended Logging", isOn: $enableExtendedLogging)
+							.labelsHidden()
+					}
+
+					HStack(spacing: 12) {
+						Image(systemName: "doc.text")
+							.foregroundColor(.purple)
+							.imageScale(.large)
+						VStack(alignment: .leading, spacing: 2) {
+							Text("Debug Logs")
+								.font(.subheadline)
+								.fontWeight(.medium)
+							Text("Size: \(logsSize)")
+								.font(.caption)
+								.foregroundColor(.secondary)
+						}
+						Spacer()
+						Button("Show in Finder") {
+							appLibraryManager.openLogsInFinder()
+						}
+						.buttonStyle(.bordered)
+						.controlSize(.small)
+
+						Button("Clear Logs", role: .destructive) {
+							showingClearLogsConfirmation = true
+						}
+						.buttonStyle(.bordered)
+						.controlSize(.small)
+					}
+
+					if enableExtendedLogging {
+						VStack(alignment: .leading, spacing: 8) {
+							Divider()
+
+							LogLevelSettingRow()
+
+							SettingRow(
+								"Debug Mode",
+								description: "Show the Debug section with a live log viewer (⇧⌘D)"
+							) {
+								Toggle("Debug Mode", isOn: $debugModeEnabled)
+									.labelsHidden()
+							}
+						}
+					}
+				}
+
 			}
+			.formStyle(.grouped)
 			.settingsSwitches()
 		case .liveTranscription:
-			ScrollView {
-				VStack(spacing: 24) {
-					// Header
+			Form {
+				// Header
+				HStack {
+					Text("Live Transcription Settings")
+						.font(.headline)
+					Spacer()
+					GlassBetaElement()
+				}
+
+				Text("Customize how the live transcription window appears and behaves")
+					.font(.caption)
+					.foregroundColor(.secondary)
+					.frame(maxWidth: .infinity, alignment: .leading)
+
+				// MARK: - Preview Section
+				SettingsSection("Preview") {
 					HStack {
-						Text("Live Transcription Settings")
-							.font(.headline)
 						Spacer()
-						GlassBetaElement()
-					}
-
-					Text("Customize how the live transcription window appears and behaves")
-						.font(.caption)
-						.foregroundColor(.secondary)
-						.frame(maxWidth: .infinity, alignment: .leading)
-
-					Divider()
-
-					// MARK: - Preview Section
-					SettingsSection("Preview") {
-						HStack {
-							Spacer()
-							LiveTranscriptionPreview(
-								maxWords: liveTranscriptionMaxWords,
-								cornerRadius: liveTranscriptionCornerRadius,
-								showEllipsis: liveTranscriptionShowEllipsis
-							)
-							Spacer()
-						}
-						.padding(.vertical, 20)
-						.background(
-							Color.gray.opacity(0.1),
-							in: RoundedRectangle(cornerRadius: 8)
+						LiveTranscriptionPreview(
+							maxWords: liveTranscriptionMaxWords,
+							cornerRadius: liveTranscriptionCornerRadius,
+							showEllipsis: liveTranscriptionShowEllipsis
 						)
+						Spacer()
+					}
+					.padding(.vertical, 20)
+					.background(
+						Color.gray.opacity(0.1),
+						in: RoundedRectangle(cornerRadius: 8)
+					)
+				}
+
+				// MARK: - Settings Section
+				SettingsSection("Appearance") {
+					VStack(alignment: .leading, spacing: 8) {
+						HStack {
+							Text("Maximum Words to Display")
+								.font(.body)
+							Spacer()
+							Text("\(liveTranscriptionMaxWords)")
+								.font(.system(.body, design: .monospaced))
+								.foregroundColor(.secondary)
+						}
+
+						HStack {
+							Slider(
+								value: Binding(
+									get: { Double(liveTranscriptionMaxWords) },
+									set: {
+										liveTranscriptionMaxWords = Int($0)
+										NSHapticFeedbackManager.defaultPerformer
+											.perform(
+												.generic, performanceTime: .now)
+									}
+								),
+								in: 1...50,
+								step: 1
+							)
+							TextField(
+								"Custom", value: $liveTranscriptionMaxWords, format: .number
+							)
+							.textFieldStyle(.roundedBorder)
+							.frame(width: 60)
+						}
+
+						Text("Number of words to show in the transcription window (1-200+)")
+							.font(.caption)
+							.foregroundColor(.secondary)
 					}
 
 					Divider()
 
-					// MARK: - Settings Section
-					SettingsSection("Appearance") {
-						VStack(alignment: .leading, spacing: 8) {
-							HStack {
-								Text("Maximum Words to Display")
-									.font(.body)
-								Spacer()
-								Text("\(liveTranscriptionMaxWords)")
-									.font(.system(.body, design: .monospaced))
-									.foregroundColor(.secondary)
-							}
-
-							HStack {
-								Slider(
-									value: Binding(
-										get: { Double(liveTranscriptionMaxWords) },
-										set: {
-											liveTranscriptionMaxWords = Int($0)
-											NSHapticFeedbackManager.defaultPerformer
-												.perform(
-													.generic, performanceTime: .now)
-										}
-									),
-									in: 1...50,
-									step: 1
-								)
-								TextField(
-									"Custom", value: $liveTranscriptionMaxWords, format: .number
-								)
-								.textFieldStyle(.roundedBorder)
-								.frame(width: 60)
-							}
-
-							Text("Number of words to show in the transcription window (1-200+)")
-								.font(.caption)
+					VStack(alignment: .leading, spacing: 8) {
+						HStack {
+							Text("Window Corner Radius")
+								.font(.body)
+							Spacer()
+							Text("\(Int(liveTranscriptionCornerRadius))")
+								.font(.system(.body, design: .monospaced))
 								.foregroundColor(.secondary)
 						}
 
-						Divider()
-
-						VStack(alignment: .leading, spacing: 8) {
-							HStack {
-								Text("Window Corner Radius")
-									.font(.body)
-								Spacer()
-								Text("\(Int(liveTranscriptionCornerRadius))")
-									.font(.system(.body, design: .monospaced))
-									.foregroundColor(.secondary)
-							}
-
-							Slider(value: $liveTranscriptionCornerRadius, in: 0...20, step: 1)
-								.onChange(of: liveTranscriptionCornerRadius) {
-									NSHapticFeedbackManager.defaultPerformer.perform(
-										.generic, performanceTime: .now)
-								}
-
-							Text("Roundness of the window corners")
-								.font(.caption)
-								.foregroundColor(.secondary)
-						}
-
-						Divider()
-
-						VStack(alignment: .leading, spacing: 8) {
-							HStack {
-								Text("Maximum Window Width")
-									.font(.body)
-								Spacer()
-								Text("\(Int(liveTranscriptionMaxWidthPercentage * 100))%")
-									.font(.system(.body, design: .monospaced))
-									.foregroundColor(.secondary)
-							}
-
-							Slider(
-								value: $liveTranscriptionMaxWidthPercentage, in: 0.3...0.8,
-								step: 0.05
-							)
-							.onChange(of: liveTranscriptionMaxWidthPercentage) {
+						Slider(value: $liveTranscriptionCornerRadius, in: 0...20, step: 1)
+							.onChange(of: liveTranscriptionCornerRadius) {
 								NSHapticFeedbackManager.defaultPerformer.perform(
 									.generic, performanceTime: .now)
 							}
 
-							Text("Maximum width as percentage of screen width")
-								.font(.caption)
+						Text("Roundness of the window corners")
+							.font(.caption)
+							.foregroundColor(.secondary)
+					}
+
+					Divider()
+
+					VStack(alignment: .leading, spacing: 8) {
+						HStack {
+							Text("Maximum Window Width")
+								.font(.body)
+							Spacer()
+							Text("\(Int(liveTranscriptionMaxWidthPercentage * 100))%")
+								.font(.system(.body, design: .monospaced))
 								.foregroundColor(.secondary)
 						}
-					}
 
-					Divider()
-
-					SettingsSection("Behavior") {
-						SettingRow(
-							"Show Ellipsis", description: "Display '...' when text is truncated"
-						) {
-							Toggle("Show Ellipsis", isOn: $liveTranscriptionShowEllipsis)
-								.labelsHidden()
+						Slider(
+							value: $liveTranscriptionMaxWidthPercentage, in: 0.3...0.8,
+							step: 0.05
+						)
+						.onChange(of: liveTranscriptionMaxWidthPercentage) {
+							NSHapticFeedbackManager.defaultPerformer.perform(
+								.generic, performanceTime: .now)
 						}
-					}
 
+						Text("Maximum width as percentage of screen width")
+							.font(.caption)
+							.foregroundColor(.secondary)
+					}
 				}
-				.padding(20)
+
+				SettingsSection("Behavior") {
+					SettingRow(
+						"Show Ellipsis", description: "Display '...' when text is truncated"
+					) {
+						Toggle("Show Ellipsis", isOn: $liveTranscriptionShowEllipsis)
+							.labelsHidden()
+					}
+				}
+
 			}
+			.formStyle(.grouped)
 			.settingsSwitches()
 		case .fileTranscription:
-			ScrollView {
-				VStack(spacing: 24) {
-					// MARK: - File Selection Section
-					SettingsSection("File Selection") {
-						SettingRow(
-							"Shortcut",
-							description:
-								"Use this shortcut to open a file selection dialog for transcription."
-						) {
-							HStack(spacing: 8) {
-								Text(fileSelectionShortcut)
-									.font(.system(.body, design: .monospaced))
-									.padding(.horizontal, 8)
-									.padding(.vertical, 4)
-									.background(
-										.quaternary,
-										in: RoundedRectangle(cornerRadius: 6)
-									)
-								Button(isRecordingFileShortcut ? "Press keys..." : "Change") {
-									if isRecordingFileShortcut {
-										stopRecordingFileShortcut()
-									} else {
-										startRecordingFileShortcut()
-									}
+			Form {
+				// MARK: - File Selection Section
+				SettingsSection("File Selection") {
+					SettingRow(
+						"Shortcut",
+						description:
+							"Use this shortcut to open a file selection dialog for transcription."
+					) {
+						HStack(spacing: 8) {
+							Text(fileSelectionShortcut)
+								.font(.system(.body, design: .monospaced))
+								.padding(.horizontal, 8)
+								.padding(.vertical, 4)
+								.background(
+									.quaternary,
+									in: RoundedRectangle(cornerRadius: 6)
+								)
+							Button(isRecordingFileShortcut ? "Press keys..." : "Change") {
+								if isRecordingFileShortcut {
+									stopRecordingFileShortcut()
+								} else {
+									startRecordingFileShortcut()
 								}
-								.buttonStyle(.bordered)
-								.foregroundColor(isRecordingFileShortcut ? .white : .primary)
-								.background(isRecordingFileShortcut ? .blue : Color.clear)
 							}
+							.buttonStyle(.bordered)
+							.foregroundColor(isRecordingFileShortcut ? .white : .primary)
+							.background(isRecordingFileShortcut ? .blue : Color.clear)
 						}
 					}
+				}
 
-					Divider()
+				// MARK: - Transcription Options Section
+				SettingsSection("Transcription Options") {
+					SettingRow("Default mode") {
+						Picker("Default mode", selection: $defaultTranscriptionMode) {
+							Text("Plain Text").tag("plain")
+							Text("With Timestamps").tag("timestamps")
+						}
+						.labelsHidden()
+						.pickerStyle(.menu)
+						.frame(width: 200, alignment: .trailing)
+					}
 
-					// MARK: - Transcription Options Section
-					SettingsSection("Transcription Options") {
-						SettingRow("Default mode") {
-							Picker("Default mode", selection: $defaultTranscriptionMode) {
-								Text("Plain Text").tag("plain")
-								Text("With Timestamps").tag("timestamps")
+					SettingRow("Show timestamps") {
+						Toggle("Show timestamps", isOn: $showTimestamps)
+							.labelsHidden()
+					}
+
+					if showTimestamps {
+						SettingRow("Timestamp format") {
+							Picker("Format", selection: $timestampFormat) {
+								Text("MM:SS").tag("MM:SS")
+								Text("HH:MM:SS").tag("HH:MM:SS")
+								Text("Seconds").tag("Seconds")
 							}
 							.labelsHidden()
 							.pickerStyle(.menu)
 							.frame(width: 200, alignment: .trailing)
 						}
+					}
+				}
 
-						SettingRow("Show timestamps") {
-							Toggle("Show timestamps", isOn: $showTimestamps)
-								.labelsHidden()
+				// MARK: - Network & YouTube Section
+				SettingsSection("Network & YouTube") {
+					SettingRow("Auto-delete downloaded files") {
+						Toggle("Auto-delete downloaded files", isOn: $autoDeleteDownloadedFiles)
+							.labelsHidden()
+					}
+
+					SettingRow("Save transcription to") {
+						Picker("Output", selection: $transcriptionOutput) {
+							Text("Clipboard only").tag("clipboard")
+							Text("File only").tag("file")
+							Text("Both").tag("both")
 						}
+						.labelsHidden()
+						.pickerStyle(MenuPickerStyle())
+						.frame(width: 200, alignment: .trailing)
+					}
 
-						if showTimestamps {
-							SettingRow("Timestamp format") {
-								Picker("Format", selection: $timestampFormat) {
-									Text("MM:SS").tag("MM:SS")
-									Text("HH:MM:SS").tag("HH:MM:SS")
-									Text("Seconds").tag("Seconds")
+					if transcriptionOutput == "file" || transcriptionOutput == "both" {
+						SettingRow("File location") {
+							HStack(spacing: 8) {
+								Picker("Location", selection: $transcriptionFileLocation) {
+									Text("Desktop").tag("Desktop")
+									Text("Documents").tag("Documents")
+									Text("Downloads").tag("Downloads")
+									Text("Custom...").tag("Custom")
 								}
 								.labelsHidden()
 								.pickerStyle(.menu)
-								.frame(width: 200, alignment: .trailing)
-							}
-						}
-					}
-					Divider()
+								.frame(width: 180, alignment: .trailing)
 
-					// MARK: - Network & YouTube Section
-					SettingsSection("Network & YouTube") {
-						SettingRow("Auto-delete downloaded files") {
-							Toggle("Auto-delete downloaded files", isOn: $autoDeleteDownloadedFiles)
-								.labelsHidden()
-						}
-
-						SettingRow("Save transcription to") {
-							Picker("Output", selection: $transcriptionOutput) {
-								Text("Clipboard only").tag("clipboard")
-								Text("File only").tag("file")
-								Text("Both").tag("both")
-							}
-							.labelsHidden()
-							.pickerStyle(MenuPickerStyle())
-							.frame(width: 200, alignment: .trailing)
-						}
-
-						if transcriptionOutput == "file" || transcriptionOutput == "both" {
-							SettingRow("File location") {
-								HStack(spacing: 8) {
-									Picker("Location", selection: $transcriptionFileLocation) {
-										Text("Desktop").tag("Desktop")
-										Text("Documents").tag("Documents")
-										Text("Downloads").tag("Downloads")
-										Text("Custom...").tag("Custom")
+								if transcriptionFileLocation == "Custom" {
+									Button("Choose...") {
+										chooseCustomTranscriptionLocation()
 									}
-									.labelsHidden()
-									.pickerStyle(.menu)
-									.frame(width: 180, alignment: .trailing)
-
-									if transcriptionFileLocation == "Custom" {
-										Button("Choose...") {
-											chooseCustomTranscriptionLocation()
-										}
-										.buttonStyle(.bordered)
-										.controlSize(.small)
-									}
-								}
-							}
-
-							if transcriptionFileLocation == "Custom" {
-								HStack {
-									Text("Current:")
-										.font(.caption)
-										.foregroundColor(.secondary)
-									Text(getCustomTranscriptionPath())
-										.font(.caption)
-										.foregroundColor(.secondary)
-										.lineLimit(1)
-										.truncationMode(.middle)
-									Spacer()
+									.buttonStyle(.bordered)
+									.controlSize(.small)
 								}
 							}
 						}
 
-						SettingRow("YouTube audio quality") {
-							Picker("Quality", selection: $youtubeQuality) {
-								Text("Low (128kbps)").tag("low")
-								Text("Medium (256kbps)").tag("medium")
-								Text("High (320kbps)").tag("high")
-							}
-							.labelsHidden()
-							.pickerStyle(.menu)
-							.frame(width: 180, alignment: .trailing)
-						}
-
-						SettingRow("Max file size (MB)") {
-							TextField("Size", value: $maxFileSizeMB, format: .number)
-								.textFieldStyle(.roundedBorder)
-								.frame(width: 80)
-						}
-					}
-
-					Divider()
-
-					// MARK: - Supported Formats Section
-					SettingsSection("Supported Formats") {
-						VStack(alignment: .leading, spacing: 12) {
-							ForEach(SupportedFormat.allCases, id: \.self) { format in
-								VStack(alignment: .leading, spacing: 4) {
-									Text(format.title)
-										.font(.subheadline)
-										.foregroundColor(.secondary)
-									Text(format.formats)
-										.font(.caption)
-										.foregroundColor(.secondary)
-								}
+						if transcriptionFileLocation == "Custom" {
+							HStack {
+								Text("Current:")
+									.font(.caption)
+									.foregroundColor(.secondary)
+								Text(getCustomTranscriptionPath())
+									.font(.caption)
+									.foregroundColor(.secondary)
+									.lineLimit(1)
+									.truncationMode(.middle)
+								Spacer()
 							}
 						}
 					}
 
+					SettingRow("YouTube audio quality") {
+						Picker("Quality", selection: $youtubeQuality) {
+							Text("Low (128kbps)").tag("low")
+							Text("Medium (256kbps)").tag("medium")
+							Text("High (320kbps)").tag("high")
+						}
+						.labelsHidden()
+						.pickerStyle(.menu)
+						.frame(width: 180, alignment: .trailing)
+					}
+
+					SettingRow("Max file size (MB)") {
+						TextField("Size", value: $maxFileSizeMB, format: .number)
+							.textFieldStyle(.roundedBorder)
+							.frame(width: 80)
+					}
 				}
-				.padding(20)
+
+				// MARK: - Supported Formats Section
+				SettingsSection("Supported Formats") {
+					VStack(alignment: .leading, spacing: 12) {
+						ForEach(SupportedFormat.allCases, id: \.self) { format in
+							VStack(alignment: .leading, spacing: 4) {
+								Text(format.title)
+									.font(.subheadline)
+									.foregroundColor(.secondary)
+								Text(format.formats)
+									.font(.caption)
+									.foregroundColor(.secondary)
+							}
+						}
+					}
+				}
+
 			}
+			.formStyle(.grouped)
 			.settingsSwitches()
 		case .history:
 			TranscriptionHistoryView()
@@ -1407,7 +1415,9 @@ struct SettingsView: View {
 		eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
 			if self.isRecordingShortcut, !SyntheticKeyEvent.isSelfPosted(event) {
 				if event.type == .flagsChanged {
-					if let key = self.modifierRecording.flagsChanged(keyCode: event.keyCode, flags: event.modifierFlags) {
+					if let key = self.modifierRecording.flagsChanged(
+						keyCode: event.keyCode, flags: event.modifierFlags)
+					{
 						self.globalShortcut = key.rawValue
 						self.stopRecording()
 					}

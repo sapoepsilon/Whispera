@@ -8,15 +8,13 @@ struct AutomationSettingsView: View {
 	@State private var resetTokenError: String?
 
 	var body: some View {
-		ScrollView {
-			VStack(alignment: .leading, spacing: 24) {
-				remoteControlSection
-				LauncherSettingsSection()
-				CommandLineSettingsSection()
-				HotkeySettingsSection()
-			}
-			.padding(20)
+		Form {
+			remoteControlSection
+			LauncherSettingsSection()
+			CommandLineSettingsSection()
+			HotkeySettingsSection()
 		}
+		.formStyle(.grouped)
 		.onChange(of: urlSchemeEnabled, initial: true) { _, enabled in
 			if enabled && token == nil { token = RemoteControlToken.load() }
 		}
