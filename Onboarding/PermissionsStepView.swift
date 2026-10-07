@@ -7,6 +7,7 @@ struct PermissionsStepView: View {
 	@ObservedObject var globalShortcutManager: GlobalShortcutManager
 
 	@State private var hasMicrophonePermission = false
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	private let permissionTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
 	var body: some View {
@@ -15,6 +16,7 @@ struct PermissionsStepView: View {
 				Image(systemName: "lock.shield.fill")
 					.font(.system(size: 36))
 					.foregroundColor(.orange)
+					.accessibilityHidden(true)
 
 				Text("Permissions Required")
 					.font(.system(.title2, design: .rounded, weight: .bold))
@@ -58,11 +60,12 @@ struct PermissionsStepView: View {
 					HStack(spacing: 8) {
 						Image(systemName: "checkmark.circle.fill")
 							.foregroundColor(.green)
+							.accessibilityHidden(true)
 						Text("All permissions granted!")
 							.font(.subheadline)
-							.foregroundColor(.green)
+							.foregroundColor(.primary)
 					}
-					.transition(.scale.combined(with: .opacity))
+					.transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
 				} else if !hasPermissions {
 					Text(
 						"Go to System Settings > Privacy & Security > Accessibility and enable Whispera."
@@ -74,8 +77,8 @@ struct PermissionsStepView: View {
 			}
 			.frame(minHeight: 40)
 		}
-		.animation(.spring(duration: 0.4, bounce: 0.15), value: hasPermissions)
-		.animation(.spring(duration: 0.4, bounce: 0.15), value: hasMicrophonePermission)
+		.animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: hasPermissions)
+		.animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: hasMicrophonePermission)
 		.onAppear {
 			var transaction = Transaction()
 			transaction.disablesAnimations = true

@@ -14,13 +14,13 @@ struct HotkeySettingsSection: View {
 	var body: some View {
 		SettingsSection("Keyboard") {
 			SettingRow("Shortcut backend", description: backend.wrappedValue.summary) {
-				Picker("", selection: backend) {
+				Picker("Shortcut backend", selection: backend) {
 					ForEach(HotkeyBackend.allCases) { option in
 						Text(option.title).tag(option)
 					}
 				}
 				.labelsHidden()
-				.frame(width: 160)
+				.frame(width: 160, alignment: .trailing)
 			}
 
 			if let message = diagnostics.backendMessage {

@@ -41,7 +41,7 @@ struct RecordingControlSettingsView: View {
 					}
 				}
 				.labelsHidden()
-				.frame(width: 180)
+				.frame(width: 180, alignment: .trailing)
 				.accessibilityIdentifier("activationModePicker")
 			}
 
@@ -91,7 +91,7 @@ struct RecordingControlSettingsView: View {
 						}
 					}
 					.labelsHidden()
-					.frame(width: 180)
+					.frame(width: 180, alignment: .trailing)
 					.accessibilityIdentifier("micStreamPolicyPicker")
 				}
 			}
@@ -104,7 +104,7 @@ struct RecordingControlSettingsView: View {
 						}
 					}
 					.labelsHidden()
-					.frame(width: 180)
+					.frame(width: 180, alignment: .trailing)
 					.accessibilityIdentifier("lazyStreamClosePicker")
 				}
 			}
@@ -117,7 +117,7 @@ struct RecordingControlSettingsView: View {
 				HStack(spacing: 8) {
 					CancelShortcutRecorder()
 						.disabled(!cancelShortcutEnabled)
-					Toggle("", isOn: $cancelShortcutEnabled)
+					Toggle("Cancel Shortcut", isOn: $cancelShortcutEnabled)
 						.labelsHidden()
 						.accessibilityIdentifier("cancelShortcutToggle")
 				}

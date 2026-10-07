@@ -206,10 +206,13 @@ struct ListeningView: View {
 				}) {
 					Image(systemName: "stop.circle.fill")
 						.font(.system(size: 16))
-						.foregroundColor(.secondary)
+						.foregroundColor(.recordingAccent)
+						.frame(width: 22, height: 22)
+						.contentShape(Rectangle())
 				}
 				.buttonStyle(.plain)
 				.help("Stop recording")
+				.accessibilityLabel("Stop recording")
 			}
 		}
 	}
@@ -237,10 +240,13 @@ struct ListeningView: View {
 						reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
 			}
 			.animation(reduceMotion ? nil : Motion.iconMorph, value: layout.deviceIcon)
+			.frame(width: 22, height: 22)
 			.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain)
 		.help(audioManager.inputNotice ?? String(localized: "Input device - \(activeDeviceName). Click to switch."))
+		.accessibilityLabel("Input Device")
+		.accessibilityValue(Text(verbatim: audioManager.inputNotice ?? activeDeviceName))
 	}
 
 	private var cancelButton: some View {
@@ -250,6 +256,8 @@ struct ListeningView: View {
 			Image(systemName: "xmark.circle.fill")
 				.font(.system(size: 16))
 				.foregroundColor(.secondary)
+				.frame(width: 22, height: 22)
+				.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain)
 		.help(
@@ -257,6 +265,7 @@ struct ListeningView: View {
 				? String(localized: "Cancel and discard (Esc)")
 				: String(localized: "Cancel and discard")
 		)
+		.accessibilityLabel("Cancel and discard")
 		.accessibilityIdentifier("cancelRecordingButton")
 	}
 
@@ -293,9 +302,17 @@ struct ListeningView: View {
 						.fill(Color.blue.opacity(0.15))
 				)
 				.foregroundColor(.secondary)
+				.frame(minWidth: 22, minHeight: 22)
+				.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain)
-		.help("Input device & post-dictation action — \(ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes))")
+		.help(controlsHelp)
+		.accessibilityLabel("Input device and post-dictation action")
+		.accessibilityValue(showControls ? Text("Open") : Text("Closed"))
+	}
+
+	private var controlsHelp: LocalizedStringKey {
+		"Input device & post-dictation action — \(ListeningPostAction.label(defaultCommandId: defaultCommandId, recipes: recipeStore.recipes))"
 	}
 
 	/// The panel's state read as a switch: flipped on while it is presented, off

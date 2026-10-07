@@ -48,14 +48,14 @@ struct BenchmarkView: View {
 	}
 
 	private var headerSection: some View {
-		VStack(spacing: 8) {
+		VStack(alignment: .leading, spacing: 4) {
 			Text("RTF Benchmark")
-				.font(.title)
-				.fontWeight(.bold)
+				.font(.headline)
 			Text("Measure Real-Time Factor for transcription performance")
-				.font(.subheadline)
+				.font(.caption)
 				.foregroundColor(.secondary)
 		}
+		.frame(maxWidth: .infinity, alignment: .leading)
 	}
 
 	private var modelInfoSection: some View {
@@ -65,11 +65,19 @@ struct BenchmarkView: View {
 					Label(WhisperKitTranscriber.getModelDisplayName(for: model), systemImage: "cpu")
 					Spacer()
 					if transcriber.isCurrentModelLoaded() {
-						Text("Ready")
-							.foregroundColor(.green)
+						Label {
+							Text("Ready")
+						} icon: {
+							Image(systemName: "checkmark.circle.fill")
+								.foregroundColor(.green)
+						}
 					} else {
-						Text("Not Loaded")
-							.foregroundColor(.orange)
+						Label {
+							Text("Not Loaded")
+						} icon: {
+							Image(systemName: "exclamationmark.triangle.fill")
+								.foregroundColor(.orange)
+						}
 					}
 				} else {
 					Text("No model loaded")
@@ -181,10 +189,9 @@ struct BenchmarkView: View {
 						Text("Average RTF")
 							.font(.caption)
 							.foregroundColor(.secondary)
-						Text(summary.formattedAverageRTF)
+						RTFValueLabel(text: summary.formattedAverageRTF, isRealTime: summary.averageRTF <= 1.0)
 							.font(.title)
 							.fontWeight(.bold)
-							.foregroundColor(summary.averageRTF <= 1.0 ? .green : .orange)
 					}
 					Spacer()
 					VStack(alignment: .trailing) {
@@ -247,19 +254,16 @@ struct BenchmarkView: View {
 					.frame(maxWidth: .infinity)
 					.padding(.vertical, 8)
 			} else {
-				ScrollView {
-					VStack(alignment: .leading, spacing: 8) {
-						ForEach(Array(runner.savedBenchmarks.enumerated()), id: \.offset) { index, saved in
-							SavedBenchmarkRow(summary: saved) {
-								runner.deleteBenchmark(at: index)
-							}
-							if index < runner.savedBenchmarks.count - 1 {
-								Divider()
-							}
+				VStack(alignment: .leading, spacing: 8) {
+					ForEach(Array(runner.savedBenchmarks.enumerated()), id: \.offset) { index, saved in
+						SavedBenchmarkRow(summary: saved) {
+							runner.deleteBenchmark(at: index)
+						}
+						if index < runner.savedBenchmarks.count - 1 {
+							Divider()
 						}
 					}
 				}
-				.frame(maxHeight: 150)
 			}
 		}
 	}
@@ -270,7 +274,7 @@ struct BenchmarkView: View {
 				Image(systemName: "exclamationmark.triangle.fill")
 					.foregroundColor(.red)
 				Text(error)
-					.foregroundColor(.red)
+					.foregroundColor(.primary)
 			}
 		}
 	}
@@ -352,9 +356,8 @@ struct ResultRow: View {
 				}
 				Spacer()
 				VStack(alignment: .trailing) {
-					Text(result.formattedRTF)
+					RTFValueLabel(text: result.formattedRTF, isRealTime: result.isRealTime)
 						.fontWeight(.bold)
-						.foregroundColor(result.isRealTime ? .green : .orange)
 					Text(result.speedDescription)
 						.font(.caption)
 						.foregroundColor(.secondary)
@@ -419,24 +422,26 @@ struct SavedBenchmarkRow: View {
 			VStack(alignment: .leading, spacing: 2) {
 				Text(summary.modelName)
 					.fontWeight(.medium)
-				Text("\(summary.fileCount) files • \(formatDuration(summary.totalAudioDuration)) total")
+				Text(summary.fileCount == 1
+					? String(localized: "\(summary.fileCount) file • \(formatDuration(summary.totalAudioDuration)) total")
+					: String(localized: "\(summary.fileCount) files • \(formatDuration(summary.totalAudioDuration)) total"))
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}
 			Spacer()
 			VStack(alignment: .trailing, spacing: 2) {
-				Text(summary.formattedAverageRTF)
+				RTFValueLabel(text: summary.formattedAverageRTF, isRealTime: summary.averageRTF <= 1.0)
 					.fontWeight(.bold)
-					.foregroundColor(summary.averageRTF <= 1.0 ? .green : .orange)
 				Text("avg RTF")
 					.font(.caption2)
 					.foregroundColor(.secondary)
 			}
-			Button(action: onDelete) {
+			Button(role: .destructive, action: onDelete) {
 				Image(systemName: "trash")
-					.foregroundColor(.red)
 			}
-			.buttonStyle(.plain)
+			.buttonStyle(.borderless)
+			.help("Delete")
+			.accessibilityLabel("Delete")
 		}
 	}
 
@@ -450,6 +455,23 @@ struct SavedBenchmarkRow: View {
 			let hours = Int(seconds) / 3600
 			let minutes = (Int(seconds) % 3600) / 60
 			return "\(hours)h \(minutes)m"
+		}
+	}
+}
+
+/// An RTF value whose icon, not its text colour, says whether it ran faster than real time.
+struct RTFValueLabel: View {
+	let text: String
+	let isRealTime: Bool
+
+	var body: some View {
+		HStack(spacing: 4) {
+			Image(systemName: isRealTime ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+				.foregroundColor(isRealTime ? .green : .orange)
+				.imageScale(.small)
+				.accessibilityHidden(true)
+			Text(text)
+				.foregroundColor(.primary)
 		}
 	}
 }

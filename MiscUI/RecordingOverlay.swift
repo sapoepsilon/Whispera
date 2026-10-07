@@ -87,7 +87,7 @@ struct RecordingOverlaySettingRows: View {
 			"Recording Overlay",
 			description: "What appears on screen while dictating."
 		) {
-			Picker("", selection: $styleRaw) {
+			Picker("Recording Overlay", selection: $styleRaw) {
 				ForEach(RecordingOverlayStyle.allCases) { style in
 					Text(style.displayName).tag(style.rawValue)
 				}
@@ -99,7 +99,7 @@ struct RecordingOverlaySettingRows: View {
 
 		if styleRaw != RecordingOverlayStyle.none.rawValue {
 			SettingRow("Overlay Position") {
-				Picker("", selection: $positionRaw) {
+				Picker("Overlay Position", selection: $positionRaw) {
 					ForEach(RecordingOverlayPosition.allCases) { position in
 						Text(position.displayName).tag(position.rawValue)
 					}

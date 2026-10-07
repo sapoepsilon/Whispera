@@ -225,27 +225,25 @@ struct TranscriptionHistoryView: View {
 		SettingsSection("History") {
 			SettingRow("Save transcription history", description: "Keep each dictation so you can find it later")
 			{
-				Toggle("", isOn: $historyEnabled)
-					.toggleStyle(.switch)
+				Toggle("Save transcription history", isOn: $historyEnabled)
 					.labelsHidden()
 			}
 			SettingRow(
 				"Save recordings",
 				description: "Keep the audio so entries can be replayed or re-transcribed. History and recordings stay on this Mac and are left out of Time Machine backups."
 			) {
-				Toggle("", isOn: $saveAudio)
-					.toggleStyle(.switch)
+				Toggle("Save recordings", isOn: $saveAudio)
 					.labelsHidden()
 			}
 			.disabled(!historyEnabled)
 			SettingRow("Delete entries after", description: "Starred entries are never deleted automatically") {
-				Picker("", selection: retentionSelection) {
+				Picker("Delete entries after", selection: retentionSelection) {
 					ForEach(HistoryRetentionPeriod.allCases) { period in
 						Text(period.displayName).tag(period.rawValue)
 					}
 				}
 				.labelsHidden()
-				.frame(width: 200)
+				.frame(width: 200, alignment: .trailing)
 			}
 			if retentionRaw == HistoryRetentionPeriod.preserveLimit.rawValue {
 				SettingRow("Entries to keep") {

@@ -39,7 +39,8 @@ struct TextProcessingSettingsSection: View {
 				"Bias Recognition",
 				description: "Pass custom words to Whisper as a prompt so it prefers those spellings"
 			) {
-				Toggle("", isOn: $biasDecoding)
+				Toggle("Bias Recognition", isOn: $biasDecoding)
+					.labelsHidden()
 			}
 
 			SettingRow(
@@ -62,7 +63,8 @@ struct TextProcessingSettingsSection: View {
 				"Remove Filler Words",
 				description: "Drop um, uh, hmm and repeated stutters, and squeeze extra spaces, in dictation and file transcripts. Dictation also joins line breaks into spaces; file transcripts keep them."
 			) {
-				Toggle("", isOn: $fillerWordRemovalEnabled)
+				Toggle("Remove Filler Words", isOn: $fillerWordRemovalEnabled)
+					.labelsHidden()
 					.accessibilityIdentifier("fillerWordRemovalToggle")
 			}
 
@@ -92,7 +94,7 @@ struct TextProcessingSettingsSection: View {
 					}
 				}
 				.labelsHidden()
-				.frame(width: 150)
+				.frame(width: 150, alignment: .trailing)
 			}
 		}
 	}

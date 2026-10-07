@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SlideTransition: Transition {
 	let direction: Int
+	var reduceMotion = false
 
 	func body(content: Content, phase: TransitionPhase) -> some View {
 		content
@@ -10,6 +11,7 @@ struct SlideTransition: Transition {
 	}
 
 	private func xOffset(for phase: TransitionPhase) -> CGFloat {
+		if reduceMotion { return 0 }
 		switch phase {
 		case .willAppear: return CGFloat(direction) * 50
 		case .identity: return 0

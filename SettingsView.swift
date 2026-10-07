@@ -39,6 +39,22 @@ struct SettingsSection<Content: View>: View {
 				.font(.headline)
 			content
 		}
+		.frame(maxWidth: .infinity, alignment: .leading)
+	}
+}
+
+/// Settings panes built from `SettingRow` show every toggle as a small switch.
+struct SettingsSwitchToggleStyle: ToggleStyle {
+	func makeBody(configuration: Configuration) -> some View {
+		Toggle(configuration)
+			.toggleStyle(.switch)
+			.controlSize(.small)
+	}
+}
+
+extension View {
+	func settingsSwitches() -> some View {
+		toggleStyle(SettingsSwitchToggleStyle())
 	}
 }
 
@@ -64,7 +80,7 @@ struct SettingRow<Content: View>: View {
 		HStack(spacing: 12) {
 			VStack(alignment: .leading, spacing: 2) {
 				Text(LocalizedStringKey(label))
-					.font(.subheadline)
+					.font(.body)
 				if let description = description {
 					(descriptionIsVerbatim ? Text(verbatim: description) : Text(LocalizedStringKey(description)))
 						.font(.caption)
@@ -440,14 +456,16 @@ struct SettingsView: View {
 							"Automatic Updates",
 							description: "Automatically check for updates"
 						) {
-							Toggle("", isOn: $softwareUpdater.automaticallyChecksForUpdates)
+							Toggle("Automatic Updates", isOn: $softwareUpdater.automaticallyChecksForUpdates)
+								.labelsHidden()
 						}
 
 						SettingRow(
 							"Auto-download Updates",
 							description: "Download updates in the background"
 						) {
-							Toggle("", isOn: $softwareUpdater.automaticallyDownloadsUpdates)
+							Toggle("Auto-download Updates", isOn: $softwareUpdater.automaticallyDownloadsUpdates)
+								.labelsHidden()
 						}
 
 						WhatsNewSettingRow()
@@ -484,7 +502,8 @@ struct SettingsView: View {
 						SecureInputSettingsRows()
 
 						SettingRow("Sound Feedback") {
-							Toggle("", isOn: $soundFeedback)
+							Toggle("Sound Feedback", isOn: $soundFeedback)
+								.labelsHidden()
 						}
 
 						if soundFeedback {
@@ -495,7 +514,7 @@ struct SettingsView: View {
 									}
 								}
 								.labelsHidden()
-								.frame(width: 180)
+								.frame(width: 180, alignment: .trailing)
 								.onChange(of: startSound) {
 									previewSound(start: true)
 								}
@@ -508,7 +527,7 @@ struct SettingsView: View {
 									}
 								}
 								.labelsHidden()
-								.frame(width: 180)
+								.frame(width: 180, alignment: .trailing)
 								.onChange(of: stopSound) {
 									previewSound(start: false)
 								}
@@ -521,7 +540,8 @@ struct SettingsView: View {
 							"Haptic Feedback",
 							description: "Trackpad vibration when shortcut is triggered"
 						) {
-							Toggle("", isOn: $shortcutHapticFeedback)
+							Toggle("Haptic Feedback", isOn: $shortcutHapticFeedback)
+								.labelsHidden()
 						}
 
 						RecordingOverlaySettingRows()
@@ -530,13 +550,14 @@ struct SettingsView: View {
 							"Recording Glow",
 							description: "Glow around the screen edges while recording"
 						) {
-							Toggle("", isOn: $enableRecordingGlow)
+							Toggle("Recording Glow", isOn: $enableRecordingGlow)
+								.labelsHidden()
 						}
 
 						if enableRecordingGlow {
 							SettingRow("Glow Color") {
 								ColorPicker(
-									"",
+									"Glow Color",
 									selection: Binding(
 										get: {
 											RecordingGlowColor.color(fromHex: recordingGlowColorHex)
@@ -561,7 +582,7 @@ struct SettingsView: View {
 							"Input Device",
 							description: "Select which microphone to use for recording"
 						) {
-							Picker("", selection: Binding(
+							Picker("Input Device", selection: Binding(
 								get: { AudioDeviceManager.shared.persistedDeviceUID },
 								set: { newUID in
 									AudioDeviceManager.shared.selectDevice(uid: newUID)
@@ -575,7 +596,8 @@ struct SettingsView: View {
 										.tag(device.uid)
 								}
 							}
-							.frame(maxWidth: 200)
+							.labelsHidden()
+							.frame(maxWidth: 200, alignment: .trailing)
 						}
 
 						if AudioDeviceManager.shared.persistedDeviceUID != AudioDeviceManager.systemDefaultUID,
@@ -603,7 +625,7 @@ struct SettingsView: View {
 										.scaleEffect(0.6)
 									Text(getModelStatusText())
 										.font(.caption)
-										.foregroundColor(.orange)
+										.foregroundColor(.secondary)
 									Spacer()
 								}
 
@@ -637,7 +659,7 @@ struct SettingsView: View {
 									}
 								}
 								.labelsHidden()
-								.frame(width: 200)
+								.frame(width: 200, alignment: .trailing)
 								.accessibilityIdentifier("Whisper model")
 							}
 						}
@@ -646,9 +668,13 @@ struct SettingsView: View {
 							Text("Status:")
 								.font(.caption)
 								.foregroundColor(.secondary)
-							Text(getCurrentModelStatusText())
+							Image(systemName: getModelStatusIcon())
 								.font(.caption)
 								.foregroundColor(getModelStatusColor())
+								.accessibilityHidden(true)
+							Text(getCurrentModelStatusText())
+								.font(.caption)
+								.foregroundColor(.primary)
 								.accessibilityIdentifier("modelStatusText")
 							Spacer()
 							if let diskSize = currentModelDiskSize {
@@ -665,13 +691,14 @@ struct SettingsView: View {
 						ParakeetSettingsNote(modelID: whisperKit.selectedModel ?? selectedModel)
 
 						Text(
-							"Choose your Whisper model: base is fast and accurate for most use cases, small provides better accuracy for complex speech, and tiny is fastest for simple transcriptions."
+							"Larger models are more accurate but slower and use more memory. You can change this later in Settings."
 						)
 						.font(.caption)
 						.foregroundColor(.secondary)
 
 						SettingRow("Auto Download") {
-							Toggle("", isOn: $autoDownloadModel)
+							Toggle("Auto Download", isOn: $autoDownloadModel)
+								.labelsHidden()
 						}
 
 						ModelMemorySettingsView()
@@ -695,7 +722,6 @@ struct SettingsView: View {
 								"Process audio in real-time (max 30 minutes) instead of saving to file"
 						) {
 							Toggle("Streaming Transcription", isOn: $useStreamingTranscription)
-								.toggleStyle(.switch)
 								.labelsHidden()
 								.accessibilityIdentifier("streamingTranscriptionToggle")
 						}
@@ -704,7 +730,8 @@ struct SettingsView: View {
 							"Translation Mode",
 							description: "Translate speech to English instead of transcribing"
 						) {
-							Toggle("", isOn: $enableTranslation)
+							Toggle("Translation Mode", isOn: $enableTranslation)
+								.labelsHidden()
 						}
 
 						if debugModeEnabled {
@@ -716,7 +743,8 @@ struct SettingsView: View {
 									GlassBetaElement(onTap: {
 										showLiveTranscriptionInfo()
 									})
-									Toggle("", isOn: $enableStreaming)
+									Toggle("Live Transcription Mode", isOn: $enableStreaming)
+										.labelsHidden()
 								}
 							}
 						}
@@ -725,7 +753,8 @@ struct SettingsView: View {
 							"Auto-detect from Keyboard",
 							description: "Automatically use keyboard input language when recording starts"
 						) {
-							Toggle("", isOn: $autoDetectLanguageFromKeyboard)
+							Toggle("Auto-detect from Keyboard", isOn: $autoDetectLanguageFromKeyboard)
+								.labelsHidden()
 						}
 
 						if !autoDetectLanguageFromKeyboard {
@@ -742,7 +771,7 @@ struct SettingsView: View {
 									}
 								}
 								.labelsHidden()
-								.frame(width: 180)
+								.frame(width: 180, alignment: .trailing)
 							}
 						} else {
 							InfoBox(style: .info) {
@@ -768,8 +797,9 @@ struct SettingsView: View {
 					Divider()
 
 					SettingsSection("System") {
-						SettingRow("Launch at Startup") {
-							Toggle("", isOn: $launchAtStartup)
+						SettingRow("Launch at Login", description: "Start Whispera automatically when you log in") {
+							Toggle("Launch at Login", isOn: $launchAtStartup)
+								.labelsHidden()
 						}
 
 						ThemeSettingRow()
@@ -783,7 +813,7 @@ struct SettingsView: View {
 							description: "Adjust transparency level for all windows"
 						) {
 							Picker(
-								"",
+								"Window Transparency",
 								selection: Binding(
 									get: { materialStyle },
 									set: { newValue in materialStyleRaw = newValue.rawValue }
@@ -795,12 +825,12 @@ struct SettingsView: View {
 							}
 							.labelsHidden()
 							.pickerStyle(.menu)
-							.frame(width: 180)
+							.frame(width: 180, alignment: .trailing)
 						}
 
 						HStack {
 							Text("Setup")
-								.font(.subheadline)
+								.font(.body)
 							Spacer()
 							Button("Show Onboarding Again") {
 								showOnboardingAgain()
@@ -858,6 +888,7 @@ struct SettingsView: View {
 				}
 				.padding(20)
 			}
+			.settingsSwitches()
 		case .servers:
 			ServersSettingsView()
 		case .account:
@@ -866,6 +897,7 @@ struct SettingsView: View {
 			RecipesView()
 		case .textInsertion:
 			TextInsertionSettingsView()
+				.settingsSwitches()
 		case .storage:
 			ScrollView {
 				VStack(spacing: 24) {
@@ -873,7 +905,7 @@ struct SettingsView: View {
 					SettingsSection("Storage") {
 						HStack {
 							Text("WhisperKit Models")
-								.font(.subheadline)
+								.font(.body)
 							Spacer()
 							if appLibraryManager.isCalculatingStorage {
 								ProgressView()
@@ -914,13 +946,12 @@ struct SettingsView: View {
 								.buttonStyle(.bordered)
 								.controlSize(.small)
 
-								Button("Clear All Models") {
+								Button("Clear All Models", role: .destructive) {
 									showingClearAllConfirmation = true
 									confirmationStep = 0
 								}
 								.buttonStyle(.bordered)
 								.controlSize(.small)
-								.foregroundColor(.red)
 								Spacer()
 							}
 						}
@@ -930,9 +961,10 @@ struct SettingsView: View {
 					SettingsSection("Application Logs") {
 						HStack {
 							Text("Extended Logging")
-								.font(.subheadline)
+								.font(.body)
 							Spacer()
-							Toggle("", isOn: $enableExtendedLogging)
+							Toggle("Extended Logging", isOn: $enableExtendedLogging)
+								.labelsHidden()
 						}
 
 						HStack(spacing: 12) {
@@ -954,12 +986,11 @@ struct SettingsView: View {
 							.buttonStyle(.bordered)
 							.controlSize(.small)
 
-							Button("Clear Logs") {
+							Button("Clear Logs", role: .destructive) {
 								showingClearLogsConfirmation = true
 							}
 							.buttonStyle(.bordered)
 							.controlSize(.small)
-							.foregroundColor(.red)
 						}
 
 						if enableExtendedLogging {
@@ -972,7 +1003,8 @@ struct SettingsView: View {
 									"Debug Mode",
 									description: "Show the Debug section with a live log viewer (⇧⌘D)"
 								) {
-									Toggle("", isOn: $debugModeEnabled)
+									Toggle("Debug Mode", isOn: $debugModeEnabled)
+										.labelsHidden()
 								}
 							}
 						}
@@ -981,6 +1013,7 @@ struct SettingsView: View {
 				}
 				.padding(20)
 			}
+			.settingsSwitches()
 		case .liveTranscription:
 			ScrollView {
 				VStack(spacing: 24) {
@@ -1024,7 +1057,7 @@ struct SettingsView: View {
 						VStack(alignment: .leading, spacing: 8) {
 							HStack {
 								Text("Maximum Words to Display")
-									.font(.subheadline)
+									.font(.body)
 								Spacer()
 								Text("\(liveTranscriptionMaxWords)")
 									.font(.system(.body, design: .monospaced))
@@ -1062,7 +1095,7 @@ struct SettingsView: View {
 						VStack(alignment: .leading, spacing: 8) {
 							HStack {
 								Text("Window Corner Radius")
-									.font(.subheadline)
+									.font(.body)
 								Spacer()
 								Text("\(Int(liveTranscriptionCornerRadius))")
 									.font(.system(.body, design: .monospaced))
@@ -1085,7 +1118,7 @@ struct SettingsView: View {
 						VStack(alignment: .leading, spacing: 8) {
 							HStack {
 								Text("Maximum Window Width")
-									.font(.subheadline)
+									.font(.body)
 								Spacer()
 								Text("\(Int(liveTranscriptionMaxWidthPercentage * 100))%")
 									.font(.system(.body, design: .monospaced))
@@ -1113,13 +1146,15 @@ struct SettingsView: View {
 						SettingRow(
 							"Show Ellipsis", description: "Display '...' when text is truncated"
 						) {
-							Toggle("", isOn: $liveTranscriptionShowEllipsis)
+							Toggle("Show Ellipsis", isOn: $liveTranscriptionShowEllipsis)
+								.labelsHidden()
 						}
 					}
 
 				}
 				.padding(20)
 			}
+			.settingsSwitches()
 		case .fileTranscription:
 			ScrollView {
 				VStack(spacing: 24) {
@@ -1164,11 +1199,12 @@ struct SettingsView: View {
 							}
 							.labelsHidden()
 							.pickerStyle(.menu)
-							.frame(width: 200)
+							.frame(width: 200, alignment: .trailing)
 						}
 
 						SettingRow("Show timestamps") {
-							Toggle("", isOn: $showTimestamps)
+							Toggle("Show timestamps", isOn: $showTimestamps)
+								.labelsHidden()
 						}
 
 						if showTimestamps {
@@ -1180,7 +1216,7 @@ struct SettingsView: View {
 								}
 								.labelsHidden()
 								.pickerStyle(.menu)
-								.frame(width: 200)
+								.frame(width: 200, alignment: .trailing)
 							}
 						}
 					}
@@ -1189,7 +1225,8 @@ struct SettingsView: View {
 					// MARK: - Network & YouTube Section
 					SettingsSection("Network & YouTube") {
 						SettingRow("Auto-delete downloaded files") {
-							Toggle("", isOn: $autoDeleteDownloadedFiles)
+							Toggle("Auto-delete downloaded files", isOn: $autoDeleteDownloadedFiles)
+								.labelsHidden()
 						}
 
 						SettingRow("Save transcription to") {
@@ -1200,7 +1237,7 @@ struct SettingsView: View {
 							}
 							.labelsHidden()
 							.pickerStyle(MenuPickerStyle())
-							.frame(width: 200)
+							.frame(width: 200, alignment: .trailing)
 						}
 
 						if transcriptionOutput == "file" || transcriptionOutput == "both" {
@@ -1214,7 +1251,7 @@ struct SettingsView: View {
 									}
 									.labelsHidden()
 									.pickerStyle(.menu)
-									.frame(width: 180)
+									.frame(width: 180, alignment: .trailing)
 
 									if transcriptionFileLocation == "Custom" {
 										Button("Choose...") {
@@ -1249,7 +1286,7 @@ struct SettingsView: View {
 							}
 							.labelsHidden()
 							.pickerStyle(.menu)
-							.frame(width: 180)
+							.frame(width: 180, alignment: .trailing)
 						}
 
 						SettingRow("Max file size (MB)") {
@@ -1280,10 +1317,13 @@ struct SettingsView: View {
 				}
 				.padding(20)
 			}
+			.settingsSwitches()
 		case .history:
 			TranscriptionHistoryView()
+				.settingsSwitches()
 		case .automation:
 			AutomationSettingsView()
+				.settingsSwitches()
 		case .benchmark:
 			BenchmarkView()
 		case .debug:
@@ -1632,6 +1672,14 @@ struct SettingsView: View {
 		//        } else {
 		//            return "Initializing..."
 		//        }
+	}
+
+	private func getModelStatusIcon() -> String {
+		switch getModelStatusColor() {
+		case .green: return "checkmark.circle.fill"
+		case .orange: return "exclamationmark.circle.fill"
+		default: return "circle"
+		}
 	}
 
 	private func getModelStatusColor() -> Color {

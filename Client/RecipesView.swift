@@ -48,6 +48,8 @@ struct RecipesView: View {
 				if recipesEnabled || cleanUpOnRequest, let failure = health.lastFailure {
 					failureRow(failure)
 				}
+			} header: {
+				Text("Recipes")
 			}
 
 			Section {

@@ -80,14 +80,14 @@ struct AppLanguageSettingRow: View {
 
 	var body: some View {
 		SettingRow("App Language", description: "Language used for Whispera's menus and settings") {
-			Picker("", selection: $language) {
+			Picker("App Language", selection: $language) {
 				ForEach(AppLanguage.allCases) { language in
 					Text(verbatim: language.displayName).tag(language)
 				}
 			}
 			.labelsHidden()
 			.pickerStyle(.menu)
-			.frame(width: 180)
+			.frame(width: 180, alignment: .trailing)
 			.onChange(of: language) { _, newValue in
 				AppLanguage.store(newValue)
 				pendingRelaunch = true

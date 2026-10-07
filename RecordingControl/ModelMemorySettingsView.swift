@@ -36,7 +36,7 @@ struct ModelMemorySettingsView: View {
 				}
 			}
 			.labelsHidden()
-			.frame(width: 180)
+			.frame(width: 180, alignment: .trailing)
 			.accessibilityIdentifier("modelUnloadTimeoutPicker")
 		}
 

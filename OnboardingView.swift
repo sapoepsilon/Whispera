@@ -13,6 +13,7 @@ struct OnboardingView: View {
 	@State private var customShortcut = ""
 	@State private var hasPermissions = false
 	@State private var launchAtLogin = false
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	@AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 	@AppStorage(ShortcutDefaults.dictationKey) private var globalShortcut = ShortcutDefaults.dictation
@@ -47,7 +48,7 @@ struct OnboardingView: View {
 				stepContent
 					.geometryGroup()
 					.id(currentStep)
-					.transition(SlideTransition(direction: direction))
+					.transition(SlideTransition(direction: direction, reduceMotion: reduceMotion))
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 			.clipped()
@@ -56,7 +57,7 @@ struct OnboardingView: View {
 				if currentStep > 0 {
 					Button("Back") {
 						direction = -1
-						withAnimation(.spring(duration: 0.5, bounce: 0.18)) {
+						withAnimation(reduceMotion ? nil : .spring(duration: 0.5, bounce: 0.18)) {
 							currentStep -= 1
 						}
 					}
@@ -78,7 +79,7 @@ struct OnboardingView: View {
 			.padding(.bottom, 30)
 			.padding(.top, 8)
 		}
-		.background(materialStyle.material)
+		.background(AdaptiveMaterialBackground(style: materialStyle))
 		.overlay(
 			LinearGradient(
 				colors: [Color.blue.opacity(0.02), Color.clear],
@@ -115,7 +116,7 @@ struct OnboardingView: View {
 		.onReceive(NotificationCenter.default.publisher(for: .onboardingMagnetDissolve)) {
 			notification in
 			let dissolving = notification.object as? Bool ?? false
-			withAnimation(.easeInOut(duration: 0.2)) {
+			withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
 				isDissolving = dissolving
 			}
 		}
@@ -197,7 +198,7 @@ struct OnboardingView: View {
 		}
 
 		direction = 1
-		withAnimation(.spring(duration: 0.5, bounce: 0.18)) {
+		withAnimation(reduceMotion ? nil : .spring(duration: 0.5, bounce: 0.18)) {
 			currentStep += 1
 		}
 	}

@@ -392,6 +392,29 @@
         }
       }
     },
+    "%lld file • %@ total": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Datei • %@ insgesamt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld archivo • %@ en total"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld fichier • %@ au total"
+          }
+        }
+      }
+    },
     "%lld file(s) selected": {
       "extractionState": "manual",
       "localizations": {
@@ -3290,6 +3313,29 @@
         }
       }
     },
+    "Browse…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durchsuchen…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Examinar…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parcourir…"
+          }
+        }
+      }
+    },
     "Built-in": {
       "extractionState": "manual",
       "localizations": {
@@ -4371,6 +4417,52 @@
         }
       }
     },
+    "Click to record": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klicken zum Aufnehmen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic para grabar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez pour enregistrer"
+          }
+        }
+      }
+    },
+    "Click to stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klicken zum Stoppen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic para detener"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez pour arrêter"
+          }
+        }
+      }
+    },
     "Click to view all files": {
       "extractionState": "manual",
       "localizations": {
@@ -4482,6 +4574,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fermer"
+          }
+        }
+      }
+    },
+    "Closed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geschlossen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fermé"
           }
         }
       }
@@ -7039,6 +7154,29 @@
         }
       }
     },
+    "Drop a file on the menu, or click to browse": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ziehe eine Datei auf das Menü oder klicke, um sie auszuwählen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrastra un archivo al menú o haz clic para buscarlo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déposez un fichier sur le menu ou cliquez pour le choisir"
+          }
+        }
+      }
+    },
     "Drop audio/video files or URLs here": {
       "extractionState": "manual",
       "localizations": {
@@ -9431,6 +9569,29 @@
         }
       }
     },
+    "Input device and post-dictation action": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingabegerät und Aktion nach dem Diktat"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dispositivo de entrada y acción tras el dictado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Périphérique d’entrée et action après la dictée"
+          }
+        }
+      }
+    },
     "Insert Text By": {
       "extractionState": "manual",
       "localizations": {
@@ -10301,6 +10462,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "La langue sera détectée automatiquement au début de l'enregistrement"
+          }
+        }
+      }
+    },
+    "Larger models are more accurate but slower and use more memory. You can change this later in Settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Größere Modelle sind genauer, aber langsamer und brauchen mehr Arbeitsspeicher. Du kannst das später in den Einstellungen ändern."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los modelos más grandes son más precisos, pero más lentos y usan más memoria. Puedes cambiarlo más tarde en Ajustes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les modèles plus grands sont plus précis, mais plus lents et utilisent plus de mémoire. Vous pourrez changer cela plus tard dans les Réglages."
           }
         }
       }
@@ -13617,6 +13801,29 @@
         }
       }
     },
+    "Open": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geöffnet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abierto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvert"
+          }
+        }
+      }
+    },
     "Open Accessibility Settings": {
       "extractionState": "manual",
       "localizations": {
@@ -15292,6 +15499,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Privé"
+          }
+        }
+      }
+    },
+    "Private by default": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standardmäßig privat"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privado por defecto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privé par défaut"
           }
         }
       }
@@ -17757,6 +17987,29 @@
         }
       }
     },
+    "Runs on your Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Läuft auf deinem Mac"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Funciona en tu Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fonctionne sur votre Mac"
+          }
+        }
+      }
+    },
     "Safety number — must match the one on your iPhone": {
       "extractionState": "manual",
       "localizations": {
@@ -19804,6 +20057,29 @@
         }
       }
     },
+    "Speech stays on your Mac unless you add a server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache bleibt auf deinem Mac, solange du keinen Server hinzufügst"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu voz se queda en tu Mac a menos que añadas un servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre voix reste sur votre Mac, sauf si vous ajoutez un serveur"
+          }
+        }
+      }
+    },
     "Star": {
       "extractionState": "manual",
       "localizations": {
@@ -20007,6 +20283,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvre Whispera automatiquement à la connexion"
+          }
+        }
+      }
+    },
+    "Start recording": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufnahme starten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empezar a grabar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démarrer l'enregistrement"
           }
         }
       }
@@ -26033,6 +26332,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Votre voix, transcrite localement"
+          }
+        }
+      }
+    },
+    "Your voice, transcribed on your Mac by default": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Stimme, standardmäßig auf deinem Mac transkribiert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu voz, transcrita en tu Mac de forma predeterminada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre voix, transcrite sur votre Mac par défaut"
           }
         }
       }

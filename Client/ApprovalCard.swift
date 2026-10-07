@@ -408,7 +408,7 @@ struct ApprovalCardView: View {
 		return GridRow(alignment: .firstTextBaseline) {
 			Text(label)
 				.foregroundColor(.secondary)
-				.frame(width: 118, alignment: .leading)
+				.frame(width: 180, alignment: .leading)
 				.fixedSize(horizontal: false, vertical: true)
 			Text(verbatim: shown.isEmpty ? "—" : shown)
 				.fixedSize(horizontal: false, vertical: true)
@@ -530,9 +530,9 @@ struct ApprovalCardButtonStyle: ButtonStyle {
 		}
 
 		private var fill: Color {
-			// The owner's system accent colour, whatever the window's state.
+			// The app's fixed primary blue: a Graphite accent would read as disabled.
 			if prominent {
-				return Color(nsColor: .controlAccentColor).opacity(configuration.isPressed ? 0.75 : 1)
+				return Color.primaryAction.opacity(configuration.isPressed ? 0.75 : 1)
 			}
 			return Color.primary.opacity(configuration.isPressed ? 0.16 : 0.08)
 		}

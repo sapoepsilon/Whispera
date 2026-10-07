@@ -307,13 +307,13 @@ struct SetupStepConsolidationTests {
 struct WelcomeStepTests {
 
 	@Test func featurePillsAreThree() {
-		let pills = ["On-device", "Private", "Accurate"]
+		let pills = ["Runs on your Mac", "Private", "Accurate"]
 		#expect(pills.count == 3)
 	}
 
 	@Test func featurePillsHaveIcons() {
 		let pills: [(icon: String, label: String)] = [
-			("waveform", "On-device"),
+			("waveform", "Runs on your Mac"),
 			("lock.fill", "Private"),
 			("checkmark.seal", "Accurate"),
 		]
@@ -332,7 +332,7 @@ struct CompleteStepTests {
 		let tips = [
 			"Press shortcut anywhere",
 			"Menu bar access",
-			"Private by design",
+			"Private by default",
 		]
 		#expect(tips.count == 3)
 	}

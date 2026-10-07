@@ -4,6 +4,7 @@ struct TestStepView: View {
 	@Bindable var audioManager: AudioManager
 	@Binding var selectedLanguage: String
 	@State private var pulseRecord = false
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
 		VStack(spacing: 24) {
@@ -28,6 +29,7 @@ struct TestStepView: View {
 						Text(Constants.localizedLanguageName(for: language)).tag(language)
 					}
 				}
+				.labelsHidden()
 				.frame(minWidth: 140)
 			}
 			.padding(12)
@@ -54,13 +56,15 @@ struct TestStepView: View {
 					}
 				}
 				.buttonStyle(.plain)
+				.accessibilityLabel(audioManager.isRecording ? Text("Stop recording") : Text("Start recording"))
 				.onChange(of: audioManager.isRecording) { _, recording in
+					let pulse = recording && !reduceMotion
 					withAnimation(
-						recording
+						pulse
 							? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
 							: .default
 					) {
-						pulseRecord = recording
+						pulseRecord = pulse
 					}
 				}
 
@@ -79,7 +83,7 @@ struct TestStepView: View {
 					}
 				}
 
-				Text(audioManager.isRecording ? String(localized: "Tap to stop") : String(localized: "Tap to record"))
+				Text(recordHint)
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}
@@ -89,9 +93,10 @@ struct TestStepView: View {
 					HStack(spacing: 8) {
 						Image(systemName: "checkmark.circle.fill")
 							.foregroundColor(.green)
+							.accessibilityHidden(true)
 						Text("Transcription Complete")
 							.font(.system(.subheadline, design: .rounded, weight: .medium))
-							.foregroundColor(.green)
+							.foregroundColor(.primary)
 					}
 
 					Text(transcription)
@@ -105,16 +110,28 @@ struct TestStepView: View {
 						NSPasteboard.general.clearContents()
 						NSPasteboard.general.setString(transcription, forType: .string)
 					}
-					.buttonStyle(SecondaryButtonStyle())
+					.buttonStyle(.bordered)
 					.controlSize(.small)
 				}
 				.padding(16)
 				.background(.green.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-				.transition(.move(edge: .bottom).combined(with: .opacity))
+				.transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+			} else if !audioManager.isRecording, !audioManager.isTranscribing,
+				let notice = audioManager.transcriptionError
+			{
+				InfoBox(style: .warning) {
+					Text(notice)
+						.font(.caption)
+				}
 			}
 		}
-		.animation(.spring(duration: 0.4, bounce: 0.15), value: audioManager.isRecording)
-		.animation(.spring(duration: 0.4, bounce: 0.15), value: audioManager.lastTranscription)
+		.animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: audioManager.isRecording)
+		.animation(
+			reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: audioManager.lastTranscription)
+	}
+
+	private var recordHint: LocalizedStringKey {
+		audioManager.isRecording ? "Click to stop" : "Click to record"
 	}
 }
 

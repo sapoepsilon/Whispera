@@ -5,6 +5,8 @@ struct OnboardingProgressView: View {
 	let totalSteps: Int
 	let stepNames: [String]
 
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
 	/// Seconds for one shimmer sweep, matching the previous repeatForever timing.
 	private static let shimmerPeriod: TimeInterval = 2.0
 
@@ -17,7 +19,7 @@ struct OnboardingProgressView: View {
 			HStack(spacing: 3) {
 				ForEach(0..<totalSteps, id: \.self) { step in
 					TimelineView(
-						.animation(minimumInterval: 1.0 / 30.0, paused: step != currentStep)
+						.animation(minimumInterval: 1.0 / 30.0, paused: step != currentStep || reduceMotion)
 					) { timeline in
 						RoundedRectangle(cornerRadius: 3)
 							.fill(
@@ -31,15 +33,18 @@ struct OnboardingProgressView: View {
 				}
 			}
 			.frame(height: 6)
-			.animation(.spring(duration: 0.4, bounce: 0.15), value: currentStep)
+			.animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: currentStep)
 
 			if currentStep < stepNames.count {
 				Text(stepNames[currentStep])
-					.font(.system(.caption2, design: .rounded))
+					.font(.system(.caption, design: .rounded))
 					.foregroundColor(.secondary)
 					.animation(.none, value: currentStep)
 			}
 		}
+		.accessibilityElement(children: .ignore)
+		.accessibilityLabel(currentStep < stepNames.count ? stepNames[currentStep] : "")
+		.accessibilityValue(Text("Step \(currentStep + 1) of \(totalSteps)"))
 	}
 
 	private static func shimmerOffset(at date: Date) -> CGFloat {
@@ -55,7 +60,7 @@ struct OnboardingProgressView: View {
 	private static let shimmerColors: [Color] = [.blue, .blue.opacity(0.6), .blue]
 
 	private func segmentFill(for step: Int, shimmerOffset: CGFloat) -> AnyShapeStyle {
-		if step < currentStep {
+		if step < currentStep || (step == currentStep && reduceMotion) {
 			return Self.completedFill
 		} else if step == currentStep {
 			return AnyShapeStyle(

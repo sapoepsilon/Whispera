@@ -1,10 +1,11 @@
 import SwiftUI
 
 struct WelcomeStepView: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var animateRings = false
 
 	private let pills: [(icon: String, label: String)] = [
-		("waveform", String(localized: "On-device")),
+		("waveform", String(localized: "Runs on your Mac")),
 		("lock.fill", String(localized: "Private")),
 		("checkmark.seal", String(localized: "Accurate")),
 	]
@@ -39,12 +40,13 @@ struct WelcomeStepView: View {
 					.frame(width: 80, height: 80)
 					.clipShape(RoundedRectangle(cornerRadius: 18))
 			}
+			.accessibilityHidden(true)
 
 			VStack(spacing: 8) {
 				Text("Whispera")
 					.font(.system(.largeTitle, design: .rounded, weight: .bold))
 
-				Text("Your voice, transcribed locally")
+				Text("Your voice, transcribed on your Mac by default")
 					.font(.title3)
 					.foregroundColor(.secondary)
 			}
@@ -54,6 +56,7 @@ struct WelcomeStepView: View {
 					HStack(spacing: 6) {
 						Image(systemName: pill.icon)
 							.font(.system(size: 10, weight: .semibold))
+							.accessibilityHidden(true)
 						Text(pill.label)
 							.font(.system(.caption, design: .rounded, weight: .medium))
 					}
@@ -67,7 +70,7 @@ struct WelcomeStepView: View {
 			Spacer()
 		}
 		.onAppear {
-			animateRings = true
+			animateRings = !reduceMotion
 		}
 	}
 }
