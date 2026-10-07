@@ -108,6 +108,9 @@ final class MacSpeechEngineTests: XCTestCase {
 		let response = try await transcribe(phone)
 		XCTAssertEqual(response.status, 404)
 		XCTAssertEqual(response.body, FakeSpeechServer.notInstalledBody("not/installed"))
+		let (_, model) = try await models(phone)
+		XCTAssertEqual(model["ready"] as? Bool, false)
+		XCTAssertTrue((model["message"] as? String)?.contains("doesn't have the selected model") == true)
 	}
 
 	func testAnUnreachableSpeechServerSaysWhichOne() async throws {
@@ -118,6 +121,9 @@ final class MacSpeechEngineTests: XCTestCase {
 		XCTAssertEqual(
 			(response.json["error"] as? [String: Any])?["message"] as? String,
 			"The Mac couldn't reach its speech server at http://127.0.0.1:9/v1")
+		let (_, model) = try await models(phone)
+		XCTAssertEqual(model["ready"] as? Bool, false)
+		XCTAssertTrue((model["message"] as? String)?.contains("couldn't reach") == true)
 	}
 
 	func testARemoteEngineWithoutAModelOrAddressSaysWhatToFixOnTheMac() async throws {
@@ -318,6 +324,9 @@ final class FakeSpeechServer: @unchecked Sendable {
 	}
 
 	private func handle(_ exchange: HTTPExchange, installed: String) {
+		if exchange.method == "GET", exchange.path == "/v1/models" {
+			return exchange.respond(200, body: WireJSON.encode(["data": [["id": installed]]]))
+		}
 		guard exchange.method == "POST", exchange.path == "/v1/audio/transcriptions" else {
 			return exchange.respond(404, body: Data(#"{"detail":"Not Found"}"#.utf8))
 		}

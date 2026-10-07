@@ -1258,7 +1258,7 @@
 			repositoryURL = "https://github.com/sapoepsilon/whispera-components";
 			requirement = {
 				kind = revision;
-				revision = ddd9fed7e101e1c606bf5e23eb010821a919db42;
+				revision = fa1be6cf73bfe6cb684f8c3eccc14cbe75760f88;
 			};
 		};
 		D63900CD2E3D77B4005B5623 /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {

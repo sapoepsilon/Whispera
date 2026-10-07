@@ -231,7 +231,26 @@ public final class SpeechService: @unchecked Sendable {
 	/// has to know a model name. Answers even when the engine is not ready, with `ready: false`
 	/// and the reason.
 	public func models(deviceID: String) throws -> Reply {
-		let info = engineInfo()
+		var info = engineInfo()
+		if case .remote(let server) = currentRoute(), info.ready {
+			do {
+				let listed = try forward(server, path: "/models", method: "GET", body: nil, contentType: nil, deviceID: deviceID, requestTimeout: 5)
+				if !(200..<300).contains(listed.status) {
+					info.ready = false
+					info.message = "The Mac's speech server returned HTTP \(listed.status). Check its address, port, and API key in Mac Settings ▸ Servers."
+				} else if let object = WireJSON.decodeObject(listed.body), let models = object["data"] as? [[String: Any]] {
+					if !models.contains(where: { $0["id"] as? String == server.model }) {
+						info.ready = false
+						info.message = "The Mac's speech server doesn't have the selected model (\(server.model)). Choose an installed model in Mac Settings ▸ Servers."
+					}
+				} else {
+					info.ready = false; info.message = "The Mac's speech server returned an unexpected model list. Check the full address in Mac Settings ▸ Servers."
+				}
+			} catch {
+				info.ready = false
+				info.message = (error as? APIError)?.message ?? "The Mac couldn't reach its speech server. Check its address and port in Mac Settings ▸ Servers."
+			}
+		}
 		var model: [String: Any] = [
 			"id": Self.macModelID, "object": "model", "created": 0, "owned_by": "whispera",
 			"task": "automatic-speech-recognition", "engine": info.name, "engine_kind": info.kind,
@@ -258,14 +277,15 @@ public final class SpeechService: @unchecked Sendable {
 
 	private func forward(
 		_ server: RemoteSpeechServer, path: String, method: String, body: Data?, contentType: String?,
-		deviceID: String
+		deviceID: String, requestTimeout: Double? = nil
 	) throws -> Reply {
 		guard let url = URL(string: server.baseURL + path) else {
 			throw APIError(502, "upstream_error", "The Mac's speech server address is invalid: \(server.baseURL)")
 		}
 		var request = URLRequest(url: url)
 		request.httpMethod = method
-		request.timeoutInterval = timeout
+		let limit = requestTimeout ?? timeout
+		request.timeoutInterval = limit
 		if let body {
 			request.httpBody = body
 			request.setValue(contentType ?? "application/octet-stream", forHTTPHeaderField: "Content-Type")
@@ -273,9 +293,9 @@ public final class SpeechService: @unchecked Sendable {
 		if let key = key(for: server) { request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization") }
 		let started = Date()
 		let prepared = request
-		let seconds = Int(timeout)
+		let seconds = Int(limit)
 		let base = server.baseURL
-		let (data, response) = try Self.runBlocking(timeout: timeout + 5) {
+		let (data, response) = try Self.runBlocking(timeout: limit + 5) {
 			[session] () async throws -> (Data, URLResponse) in
 			do {
 				return try await session.data(for: prepared)

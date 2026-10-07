@@ -634,8 +634,8 @@ enum OfferAddresses {
 			return out
 		}
 		let addresses = interfaceIPv4()
-		for ip in addresses where !isTailscale(ip) { add("http://\(ip):\(port)") }
 		for ip in addresses where isTailscale(ip) { add("http://\(ip):\(port)") }
+		for ip in addresses where !isTailscale(ip) { add("http://\(ip):\(port)") }
 		let (derived, _) = config.effectivePublicURL(boundPort: port)
 		add(derived)
 		return out

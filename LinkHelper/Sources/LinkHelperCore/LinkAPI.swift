@@ -27,9 +27,11 @@ final class LinkAPI: @unchecked Sendable {
 	private unowned let daemon: LinkDaemon
 	private let verifier: RequestVerifier
 	private let rateLimiter = RateLimiter()
+	private let submissions: AgentSubmissions
 
 	init(daemon: LinkDaemon) {
 		self.daemon = daemon
+		submissions = AgentSubmissions(stateDirectory: daemon.config.paths.stateDir)
 		let devices = daemon.devices
 		verifier = RequestVerifier(
 			skew: Int64(daemon.config.clockSkew),
@@ -71,6 +73,8 @@ final class LinkAPI: @unchecked Sendable {
 			default: return nil
 			}
 			return Route(name: route, auth: .signed, body: .json, agentID: rest[1])
+		case ("POST", 2, "images") where !rest[1].isEmpty:
+			return Route(name: "images.upload", auth: .signed, body: .json, requestID: rest[1])
 		case ("GET", 1, "events"): return Route(name: "events", auth: .signed, body: .json)
 		case ("GET", 2, "approvals") where rest[1] == "pending":
 			return Route(name: "approvals.pending", auth: .signed, body: .json)
@@ -292,7 +296,7 @@ final class LinkAPI: @unchecked Sendable {
 	func health() -> [String: Any] {
 		[
 			"ok": true, "service": "whispera-link", "version": LinkDaemon.version,
-			"protocol": LinkDaemon.protocolVersion,
+			"protocol": LinkDaemon.protocolVersion, "capabilities": ["prompt_receipts", "image_uploads"],
 			"daemon_fp": daemon.daemonFP, "server_time": daemon.now(), "herdr": daemon.herdrState(),
 			"broker": daemon.approvals.isConnected ? "connected" : "idle",
 			"apns": daemon.push.isConfigured ? "configured" : "unconfigured",
@@ -305,6 +309,9 @@ final class LinkAPI: @unchecked Sendable {
 	{
 		let json = { (object: [String: Any]) in self.send(exchange, 200, object, requestID: requestID) }
 		switch route.name {
+		case "images.upload":
+			guard let id = route.requestID else { throw APIError(400, "bad_request", "missing image id") }
+			json(try submissions.upload(id, device: device.deviceID, request: parseJSON(body)))
 		case "devices.me":
 			json(["device": (daemon.devices.get(device.deviceID) ?? device).publicJSON])
 		case "devices.apns":
@@ -382,7 +389,14 @@ final class LinkAPI: @unchecked Sendable {
 				wait = (until, min(timeout, 30_000))
 			}
 			daemon.log("agent.prompt", ["device": device.deviceID, "detail": "len=\(text.unicodeScalars.count)"])
-			json(try daemon.agents.prompt(id, text: text, wait: wait))
+			if let submissionID = request["submission_id"] as? String {
+				guard request["images"] == nil || request["images"] is [String] else { throw APIError(400, "bad_request", "images must list upload ids") }
+				json(try submissions.submit(submissionID, device: device.deviceID, agent: id, text: text,
+					images: request["images"] as? [String] ?? [],
+					prepare: { try daemon.agents.imagePaths(id, paths: $0, device: device.deviceID) }) { delivered in
+						try daemon.agents.prompt(id, text: delivered, wait: nil)
+					})
+			} else { json(try daemon.agents.prompt(id, text: text, wait: wait)) }
 		case "agents.keys":
 			let id = try agentID(route)
 			let request = try parseJSON(body)
