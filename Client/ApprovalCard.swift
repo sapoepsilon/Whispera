@@ -340,9 +340,16 @@ struct ApprovalCardView: View {
 				}
 				Spacer()
 				if !state.isFinished {
-					Text(String(format: String(localized: "%@ left"), clock))
-						.font(.caption.monospacedDigit())
-						.foregroundColor(state.secondsLeft(now: session.now) <= 30 ? .orange : .secondary)
+					HStack(spacing: 4) {
+						if state.secondsLeft(now: session.now) <= 30 {
+							Image(systemName: "exclamationmark.triangle.fill")
+								.foregroundStyle(.orange)
+								.accessibilityHidden(true)
+						}
+						Text(String(format: String(localized: "%@ left"), clock))
+							.foregroundStyle(.secondary)
+					}
+					.font(.caption.monospacedDigit())
 				}
 			}
 			// What the broker will do, and with which token: a read that asks for the write token
@@ -397,13 +404,14 @@ struct ApprovalCardView: View {
 			text
 		} icon: {
 			Image(systemName: systemImage)
+				.foregroundStyle(emphasised ? Color.orange : Color.primary)
 		}
 		.labelStyle(.titleAndIcon)
 		.font(.callout.weight(emphasised ? .bold : .medium))
-		.foregroundStyle(emphasised ? Color.white : Color.primary)
+		.foregroundStyle(Color.primary)
 		.padding(.horizontal, 8)
 		.padding(.vertical, 3)
-		.background(Capsule().fill(emphasised ? Color.orange : Color.primary.opacity(0.08)))
+		.background(Capsule().fill(emphasised ? Color.orange.opacity(0.16) : Color.primary.opacity(0.08)))
 	}
 
 	private func row(_ label: LocalizedStringKey, _ value: String) -> some View {
@@ -423,9 +431,16 @@ struct ApprovalCardView: View {
 	@ViewBuilder private var footer: some View {
 		switch state.phase {
 		case .finished(let outcome):
-			Text(outcomeText(outcome))
-				.font(.callout.weight(.medium))
-				.foregroundColor(outcomeIsApproval(outcome) ? .green : .secondary)
+			HStack(spacing: 6) {
+				if outcomeIsApproval(outcome) {
+					Image(systemName: "checkmark.circle.fill")
+						.foregroundStyle(.green)
+						.accessibilityHidden(true)
+				}
+				Text(outcomeText(outcome))
+					.foregroundStyle(.primary)
+			}
+			.font(.callout.weight(.medium))
 		default:
 			VStack(alignment: .leading, spacing: 6) {
 				HStack {

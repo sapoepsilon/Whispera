@@ -1151,8 +1151,7 @@ struct NotificationBanner: View {
 		}
 		.padding(12)
 		.background {
-			// The toast floats over the popover's buttons, so the 10% tint needs an opaque base
-			// or the controls underneath read through the message
+			// Keep the message legible over translucent materials.
 			RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: Self.baseColor))
 			RoundedRectangle(cornerRadius: 10).fill(type.backgroundColor)
 		}
@@ -1249,11 +1248,11 @@ struct ToastOverlay: View {
 					type: toast.type,
 					onDismiss: { toastCenter.dismiss() }
 				)
+				.padding(.bottom, 8)
+				.padding(.horizontal, 20)
 				.transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
 			}
 		}
-		.padding(.bottom, 8)
-		.padding(.horizontal, 8)
 		.animation(reduceMotion ? nil : Motion.transient, value: toastCenter.current)
 	}
 }
