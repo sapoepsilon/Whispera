@@ -18,8 +18,10 @@ let package = Package(
 	dependencies: [
 		.package(
 			url: "https://github.com/sapoepsilon/whispera-components",
-			revision: "e44b4ee358cbb06f19452ead48c3a8f159475b50"),
-		.package(url: "https://github.com/sapoepsilon/agent-tui-protocol", revision: "c1974d364f0d52d565628feb8c0ca67a3726a5df")
+			revision: "1f15ab9c7f53e2180348a7e0a3861acc54354a9a"),
+		.package(url: "https://github.com/sapoepsilon/agent-tui-protocol", revision: "c17ca27cdc54a311d310cb8da532734634026cbd"),
+        .package(url: "https://github.com/sapoepsilon/agent-herdr", revision: "631e50ebb8b77ab1db6105b31cc5127eb1b97616"),
+        .package(url: "https://github.com/sapoepsilon/agent-tmux", revision: "a6caf9dd203b3c1d08218d5fd2457363ec3454ea")
 	],
 	targets: [
 		.target(name: "LinkHelperXPC"),
@@ -29,7 +31,8 @@ let package = Package(
 				"LinkHelperXPC",
 				.product(name: "WhisperaLink", package: "whispera-components"),
 				.product(name: "WhisperaLinkServer", package: "whispera-components"),
-				.product(name: "WhisperaHerdr", package: "agent-tui-protocol"),
+				.product(name: "WhisperaHerdr", package: "agent-herdr"),
+                .product(name: "WhisperaTmux", package: "agent-tmux"),
 				.product(name: "WhisperaRecipes", package: "whispera-components"),
 				.product(name: "WhisperaOpenAI", package: "whispera-components"),
 			]

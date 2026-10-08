@@ -1,148 +1,165 @@
 {
-  "originHash": "0b5f0e8c3c31d0f9ff66adf440c13353b216fea1b448cd660528f01ac4ec0591",
-  "pins": [
+  "originHash" : "0b5f0e8c3c31d0f9ff66adf440c13353b216fea1b448cd660528f01ac4ec0591",
+  "pins" : [
     {
-      "identity": "agent-tui-protocol",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/sapoepsilon/agent-tui-protocol",
-      "state": {
-        "revision": "c1974d364f0d52d565628feb8c0ca67a3726a5df"
+      "identity" : "agent-herdr",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/agent-herdr",
+      "state" : {
+        "revision" : "631e50ebb8b77ab1db6105b31cc5127eb1b97616"
       }
     },
     {
-      "identity": "fluidaudio",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/FluidInference/FluidAudio",
-      "state": {
-        "revision": "915a392a3b214205fcf4860cc3608bde35891d03",
-        "version": "0.9.1"
+      "identity" : "agent-tmux",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/agent-tmux",
+      "state" : {
+        "revision" : "a6caf9dd203b3c1d08218d5fd2457363ec3454ea"
       }
     },
     {
-      "identity": "networkimage",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/gonzalezreal/NetworkImage",
-      "state": {
-        "revision": "2849f5323265386e200484b0d0f896e73c3411b9",
-        "version": "6.0.1"
+      "identity" : "agent-tui-protocol",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/agent-tui-protocol",
+      "state" : {
+        "revision" : "c17ca27cdc54a311d310cb8da532734634026cbd",
+        "version" : "0.2.0"
       }
     },
     {
-      "identity": "sparkle",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/sparkle-project/Sparkle",
-      "state": {
-        "revision": "21d8df80440b1ca3b65fa82e40782f1e5a9e6ba2",
-        "version": "2.9.0"
+      "identity" : "fluidaudio",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/FluidInference/FluidAudio",
+      "state" : {
+        "revision" : "915a392a3b214205fcf4860cc3608bde35891d03",
+        "version" : "0.9.1"
       }
     },
     {
-      "identity": "swift-argument-parser",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/apple/swift-argument-parser.git",
-      "state": {
-        "revision": "c5d11a805e765f52ba34ec7284bd4fcd6ba68615",
-        "version": "1.7.0"
+      "identity" : "networkimage",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gonzalezreal/NetworkImage",
+      "state" : {
+        "revision" : "2849f5323265386e200484b0d0f896e73c3411b9",
+        "version" : "6.0.1"
       }
     },
     {
-      "identity": "swift-asn1",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/apple/swift-asn1.git",
-      "state": {
-        "revision": "810496cf121e525d660cd0ea89a758740476b85f",
-        "version": "1.5.1"
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle",
+      "state" : {
+        "revision" : "21d8df80440b1ca3b65fa82e40782f1e5a9e6ba2",
+        "version" : "2.9.0"
       }
     },
     {
-      "identity": "swift-cmark",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/swiftlang/swift-cmark",
-      "state": {
-        "revision": "5d9bdaa4228b381639fff09403e39a04926e2dbe",
-        "version": "0.7.1"
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "revision" : "c5d11a805e765f52ba34ec7284bd4fcd6ba68615",
+        "version" : "1.7.0"
       }
     },
     {
-      "identity": "swift-collections",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/apple/swift-collections.git",
-      "state": {
-        "revision": "8d9834a6189db730f6264db7556a7ffb751e99ee",
-        "version": "1.4.0"
+      "identity" : "swift-asn1",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-asn1.git",
+      "state" : {
+        "revision" : "810496cf121e525d660cd0ea89a758740476b85f",
+        "version" : "1.5.1"
       }
     },
     {
-      "identity": "swift-crypto",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/apple/swift-crypto.git",
-      "state": {
-        "revision": "fa308c07a6fa04a727212d793e761460e41049c3",
-        "version": "4.3.0"
+      "identity" : "swift-cmark",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-cmark",
+      "state" : {
+        "revision" : "5d9bdaa4228b381639fff09403e39a04926e2dbe",
+        "version" : "0.7.1"
       }
     },
     {
-      "identity": "swift-jinja",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/huggingface/swift-jinja.git",
-      "state": {
-        "revision": "f731f03bf746481d4fda07f817c3774390c4d5b9",
-        "version": "2.3.2"
+      "identity" : "swift-collections",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-collections.git",
+      "state" : {
+        "revision" : "8d9834a6189db730f6264db7556a7ffb751e99ee",
+        "version" : "1.4.0"
       }
     },
     {
-      "identity": "swift-markdown-ui",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/gonzalezreal/swift-markdown-ui",
-      "state": {
-        "revision": "5f613358148239d0292c0cef674a3c2314737f9e",
-        "version": "2.4.1"
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "fa308c07a6fa04a727212d793e761460e41049c3",
+        "version" : "4.3.0"
       }
     },
     {
-      "identity": "swift-transformers",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/huggingface/swift-transformers.git",
-      "state": {
-        "revision": "150169bfba0889c229a2ce7494cf8949f18e6906",
-        "version": "1.1.9"
+      "identity" : "swift-jinja",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/huggingface/swift-jinja.git",
+      "state" : {
+        "revision" : "f731f03bf746481d4fda07f817c3774390c4d5b9",
+        "version" : "2.3.2"
       }
     },
     {
-      "identity": "whispera-components",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/sapoepsilon/whispera-components",
-      "state": {
-        "revision": "e44b4ee358cbb06f19452ead48c3a8f159475b50"
+      "identity" : "swift-markdown-ui",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gonzalezreal/swift-markdown-ui",
+      "state" : {
+        "revision" : "5f613358148239d0292c0cef674a3c2314737f9e",
+        "version" : "2.4.1"
       }
     },
     {
-      "identity": "whisperkit",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/argmaxinc/WhisperKit",
-      "state": {
-        "branch": "main",
-        "revision": "3817d2833f73ceb30586cb285e0e0439a3860536"
+      "identity" : "swift-transformers",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/huggingface/swift-transformers.git",
+      "state" : {
+        "revision" : "150169bfba0889c229a2ce7494cf8949f18e6906",
+        "version" : "1.1.9"
       }
     },
     {
-      "identity": "youtubekit",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/alexeichhorn/YouTubeKit",
-      "state": {
-        "revision": "4140995e3485cd691fadb67b2820dbab2d3d84e9",
-        "version": "0.4.7"
+      "identity" : "whispera-components",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/whispera-components",
+      "state" : {
+        "revision" : "1f15ab9c7f53e2180348a7e0a3861acc54354a9a"
       }
     },
     {
-      "identity": "yyjson",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/ibireme/yyjson.git",
-      "state": {
-        "revision": "8b4a38dc994a110abaec8a400615567bd996105f",
-        "version": "0.12.0"
+      "identity" : "whisperkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/argmaxinc/WhisperKit",
+      "state" : {
+        "branch" : "main",
+        "revision" : "3817d2833f73ceb30586cb285e0e0439a3860536"
+      }
+    },
+    {
+      "identity" : "youtubekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/alexeichhorn/YouTubeKit",
+      "state" : {
+        "revision" : "4140995e3485cd691fadb67b2820dbab2d3d84e9",
+        "version" : "0.4.7"
+      }
+    },
+    {
+      "identity" : "yyjson",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ibireme/yyjson.git",
+      "state" : {
+        "revision" : "8b4a38dc994a110abaec8a400615567bd996105f",
+        "version" : "0.12.0"
       }
     }
   ],
-  "version": 3
+  "version" : 3
 }

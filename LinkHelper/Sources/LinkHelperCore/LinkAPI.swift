@@ -70,6 +70,7 @@ final class LinkAPI: @unchecked Sendable {
 			let route: String
 			switch (method, rest[2]) {
 			case ("GET", "output"): route = "agents.output"
+			case ("GET", "diff"): route = "agents.diff"
 			case ("POST", "prompt"): route = "agents.prompt"
 			case ("POST", "keys"): route = "agents.keys"
 			case ("POST", "interrupt"): route = "agents.interrupt"
@@ -355,6 +356,10 @@ final class LinkAPI: @unchecked Sendable {
 			json(try daemon.agents.list())
 		case "agents.get":
 			json(try daemon.agents.get(try agentID(route)))
+        case "agents.diff":
+            let query = try Self.parseQuery(exchange.query)
+            guard query["staged"] == nil || ["0", "1"].contains(query["staged"]!) else { throw APIError(400, "bad_request", "staged must be 0 or 1") }
+            json(try daemon.agents.diff(try agentID(route), staged: query["staged"] == "1"))
 		case "agents.output":
 			let id = try agentID(route)
 			let query = try Self.parseQuery(exchange.query)

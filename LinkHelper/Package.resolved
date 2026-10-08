@@ -1,11 +1,27 @@
 {
   "pins" : [
     {
+      "identity" : "agent-herdr",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/agent-herdr",
+      "state" : {
+        "revision" : "631e50ebb8b77ab1db6105b31cc5127eb1b97616"
+      }
+    },
+    {
+      "identity" : "agent-tmux",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/agent-tmux",
+      "state" : {
+        "revision" : "a6caf9dd203b3c1d08218d5fd2457363ec3454ea"
+      }
+    },
+    {
       "identity" : "agent-tui-protocol",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sapoepsilon/agent-tui-protocol",
       "state" : {
-        "revision" : "c1974d364f0d52d565628feb8c0ca67a3726a5df"
+        "revision" : "c17ca27cdc54a311d310cb8da532734634026cbd"
       }
     },
     {
@@ -13,7 +29,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sapoepsilon/whispera-components",
       "state" : {
-        "revision" : "e44b4ee358cbb06f19452ead48c3a8f159475b50"
+        "revision" : "1f15ab9c7f53e2180348a7e0a3861acc54354a9a"
       }
     }
   ],

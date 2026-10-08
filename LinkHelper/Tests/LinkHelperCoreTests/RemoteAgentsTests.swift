@@ -84,7 +84,7 @@ final class FakeHerdrRig {
 	}
 
 	func writes(_ socket: String) throws -> [(String, [String: Any])] {
-		let readOnly: Set<String> = ["ping", "agent.list", "agent.get", "agent.read", "events.subscribe"]
+		let readOnly: Set<String> = ["ping", "agent.list", "agent.get", "agent.read", "events.subscribe", "workspace.list", "tab.list"]
 		return try requests(socket).filter { !readOnly.contains($0.0) }
 	}
 

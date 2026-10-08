@@ -89,7 +89,7 @@ public final class LinkDaemon: @unchecked Sendable {
 		let hub = EventHub()
 		self.hub = hub
 		subscriber = HerdrSubscriber(socketPath: config.herdrSocket, emit: { hub.publish($0, $1) }, log: opsLog)
-		let directory = AgentDirectory(local: herdr, cli: HerdrCLI(configured: config.herdrCLI), log: opsLog)
+		let directory = AgentDirectory(local: herdr, cli: HerdrCLI(configured: config.herdrCLI), log: opsLog, tmux: TmuxDirectory(configured: config.tmuxCLI, socket: config.tmuxSocket))
 		agents = directory
 		remotePoller = RemoteAgentPoller(
 			directory: directory, interval: config.remotePollInterval, isListening: { hub.streamCount() > 0 },

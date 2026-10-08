@@ -42,6 +42,8 @@ public struct HelperConfig: Sendable {
 	/// `herdr --machine <id> …`). A bare name is looked up on PATH and ~/.local/bin; empty turns
 	/// remote machines off.
 	public var herdrCLI = "herdr"
+	public var tmuxCLI = "tmux"
+	public var tmuxSocket: String?
 	/// Seconds before the other phones are pushed while an approval is still pending.
 	public var approvalFallback: Double = 20
 	/// Seconds between status polls of the remote herdr machines (only while a phone listens).
@@ -118,6 +120,8 @@ public struct HelperConfig: Sendable {
 		}
 		if let name = nonEmpty(env["WHISPERA_LINK_MAC_NAME"]) { cfg.macName = name }
 		if let cli = env["WHISPERA_LINK_HERDR_CLI"] { cfg.herdrCLI = cli }
+		if let cli = env["WHISPERA_LINK_TMUX_CLI"] { cfg.tmuxCLI = cli }
+		cfg.tmuxSocket = nonEmpty(env["WHISPERA_LINK_TMUX_SOCKET"])
 		if let seconds = nonEmpty(env["WHISPERA_LINK_APPROVAL_FALLBACK_S"]).flatMap(Double.init), seconds >= 0 {
 			cfg.approvalFallback = seconds
 		}
@@ -157,6 +161,8 @@ public struct HelperConfig: Sendable {
 			case "pair_code_ttl_s": if let v = int(key, value) { pairCodeTTL = v }
 			case "max_json_bytes": if let v = int(key, value) { maxJSONBytes = v }
 			case "herdr_cli": if let v = string(value) { herdrCLI = v }
+			case "tmux_cli": if let v = string(value) { tmuxCLI = v }
+			case "tmux_socket": if let v = string(value) { tmuxSocket = v }
 			case "approval_fallback_s": if let v = double(value), v >= 0 { approvalFallback = v }
 			case "remote_poll_s": if let v = double(value), v > 0 { remotePollInterval = v }
 			case "log_debug": if let v = value as? Bool { logDebug = v }
