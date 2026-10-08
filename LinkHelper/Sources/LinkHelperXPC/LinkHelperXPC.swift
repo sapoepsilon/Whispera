@@ -68,6 +68,8 @@ public enum LinkHelperXPC {
 	/// it. The helper sends it only to that base URL, on the phone's behalf, and never to a phone.
 	/// Replies `{"ok":true}` or `{"ok":false,"error":{…}}`.
 	func setSpeechServerKey(_ request: Data, reply: @escaping (Data) -> Void)
+    /// The recipe LLM key, scoped to its URL. Never sent to a paired phone.
+    func setRecipeServerKey(_ request: Data, reply: @escaping (Data) -> Void)
 }
 
 /// What the helper calls back on a connection that asked to `watchApprovals`.

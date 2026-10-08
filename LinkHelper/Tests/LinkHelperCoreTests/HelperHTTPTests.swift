@@ -18,6 +18,22 @@ final class HelperHTTPTests: XCTestCase {
 		helper.stop()
 	}
 
+    func testRecipeRoutesRequirePairingAndHideTemplates() async throws {
+        var unsigned = URLRequest(url: helper.baseURL.appendingPathComponent("v1/recipes"))
+        unsigned.httpMethod = "GET"
+        let refused = try await SoftPhone.send(unsigned)
+        XCTAssertEqual(refused.status, 401)
+        let phone = try await helper.pairedPhone()
+        let catalog = try await SoftPhone.send(try phone.signed("GET", "/v1/recipes"))
+        XCTAssertEqual(catalog.status, 200)
+        for recipe in catalog.json["recipes"] as? [[String: Any]] ?? [] {
+            XCTAssertNil(recipe["steps"])
+            XCTAssertNil(recipe["prompt"])
+        }
+        let run = try await SoftPhone.send(try phone.signed("POST", "/v1/recipes/nonexistent-qa-recipe/run", body: WireJSON.encode(["text": "Keep my original"])))
+        XCTAssertEqual(run.status, 404)
+    }
+
 	func testPairingResponseIsSignedByTheDaemonKeyAndTheCodeIsSingleUse() async throws {
 		let begin = helper.daemon.pairing.begin(ttl: 60)
 		let code = (begin["code"] as! String).replacingOccurrences(of: "-", with: "")

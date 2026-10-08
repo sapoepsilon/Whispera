@@ -1,11 +1,19 @@
 {
   "pins" : [
     {
+      "identity" : "agent-tui-protocol",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/agent-tui-protocol",
+      "state" : {
+        "revision" : "c1974d364f0d52d565628feb8c0ca67a3726a5df"
+      }
+    },
+    {
       "identity" : "whispera-components",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sapoepsilon/whispera-components",
       "state" : {
-        "revision" : "fa1be6cf73bfe6cb684f8c3eccc14cbe75760f88"
+        "revision" : "e44b4ee358cbb06f19452ead48c3a8f159475b50"
       }
     }
   ],

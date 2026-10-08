@@ -1,4 +1,5 @@
 import Foundation
+import WhisperaHerdr
 
 /// herdr socket client (PROTOCOL §6). One short-lived connection per call. Beyond v1's read and
 /// prompt calls it sends `agent.send_keys`, `agent.start` and `tab.create` (the phone's keys,
@@ -111,18 +112,7 @@ public final class HerdrClient: @unchecked Sendable {
 
 	/// herdr `AgentInfo` → the public agent object (§5.4); terminal ids, tokens and sessions are dropped.
 	static func mapAgent(_ info: [String: Any]) -> [String: Any] {
-		func value(_ key: String) -> Any { info[key].flatMap { $0 is NSNull ? nil : $0 } ?? NSNull() }
-		let status = (info["agent_status"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "unknown"
-		let cwd = (info["foreground_cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (info["cwd"] as? String)
-		return [
-			"id": value("pane_id"), "agent": value("agent"), "display_agent": value("display_agent"),
-			"name": value("name"),
-			"title": value("title"), "status": status, "cwd": cwd ?? NSNull(),
-			"workspace_id": value("workspace_id"),
-			"tab_id": value("tab_id"), "focused": (info["focused"] as? Bool) ?? false,
-			"revision": value("revision"),
-			"state_labels": info["state_labels"] as? [String: Any] ?? [:],
-		]
+		HerdrTUIProvider.agent(info)
 	}
 
 	@discardableResult

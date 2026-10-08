@@ -18,7 +18,8 @@ let package = Package(
 	dependencies: [
 		.package(
 			url: "https://github.com/sapoepsilon/whispera-components",
-			revision: "fa1be6cf73bfe6cb684f8c3eccc14cbe75760f88")
+			revision: "e44b4ee358cbb06f19452ead48c3a8f159475b50"),
+		.package(url: "https://github.com/sapoepsilon/agent-tui-protocol", revision: "c1974d364f0d52d565628feb8c0ca67a3726a5df")
 	],
 	targets: [
 		.target(name: "LinkHelperXPC"),
@@ -28,6 +29,9 @@ let package = Package(
 				"LinkHelperXPC",
 				.product(name: "WhisperaLink", package: "whispera-components"),
 				.product(name: "WhisperaLinkServer", package: "whispera-components"),
+				.product(name: "WhisperaHerdr", package: "agent-tui-protocol"),
+				.product(name: "WhisperaRecipes", package: "whispera-components"),
+				.product(name: "WhisperaOpenAI", package: "whispera-components"),
 			]
 		),
 		// The helper without the speech engine, for `swift run` and the e2e scripts on a machine

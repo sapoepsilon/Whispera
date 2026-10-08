@@ -25,6 +25,7 @@ public final class LinkDaemon: @unchecked Sendable {
 	let approvals: ApprovalsServer
 	let pairing: PairingManager
 	let speech: SpeechService
+    let recipes: MacRecipeService
 	let push: PushNotifier
 	let lastDevice: LastDeviceFile
 	public let macApprovers: MacApproverStore
@@ -70,6 +71,7 @@ public final class LinkDaemon: @unchecked Sendable {
 		accountTransport: LinkTransport = URLSessionLinkTransport(), speechSelection: MacSpeechSelecting? = nil,
 		speechKeys: SpeechKeyStoring? = nil
 	) throws {
+        recipes = MacRecipeService(domain: AppSpeechSelection.appDomain(helperBundleIdentifier: Bundle.main.bundleIdentifier))
 		self.config = config
 		let opsLog = OpsLog(path: config.paths.log, debug: config.logDebug)
 		log = opsLog
