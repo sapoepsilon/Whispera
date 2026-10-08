@@ -28,6 +28,7 @@ final class LinkAPI: @unchecked Sendable {
 	private let verifier: RequestVerifier
 	private let rateLimiter = RateLimiter()
 	private let submissions: AgentSubmissions
+	private var recipes: MacRecipeService { daemon.recipes }
 
 	init(daemon: LinkDaemon) {
 		self.daemon = daemon
@@ -58,6 +59,9 @@ final class LinkAPI: @unchecked Sendable {
 			return Route(name: "devices.apns", auth: .signed, body: .json)
 		case ("PUT", 3, "devices") where rest[1] == "me" && rest[2] == "push":
 			return Route(name: "devices.push", auth: .signed, body: .json)
+		case ("GET", 1, "recipes"): return Route(name: "recipes.list", auth: .signed, body: .json)
+		case ("POST", 3, "recipes") where rest[2] == "run":
+			return Route(name: "recipes.run", auth: .signed, body: .json, requestID: rest[1])
 		case ("GET", 1, "agents"): return Route(name: "agents.list", auth: .signed, body: .json)
 		case ("POST", 1, "agents"): return Route(name: "agents.start", auth: .signed, body: .json)
 		case ("GET", 2, "agents") where !rest[1].isEmpty:
@@ -66,6 +70,7 @@ final class LinkAPI: @unchecked Sendable {
 			let route: String
 			switch (method, rest[2]) {
 			case ("GET", "output"): route = "agents.output"
+			case ("GET", "diff"): route = "agents.diff"
 			case ("POST", "prompt"): route = "agents.prompt"
 			case ("POST", "keys"): route = "agents.keys"
 			case ("POST", "interrupt"): route = "agents.interrupt"
@@ -296,7 +301,7 @@ final class LinkAPI: @unchecked Sendable {
 	func health() -> [String: Any] {
 		[
 			"ok": true, "service": "whispera-link", "version": LinkDaemon.version,
-			"protocol": LinkDaemon.protocolVersion, "capabilities": ["prompt_receipts", "image_uploads"],
+			"protocol": LinkDaemon.protocolVersion, "capabilities": ["prompt_receipts", "image_uploads", "recipes", "herdr_tui"],
 			"daemon_fp": daemon.daemonFP, "server_time": daemon.now(), "herdr": daemon.herdrState(),
 			"broker": daemon.approvals.isConnected ? "connected" : "idle",
 			"apns": daemon.push.isConfigured ? "configured" : "unconfigured",
@@ -351,6 +356,10 @@ final class LinkAPI: @unchecked Sendable {
 			json(try daemon.agents.list())
 		case "agents.get":
 			json(try daemon.agents.get(try agentID(route)))
+        case "agents.diff":
+            let query = try Self.parseQuery(exchange.query)
+            guard query["staged"] == nil || ["0", "1"].contains(query["staged"]!) else { throw APIError(400, "bad_request", "staged must be 0 or 1") }
+            json(try daemon.agents.diff(try agentID(route), staged: query["staged"] == "1"))
 		case "agents.output":
 			let id = try agentID(route)
 			let query = try Self.parseQuery(exchange.query)
@@ -397,6 +406,12 @@ final class LinkAPI: @unchecked Sendable {
 						try daemon.agents.prompt(id, text: delivered, wait: nil)
 					})
 			} else { json(try daemon.agents.prompt(id, text: text, wait: wait)) }
+		case "recipes.list":
+			json(try recipes.catalog())
+		case "recipes.run":
+			let request = try parseJSON(body)
+			guard let text = request["text"] as? String, let id = route.requestID else { throw APIError(400, "bad_request", "Recipe id and text are required") }
+			json(["text": try recipes.run(id, text: text)])
 		case "agents.keys":
 			let id = try agentID(route)
 			let request = try parseJSON(body)

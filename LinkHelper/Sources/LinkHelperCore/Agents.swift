@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import WhisperaLink
+import WhisperaHerdr
 
 /// `POST /v1/agents`, validated.
 struct AgentStart: Equatable {
@@ -246,12 +247,14 @@ final class AgentDirectory: @unchecked Sendable {
 
 	let local: HerdrClient
 	let cli: HerdrCLI
+	let tmux: TmuxDirectory?
 	private let log: OpsLog
 	private let lock = NSLock()
 	private var listCache: [String: (at: Date, result: Result<[[String: Any]], APIError>)] = [:]
 
-	init(local: HerdrClient, cli: HerdrCLI, log: OpsLog = .null) {
+	init(local: HerdrClient, cli: HerdrCLI, log: OpsLog = .null, tmux: TmuxDirectory? = nil) {
 		self.local = local
+		self.tmux = tmux
 		self.cli = cli
 		self.log = log
 	}
@@ -290,7 +293,9 @@ final class AgentDirectory: @unchecked Sendable {
 		do {
 			let answer = try HerdrClient.expect(
 				cli.call(machine: machine.id, ["agent", "list"], timeout: HerdrCLI.listTimeout), "agent_list")
-			result = .success(answer["agents"] as? [[String: Any]] ?? [])
+			let workspaces = (try? cli.call(machine: machine.id, ["workspace", "list"], timeout: 2)["workspaces"] as? [[String: Any]]) ?? []
+            let tabs = (try? cli.call(machine: machine.id, ["tab", "list"], timeout: 2)["tabs"] as? [[String: Any]]) ?? []
+            result = .success(HerdrTUIProvider.named(answer["agents"] as? [[String: Any]] ?? [], workspaces: workspaces, tabs: tabs))
 		} catch let error as APIError {
 			result = .failure(error)
 		} catch {
@@ -302,6 +307,13 @@ final class AgentDirectory: @unchecked Sendable {
 		return result
 	}
 
+    private func mapNamedRemote(_ info: [String: Any], machine: HerdrCLI.Machine) -> [String: Any] {
+        var info = info
+        if case .success(let cached) = remoteAgents(machine), let matching = cached.first(where: { ($0["pane_id"] as? String) == (info["pane_id"] as? String) }) {
+            for key in ["workspace_label", "tab_label"] { if let value = matching[key] { info[key] = value } }
+        }
+        return Self.mapRemote(info, machine: machine)
+    }
 	private func invalidate(_ machineID: String) {
 		lock.lock()
 		listCache[machineID] = nil
@@ -320,6 +332,7 @@ final class AgentDirectory: @unchecked Sendable {
 				group.leave()
 			}
 		}
+		let tmuxAgents = (try? tmux?.list()) ?? []
 		var agents: [[String: Any]] = []
 		var statuses: [[String: Any]] = []
 		var version: Any = NSNull()
@@ -334,11 +347,12 @@ final class AgentDirectory: @unchecked Sendable {
 			statuses.append(["id": AgentMachine.localID, "label": Self.localLabel, "status": "ok"])
 		} catch let error as APIError {
 			// Without other machines the list is this Mac's herdr, and its error is the answer.
-			guard !machines.isEmpty else { throw error }
+			guard !machines.isEmpty || !tmuxAgents.isEmpty else { throw error }
 			statuses.append([
 				"id": AgentMachine.localID, "label": Self.localLabel, "status": "unreachable", "error": error.message,
 			])
 		}
+		agents += tmuxAgents
 		group.wait()
 		for (index, machine) in machines.enumerated() {
 			switch results.get(index) {
@@ -375,6 +389,10 @@ final class AgentDirectory: @unchecked Sendable {
 	}
 
 	func get(_ id: String) throws -> [String: Any] {
+        if id.hasPrefix("tmux:") {
+            guard let transport = tmux else { throw APIError(503, "tmux_unavailable", "tmux is not installed on this Mac") }
+            return ["agent": try transport.get(id)]
+        }
 		switch AgentRef(id) {
 		case .local(let pane):
 			var answer = try local.getAgent(pane)
@@ -386,11 +404,15 @@ final class AgentDirectory: @unchecked Sendable {
 		case .remote(let machineID, let pane):
 			let machine = try machine(machineID)
 			let result = try HerdrClient.expect(cli.call(machine: machine.id, ["agent", "get", pane]), "agent_info")
-			return ["agent": Self.mapRemote(result["agent"] as? [String: Any] ?? [:], machine: machine)]
+			return ["agent": mapNamedRemote(result["agent"] as? [String: Any] ?? [:], machine: machine)]
 		}
 	}
 
 	func read(_ id: String, source: String, lines: Int) throws -> [String: Any] {
+        if id.hasPrefix("tmux:") {
+            guard let transport = tmux else { throw APIError(503, "tmux_unavailable", "tmux is not installed on this Mac") }
+            return try transport.read(id, source: source, lines: lines)
+        }
 		switch AgentRef(id) {
 		case .local(let pane):
 			return try local.read(pane, source: source, lines: lines)
@@ -449,6 +471,14 @@ final class AgentDirectory: @unchecked Sendable {
 	}
 
 	func prompt(_ id: String, text: String, wait: (until: [String], timeoutMS: Int)?) throws -> [String: Any] {
+        if id.hasPrefix("tmux:") {
+            guard let transport = tmux else { throw APIError(503, "tmux_unavailable", "tmux is not installed on this Mac") }
+            let agent = try transport.get(id)
+            try transport.send(text, id: id)
+            // A submitted command can immediately close its pane. Discovery after the
+            // terminal write must not turn successful delivery into an apparent failure.
+            return ["agent": agent, "waited": false]
+        }
 		switch AgentRef(id) {
 		case .local(let pane):
 			var answer = try local.prompt(pane, text: text, wait: wait)
@@ -474,12 +504,30 @@ final class AgentDirectory: @unchecked Sendable {
 			defer { invalidate(machine.id) }
 			let result = try HerdrClient.expect(cli.call(machine: machine.id, arguments, timeout: timeout), "agent_prompted")
 			return [
-				"agent": Self.mapRemote(result["agent"] as? [String: Any] ?? [:], machine: machine), "waited": wait != nil,
+				"agent": mapNamedRemote(result["agent"] as? [String: Any] ?? [:], machine: machine), "waited": wait != nil,
 			]
 		}
 	}
 
+    /// Git reads only the directory reported by the selected terminal, never a phone path.
+    func diff(_ id: String, staged: Bool) throws -> [String: Any] {
+        guard let agent = try get(id)["agent"] as? [String: Any], let cwd = agent["cwd"] as? String, cwd.hasPrefix("/"), !cwd.contains("\0") else { throw APIError(409, "no_repository", "This terminal has no working directory") }
+        let args = ["-C", cwd, "--no-pager", "diff", "--no-ext-diff", "--no-textconv", "--no-color"] + (staged ? ["--cached"] : []) + ["--"]
+        let result: HerdrCLI.RunResult
+        if case .remote(let machineID, _) = AgentRef(id) {
+            guard let target = try machine(machineID).target, !target.isEmpty, !target.hasPrefix("-"), target.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "@._-:[]".unicodeScalars.contains($0)) }) else { throw APIError(503, "machine_unavailable", "The saved SSH machine needs a valid address") }
+            func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+            result = try HerdrCLI.spawn("/usr/bin/ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "--", target, (["git"] + args).map(quote).joined(separator: " ")], timeout: 10)
+        } else { result = try HerdrCLI.spawn("/usr/bin/git", args, timeout: 5) }
+        guard result.status == 0 else { throw APIError(409, "no_repository", "Couldn't read changes. Check that this terminal is inside a Git repository.") }
+        return ["patch": String(decoding: result.stdout, as: UTF8.self), "staged": staged]
+    }
+
 	func sendKeys(_ id: String, keys: [String]) throws -> [String: Any] {
+        if id.hasPrefix("tmux:") {
+            guard let transport = tmux else { throw APIError(503, "tmux_unavailable", "tmux is not installed on this Mac") }
+            try transport.keys(keys, id: id); return ["id": id, "keys": keys.count]
+        }
 		switch AgentRef(id) {
 		case .local(let pane):
 			return try local.sendKeys(pane, keys: keys)
@@ -496,6 +544,7 @@ final class AgentDirectory: @unchecked Sendable {
 
 	/// Starts an agent; without a pane, in the root pane of a new tab (`tab.create`).
 	func start(_ request: AgentStart) throws -> [String: Any] {
+        guard request.paneID?.hasPrefix("tmux:") != true else { throw APIError(400, "bad_request", "Open tmux sessions on your Mac before using them here") }
 		var machineID = request.machine.flatMap { $0 == AgentMachine.localID ? nil : $0 }
 		var pane = request.paneID
 		if let given = pane, case .remote(let owner, let raw) = AgentRef(given) {
@@ -537,7 +586,7 @@ final class AgentDirectory: @unchecked Sendable {
 		let result = try HerdrClient.expect(
 			cli.call(machine: machine.id, arguments, timeout: Double(request.timeoutMS) / 1000 + HerdrCLI.callTimeout),
 			"agent_started")
-		return ["agent": Self.mapRemote(result["agent"] as? [String: Any] ?? [:], machine: machine)]
+		return ["agent": mapNamedRemote(result["agent"] as? [String: Any] ?? [:], machine: machine)]
 	}
 }
 
@@ -554,6 +603,7 @@ final class RemoteAgentPoller: @unchecked Sendable {
 	private let wake = DispatchSemaphore(value: 0)
 	/// remote agent id → status, per machine; nil entry = machine unreachable last time.
 	private var baseline: [String: [String: String]?]?
+    private var tmuxSignature: Data?
 
 	init(
 		directory: AgentDirectory, interval: TimeInterval, isListening: @escaping () -> Bool,
@@ -592,11 +642,19 @@ final class RemoteAgentPoller: @unchecked Sendable {
 	private func reset() {
 		lock.lock()
 		baseline = nil
+        tmuxSignature = nil
 		lock.unlock()
 	}
 
 	/// One poll: the first only records what is there.
 	func pollOnce() {
+        // Discover panes/names only while a phone listens; output is captured on request.
+        if let transport = directory.tmux {
+            let rows = (try? transport.list()) ?? []
+            let signature = try? JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys])
+            lock.lock(); let old = tmuxSignature; tmuxSignature = signature; lock.unlock()
+            if let old, old != signature { emit("agents.changed", [:]) }
+        }
 		var now: [String: [String: String]?] = [:]
 		var agents: [String: [String: Any]] = [:]
 		for machine in directory.cli.machines() {

@@ -237,6 +237,10 @@ class FakeHerdr:
         """One API call: a result dict, or (code, message) for an error."""
         if method == "ping":
             return {"type": "pong", "version": self.version, "protocol": 22, "capabilities": None}
+        if method == "workspace.list":
+            return {"type": "workspace_list", "workspaces": [{"workspace_id": ws, "label": "Mobile review " + ws} for ws in sorted({a["workspace_id"] for a in self.agents.values()})]}
+        if method == "tab.list":
+            return {"type": "tab_list", "tabs": [{"tab_id": tab, "label": "1"} for tab in sorted({a["tab_id"] for a in self.agents.values()})]}
         if method == "agent.list":
             with self._lock:
                 agents = [copy.deepcopy(a) for a in self.agents.values()]

@@ -1,6 +1,31 @@
 {
-  "originHash" : "dbfffaad6f2c4155a8340d04e9e2862cbbc5095bdfbc38e33f785a3f45dd85c6",
+  "originHash" : "0b5f0e8c3c31d0f9ff66adf440c13353b216fea1b448cd660528f01ac4ec0591",
   "pins" : [
+    {
+      "identity" : "agent-herdr",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/agent-herdr",
+      "state" : {
+        "revision" : "631e50ebb8b77ab1db6105b31cc5127eb1b97616"
+      }
+    },
+    {
+      "identity" : "agent-tmux",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/agent-tmux",
+      "state" : {
+        "revision" : "a6caf9dd203b3c1d08218d5fd2457363ec3454ea"
+      }
+    },
+    {
+      "identity" : "agent-tui-protocol",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sapoepsilon/agent-tui-protocol",
+      "state" : {
+        "revision" : "c17ca27cdc54a311d310cb8da532734634026cbd",
+        "version" : "0.2.0"
+      }
+    },
     {
       "identity" : "fluidaudio",
       "kind" : "remoteSourceControl",
@@ -105,7 +130,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sapoepsilon/whispera-components",
       "state" : {
-        "revision" : "fa1be6cf73bfe6cb684f8c3eccc14cbe75760f88"
+        "revision" : "1f15ab9c7f53e2180348a7e0a3861acc54354a9a"
       }
     },
     {

@@ -76,6 +76,22 @@ final class HelperXPCService: NSObject, NSXPCListenerDelegate, LinkHelperXPCProt
 		}
 	}
 
+	func setRecipeServerKey(_ request: Data, reply: @escaping (Data) -> Void) {
+		let object = WireJSON.decodeObject(request) ?? [:]
+		answer(reply) { [daemon] in
+			let key = (object["key"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+			if key.isEmpty { try daemon.recipes.keyStore.setCredential(nil) }
+			else {
+				guard let raw = object["base_url"] as? String, let base = AppSpeechSelection.normalize(raw),
+                      let url = URL(string: base), ["http", "https"].contains(url.scheme ?? "") else {
+					throw APIError(400, "bad_request", "base_url is not a server address")
+				}
+				try daemon.recipes.keyStore.setCredential(SpeechServerCredential(baseURL: base, key: key))
+			}
+			return ["ok": true]
+		}
+	}
+
 	func clearAccount(reply: @escaping (Data) -> Void) { answer(reply) { [daemon] in daemon.accountClear() } }
 
 	func accountStatus(reply: @escaping (Data) -> Void) { answer(reply) { [daemon] in daemon.accountStatus() } }

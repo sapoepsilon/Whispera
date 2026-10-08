@@ -59,6 +59,7 @@ final class MacLinkHelper: ObservableObject {
 				AppLogger.shared.general.error("Mac link helper did not answer over XPC (status \(self.serviceStatus.rawValue))")
 			}
 			await syncSpeechServerKey()
+			await syncRecipeServerKey()
 			observeSpeechServerAddress()
 			// A signed-in Mac re-hands the bearer, so a helper that lost its state joins again;
 			// one that is already on the account does nothing.
@@ -77,6 +78,7 @@ final class MacLinkHelper: ObservableObject {
 				Task {
 					try? await Task.sleep(nanoseconds: 3_000_000_000)
 					await syncSpeechServerKey()
+					await syncRecipeServerKey()
 					observeSpeechServerAddress()
 				}
 			} else {
@@ -119,6 +121,21 @@ final class MacLinkHelper: ObservableObject {
 		}
 	}
 
+	private var handedRecipeAddress: String?
+	func syncRecipeServerKey() async {
+		guard isEnabled else { return }
+		let entry = WhisperaSettings.llmServer
+		var request: [String: String] = [:]
+		if let url = entry.url, let key = entry.keyProvider(), !key.isEmpty {
+			request = ["base_url": url.absoluteString, "key": key]
+		}
+		let body = (try? JSONSerialization.data(withJSONObject: request)) ?? Data("{}".utf8)
+		let reply = await Self.call { $0.setRecipeServerKey(body, reply: $1) }
+		if reply.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })?["ok"] as? Bool == true {
+			handedRecipeAddress = entry.url?.absoluteString ?? ""
+		} else { AppLogger.shared.general.error("Mac link helper did not take the recipe server key") }
+	}
+
 	/// A key is bound to the address it was handed for, so a new speech server address hands it again.
 	private func observeSpeechServerAddress() {
 		guard speechAddressObserver == nil else { return }
@@ -128,8 +145,8 @@ final class MacLinkHelper: ObservableObject {
 			Task { @MainActor in
 				guard let self, self.isEnabled else { return }
 				let address = WhisperaSettings.speechServer.url?.absoluteString ?? ""
-				guard address != self.handedSpeechAddress else { return }
-				await self.syncSpeechServerKey()
+				if address != self.handedSpeechAddress { await self.syncSpeechServerKey() }
+				if (WhisperaSettings.llmServer.url?.absoluteString ?? "") != self.handedRecipeAddress { await self.syncRecipeServerKey() }
 			}
 		}
 	}

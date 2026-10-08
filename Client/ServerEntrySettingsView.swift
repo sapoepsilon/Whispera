@@ -171,8 +171,10 @@ struct ServerEntrySettingsView: View {
 	/// Paired phones transcribe through this Mac's speech server, so the Mac link helper keeps
 	/// its own copy of the key, bound to the server's address.
 	private func handKeyToMacLink() {
-		guard capability == .speech else { return }
-		Task { await MacLinkHelper.shared.syncSpeechServerKey() }
+		Task {
+			if capability == .speech { await MacLinkHelper.shared.syncSpeechServerKey() }
+			else { await MacLinkHelper.shared.syncRecipeServerKey() }
+		}
 	}
 
 	/// Optional: a LAN engine usually wants no key, a cloud always does. Stored

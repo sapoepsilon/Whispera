@@ -1,4 +1,5 @@
 import Foundation
+import WhisperaHerdr
 
 /// herdr socket client (PROTOCOL §6). One short-lived connection per call. Beyond v1's read and
 /// prompt calls it sends `agent.send_keys`, `agent.start` and `tab.create` (the phone's keys,
@@ -11,13 +12,14 @@ public final class HerdrClient: @unchecked Sendable {
 	static let maxLine = 8 * 1024 * 1024
 	public static let allowedMethods: Set<String> = [
 		"ping", "agent.list", "agent.get", "agent.read", "agent.prompt", "agent.send_keys", "agent.start",
-		"tab.create", "events.subscribe",
+		"tab.create", "events.subscribe", "workspace.list", "tab.list",
 	]
 	public static let readSources = ["visible", "recent", "recent_unwrapped"]
 
 	let socketPath: String
 	private let lock = NSLock()
 	private var cachedVersion: String?
+	private var names: (at: Date, workspaces: [[String: Any]], tabs: [[String: Any]])?
 
 	public init(socketPath: String) {
 		self.socketPath = socketPath
@@ -111,18 +113,7 @@ public final class HerdrClient: @unchecked Sendable {
 
 	/// herdr `AgentInfo` → the public agent object (§5.4); terminal ids, tokens and sessions are dropped.
 	static func mapAgent(_ info: [String: Any]) -> [String: Any] {
-		func value(_ key: String) -> Any { info[key].flatMap { $0 is NSNull ? nil : $0 } ?? NSNull() }
-		let status = (info["agent_status"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "unknown"
-		let cwd = (info["foreground_cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (info["cwd"] as? String)
-		return [
-			"id": value("pane_id"), "agent": value("agent"), "display_agent": value("display_agent"),
-			"name": value("name"),
-			"title": value("title"), "status": status, "cwd": cwd ?? NSNull(),
-			"workspace_id": value("workspace_id"),
-			"tab_id": value("tab_id"), "focused": (info["focused"] as? Bool) ?? false,
-			"revision": value("revision"),
-			"state_labels": info["state_labels"] as? [String: Any] ?? [:],
-		]
+		HerdrTUIProvider.agent(info)
 	}
 
 	@discardableResult
@@ -135,8 +126,24 @@ public final class HerdrClient: @unchecked Sendable {
 	}
 
 	func listAgentsRaw() throws -> [[String: Any]] {
-		try Self.expect(call("agent.list"), "agent_list")["agents"] as? [[String: Any]] ?? []
+		let agents = try Self.expect(call("agent.list"), "agent_list")["agents"] as? [[String: Any]] ?? []
+		return named(agents)
 	}
+
+	private func named(_ agents: [[String: Any]]) -> [[String: Any]] {
+        lock.lock(); let cache = names; lock.unlock()
+        let metadata: (at: Date, workspaces: [[String: Any]], tabs: [[String: Any]])
+        if let cache, Date().timeIntervalSince(cache.at) < 5 { metadata = cache }
+        else {
+            // Older HERDR versions may not expose labels. Metadata failure never fails delivery.
+            let workspaces = (try? call("workspace.list", timeout: 1)["workspaces"] as? [[String: Any]]) ?? []
+            let tabs = (try? call("tab.list", timeout: 1)["tabs"] as? [[String: Any]]) ?? []
+            metadata = (Date(), workspaces, tabs)
+            lock.lock(); names = metadata; lock.unlock()
+        }
+        return HerdrTUIProvider.named(agents, workspaces: metadata.workspaces, tabs: metadata.tabs)
+    }
+    private func projectAgent(_ info: [String: Any]) -> [String: Any] { Self.mapAgent(named([info])[0]) }
 
 	public func listAgents() throws -> [String: Any] {
 		if version == nil { _ = try? ping() }
@@ -145,7 +152,7 @@ public final class HerdrClient: @unchecked Sendable {
 
 	public func getAgent(_ target: String) throws -> [String: Any] {
 		let result = try Self.expect(call("agent.get", ["target": target]), "agent_info")
-		return ["agent": Self.mapAgent(result["agent"] as? [String: Any] ?? [:])]
+		return ["agent": projectAgent(result["agent"] as? [String: Any] ?? [:])]
 	}
 
 	/// The pane's text. herdr refuses a `recent` read longer than the screen while an
@@ -194,7 +201,7 @@ public final class HerdrClient: @unchecked Sendable {
 			timeout = Double(ms) / 1000 + Self.callTimeout
 		}
 		let result = try Self.expect(call("agent.prompt", params, timeout: timeout), "agent_prompted")
-		return ["agent": Self.mapAgent(result["agent"] as? [String: Any] ?? [:]), "waited": wait != nil]
+		return ["agent": projectAgent(result["agent"] as? [String: Any] ?? [:]), "waited": wait != nil]
 	}
 
 	/// `agent.send_keys` (herdr validates every key before writing any byte).
@@ -213,7 +220,7 @@ public final class HerdrClient: @unchecked Sendable {
 		]
 		let result = try Self.expect(
 			call("agent.start", params, timeout: Double(timeoutMS) / 1000 + Self.callTimeout), "agent_started")
-		return ["agent": Self.mapAgent(result["agent"] as? [String: Any] ?? [:])]
+		return ["agent": projectAgent(result["agent"] as? [String: Any] ?? [:])]
 	}
 }
 

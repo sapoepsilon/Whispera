@@ -116,6 +116,8 @@ def api_command(sock, args):
     group, command, rest = args[0], args[1], args[2:]
     cli_id = "cli:%s:%s" % (group, command)
     try:
+        if group in ("workspace", "tab") and command == "list":
+            return emit(cli_id, rpc(sock, group + ".list", {}))
         if (group, command) == ("agent", "list"):
             return emit(cli_id, rpc(sock, "agent.list", {}))
         if (group, command) == ("agent", "get"):
