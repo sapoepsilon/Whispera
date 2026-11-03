@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -41,6 +42,51 @@ enum MaterialStyle: String, CaseIterable, Identifiable {
 //		}
 //	}
 //}
+
+/// The app's whole motion vocabulary. Every animated surface (menu bar popover,
+/// listening pill, controls panel) reads these four curves instead of spelling
+/// out its own literals, so the surfaces cannot drift apart when one is tuned.
+///
+/// Reduce Motion is deliberately NOT baked in here: call sites pass
+/// `reduceMotion ? nil : Motion.<curve>` so the gate stays visible in the view.
+enum Motion {
+	/// A size-affecting module entered or left; siblings glide to their new place.
+	static let structural: Animation = .easeOut(duration: structuralDuration)
+	/// Content blooming in while an animated frame growth uncovers it.
+	static let reveal: Animation = .easeOut(duration: revealDuration)
+	/// Transient overlays (toasts) that need a little settle on the way in.
+	static let transient: Animation = .spring(response: 0.4, dampingFraction: 0.8)
+	/// Button press feedback.
+	static let press: Animation = .easeOut(duration: pressDuration)
+
+	/// Status-icon glyph swap: the outgoing symbol scales and fades out while the
+	/// incoming one scales in. Its own beat, distinct from the four above.
+	static let iconMorph: Animation = .spring(duration: iconMorphDuration)
+	/// The tint change that rides along with `iconMorph`, on the same beat.
+	static let iconMorphTint: Animation = .easeInOut(duration: iconMorphDuration)
+
+	/// Per-bar level tracking in the audio meter. Deliberately quick and loose:
+	/// it follows a continuous signal rather than a layout change.
+	static let meter: Animation = .spring(response: 0.15, dampingFraction: 0.6)
+
+	static let pressScale: CGFloat = 0.98
+	static let pressOpacity: Double = 0.8
+
+	// AppKit mirrors. NSAnimationContext takes raw seconds and `Animation` has no
+	// public duration accessor, so the numbers live here and the SwiftUI curves
+	// above are built from them - one place to change, two consumers.
+	static let structuralDuration: TimeInterval = 0.25
+	static let revealDuration: TimeInterval = 0.22
+	static let pressDuration: TimeInterval = 0.1
+	/// Shared by `iconMorph` and `iconMorphTint` so the glyph and its tint can
+	/// never fall out of step.
+	static let iconMorphDuration: TimeInterval = 0.3
+
+	/// AppKit-side Reduce Motion, for windows that animate their own frame.
+	@MainActor static var systemReduceMotion: Bool {
+		NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+	}
+}
 
 struct Constants {
 	public static let languages: [String: String] = [
@@ -167,9 +213,9 @@ struct Constants {
 	public static let autoDetectLanguageFromKeyboardDefault = false
 
 	// Helper to get sorted language names for UI
-	public static var sortedLanguageNames: [String] {
-		return Array(languages.keys).sorted()
-	}
+	// languages is a let with unique keys, so this sort is invariant; computing it
+	// per access re-sorted ~100 strings on every body pass that read it
+	public static let sortedLanguageNames: [String] = Array(languages.keys).sorted()
 
 	/// The Whisper language name shown in the app's UI language, e.g. "german" -> "Deutsch".
 	public static func localizedLanguageName(for languageName: String, locale: Locale = .current) -> String {

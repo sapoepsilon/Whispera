@@ -490,7 +490,7 @@ final class SettingsViewUITests: XCTestCase {
 		XCTAssertTrue(sidebar.waitForExistence(timeout: 10), "Settings should show a sidebar instead of a tab bar")
 
 		let alwaysVisible = [
-			"general", "textInsertion", "storage", "fileTranscription", "history", "benchmark", "postProcessing",
+			"general", "textInsertion", "storage", "fileTranscription", "history", "benchmark", "recipes",
 		]
 		for pane in alwaysVisible {
 			let row = app.descendants(matching: .any).matching(identifier: "settingsSidebar.\(pane)").firstMatch

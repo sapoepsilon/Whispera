@@ -281,7 +281,7 @@ struct PromptEchoFilterTests {
 	@Test(arguments: [
 		("Deploy to production.", ["Deployment", "Production"]),
 		("Acme Corporation.", ["Acme Corp"]),
-		("Kentra Health.", ["Kentra Health"]),
+		("Acme Health.", ["Acme Health"]),
 		("Alex Hamilton.", ["Alexander", "Hamilton"]),
 	])
 	func spokenCustomWordsAreKept(sentence: String, customWords: [String]) throws {

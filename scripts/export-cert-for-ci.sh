@@ -6,7 +6,7 @@
 set -e
 
 CERT_NAME="Developer ID Application: Ismatulla Mansurov (NK28QT38A3)"
-APPLE_ID="sapoepsilon98@yandex.com"
+APPLE_ID="${APPLE_ID:?set APPLE_ID to the Apple ID email used for notarization}"
 TEAM_ID="NK28QT38A3"
 
 echo "🔍 Searching for Developer ID certificate in keychain..."

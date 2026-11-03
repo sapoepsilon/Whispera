@@ -13,17 +13,11 @@ echo "Sparkle EdDSA Key Generator"
 echo "==========================="
 echo ""
 
-# Check if Sparkle tools exist in the build directory
-SPARKLE_TOOLS_PATH="$PROJECT_ROOT/build/SourcePackages/artifacts/sparkle/Sparkle/bin"
+# Sparkle's tools are vendored next to the framework (see Packages/VENDORED.md)
+SPARKLE_TOOLS_PATH="$PROJECT_ROOT/Packages/Sparkle/bin"
 
 if [ ! -d "$SPARKLE_TOOLS_PATH" ]; then
     echo "Sparkle tools not found at: $SPARKLE_TOOLS_PATH"
-    echo ""
-    echo "First, build the project in Xcode to download the Sparkle package."
-    echo "Then run this script again."
-    echo ""
-    echo "Alternatively, download Sparkle manually from:"
-    echo "https://github.com/sparkle-project/Sparkle/releases"
     exit 1
 fi
 

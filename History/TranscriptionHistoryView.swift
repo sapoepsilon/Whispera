@@ -76,7 +76,9 @@ struct TranscriptionHistoryView: View {
 	@AppStorage(HistorySettings.retentionKey) private var retentionRaw = HistorySettings.defaultRetention
 		.rawValue
 	@AppStorage(HistorySettings.limitKey) private var historyLimit = HistorySettings.defaultLimit
-	@AppStorage(PostProcessingSettings.Key.enabled) private var postProcessingEnabled = false
+	@AppStorage(CancelledRecordingStore.keepRecordingsKey) private var keepCancelledRecordings =
+		CancelledRecordingStore.defaultKeepRecordings
+	@AppStorage(ServerEntry.Capability.llm.urlKey) private var llmServerURL = ""
 
 	private var filteredEntries: [TranscriptionHistoryEntry] {
 		TranscriptionHistoryStore.filter(store.entries, query: searchText, starredOnly: starredOnly)
@@ -109,6 +111,9 @@ struct TranscriptionHistoryView: View {
 			if wasSaving && !isSaving && store.hasSavedRecordings {
 				pendingPurge = .recordings
 			}
+		}
+		.onChange(of: keepCancelledRecordings) { _, keep in
+			CancelledRecordingStore.shared.setKeepsRecordings(keep)
 		}
 		.onAppear {
 			if isActivePane { becameVisible() }
@@ -222,30 +227,36 @@ struct TranscriptionHistoryView: View {
 	}
 
 	private var settingsSection: some View {
-		SettingsSection("History") {
+		SettingsSection("History", inForm: false) {
 			SettingRow("Save transcription history", description: "Keep each dictation so you can find it later")
 			{
-				Toggle("", isOn: $historyEnabled)
-					.toggleStyle(.switch)
+				Toggle("Save transcription history", isOn: $historyEnabled)
 					.labelsHidden()
 			}
 			SettingRow(
 				"Save recordings",
 				description: "Keep the audio so entries can be replayed or re-transcribed. History and recordings stay on this Mac and are left out of Time Machine backups."
 			) {
-				Toggle("", isOn: $saveAudio)
-					.toggleStyle(.switch)
+				Toggle("Save recordings", isOn: $saveAudio)
 					.labelsHidden()
 			}
 			.disabled(!historyEnabled)
+			SettingRow(
+				"Keep cancelled recordings",
+				description: "Keep the audio of a cancelled dictation for a day so it can still be transcribed from the menu bar. Turning this off deletes the ones already kept."
+			) {
+				Toggle("Keep cancelled recordings", isOn: $keepCancelledRecordings)
+					.labelsHidden()
+			}
+			.accessibilityIdentifier("keepCancelledRecordingsToggle")
 			SettingRow("Delete entries after", description: "Starred entries are never deleted automatically") {
-				Picker("", selection: retentionSelection) {
+				Picker("Delete entries after", selection: retentionSelection) {
 					ForEach(HistoryRetentionPeriod.allCases) { period in
 						Text(period.displayName).tag(period.rawValue)
 					}
 				}
 				.labelsHidden()
-				.frame(width: 200)
+				.frame(width: 200, alignment: .trailing)
 			}
 			if retentionRaw == HistoryRetentionPeriod.preserveLimit.rawValue {
 				SettingRow("Entries to keep") {
@@ -293,7 +304,7 @@ struct TranscriptionHistoryView: View {
 					isPlaying: player.playingID == entry.id,
 					isRetranscribing: store.retranscribingIDs.contains(entry.id),
 					justCopied: copiedID == entry.id,
-					canPostProcess: postProcessingEnabled,
+					canPostProcess: ServerURLNormalizer.normalize(llmServerURL) != nil,
 					onPlay: { play(entry) },
 					onCopy: { copy(entry.text, id: entry.id) },
 					onCopyOriginal: { copy(entry.transcriptText, id: entry.id) },
@@ -344,7 +355,7 @@ struct TranscriptionHistoryView: View {
 			do {
 				try await store.reprocess(entry)
 			} catch {
-				errorMessage = String(localized: "Post-processing failed: \(error.localizedDescription)")
+				errorMessage = String(localized: "Clean up failed: \(error.localizedDescription)")
 			}
 		}
 	}
@@ -420,7 +431,7 @@ private struct HistoryEntryRow: View {
 			Button(entry.isStarred ? "Unstar" : "Star", action: onStar)
 			Button(entry.didFail ? "Retry" : "Re-transcribe", action: onRetranscribe)
 				.disabled(!hasAudio || isRetranscribing)
-			Button("Post-process Again", action: onPostProcess)
+			Button("Clean Up Again", action: onPostProcess)
 				.disabled(!canPostProcess || entry.transcriptText.isEmpty || isRetranscribing)
 			Button("Show Recording in Finder", action: onReveal).disabled(!hasAudio)
 			Divider()
@@ -431,7 +442,7 @@ private struct HistoryEntryRow: View {
 	@ViewBuilder
 	private var postProcessingDetails: some View {
 		if let error = entry.postProcessError {
-			Label("Post-processing failed: \(error)", systemImage: "exclamationmark.triangle")
+			Label("Recipe failed: \(error)", systemImage: "exclamationmark.triangle")
 				.font(.caption)
 				.foregroundColor(.orange)
 		}
@@ -444,7 +455,7 @@ private struct HistoryEntryRow: View {
 					.frame(maxWidth: .infinity, alignment: .leading)
 			} label: {
 				Label(
-					"Original transcript, post-processed with \(entry.postProcessPromptName ?? "")",
+					"Original transcript, rewritten by \(entry.postProcessPromptName ?? "")",
 					systemImage: "wand.and.stars"
 				)
 				.font(.caption)

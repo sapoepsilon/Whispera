@@ -7,6 +7,7 @@ struct PermissionRowView: View {
 	let isGranted: Bool
 	var grantAction: (() -> Void)? = nil
 
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var checkScale: CGFloat = 1.0
 
 	var body: some View {
@@ -20,6 +21,7 @@ struct PermissionRowView: View {
 					.font(.system(size: 18))
 					.foregroundColor(isGranted ? .green : .gray)
 			}
+			.accessibilityHidden(true)
 
 			VStack(alignment: .leading, spacing: 4) {
 				Text(LocalizedStringKey(title))
@@ -35,19 +37,26 @@ struct PermissionRowView: View {
 				Image(systemName: "checkmark.circle.fill")
 					.foregroundColor(.green)
 					.scaleEffect(checkScale)
+					.accessibilityLabel("Granted")
 			} else if let grantAction {
 				Button("Grant", action: grantAction)
-					.buttonStyle(SecondaryButtonStyle())
+					.buttonStyle(.bordered)
 					.controlSize(.small)
+					.accessibilityLabel(grantLabel)
 			}
 		}
 		.onChange(of: isGranted) { wasGranted, nowGranted in
-			if !wasGranted && nowGranted {
+			if !wasGranted && nowGranted && !reduceMotion {
 				checkScale = 0.3
 				withAnimation(.spring(duration: 0.4, bounce: 0.5)) {
 					checkScale = 1.0
 				}
 			}
 		}
+	}
+
+	private var grantLabel: String {
+		let permission = String(localized: String.LocalizationValue(title))
+		return String(localized: "Grant") + " " + permission
 	}
 }

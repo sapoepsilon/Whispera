@@ -30,20 +30,12 @@ jobs:
           # The FoundationModels weak link needs the macOS 26 SDK
           xcode-version: "^26.0"
 
-      - name: Cache Swift Package Manager
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            .build
-            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
-          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-spm-
-
       - name: Clean stale build artifacts
         run: |
           find ~/Library/Developer/Xcode/DerivedData -name "*.pcm" -delete 2>/dev/null || true
 
+      # Every package is vendored under Packages/ (see Packages/VENDORED.md), so resolving reads
+      # only local paths: no network, no package cache, no access to private repositories
       - name: Resolve Swift Package Dependencies
         run: |
           xcodebuild -resolvePackageDependencies -project "${APP_NAME}.xcodeproj" -scheme "${SCHEME_NAME}"
@@ -109,15 +101,6 @@ jobs:
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: "^26.0"
-
-      - name: Cache Swift Package Manager
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
-          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-spm-
 
       # Tests that need a downloaded Whisper or Parakeet model, the bundled test recording,
       # Apple Intelligence or an unlocked keychain skip themselves via .enabled(if:), so this

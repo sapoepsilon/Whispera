@@ -26,15 +26,35 @@
 				<string>whispera</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.macwhisper.app.account-callback</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>whispera-mac</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.0</string>
+	<string>1.5.0</string>
 	<key>CFBundleVersion</key>
-	<string>37</string>
+	<string>38</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Local mode + self-hosted transcription hit HTTP servers on localhost
+		     or the LAN (ollama, llama-server, vLLM, whisper). Allow cleartext to
+		     local/private networks without weakening ATS for the public internet. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Whispera connects to local AI servers (e.g. ollama or a self-hosted Whisper endpoint) on your machine or network for Local-mode transcription and recipe execution.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Whispera uses Apple Events to read the Finder selection and to run insertion scripts you approve.</string>
 	<key>NSMicrophoneUsageDescription</key>
@@ -43,5 +63,10 @@
 	<string>https://raw.githubusercontent.com/sapoepsilon/Whispera/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>GbHOfW9t2r/mOlDit7usEnhy2upMdDdzNhFvHiKD7qU=</string>
+	<key>WhisperaClerkClientID</key>
+	<!-- The hosted account's Clerk OAuth client id (public PKCE client, no secret),
+	     from the WHISPERA_CLERK_CLIENT_ID build setting; empty means hosted sign-in
+	     is unavailable and only a custom issuer or a server token can be used. -->
+	<string>$(WHISPERA_CLERK_CLIENT_ID)</string>
 </dict>
 </plist>

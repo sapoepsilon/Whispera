@@ -80,9 +80,6 @@ struct MenuBarView: View {
 		.frame(maxHeight: .infinity, alignment: .top)
 		.background(AdaptiveMaterialBackground(style: materialStyle))
 		.overlay(dropZoneOverlay)
-		.overlay(alignment: .bottom) {
-			ToastOverlay(toastCenter: toastCenter)
-		}
 		.onAppear { registerOpenSettings { openSettings() } }
 		.onChange(of: audioManager.transcriptionError) { _, newValue in
 			if let error = newValue {
@@ -202,6 +199,8 @@ struct MenuBarView: View {
 					.accessibilityIdentifier("menuBarCopyLastButton")
 				}
 
+				CancelledRecordingsSection(audioManager: audioManager)
+
 				// Single compact lane for the file journey: Drop (the whole popover is
 				// the target) or Browse (NSOpenPanel), and an active summary that opens
 				// the Activity window. Replaces the transitional queue status card.
@@ -218,11 +217,11 @@ struct MenuBarView: View {
 			// lanes glide to their new positions. Scoped to these two values so
 			// unrelated state (recording, mode, results) never animates this stack.
 			.animation(
-				reduceMotion ? nil : .easeOut(duration: 0.25),
+				reduceMotion ? nil : Motion.structural,
 				value: layout.updateVisible
 			)
 			.animation(
-				reduceMotion ? nil : .easeOut(duration: 0.25),
+				reduceMotion ? nil : Motion.structural,
 				value: layout.needsPermissions || layout.modelPreparing || layout.modelDownloading)
 
 			// Result glance: only when there is a real transcription (errors route to
@@ -241,7 +240,9 @@ struct MenuBarView: View {
 					.transition(.opacity)
 				}
 			}
-			.animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: layout.hasResult)
+			.animation(reduceMotion ? nil : Motion.reveal, value: layout.hasResult)
+
+			ToastOverlay(toastCenter: toastCenter)
 
 		}
 		.frame(width: PopoverMetrics.width)
@@ -360,7 +361,7 @@ struct FileLane: View {
 
 						Spacer(minLength: 8)
 
-						Text("Drop · Browse")
+						Text("Browse…")
 							.font(.caption)
 							.foregroundStyle(.secondary)
 					}
@@ -368,6 +369,8 @@ struct FileLane: View {
 				.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
+			.accessibilityLabel(isActive ? Text(summary) : Text("Transcribe a file"))
+			.accessibilityHint(isActive ? Text("Open Transcription Activity") : Text("Drop a file on the menu, or click to browse"))
 			.help(isActive ? String(localized: "Open Transcription Activity") : String(localized: "Browse for a file to transcribe"))
 		}
 	}
@@ -774,38 +777,51 @@ struct PrimaryButtonStyle: ButtonStyle {
 		let isRecording: Bool
 		let configuration: ButtonStyleConfiguration
 		@Environment(\.isEnabled) private var isEnabled
+		@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 		var body: some View {
 			configuration.label
-				.padding(10)
+				.padding(.horizontal, 16)
+				.frame(minHeight: ButtonMetrics.height)
 				.font(.system(.body, design: .rounded, weight: .medium))
 				.foregroundColor(.white)
 				.background(
 					RoundedRectangle(cornerRadius: ButtonMetrics.cornerRadius)
 						.fill(isRecording ? Color.recordingAccent : Color.primaryAction)
-						.opacity(configuration.isPressed ? 0.8 : 1.0)
-						.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+						.opacity(configuration.isPressed ? Motion.pressOpacity : 1.0)
+						.scaleEffect(configuration.isPressed && !reduceMotion ? Motion.pressScale : 1.0)
 				)
 				.opacity(isEnabled ? 1.0 : 0.5)
-				.animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+				.animation(reduceMotion ? nil : Motion.press, value: configuration.isPressed)
 		}
 	}
 }
 
 struct SecondaryButtonStyle: ButtonStyle {
 	func makeBody(configuration: Configuration) -> some View {
-		configuration.label
-			.padding(10)
-			.font(.system(.body, design: .rounded))
-			.foregroundColor(.primary)
-			.frame(height: ButtonMetrics.height)
-			.background(
-				RoundedRectangle(cornerRadius: ButtonMetrics.cornerRadius)
-					.fill(Color.gray.opacity(0.2))
-					.opacity(configuration.isPressed ? 0.7 : 1.0)
-					.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-			)
-			.animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+		SecondaryButtonBody(configuration: configuration)
+	}
+
+	private struct SecondaryButtonBody: View {
+		let configuration: ButtonStyleConfiguration
+		@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+		var body: some View {
+			configuration.label
+				.padding(.horizontal, 16)
+				.font(.system(.body, design: .rounded))
+				.foregroundColor(.primary)
+				.frame(minHeight: ButtonMetrics.height)
+				.background(
+					RoundedRectangle(cornerRadius: ButtonMetrics.cornerRadius)
+						.fill(Color.gray.opacity(0.2))
+						// Secondary presses dim a touch further than Motion.pressOpacity
+						// because the fill underneath is already low-contrast.
+						.opacity(configuration.isPressed ? 0.7 : 1.0)
+						.scaleEffect(configuration.isPressed && !reduceMotion ? Motion.pressScale : 1.0)
+				)
+				.animation(reduceMotion ? nil : Motion.press, value: configuration.isPressed)
+		}
 	}
 }
 
@@ -1132,12 +1148,12 @@ struct NotificationBanner: View {
 				}
 				.buttonStyle(.plain)
 				.help("Dismiss")
+				.accessibilityLabel("Dismiss")
 			}
 		}
 		.padding(12)
 		.background {
-			// The toast floats over the popover's buttons, so the 10% tint needs an opaque base
-			// or the controls underneath read through the message
+			// Keep the message legible over translucent materials.
 			RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: Self.baseColor))
 			RoundedRectangle(cornerRadius: 10).fill(type.backgroundColor)
 		}
@@ -1220,10 +1236,11 @@ final class ToastCenter {
 	}
 }
 
-// Bottom overlay for the single toast. Observes only the ToastCenter and drives a
-// single combined-value animation so success and error share one motion language.
+// The toast participates in the measured content height so it never covers controls.
+// Success and error share one motion language.
 struct ToastOverlay: View {
 	let toastCenter: ToastCenter
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -1233,12 +1250,12 @@ struct ToastOverlay: View {
 					type: toast.type,
 					onDismiss: { toastCenter.dismiss() }
 				)
-				.transition(.move(edge: .bottom).combined(with: .opacity))
+				.padding(.bottom, 8)
+				.padding(.horizontal, 20)
+				.transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
 			}
 		}
-		.padding(.bottom, 8)
-		.padding(.horizontal, 8)
-		.animation(.spring(response: 0.4, dampingFraction: 0.8), value: toastCenter.current)
+		.animation(reduceMotion ? nil : Motion.transient, value: toastCenter.current)
 	}
 }
 
@@ -1341,6 +1358,7 @@ struct UpdateRow: View {
 				}
 				.buttonStyle(.plain)
 				.help("Dismiss")
+				.accessibilityLabel("Dismiss")
 			}
 			.padding(.horizontal, 10)
 			.padding(.vertical, 8)
@@ -1385,6 +1403,7 @@ struct HeaderLine: View {
 				isRecording: audioManager.isRecording,
 				reduceMotion: reduceMotion
 			)
+			.accessibilityHidden(true)
 
 			VStack(alignment: .leading, spacing: 2) {
 				HStack(spacing: 6) {
@@ -1404,6 +1423,7 @@ struct HeaderLine: View {
 					.lineLimit(1)
 					.truncationMode(.middle)
 			}
+			.accessibilityElement(children: .combine)
 
 			Spacer()
 
@@ -1416,6 +1436,7 @@ struct HeaderLine: View {
 			}
 			.buttonStyle(.plain)
 			.help("Settings")
+			.accessibilityLabel("Settings")
 
 			Menu {
 				ForEach(Array(menuEntries.enumerated()), id: \.offset) { _, entry in
@@ -1435,6 +1456,7 @@ struct HeaderLine: View {
 			.menuIndicator(.hidden)
 			.fixedSize()
 			.help("More")
+			.accessibilityLabel("More")
 		}
 	}
 }
@@ -1459,8 +1481,8 @@ struct HeaderGlyph: View {
 				.id(systemImage)
 				.transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
 		}
-		.animation(reduceMotion ? nil : .spring(duration: 0.3), value: systemImage)
-		.animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: color)
+		.animation(reduceMotion ? nil : Motion.iconMorph, value: systemImage)
+		.animation(reduceMotion ? nil : Motion.iconMorphTint, value: color)
 		// Fence the glyph's local animations off from ancestor layout shifts:
 		// when a Fix-It row collapses in the same beat as a state change, the
 		// circle must jump with the layout, not slide in from its old position.
@@ -1486,9 +1508,12 @@ struct DictateLane: View {
 	let selectedLanguage: String
 	let isBlocked: Bool
 
+	@FocusState private var recordFocused: Bool
+
 	var body: some View {
 		VStack(spacing: 12) {
 			RecordButton(audioManager: audioManager, isBlocked: isBlocked)
+				.focused($recordFocused)
 
 			// The cancel shortcut is not armed while transcribing, so this is the way out. It only
 			// abandons transcriptions: a recording started meanwhile keeps running.
@@ -1507,8 +1532,13 @@ struct DictateLane: View {
 				MicMenu(audioManager: audioManager)
 			}
 
-			ShortcutReminder(audioManager: audioManager, shortcutKey: shortcutKey)
+			// Text mode already shows the shortcut in the header subtitle.
+			if audioManager.enableTranslation {
+				ShortcutReminder(audioManager: audioManager, shortcutKey: shortcutKey)
+			}
 		}
+		.defaultFocus($recordFocused, true)
+		.onAppear { recordFocused = true }
 	}
 }
 
@@ -1546,6 +1576,7 @@ struct RecordButton: View {
 			}
 			.frame(maxWidth: .infinity)
 			.frame(height: 40)
+			.padding(.vertical, 10)
 		}
 		.buttonStyle(PrimaryButtonStyle(isRecording: mode == .stop))
 		.disabled(!mode.isEnabled(blocked: isBlocked))

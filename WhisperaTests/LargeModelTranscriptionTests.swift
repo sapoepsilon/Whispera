@@ -424,7 +424,7 @@ final class LargeModelTranscriptionTests: XCTestCase {
 		}
 		return URL(
 			fileURLWithPath:
-				"/Users/ismatullamansurov/Developer/whispera/WhisperaTests/Resources/bush_radio_address.wav"
+				"/Users/me/Developer/whispera/WhisperaTests/Resources/bush_radio_address.wav"
 		)
 	}
 

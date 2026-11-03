@@ -27,8 +27,13 @@ enum CorrectionCommand {
 	private(set) var sessionStartPosition: Int = 0
 	private var transcriber: WhisperKitTranscriber = WhisperKitTranscriber.shared
 	private var isTrackingEnabled = true
+	/// On-device live dictation types each confirmed segment as it lands. A remote
+	/// streaming engine only tracks here and pastes once at stop, through the
+	/// recipe processor. See WHI-58.
+	private let typesConfirmedText: Bool
 
-	init() {
+	init(typesConfirmedText: Bool = true) {
+		self.typesConfirmedText = typesConfirmedText
 		setupTranscriberCallback()
 	}
 
@@ -38,15 +43,20 @@ enum CorrectionCommand {
 		}
 	}
 
+	/// `trackedWords` is kept up to date whether or not this tracker types, since
+	/// the correction commands below (`processCorrectionCommand`/`executeCorrection`)
+	/// index into it.
 	private func handleConfirmedTextChange(_ fullText: String) {
 		guard isTrackingEnabled else { return }
 		let newContent = extractNewContent(from: fullText)
 		if !newContent.isEmpty {
 			trackWords(from: newContent)
-			// Queued synchronously so anything inserted after it, like the auto-submit key, lands after it
-			TextInserter.shared.insert(" " + newContent, context: .liveSegment)
+			if typesConfirmedText {
+				// Queued synchronously so anything inserted after it, like the auto-submit key, lands after it
+				TextInserter.shared.insert(" " + newContent, context: .liveSegment)
+			}
 		} else {
-			logger.debug("No new content to paste")
+			logger.debug("No new content to track")
 		}
 	}
 

@@ -11,10 +11,10 @@ If keys are compromised or need rotation:
 
 ```bash
 # Generate new keypair (saves to macOS Keychain)
-./build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys
+./Packages/Sparkle/bin/generate_keys
 
 # Export private key
-./build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys -x sparkle_key.txt
+./Packages/Sparkle/bin/generate_keys -x sparkle_key.txt
 
 # Update GitHub secret
 gh secret set SPARKLE_PRIVATE_KEY < sparkle_key.txt
@@ -28,7 +28,7 @@ Then update `SUPublicEDKey` in `Info.plist` with the new public key shown in ter
 ## View Existing Public Key
 
 ```bash
-./build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys -p
+./Packages/Sparkle/bin/generate_keys -p
 ```
 
 ## Notes

@@ -1,7 +1,11 @@
 import AppKit
+import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {
 	case general
+	case servers
+	case account
+	case recipes
 	case textInsertion
 	case storage
 	case liveTranscription
@@ -9,7 +13,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	case history
 	case automation
 	case benchmark
-	case postProcessing
 	case debug
 
 	var id: String { rawValue }
@@ -17,6 +20,9 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	func title(bundle: Bundle = .main) -> String {
 		switch self {
 		case .general: return String(localized: "General", bundle: bundle)
+		case .servers: return String(localized: "Servers", bundle: bundle)
+		case .account: return String(localized: "Account", bundle: bundle)
+		case .recipes: return String(localized: "Recipes", bundle: bundle)
 		case .textInsertion: return String(localized: "Text Insertion", bundle: bundle)
 		case .storage: return String(localized: "Storage & Downloads", bundle: bundle)
 		case .liveTranscription: return String(localized: "Live Transcription", bundle: bundle)
@@ -24,7 +30,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 		case .history: return String(localized: "History", bundle: bundle)
 		case .automation: return String(localized: "Automation", bundle: bundle)
 		case .benchmark: return String(localized: "Benchmark", bundle: bundle)
-		case .postProcessing: return String(localized: "Post-Processing", bundle: bundle)
 		case .debug: return String(localized: "Debug", bundle: bundle)
 		}
 	}
@@ -32,6 +37,9 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 	var systemImage: String {
 		switch self {
 		case .general: return "gear"
+		case .servers: return "server.rack"
+		case .account: return "person.crop.circle"
+		case .recipes: return "command"
 		case .textInsertion: return "text.cursor"
 		case .storage: return "internaldrive"
 		case .liveTranscription: return "waveform"
@@ -39,12 +47,64 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 		case .history: return "clock.arrow.circlepath"
 		case .automation: return "bolt.horizontal"
 		case .benchmark: return "speedometer"
-		case .postProcessing: return "wand.and.stars"
 		case .debug: return "ladybug"
 		}
 	}
 
 	var accessibilityIdentifier: String { "settingsSidebar.\(rawValue)" }
+
+	var sidebarGroup: Int {
+		switch self {
+		case .general, .servers, .account: return 0
+		case .recipes, .textInsertion, .liveTranscription, .fileTranscription, .history: return 1
+		case .storage, .automation, .benchmark, .debug: return 2
+		}
+	}
+
+	var iconColor: Color {
+		switch self {
+		case .general, .debug: return .gray
+		case .servers, .fileTranscription: return .blue
+		case .account, .recipes: return .purple
+		case .textInsertion: return .indigo
+		case .storage, .automation: return .orange
+		case .liveTranscription: return .red
+		case .history: return .green
+		case .benchmark: return .pink
+		}
+	}
+
+	func matches(_ query: String) -> Bool {
+		let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !query.isEmpty else { return true }
+		let keywords: [String] =
+			switch self {
+			case .general:
+				[
+					"Microphone", "Whisper Model", "Recording Control", "Shortcuts & Feedback", "Appearance",
+					"Application", "Language",
+				]
+			case .servers: ["Speech", "LLM server", "Mac Link"]
+			case .account: ["Sign in", "Devices"]
+			case .recipes: ["Clean up", "Shortcut"]
+			case .textInsertion: ["Clipboard", "Auto-Submit"]
+			case .storage: ["WhisperKit Models", "Application Logs"]
+			case .liveTranscription: ["Live Transcription Mode"]
+			case .fileTranscription: ["YouTube", "Transcription Options"]
+			case .history: ["Save transcription history", "Save recordings"]
+			case .automation: ["Remote Control", "Launchers", "Command Line"]
+			case .benchmark: ["RTF Benchmark"]
+			case .debug: ["Logging"]
+			}
+		return ([title()] + keywords.map { NSLocalizedString($0, comment: "") })
+			.contains { $0.localizedStandardContains(query) }
+	}
+
+	/// Post-Processing became the Clean up recipe, so a request for its old pane
+	/// (a saved destination, an automation link) opens Recipes.
+	static func named(_ raw: String) -> SettingsPane? {
+		raw == "postProcessing" ? .recipes : SettingsPane(rawValue: raw)
+	}
 
 	/// Live Transcription and Automation are not supported for regular users yet, so they sit
 	/// behind Debug Mode with the Debug pane. The features themselves keep working (URL scheme,

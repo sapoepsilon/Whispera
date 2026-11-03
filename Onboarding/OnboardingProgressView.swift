@@ -5,57 +5,73 @@ struct OnboardingProgressView: View {
 	let totalSteps: Int
 	let stepNames: [String]
 
-	@State private var shimmerOffset: CGFloat = -1
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	/// Seconds for one shimmer sweep, matching the previous repeatForever timing.
+	private static let shimmerPeriod: TimeInterval = 2.0
 
 	var body: some View {
+		// The sweep is a capped schedule rather than a repeatForever on the
+		// gradient's UnitPoint, which CoreAnimation cannot drive. Scoping the
+		// schedule to the one shimmering segment keeps the other four, the label
+		// and the containing VStack out of the per-tick invalidation.
 		VStack(spacing: 6) {
-			GeometryReader { geometry in
-				let gap: CGFloat = 3
-				let totalGaps = CGFloat(totalSteps - 1) * gap
-				let segmentWidth = (geometry.size.width - totalGaps) / CGFloat(totalSteps)
-
-				HStack(spacing: gap) {
-					ForEach(0..<totalSteps, id: \.self) { step in
+			HStack(spacing: 3) {
+				ForEach(0..<totalSteps, id: \.self) { step in
+					TimelineView(
+						.animation(minimumInterval: 1.0 / 30.0, paused: step != currentStep || reduceMotion)
+					) { timeline in
 						RoundedRectangle(cornerRadius: 3)
-							.fill(segmentFill(for: step, width: segmentWidth))
+							.fill(
+								segmentFill(
+									for: step,
+									shimmerOffset: Self.shimmerOffset(at: timeline.date))
+							)
 							.frame(height: 6)
 					}
+					.frame(maxWidth: .infinity)
 				}
 			}
 			.frame(height: 6)
-			.animation(.spring(duration: 0.4, bounce: 0.15), value: currentStep)
+			.animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: currentStep)
 
 			if currentStep < stepNames.count {
 				Text(stepNames[currentStep])
-					.font(.system(.caption2, design: .rounded))
+					.font(.system(.caption, design: .rounded))
 					.foregroundColor(.secondary)
 					.animation(.none, value: currentStep)
 			}
 		}
-		.onAppear {
-			withAnimation(.linear(duration: 2.0).repeatForever(autoreverses: false)) {
-				shimmerOffset = 2
-			}
-		}
+		.accessibilityElement(children: .ignore)
+		.accessibilityLabel(currentStep < stepNames.count ? stepNames[currentStep] : "")
+		.accessibilityValue(Text("Step \(currentStep + 1) of \(totalSteps)"))
 	}
 
-	private func segmentFill(for step: Int, width: CGFloat) -> some ShapeStyle {
-		if step < currentStep {
-			return AnyShapeStyle(Color.blue)
+	private static func shimmerOffset(at date: Date) -> CGFloat {
+		let phase = date.timeIntervalSinceReferenceDate
+			.truncatingRemainder(dividingBy: shimmerPeriod) / shimmerPeriod
+		// same -1 ... 2 sweep the animation used
+		return -1 + CGFloat(phase) * 3
+	}
+
+	// hoisted: Color resolves at draw time, so these still track light/dark
+	private static let completedFill = AnyShapeStyle(Color.blue)
+	private static let upcomingFill = AnyShapeStyle(Color.gray.opacity(0.15))
+	private static let shimmerColors: [Color] = [.blue, .blue.opacity(0.6), .blue]
+
+	private func segmentFill(for step: Int, shimmerOffset: CGFloat) -> AnyShapeStyle {
+		if step < currentStep || (step == currentStep && reduceMotion) {
+			return Self.completedFill
 		} else if step == currentStep {
 			return AnyShapeStyle(
 				LinearGradient(
-					colors: [
-						Color.blue,
-						Color.blue.opacity(0.6),
-						Color.blue,
-					],
+					colors: Self.shimmerColors,
 					startPoint: UnitPoint(x: shimmerOffset, y: 0.5),
 					endPoint: UnitPoint(x: shimmerOffset + 0.5, y: 0.5)
 				)
 			)
 		} else {
-			return AnyShapeStyle(Color.gray.opacity(0.15))
+			return Self.upcomingFill
 		}
 	}
 }

@@ -178,12 +178,14 @@ struct ShortcutOptionsView: View {
 // button styles; rehomed here after the menu-bar redesign removed its popover
 // consumers, leaving this onboarding Cancel action as the sole user.
 struct TertiaryButtonStyle: ButtonStyle {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
 	func makeBody(configuration: Configuration) -> some View {
 		configuration.label
 			.font(.system(.caption, design: .rounded))
 			.foregroundColor(.secondary)
 			.opacity(configuration.isPressed ? 0.7 : 1.0)
-			.scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-			.animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+			.scaleEffect(configuration.isPressed && !reduceMotion ? Motion.pressScale : 1.0)
+			.animation(reduceMotion ? nil : Motion.press, value: configuration.isPressed)
 	}
 }

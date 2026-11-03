@@ -1,6 +1,6 @@
-# Mac Whisper Design Language
+# Whispera Design Language
 
-A comprehensive design system for the Mac Whisper speech recognition application, emphasizing clarity, accessibility, and macOS platform conventions.
+A comprehensive design system for the Whispera speech recognition application, emphasizing clarity, accessibility, and macOS platform conventions.
 
 ## Design Principles
 
@@ -56,7 +56,7 @@ A comprehensive design system for the Mac Whisper speech recognition application
 - **System Default**: Falls back to SF Pro on macOS
 
 ### Text Hierarchy
-- **Title**: `.title2` + `.semibold` - Main headings (e.g., "Mac Whisper")
+- **Title**: `.title2` + `.semibold` - Main headings (e.g., "Whispera")
 - **Headline**: `.headline` - Section titles, primary labels
 - **Body**: `.body` - Main content, button labels
 - **Caption**: `.caption` - Secondary information, descriptions
@@ -68,7 +68,7 @@ A comprehensive design system for the Mac Whisper speech recognition application
 .fontWeight(.semibold)
 
 // Settings labels
-.font(.headline)
+.font(.body)
 
 // Button text
 .font(.system(.body, design: .rounded, weight: .medium))
@@ -84,9 +84,9 @@ A comprehensive design system for the Mac Whisper speech recognition application
 ## Layout & Spacing
 
 ### Container Dimensions
-- **Menu Bar Popover**: 320pt width, dynamic height
-- **Settings Window**: 400pt × 300pt (compact, no scrolling)
-- **Recording Indicator**: 60pt × 60pt (floating overlay)
+- **Menu Bar Popover**: `PopoverMetrics.width` (344pt), measured height capped to the visible screen
+- **Settings Window**: `SettingsLayout`: a measured sidebar and at least 520pt of detail width; scroll longer panes
+- **Recording Indicator**: measured dictation pill; use `PillSpacing` and `PillTypography`
 
 ### Spacing Scale
 - **Micro**: 4pt - Icon-to-text spacing
@@ -97,7 +97,7 @@ A comprehensive design system for the Mac Whisper speech recognition application
 - **XXL**: 24pt - Major section breaks
 
 ### Padding Standards
-- **Buttons**: 16pt horizontal, 12pt vertical
+- **Buttons**: 16pt horizontal; `ButtonMetrics.height` is the minimum for primary and secondary actions
 - **Cards**: 16-20pt all sides
 - **Windows**: 20pt edges
 - **Settings Rows**: 20pt horizontal, 16pt vertical
@@ -111,7 +111,7 @@ A comprehensive design system for the Mac Whisper speech recognition application
 // Recording/main action button
 .buttonStyle(PrimaryButtonStyle(isRecording: audioManager.isRecording))
 ```
-- **Height**: 40pt
+- **Height**: at least 40pt; the popover recording action is 60pt
 - **Corner Radius**: 10pt
 - **Background**: Blue/Red based on state
 - **Text**: White, rounded font, medium weight
@@ -122,9 +122,9 @@ A comprehensive design system for the Mac Whisper speech recognition application
 // Settings, navigation buttons
 .buttonStyle(SecondaryButtonStyle())
 ```
-- **Height**: 36pt
-- **Corner Radius**: 8pt
-- **Background**: `.quaternary`
+- **Height**: at least 40pt
+- **Corner Radius**: `ButtonMetrics.cornerRadius` (10pt)
+- **Background**: `Color.gray.opacity(0.2)`
 - **Text**: Primary color, rounded font
 - **Animation**: Scale and opacity on press
 
@@ -253,7 +253,7 @@ A comprehensive design system for the Mac Whisper speech recognition application
 
 ### Don'ts
 - Don't override system appearance preferences
-- Don't use complex layouts that require scrolling
+- Use one scroll container per pane; avoid nesting vertical scroll views
 - Don't rely solely on color to convey information
 - Don't interrupt user workflow with unnecessary modal dialogs
 - Don't use non-standard interaction patterns
@@ -264,7 +264,7 @@ A comprehensive design system for the Mac Whisper speech recognition application
 ```swift
 HStack {
     Text("Setting Name")
-        .font(.headline)
+        .font(.body)
     Spacer()
     // Control (Toggle, Picker, Button)
 }
@@ -297,4 +297,11 @@ if needsAttention {
 }
 ```
 
-This design language ensures Mac Whisper feels native to macOS while maintaining a consistent, accessible, and delightful user experience across all interface components.
+This design language ensures Whispera feels native to macOS while maintaining a consistent, accessible, and delightful user experience across all interface components.
+## Shared tokens and adaptive surfaces
+
+Use `Motion` for structural, reveal, transient, press, and icon changes. Read Reduce Motion at the view: stop looping or scaling motion and pause animation timelines while that preference is on. AppKit window animation uses `Motion.systemReduceMotion`.
+
+Use `AdaptiveMaterialBackground` for translucent windows. `SurfaceContrast` supplies backing opacity for light and dark appearances, Increase Contrast, and Reduce Transparency. Use primary or secondary text with a colored icon for status; preserve a shape or text cue as well as color.
+
+Settings row labels use body text, section headers use headline, and supporting descriptions use secondary caption text. Servers, Recipes, and Account use native grouped forms. Every hidden-label control must retain a meaningful accessibility label.

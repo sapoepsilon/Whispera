@@ -107,6 +107,17 @@ for framework in "$APP_BUNDLE"/Contents/Frameworks/*.framework; do
     "$framework"
 done
 
+# Login items (the Mac link helper) are nested apps: signed on their own, before the app that
+# embeds them, or the app's signature seals an unsigned bundle and notarization refuses it.
+for login_item in "$APP_BUNDLE"/Contents/Library/LoginItems/*.app; do
+  [ -e "$login_item" ] || continue
+  echo "  Signing login item: $(basename "$login_item")"
+  codesign --force --options runtime \
+    --sign "$DEVELOPER_ID" \
+    $KEYCHAIN_PARAM \
+    "$login_item"
+done
+
 echo "  Signing main app bundle..."
 codesign --force --options runtime \
   --entitlements "${APP_NAME}.entitlements" \
@@ -219,85 +230,9 @@ if [ -f "${DIST_PATH}/${APP_NAME}.dmg" ]; then
     echo "📦 Created versioned DMG: ${DMG_VERSIONED}"
 fi
 
-# Generate Sparkle signature if private key is available
-if [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
-    echo "🔐 Generating Sparkle EdDSA signature..."
-
-    # Write private key to temp file, removed on every exit path
-    SPARKLE_KEY_FILE=$(mktemp)
-    trap 'rm -f "$SPARKLE_KEY_FILE"' EXIT
-    echo "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_KEY_FILE"
-
-    # Find Sparkle sign_update tool
-    SIGN_UPDATE=""
-    for path in \
-        "./build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
-        "$(find ~/Library/Developer/Xcode/DerivedData -name 'sign_update' -type f 2>/dev/null | head -1)"; do
-        if [ -f "$path" ]; then
-            SIGN_UPDATE="$path"
-            break
-        fi
-    done
-
-		if [ -n "$SIGN_UPDATE" ]; then
-			# Sign the versioned DMG
-			SIGNATURE=$("$SIGN_UPDATE" "${DIST_PATH}/${DMG_VERSIONED}" -f "$SPARKLE_KEY_FILE" | tr -d '\r\n')
-			# Every Sparkle client rejects an enclosure without an EdDSA signature, so an
-			# unsigned appcast must never be written, let alone published
-			if ! printf '%s' "$SIGNATURE" | grep -Eq '^sparkle:edSignature="[A-Za-z0-9+/=]+" length="[0-9]+"$'; then
-				echo "❌ Sparkle sign_update did not produce a signature: '${SIGNATURE}'"
-				exit 1
-			fi
-			echo "✅ Sparkle signature generated"
-
-        # Sparkle must not offer the update to a macOS the app cannot launch on
-        MINIMUM_SYSTEM=$(/usr/libexec/PlistBuddy -c "Print LSMinimumSystemVersion" "${DIST_PATH}/${APP_NAME}.app/Contents/Info.plist")
-        if [ -z "$MINIMUM_SYSTEM" ]; then
-            echo "❌ LSMinimumSystemVersion missing from the built app"
-            exit 1
-        fi
-
-        # Get file size
-        FILE_SIZE=$(stat -f%z "${DIST_PATH}/${DMG_VERSIONED}")
-
-        # Generate appcast.xml
-        DATE=$(date -R)
-        DOWNLOAD_URL="https://github.com/sapoepsilon/Whispera/releases/download/v${VERSION}/${DMG_VERSIONED}"
-
-        cat > appcast.xml << EOF
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <channel>
-    <title>Whispera Updates</title>
-    <link>https://github.com/sapoepsilon/Whispera/releases</link>
-    <description>Most recent updates to Whispera</description>
-    <language>en</language>
-    <item>
-      <title>Version ${VERSION}</title>
-      <pubDate>${DATE}</pubDate>
-      <sparkle:version>${BUILD}</sparkle:version>
-      <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>${MINIMUM_SYSTEM}</sparkle:minimumSystemVersion>
-      <enclosure url="${DOWNLOAD_URL}"
-                 ${SIGNATURE}
-                 type="application/octet-stream"/>
-    </item>
-  </channel>
-</rss>
-EOF
-        echo "✅ Appcast generated: appcast.xml"
-        cat appcast.xml
-    else
-        echo "❌ Sparkle sign_update tool not found; the appcast cannot be signed"
-        exit 1
-    fi
-
-    # Clean up key file
-    rm -f "$SPARKLE_KEY_FILE"
-    trap - EXIT
-else
-    echo "⚠️ SPARKLE_PRIVATE_KEY not set, skipping Sparkle signing"
-fi
+# The Sparkle signature and appcast are made by release.yml after this script, with the verified
+# copy of sign_update; the private key never enters this script's environment
+# (scripts/write-appcast.sh).
 
 echo ""
 echo "🎯 Ready for GitHub release!"

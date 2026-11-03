@@ -576,17 +576,16 @@ struct HistoryRetranscriptionTests {
 		try #require(say.terminationStatus == 0)
 
 		let store = TranscriptionHistoryStore(directory: directory, defaults: makeDefaults())
-		let prompt = PostProcessingPrompt(id: "shout", name: "Shout", template: "${output}")
+		let shout = Recipe(name: "Shout", steps: [RecipeStep(config: LLMStepConfig(prompt: "{{input}}"))])
 		let entry = try #require(
 			store.record(
 				text: "stale", audio: .file(spoken), source: .dictation, modelName: nil, language: nil,
-				postProcessing: HistoryPostProcessing(
-					PostProcessingRun(prompt: prompt, outcome: .processed("STALE")))))
+				postProcessing: HistoryPostProcessing(recipe: shout, outcome: .processed("STALE"))))
 
 		let transcriber = WhisperKitTranscriber.shared
 		try await transcriber.waitForReadyForTranscription(timeoutSeconds: 240)
 		try await store.retranscribe(entry, transcriber: transcriber, enableTranslation: false) { input in
-			PostProcessingRun(prompt: prompt, outcome: .processed(input.uppercased()))
+			HistoryPostProcessing(recipe: shout, outcome: .processed(input.uppercased()))
 		}
 
 		#expect(entry.rawText?.localizedCaseInsensitiveContains("fox") == true, "Got: \(entry.rawText ?? "nil")")
@@ -598,29 +597,30 @@ struct HistoryRetranscriptionTests {
 
 // MARK: - Post-processed history
 
-private let cleanupPrompt = PostProcessingPrompt(id: "cleanup", name: "Clean up", template: "Fix: ${output}")
+private let cleanupRecipe = Recipe(
+	name: "Clean up", steps: [RecipeStep(config: LLMStepConfig(prompt: "Fix: {{input}}"))])
 
-private func run(_ outcome: PostProcessingOutcome) -> PostProcessingRun {
-	PostProcessingRun(prompt: cleanupPrompt, outcome: outcome)
+private func run(_ outcome: RecipeRunOutcome?) -> HistoryPostProcessing {
+	HistoryPostProcessing(recipe: cleanupRecipe, outcome: outcome)
 }
 
 struct HistoryPostProcessingMappingTests {
 	@Test func processedRunKeepsTextAndPrompt() {
-		let record = HistoryPostProcessing(run(.processed("Hello.")))
+		let record = run(.processed("Hello."))
 		#expect(record.processedText == "Hello.")
 		#expect(record.promptName == "Clean up")
-		#expect(record.promptTemplate == "Fix: ${output}")
+		#expect(record.promptTemplate == "Fix: {{input}}")
 		#expect(record.errorMessage == nil)
 	}
 
 	@Test func failedRunKeepsErrorWithoutText() {
-		let record = HistoryPostProcessing(run(.failed(original: "hello", error: "HTTP 500")))
+		let record = run(.failed("HTTP 500"))
 		#expect(record.processedText == nil)
 		#expect(record.errorMessage == "HTTP 500")
 	}
 
 	@Test func skippedRunHasNeitherTextNorError() {
-		let record = HistoryPostProcessing(run(.skipped(original: "")))
+		let record = run(nil)
 		#expect(record.processedText == nil)
 		#expect(record.errorMessage == nil)
 	}
@@ -633,14 +633,14 @@ struct PostProcessedHistoryStoreTests {
 		let entry = try #require(
 			store.record(
 				text: " um hello world ", audio: nil, source: .dictation, modelName: nil, language: nil,
-				postProcessing: HistoryPostProcessing(run(.processed(" Hello, world. ")))))
+				postProcessing: run(.processed(" Hello, world. "))))
 
 		#expect(entry.text == "Hello, world.")
 		#expect(entry.rawText == "um hello world")
 		#expect(entry.transcriptText == "um hello world")
 		#expect(entry.postProcessedText == "Hello, world.")
 		#expect(entry.postProcessPromptName == "Clean up")
-		#expect(entry.postProcessPrompt == "Fix: ${output}")
+		#expect(entry.postProcessPrompt == "Fix: {{input}}")
 		#expect(entry.postProcessRequested)
 		#expect(entry.wasPostProcessed)
 	}
@@ -650,7 +650,7 @@ struct PostProcessedHistoryStoreTests {
 		let entry = try #require(
 			store.record(
 				text: "hello", audio: nil, source: .dictation, modelName: nil, language: nil,
-				postProcessing: HistoryPostProcessing(run(.failed(original: "hello", error: "timeout")))))
+				postProcessing: run(.failed("timeout"))))
 
 		#expect(entry.text == "hello")
 		#expect(entry.rawText == "hello")
@@ -709,7 +709,7 @@ struct PostProcessedHistoryStoreTests {
 			let store = TranscriptionHistoryStore(directory: directory, defaults: defaults)
 			store.record(
 				text: "raw words", audio: nil, source: .dictation, modelName: nil, language: nil,
-				postProcessing: HistoryPostProcessing(run(.processed("Clean words."))))
+				postProcessing: run(.processed("Clean words.")))
 		}
 		let reopened = TranscriptionHistoryStore(directory: directory, defaults: defaults)
 		let entry = try #require(reopened.entries.first)
@@ -724,7 +724,7 @@ struct PostProcessedHistoryStoreTests {
 		let entry = try #require(
 			store.record(
 				text: "first draft", audio: nil, source: .dictation, modelName: nil, language: nil,
-				postProcessing: HistoryPostProcessing(run(.processed("First draft.")))))
+				postProcessing: run(.processed("First draft."))))
 
 		let seen = SeenInputs()
 		try await store.reprocess(entry) { input in
@@ -764,7 +764,7 @@ struct PostProcessedHistoryStoreTests {
 		let entry = try #require(
 			store.record(
 				text: "raw", audio: nil, source: .dictation, modelName: nil, language: nil,
-				postProcessing: HistoryPostProcessing(run(.processed("Processed.")))))
+				postProcessing: run(.processed("Processed."))))
 		store.applyTranscription("again", modelName: nil, language: nil, to: entry)
 		#expect(entry.text == "again")
 		#expect(entry.rawText == nil)
@@ -776,7 +776,7 @@ struct PostProcessedHistoryStoreTests {
 		let store = TranscriptionHistoryStore(directory: makeTempDirectory(), defaults: makeDefaults())
 		store.record(
 			text: "gonna buy apples", audio: nil, source: .dictation, modelName: nil, language: nil,
-			postProcessing: HistoryPostProcessing(run(.processed("I will buy fruit."))))
+			postProcessing: run(.processed("I will buy fruit.")))
 		#expect(TranscriptionHistoryStore.filter(store.entries, query: "gonna", starredOnly: false).count == 1)
 		#expect(TranscriptionHistoryStore.filter(store.entries, query: "fruit", starredOnly: false).count == 1)
 	}

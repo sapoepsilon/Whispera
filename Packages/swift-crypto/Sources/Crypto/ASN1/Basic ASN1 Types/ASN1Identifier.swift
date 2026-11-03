@@ -1,0 +1,162 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the SwiftCrypto open source project
+//
+// Copyright (c) 2019-2020 Apple Inc. and the SwiftCrypto project authors
+// Licensed under Apache License v2.0
+//
+// See LICENSE.txt for license information
+// See CONTRIBUTORS.txt for the list of SwiftCrypto project authors
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+//===----------------------------------------------------------------------===//
+#if CRYPTO_IN_SWIFTPM && !CRYPTO_IN_SWIFTPM_FORCE_BUILD_API
+@_exported import CryptoKit
+#else
+
+#if CRYPTOKIT_NO_ACCESS_TO_FOUNDATION
+import SwiftSystem
+#else
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
+#endif
+
+@available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, macCatalyst 13, visionOS 1.0, *)
+extension ASN1 {
+    /// An `ASN1Identifier` is a representation of the abstract notion of an ASN.1 identifier. Identifiers have a number of properties that relate to both the specific
+    /// tag number as well as the properties of the identifier in the stream.
+    @available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, macCatalyst 13, visionOS 1.0, *)
+    internal struct ASN1Identifier {
+        /// The base tag. In a general ASN.1 implementation we'd need an arbitrary precision integer here as the tag number can be arbitrarily large, but
+        /// we don't need the full generality here.
+        private(set) var baseTag: UInt8
+
+        /// Whether this tag is primitive.
+        var primitive: Bool {
+            return self.baseTag & 0x20 == 0
+        }
+
+        /// Whether this tag is constructed.
+        var constructed: Bool {
+            return !self.primitive
+        }
+
+        enum TagClass {
+            case universal
+            case application
+            case contextSpecific
+            case `private`
+        }
+
+        /// The class of this tag.
+        var tagClass: TagClass {
+            switch self.baseTag >> 6 {
+            case 0x00:
+                return .universal
+            case 0x01:
+                return .application
+            case 0x02:
+                return .contextSpecific
+            case 0x03:
+                return .private
+            default:
+                fatalError("Unreachable")
+            }
+        }
+
+        init(rawIdentifier: UInt8) throws(CryptoKitMetaError) {
+            // We don't support multibyte identifiers, which are signalled when the bottom 5 bits are all 1.
+            guard rawIdentifier & 0x1F != 0x1F else {
+                throw error(CryptoKitASN1Error.invalidFieldIdentifier)
+            }
+
+            self.baseTag = rawIdentifier
+        }
+
+        init(explicitTagWithNumber number: Int, tagClass: TagClass) {
+            precondition(number >= 0)
+            precondition(number < 0x1F)
+
+            self.baseTag = UInt8(number)
+
+            switch tagClass {
+            case .universal:
+                preconditionFailure("Explicit tags may not be universal")
+            case .application:
+                self.baseTag |= 1 << 6
+            case .contextSpecific:
+                self.baseTag |= 2 << 6
+            case .private:
+                self.baseTag |= 3 << 6
+            }
+
+            // Explicit tags are always constructed.
+            self.baseTag |= 0x20
+        }
+
+        init(tagWithNumber number: Int, tagClass: TagClass, constructed: Bool) {
+            precondition(number >= 0)
+            precondition(number < 0x1F)
+
+            self.baseTag = UInt8(number)
+
+            switch tagClass {
+            case .universal:
+                preconditionFailure("Custom tags may not be universal")
+            case .application:
+                self.baseTag |= 1 << 6
+            case .contextSpecific:
+                self.baseTag |= 2 << 6
+            case .private:
+                self.baseTag |= 3 << 6
+            }
+
+            if constructed {
+                self.baseTag |= 0x20
+            }
+        }
+    }
+}
+
+@available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, macCatalyst 13, visionOS 1.0, *)
+extension ASN1.ASN1Identifier {
+    internal static let objectIdentifier = try! ASN1.ASN1Identifier(rawIdentifier: 0x06)
+    internal static let primitiveBitString = try! ASN1.ASN1Identifier(rawIdentifier: 0x03)
+    internal static let primitiveOctetString = try! ASN1.ASN1Identifier(rawIdentifier: 0x04)
+    internal static let integer = try! ASN1.ASN1Identifier(rawIdentifier: 0x02)
+    internal static let sequence = try! ASN1.ASN1Identifier(rawIdentifier: 0x30)
+    internal static let set = try! ASN1.ASN1Identifier(rawIdentifier: 0x31)
+    internal static let null = try! ASN1.ASN1Identifier(rawIdentifier: 0x05)
+    internal static let boolean = try! ASN1.ASN1Identifier(rawIdentifier: 0x01)
+    internal static let enumerated = try! ASN1.ASN1Identifier(rawIdentifier: 0x0a)
+    internal static let primitiveUTF8String = try! ASN1.ASN1Identifier(rawIdentifier: 0x0c)
+    internal static let primitiveNumericString = try! ASN1.ASN1Identifier(rawIdentifier: 0x12)
+    internal static let primitivePrintableString = try! ASN1.ASN1Identifier(rawIdentifier: 0x13)
+    internal static let primitiveTeletexString = try! ASN1.ASN1Identifier(rawIdentifier: 0x14)
+    internal static let primitiveVideotexString = try! ASN1.ASN1Identifier(rawIdentifier: 0x15)
+    internal static let primitiveIA5String = try! ASN1.ASN1Identifier(rawIdentifier: 0x16)
+    internal static let primitiveGraphicString = try! ASN1.ASN1Identifier(rawIdentifier: 0x19)
+    internal static let primitiveVisibleString = try! ASN1.ASN1Identifier(rawIdentifier: 0x1a)
+    internal static let primitiveGeneralString = try! ASN1.ASN1Identifier(rawIdentifier: 0x1b)
+    internal static let primitiveUniversalString = try! ASN1.ASN1Identifier(rawIdentifier: 0x1c)
+    internal static let primitiveBMPString = try! ASN1.ASN1Identifier(rawIdentifier: 0x1e)
+    internal static let generalizedTime = try! ASN1.ASN1Identifier(rawIdentifier: 0x18)
+}
+
+@available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, macCatalyst 13, visionOS 1.0, *)
+extension ASN1.ASN1Identifier: Hashable { }
+
+#if !hasFeature(Embedded)
+@available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, macCatalyst 13, visionOS 1.0, *)
+extension ASN1.ASN1Identifier: CustomStringConvertible {
+    var description: String {
+        return "ASN1Identifier(\(self.baseTag))"
+    }
+}
+#endif
+
+#endif // Linux or !SwiftPM

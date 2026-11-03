@@ -254,6 +254,29 @@
         }
       }
     },
+    "%@ left": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "noch %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "quedan %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ restantes"
+          }
+        }
+      }
+    },
     "%@ to stop": {
       "extractionState": "manual",
       "localizations": {
@@ -273,6 +296,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ pour arrêter"
+          }
+        }
+      }
+    },
+    "%@ token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token „%@“"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeton %@"
           }
         }
       }
@@ -300,6 +346,29 @@
         }
       }
     },
+    "%@ wants to approve secrets on this Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ möchte Geheimnisse auf diesem Mac freigeben"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ quiere aprobar secretos en este Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ souhaite approuver des secrets sur ce Mac"
+          }
+        }
+      }
+    },
     "%lld completed, %lld failed": {
       "extractionState": "manual",
       "localizations": {
@@ -319,6 +388,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld terminés, %lld en échec"
+          }
+        }
+      }
+    },
+    "%lld file • %@ total": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Datei • %@ insgesamt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld archivo • %@ en total"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld fichier • %@ au total"
           }
         }
       }
@@ -783,6 +875,29 @@
         }
       }
     },
+    "A recipe runs an AI step on your dictation when you say its trigger phrase.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein Rezept wendet einen KI-Schritt auf dein Diktat an, wenn du seine Auslösephrase sagst."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Una receta aplica un paso de IA a tu dictado cuando dices su frase de activación."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une recette applique une étape d'IA à votre dictée quand vous dites sa phrase de déclenchement."
+          }
+        }
+      }
+    },
     "A short tap toggles recording; holding past the threshold records until release": {
       "extractionState": "manual",
       "localizations": {
@@ -802,6 +917,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Un appui bref active ou arrête l'enregistrement ; au-delà du seuil, l'enregistrement dure jusqu'au relâchement"
+          }
+        }
+      }
+    },
+    "A token your self-hosted server accepts. It is kept in the Keychain.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein Token, das dein eigener Server akzeptiert. Es wird im Schlüsselbund gespeichert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un token que acepta tu servidor propio. Se guarda en el llavero."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un jeton accepté par votre serveur auto-hébergé. Il est conservé dans le trousseau."
           }
         }
       }
@@ -1009,6 +1147,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Accès à l'accessibilité requis"
+          }
+        }
+      }
+    },
+    "Account": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konto"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuenta"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte"
           }
         }
       }
@@ -1565,6 +1726,75 @@
         }
       }
     },
+    "Agent": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        }
+      }
+    },
+    "Agent (claimed by requester)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent (laut Anfrage)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agente (según quien lo pide)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent (selon le demandeur)"
+          }
+        }
+      }
+    },
+    "Agent and Mac are what the requester claims.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent und Mac sind Angaben des Anfragenden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El agente y el Mac son los que declara el solicitante."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’agent et le Mac sont ceux déclarés par le demandeur."
+          }
+        }
+      }
+    },
     "Alias": {
       "extractionState": "manual",
       "localizations": {
@@ -1726,6 +1956,29 @@
         }
       }
     },
+    "Allow Whispera Link in Login Items to finish turning it on.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erlaube Whispera Link unter Anmeldeobjekte, um es fertig einzuschalten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permite Whispera Link en Ítems de inicio para terminar de activarlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisez Whispera Link dans Ouverture pour terminer l’activation."
+          }
+        }
+      }
+    },
     "Allow whispera:// links": {
       "extractionState": "manual",
       "localizations": {
@@ -1864,6 +2117,29 @@
         }
       }
     },
+    "An iPhone is waiting for you to confirm it in Settings > Account.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein iPhone wartet unter Einstellungen > Konto auf deine Bestätigung."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un iPhone espera tu confirmación en Ajustes > Cuenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un iPhone attend votre confirmation dans Réglages > Compte."
+          }
+        }
+      }
+    },
     "An unknown error occurred": {
       "extractionState": "manual",
       "localizations": {
@@ -1952,6 +2228,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tout point de terminaison compatible OpenAI."
+          }
+        }
+      }
+    },
+    "Any OpenAI-compatible speech-to-text server, such as speaches or whisper.cpp. The base URL ends in /v1.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeder OpenAI-kompatible Spracherkennungsserver, etwa speaches oder whisper.cpp. Die Basis-URL endet auf /v1."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cualquier servidor de voz a texto compatible con OpenAI, como speaches o whisper.cpp. La URL base termina en /v1."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout serveur de reconnaissance vocale compatible OpenAI, comme speaches ou whisper.cpp. L'URL de base se termine par /v1."
           }
         }
       }
@@ -2113,6 +2412,144 @@
           "stringUnit": {
             "state": "translated",
             "value": "Journaux de l'application"
+          }
+        }
+      }
+    },
+    "Approve Secret Requests on This Mac…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geheimnis-Anfragen auf diesem Mac erlauben …"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprobar solicitudes de secretos en este Mac…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser les demandes de secrets sur ce Mac…"
+          }
+        }
+      }
+    },
+    "Approve secret access?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zugriff auf Geheimnis erlauben?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Aprobar el acceso al secreto?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser l’accès au secret ?"
+          }
+        }
+      }
+    },
+    "Approve with Touch ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Touch ID erlauben"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprobar con Touch ID"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser avec Touch ID"
+          }
+        }
+      }
+    },
+    "Approved on your iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf deinem iPhone erlaubt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprobado en tu iPhone."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisé sur votre iPhone."
+          }
+        }
+      }
+    },
+    "Approved with Touch ID.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Touch ID erlaubt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprobado con Touch ID."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisé avec Touch ID."
+          }
+        }
+      }
+    },
+    "Approved.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erlaubt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprobado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisé."
           }
         }
       }
@@ -2646,6 +3083,29 @@
         }
       }
     },
+    "Backend URL": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backend-URL"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL del backend"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL du serveur"
+          }
+        }
+      }
+    },
     "Base (English)": {
       "extractionState": "manual",
       "localizations": {
@@ -2895,6 +3355,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Parcourir pour choisir un fichier à transcrire"
+          }
+        }
+      }
+    },
+    "Browse…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durchsuchen…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Examinar…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parcourir…"
+          }
+        }
+      }
+    },
+    "Built-in": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integriert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integrada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intégrée"
           }
         }
       }
@@ -3290,6 +3796,29 @@
         }
       }
     },
+    "Checking…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird geprüft …"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobando…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérification…"
+          }
+        }
+      }
+    },
     "Chinese Output": {
       "extractionState": "manual",
       "localizations": {
@@ -3424,6 +3953,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Choisissez un dossier de modèle CoreML WhisperKit"
+          }
+        }
+      }
+    },
+    "Choose a model first.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle zuerst ein Modell."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige primero un modelo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez d'abord un modèle."
           }
         }
       }
@@ -3612,6 +4164,52 @@
         }
       }
     },
+    "Clean Up Again": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut „Clean up“ ausführen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a ejecutar «Clean up»"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relancer « Clean up »"
+          }
+        }
+      }
+    },
+    "Clean up failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„Clean up“ fehlgeschlagen: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Clean up» falló: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de « Clean up » : %@"
+          }
+        }
+      }
+    },
     "Clean up the transcript with Apple Intelligence on this Mac before it is pasted. History keeps the original text.": {
       "extractionState": "manual",
       "localizations": {
@@ -3631,6 +4229,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nettoie la transcription avec Apple Intelligence sur ce Mac avant de la coller. L'historique conserve le texte d'origine."
+          }
+        }
+      }
+    },
+    "Clean up with a shortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Kurzbefehl „Clean up“ ausführen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutar «Clean up» con un atajo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer « Clean up » avec un raccourci"
           }
         }
       }
@@ -3842,6 +4463,52 @@
         }
       }
     },
+    "Click to record": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klicken zum Aufnehmen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic para grabar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez pour enregistrer"
+          }
+        }
+      }
+    },
+    "Click to stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klicken zum Stoppen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic para detener"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez pour arrêter"
+          }
+        }
+      }
+    },
     "Click to view all files": {
       "extractionState": "manual",
       "localizations": {
@@ -3861,6 +4528,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cliquez pour voir tous les fichiers"
+          }
+        }
+      }
+    },
+    "Client ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client-ID"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID de cliente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID client"
           }
         }
       }
@@ -3930,6 +4620,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fermer"
+          }
+        }
+      }
+    },
+    "Closed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geschlossen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fermé"
           }
         }
       }
@@ -4187,6 +4900,52 @@
         }
       }
     },
+    "Confirm iPhones": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhones bestätigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar iPhones"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmer des iPhone"
+          }
+        }
+      }
+    },
+    "Connected · %lld models": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbunden · %lld Modelle"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectado · %lld modelos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté · %lld modèles"
+          }
+        }
+      }
+    },
     "Continue": {
       "extractionState": "manual",
       "localizations": {
@@ -4413,6 +5172,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copier"
+          }
+        }
+      }
+    },
+    "Copy Command": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Befehl kopieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar comando"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier la commande"
           }
         }
       }
@@ -4808,6 +5590,144 @@
         }
       }
     },
+    "Couldn't change the Mac link": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Mac-Verbindung konnte nicht geändert werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo cambiar el enlace con el Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de modifier le lien avec le Mac"
+          }
+        }
+      }
+    },
+    "Couldn't confirm the iPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das iPhone konnte nicht bestätigt werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo confirmar el iPhone"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de confirmer l’iPhone"
+          }
+        }
+      }
+    },
+    "Couldn't finish here. Approve with Touch ID or on your iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hier nicht möglich. Erlaube es mit Touch ID oder auf deinem iPhone."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo completar aquí. Apruébalo con Touch ID o en tu iPhone."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de terminer ici. Autorisez avec Touch ID ou sur votre iPhone."
+          }
+        }
+      }
+    },
+    "Couldn't reach %@: %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ist nicht erreichbar: %@."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo conectar con %@: %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre %@ : %@."
+          }
+        }
+      }
+    },
+    "Couldn't reach %@: %@. If the server is running, allow Whispera under System Settings > Privacy & Security > Local Network.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ist nicht erreichbar: %@. Wenn der Server läuft, erlaube Whispera unter Systemeinstellungen > Datenschutz & Sicherheit > Lokales Netzwerk."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo conectar con %@: %@. Si el servidor está en marcha, permite Whispera en Ajustes del Sistema > Privacidad y seguridad > Red local."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre %@ : %@. Si le serveur fonctionne, autorisez Whispera dans Réglages Système > Confidentialité et sécurité > Réseau local."
+          }
+        }
+      }
+    },
+    "Couldn't set up approvals on this Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freigaben auf diesem Mac konnten nicht eingerichtet werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron configurar las aprobaciones en este Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de configurer les autorisations sur ce Mac"
+          }
+        }
+      }
+    },
     "Couldn't switch accelerator": {
       "extractionState": "manual",
       "localizations": {
@@ -5057,6 +5977,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mots personnalisés"
+          }
+        }
+      }
+    },
+    "Custom issuer": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigener Anbieter"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emisor personalizado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Émetteur personnalisé"
           }
         }
       }
@@ -5452,6 +6395,98 @@
         }
       }
     },
+    "Denied on your iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf deinem iPhone abgelehnt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denegado en tu iPhone."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refusé sur votre iPhone."
+          }
+        }
+      }
+    },
+    "Denied with Touch ID.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Touch ID abgelehnt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denegado con Touch ID."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refusé avec Touch ID."
+          }
+        }
+      }
+    },
+    "Denied.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abgelehnt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denegado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refusé."
+          }
+        }
+      }
+    },
+    "Deny": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ablehnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denegar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refuser"
+          }
+        }
+      }
+    },
     "Desktop": {
       "extractionState": "manual",
       "localizations": {
@@ -5498,6 +6533,29 @@
         }
       }
     },
+    "Devices": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geräte"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dispositivos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appareils"
+          }
+        }
+      }
+    },
     "Dictate": {
       "extractionState": "manual",
       "localizations": {
@@ -5517,6 +6575,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dicter"
+          }
+        }
+      }
+    },
+    "Dictate with this shortcut to run Clean up on that dictation only. Always uses text mode.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit diesem Kurzbefehl diktieren, um „Clean up“ nur auf dieses Diktat anzuwenden. Nutzt immer den Textmodus."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dicta con este atajo para aplicar «Clean up» solo a ese dictado. Siempre usa el modo de texto."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictez avec ce raccourci pour appliquer « Clean up » à cette dictée uniquement. Utilise toujours le mode texte."
           }
         }
       }
@@ -6119,6 +7200,29 @@
         }
       }
     },
+    "Drop a file on the menu, or click to browse": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ziehe eine Datei auf das Menü oder klicke, um sie auszuwählen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrastra un archivo al menú o haz clic para buscarlo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déposez un fichier sur le menu ou cliquez pour le choisir"
+          }
+        }
+      }
+    },
     "Drop audio/video files or URLs here": {
       "extractionState": "manual",
       "localizations": {
@@ -6257,6 +7361,29 @@
         }
       }
     },
+    "Edit": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bearbeiten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifier"
+          }
+        }
+      }
+    },
     "Enable post-processing": {
       "extractionState": "manual",
       "localizations": {
@@ -6326,6 +7453,29 @@
         }
       }
     },
+    "Engine": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Engine"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Motor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moteur"
+          }
+        }
+      }
+    },
     "English only; the Source Language setting is ignored.": {
       "extractionState": "manual",
       "localizations": {
@@ -6368,6 +7518,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Saisissez une URL YouTube..."
+          }
+        }
+      }
+    },
+    "Enter a valid backend URL.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gib eine gültige Backend-URL ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduce una URL de backend válida."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez une URL de serveur valide."
+          }
+        }
+      }
+    },
+    "Enter the server's base URL first.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gib zuerst die Basis-URL des Servers ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribe primero la URL base del servidor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez d'abord l'URL de base du serveur."
           }
         }
       }
@@ -7269,6 +8465,29 @@
         }
       }
     },
+    "Final pass": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abschlussdurchgang"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pasada final"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passe finale"
+          }
+        }
+      }
+    },
     "Find Whispera in your menu bar": {
       "extractionState": "manual",
       "localizations": {
@@ -7311,6 +8530,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Erreur du Finder"
+          }
+        }
+      }
+    },
+    "Fingerprint": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fingerabdruck"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Huella"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empreinte"
           }
         }
       }
@@ -8074,6 +9316,29 @@
         }
       }
     },
+    "History keeps recent transcripts on this Mac. Audio is saved only if enabled. Change it in Settings > History.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Verlauf speichert die letzten Transkripte auf diesem Mac. Audio wird nur gespeichert, wenn du es aktivierst. Ändere dies unter Einstellungen > Verlauf."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El historial guarda las transcripciones recientes en este Mac. El audio solo se guarda si lo activas. Cámbialo en Ajustes > Historial."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’historique garde les transcriptions récentes sur ce Mac. L’audio n’est enregistré que si vous l’activez. Modifiez ce choix dans Réglages > Historique."
+          }
+        }
+      }
+    },
     "Hold Threshold": {
       "extractionState": "manual",
       "localizations": {
@@ -8116,6 +9381,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Maintenir ou basculer"
+          }
+        }
+      }
+    },
+    "Hosted sign-in isn't set up in this build. Use a custom issuer or a server token.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die gehostete Anmeldung ist in diesem Build nicht eingerichtet. Verwende einen eigenen Anbieter oder ein Server-Token."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El inicio de sesión alojado no está configurado en esta versión. Usa un emisor personalizado o un token del servidor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion hébergée n’est pas configurée dans cette version. Utilisez un émetteur personnalisé ou un jeton du serveur."
           }
         }
       }
@@ -8350,6 +9638,29 @@
         }
       }
     },
+    "Input device and post-dictation action": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingabegerät und Aktion nach dem Diktat"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dispositivo de entrada y acción tras el dictado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Périphérique d’entrée et action après la dictée"
+          }
+        }
+      }
+    },
     "Insert Text By": {
       "extractionState": "manual",
       "localizations": {
@@ -8557,6 +9868,75 @@
         }
       }
     },
+    "Issuer (https://auth.example.com)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anbieter (https://auth.example.com)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emisor (https://auth.example.com)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Émetteur (https://auth.example.com)"
+          }
+        }
+      }
+    },
+    "It joined your account. It can't reach this Mac until you confirm it here.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es ist deinem Konto beigetreten. Es kann diesen Mac erst erreichen, wenn du es hier bestätigst."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se unió a tu cuenta. No puede acceder a este Mac hasta que lo confirmes aquí."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il a rejoint votre compte. Il ne peut pas accéder à ce Mac tant que vous ne l’avez pas confirmé ici."
+          }
+        }
+      }
+    },
+    "Its keys don't match what the server lists. Don't trust this device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seine Schlüssel stimmen nicht mit den Angaben des Servers überein. Vertraue diesem Gerät nicht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sus claves no coinciden con las que muestra el servidor. No confíes en este dispositivo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses clés ne correspondent pas à celles du serveur. Ne faites pas confiance à cet appareil."
+          }
+        }
+      }
+    },
     "Keep": {
       "extractionState": "manual",
       "localizations": {
@@ -8737,6 +10117,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Garder ouvert pendant"
+          }
+        }
+      }
+    },
+    "Keep the Mac link running when Whispera is quit": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac-Verbindung aktiv halten, wenn Whispera beendet ist"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantener el enlace con el Mac activo cuando Whispera está cerrado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Garder le lien avec le Mac actif quand Whispera est fermé"
           }
         }
       }
@@ -8971,6 +10374,29 @@
         }
       }
     },
+    "LLM server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LLM-Server"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor LLM"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur LLM"
+          }
+        }
+      }
+    },
     "Language": {
       "extractionState": "manual",
       "localizations": {
@@ -9109,6 +10535,29 @@
         }
       }
     },
+    "Larger models are more accurate but slower and use more memory. You can change this later in Settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Größere Modelle sind genauer, aber langsamer und brauchen mehr Arbeitsspeicher. Du kannst das später in den Einstellungen ändern."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los modelos más grandes son más precisos, pero más lentos y usan más memoria. Puedes cambiarlo más tarde en Ajustes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les modèles plus grands sont plus précis, mais plus lents et utilisent plus de mémoire. Vous pourrez changer cela plus tard dans les Réglages."
+          }
+        }
+      }
+    },
     "Last Message": {
       "extractionState": "manual",
       "localizations": {
@@ -9174,6 +10623,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dernière dictée"
+          }
+        }
+      }
+    },
+    "Last recipe run failed: %@ — used the raw transcript": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte Rezeptausführung fehlgeschlagen: %@ – das unveränderte Transkript wurde verwendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La última ejecución de la receta falló: %@ — se usó la transcripción original"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La dernière exécution de la recette a échoué : %@ — la transcription brute a été utilisée"
+          }
+        }
+      }
+    },
+    "Last used": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zuletzt verwendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Último usado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dernier utilisé"
           }
         }
       }
@@ -9615,6 +11110,52 @@
         }
       }
     },
+    "Live transcription is off, so the recording is transcribed after you stop speaking.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live-Transkription ist ausgeschaltet. Die Aufnahme wird transkribiert, sobald du aufhörst zu sprechen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcripción en directo está desactivada: la grabación se transcribe cuando dejas de hablar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcription en direct est désactivée : l’enregistrement est transcrit quand vous avez fini de parler."
+          }
+        }
+      }
+    },
+    "Live transcription is on, so words appear while you speak.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live-Transkription ist eingeschaltet. Wörter erscheinen, während du sprichst."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcripción en directo está activada: las palabras aparecen mientras hablas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcription en direct est activée : les mots apparaissent pendant que vous parlez."
+          }
+        }
+      }
+    },
     "Load": {
       "extractionState": "manual",
       "localizations": {
@@ -9703,6 +11244,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Charger les notes de version"
+          }
+        }
+      }
+    },
+    "Load Starter Set": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Startpaket laden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargar recetas iniciales"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charger les recettes de départ"
           }
         }
       }
@@ -10117,6 +11681,98 @@
           "stringUnit": {
             "state": "translated",
             "value": "Basse (128 kbit/s)"
+          }
+        }
+      }
+    },
+    "Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        }
+      }
+    },
+    "Mac (claimed by requester)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac (laut Anfrage)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac (según quien lo pide)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac (selon le demandeur)"
+          }
+        }
+      }
+    },
+    "Mac Link": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac-Verbindung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enlace con el Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lien avec le Mac"
+          }
+        }
+      }
+    },
+    "Mac fingerprint: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac-Fingerabdruck: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Huella del Mac: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empreinte du Mac : %@"
           }
         }
       }
@@ -10995,6 +12651,29 @@
         }
       }
     },
+    "More accurate paste, adds a short wait after you stop.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genauerer Text, mit kurzer Wartezeit nach dem Stoppen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texto más preciso, con una breve espera al detener."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texte plus précis, avec une courte attente après l'arrêt."
+          }
+        }
+      }
+    },
     "Mute Audio While Recording": {
       "extractionState": "manual",
       "localizations": {
@@ -11202,6 +12881,29 @@
         }
       }
     },
+    "New": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neu"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nueva"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle"
+          }
+        }
+      }
+    },
     "New dictations are no longer saved. Delete the %lld entries already in history, including starred ones and their recordings?": {
       "extractionState": "manual",
       "localizations": {
@@ -11386,6 +13088,29 @@
         }
       }
     },
+    "No app took the paste, so the transcript was left on the clipboard. Click where the text should go and press ⌘V.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine App hat das Einfügen angenommen, daher bleibt das Transkript in der Zwischenablage. Klicke an die gewünschte Stelle und drücke ⌘V."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguna app recibió el pegado, así que la transcripción quedó en el portapapeles. Haz clic donde debe ir el texto y pulsa ⌘V."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune app n'a reçu le collage, la transcription est donc restée dans le presse-papiers. Cliquez à l'endroit voulu et appuyez sur ⌘V."
+          }
+        }
+      }
+    },
     "No app took the paste. Secure Input was on, so the text was not kept on the clipboard.": {
       "extractionState": "manual",
       "localizations": {
@@ -11405,6 +13130,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucune app n'a reçu le collage. La saisie sécurisée était active, le texte n'a donc pas été conservé dans le presse-papiers."
+          }
+        }
+      }
+    },
+    "No devices yet. Sign in on your iPhone with the same account.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch keine Geräte. Melde dich auf deinem iPhone mit demselben Konto an."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no hay dispositivos. Inicia sesión en tu iPhone con la misma cuenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun appareil pour l’instant. Connectez-vous sur votre iPhone avec le même compte."
           }
         }
       }
@@ -11823,6 +13571,29 @@
         }
       }
     },
+    "No trigger phrase": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Auslösephrase"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin frase de activación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune phrase de déclenchement"
+          }
+        }
+      }
+    },
     "No updates downloaded": {
       "extractionState": "manual",
       "localizations": {
@@ -11892,6 +13663,29 @@
         }
       }
     },
+    "Not Now": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht jetzt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora no"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus tard"
+          }
+        }
+      }
+    },
     "Not a dictation command": {
       "extractionState": "manual",
       "localizations": {
@@ -11934,6 +13728,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Indisponible avec un raccourci à une seule touche : la solution de secours nécessite une combinaison de touches."
+          }
+        }
+      }
+    },
+    "Not available yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch nicht verfügbar"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no disponible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore disponible"
           }
         }
       }
@@ -11984,6 +13801,29 @@
         }
       }
     },
+    "Not signed in": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht angemeldet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin sesión iniciada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non connecté"
+          }
+        }
+      }
+    },
     "Number of words to show in the transcription window (1-200+)": {
       "extractionState": "manual",
       "localizations": {
@@ -12003,6 +13843,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nombre de mots dans la fenêtre de transcription (1-200+)"
+          }
+        }
+      }
+    },
+    "Numbers Match — Confirm with Touch ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nummern stimmen überein – mit Touch ID bestätigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los números coinciden: confirmar con Touch ID"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les numéros correspondent — Confirmer avec Touch ID"
           }
         }
       }
@@ -12099,6 +13962,29 @@
         }
       }
     },
+    "Open": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geöffnet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abierto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvert"
+          }
+        }
+      }
+    },
     "Open Accessibility Settings": {
       "extractionState": "manual",
       "localizations": {
@@ -12187,6 +14073,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvrir les réglages Clavier"
+          }
+        }
+      }
+    },
+    "Open Login Items": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmeldeobjekte öffnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir Ítems de inicio"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir les éléments d’ouverture"
           }
         }
       }
@@ -12352,6 +14261,29 @@
         }
       }
     },
+    "Operation": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorgang"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Operación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opération"
+          }
+        }
+      }
+    },
     "Optimized Compute Configuration": {
       "extractionState": "manual",
       "localizations": {
@@ -12394,6 +14326,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Optimisé pour les Mac avec puce Apple et Intel"
+          }
+        }
+      }
+    },
+    "Optional": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opcional"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Facultatif"
           }
         }
       }
@@ -12486,6 +14441,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transcription d'origine, post-traitée avec %@"
+          }
+        }
+      }
+    },
+    "Original transcript, rewritten by %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Originaltranskript, umgeschrieben von %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcripción original, reescrita por %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription d'origine, réécrite par %@"
+          }
+        }
+      }
+    },
+    "Other": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Andere"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Otro"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autre"
           }
         }
       }
@@ -12697,6 +14698,52 @@
         }
       }
     },
+    "Paste (⌘V)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einsetzen (⌘V)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pegar (⌘V)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coller (⌘V)"
+          }
+        }
+      }
+    },
+    "Paste a transcript": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkript einfügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pega una transcripción"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collez une transcription"
+          }
+        }
+      }
+    },
     "Paste key": {
       "extractionState": "manual",
       "localizations": {
@@ -12877,6 +14924,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pilule"
+          }
+        }
+      }
+    },
+    "Pin it once in Terminal; bws-touchid asks for Touch ID and the last 4 characters of the key.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einmal im Terminal hinterlegen; bws-touchid fragt nach Touch ID und den letzten 4 Zeichen des Schlüssels."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regístralo una vez en Terminal; bws-touchid pide Touch ID y los últimos 4 caracteres de la clave."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Épinglez-le une fois dans Terminal ; bws-touchid demande Touch ID et les 4 derniers caractères de la clé."
           }
         }
       }
@@ -13153,6 +15223,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Préparation du chargement des modèles Whisper..."
+          }
+        }
+      }
+    },
+    "Preset": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorlage"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preajuste"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Préréglage"
           }
         }
       }
@@ -13594,6 +15687,29 @@
         }
       }
     },
+    "Private by default": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standardmäßig privat"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privado por defecto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privé par défaut"
+          }
+        }
+      }
+    },
     "Private by design": {
       "extractionState": "manual",
       "localizations": {
@@ -13778,6 +15894,29 @@
         }
       }
     },
+    "Project": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projekt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proyecto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projet"
+          }
+        }
+      }
+    },
     "Prompt": {
       "extractionState": "manual",
       "localizations": {
@@ -13847,6 +15986,52 @@
         }
       }
     },
+    "Push: generic": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mitteilung: allgemein"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aviso: genérico"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notification : générique"
+          }
+        }
+      }
+    },
+    "Push: named": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mitteilung: mit Details"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aviso: con detalles"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notification : détaillée"
+          }
+        }
+      }
+    },
     "Puts the transcript on the clipboard and presses Cmd-V": {
       "extractionState": "manual",
       "localizations": {
@@ -13866,6 +16051,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Place la transcription dans le presse-papiers et appuie sur Cmd-V"
+          }
+        }
+      }
+    },
+    "Puts the transcript on the clipboard and presses ⌘V": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legt das Transkript in die Zwischenablage und drückt ⌘V"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copia la transcripción al portapapeles y pulsa ⌘V"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Place la transcription dans le presse-papiers et appuie sur ⌘V"
           }
         }
       }
@@ -14146,6 +16354,29 @@
         }
       }
     },
+    "Read token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lese-Token"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token de lectura"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeton de lecture"
+          }
+        }
+      }
+    },
     "Ready": {
       "extractionState": "manual",
       "localizations": {
@@ -14257,6 +16488,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reçoit la transcription sur l'entrée standard et dans WHISPERA_TRANSCRIPT. Whispera exécute une copie privée du script, donc $0 est la copie : elle est lancée dans le dossier du script, WHISPERA_SCRIPT_PATH contient le chemin d'origine et WHISPERA_SCRIPT_DIR son dossier. Choisissez de nouveau le script après l'avoir modifié."
+          }
+        }
+      }
+    },
+    "Recipe failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rezept fehlgeschlagen: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La receta falló: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de la recette : %@"
+          }
+        }
+      }
+    },
+    "Recipes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rezepte"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recetas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recettes"
           }
         }
       }
@@ -14675,6 +16952,29 @@
         }
       }
     },
+    "Refresh the model list": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modellliste aktualisieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizar la lista de modelos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualiser la liste des modèles"
+          }
+        }
+      }
+    },
     "Refusing to send your API key to %@ over plain http. Use an https:// base URL, or a server on this Mac or your local network.": {
       "extractionState": "manual",
       "localizations": {
@@ -14717,6 +17017,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Whispera n'enverra pas votre transcription à %@ en http non chiffré. Utilisez une URL de base https:// ou un serveur sur ce Mac ou sur votre réseau local."
+          }
+        }
+      }
+    },
+    "Register whispera-mac://auth/callback as a redirect URI with your provider.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trage whispera-mac://auth/callback bei deinem Anbieter als Weiterleitungs-URI ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registra whispera-mac://auth/callback como URI de redirección en tu proveedor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrez whispera-mac://auth/callback comme URI de redirection chez votre fournisseur."
           }
         }
       }
@@ -15062,6 +17385,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Remplacer la clé enregistrée"
+          }
+        }
+      }
+    },
+    "Request": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anfrage"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solicitud"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requête"
           }
         }
       }
@@ -15457,6 +17803,52 @@
         }
       }
     },
+    "Revoke": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widerrufen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revocar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Révoquer"
+          }
+        }
+      }
+    },
+    "Revoked": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widerrufen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revocado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Révoqué"
+          }
+        }
+      }
+    },
     "Right ⇧": {
       "extractionState": "manual",
       "localizations": {
@@ -15618,6 +18010,52 @@
         }
       }
     },
+    "Run Clean up": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„Clean up“ ausführen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutar «Clean up»"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer « Clean up »"
+          }
+        }
+      }
+    },
+    "Run recipes on dictation": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rezepte beim Diktieren ausführen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutar recetas al dictar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exécuter les recettes pendant la dictée"
+          }
+        }
+      }
+    },
     "Run script": {
       "extractionState": "manual",
       "localizations": {
@@ -15637,6 +18075,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Exécuter un script"
+          }
+        }
+      }
+    },
+    "Running on port %lld · %lld paired devices · speech: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Läuft auf Port %lld · %lld gekoppelte Geräte · Sprache: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En el puerto %lld · %lld dispositivos vinculados · voz: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur le port %lld · %lld appareils jumelés · parole : %@"
           }
         }
       }
@@ -15687,6 +18148,29 @@
         }
       }
     },
+    "Runs on every dictation": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Läuft bei jedem Diktat"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se ejecuta en cada dictado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "S'exécute à chaque dictée"
+          }
+        }
+      }
+    },
     "Runs on this Mac. No API key and no network needed.": {
       "extractionState": "manual",
       "localizations": {
@@ -15706,6 +18190,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "S'exécute sur ce Mac. Ni clé d'API ni réseau nécessaires."
+          }
+        }
+      }
+    },
+    "Runs on your Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Läuft auf deinem Mac"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Funciona en tu Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fonctionne sur votre Mac"
+          }
+        }
+      }
+    },
+    "Safety number — must match the one on your iPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sicherheitsnummer – muss mit der auf deinem iPhone übereinstimmen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Número de seguridad: debe coincidir con el de tu iPhone"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Numéro de sécurité — doit correspondre à celui de votre iPhone"
           }
         }
       }
@@ -15848,6 +18378,29 @@
         }
       }
     },
+    "Saved in Keychain": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Schlüsselbund gesichert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardada en el llavero"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrée dans le trousseau"
+          }
+        }
+      }
+    },
     "Saved in your Keychain.": {
       "extractionState": "manual",
       "localizations": {
@@ -15959,6 +18512,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Secondes"
+          }
+        }
+      }
+    },
+    "Secret": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geheimnis"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secreto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secret"
           }
         }
       }
@@ -16262,6 +18838,98 @@
         }
       }
     },
+    "Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur"
+          }
+        }
+      }
+    },
+    "Server needs an API key": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server braucht einen API-Schlüssel"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servidor necesita una clave de API"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur demande une clé d'API"
+          }
+        }
+      }
+    },
+    "Server token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Token"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token del servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeton du serveur"
+          }
+        }
+      }
+    },
+    "Servers": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidores"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveurs"
+          }
+        }
+      }
+    },
     "Set Dictation Language": {
       "extractionState": "manual",
       "localizations": {
@@ -16327,6 +18995,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Définissez vos raccourcis"
+          }
+        }
+      }
+    },
+    "Set it to run on every dictation, or use its shortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für jedes Diktat festlegen oder per Kurzbefehl nutzen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configúrala para cada dictado o usa su atajo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exécutez-la à chaque dictée ou utilisez son raccourci"
           }
         }
       }
@@ -16952,6 +19643,167 @@
         }
       }
     },
+    "Shows a card with Touch ID when an agent asks the broker for a secret.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt eine Karte mit Touch ID, wenn ein Agent den Broker nach einem Geheimnis fragt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muestra una tarjeta con Touch ID cuando un agente pide un secreto al broker."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affiche une carte avec Touch ID quand un agent demande un secret au broker."
+          }
+        }
+      }
+    },
+    "Sign In": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmelden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter"
+          }
+        }
+      }
+    },
+    "Sign Out": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abmelden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar sesión"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se déconnecter"
+          }
+        }
+      }
+    },
+    "Sign in on this Mac and on your iPhone with the same account, and they find each other — no pairing code.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melde dich auf diesem Mac und deinem iPhone mit demselben Konto an, dann finden sie sich – ohne Kopplungscode."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicia sesión en este Mac y en tu iPhone con la misma cuenta y se encontrarán solos, sin código de emparejamiento."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connectez-vous sur ce Mac et sur votre iPhone avec le même compte : ils se trouvent seuls, sans code de jumelage."
+          }
+        }
+      }
+    },
+    "Sign in with": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmelden mit"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión con"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter avec"
+          }
+        }
+      }
+    },
+    "Signed in": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angemeldet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesión iniciada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté"
+          }
+        }
+      }
+    },
+    "Signed in as": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angemeldet als"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesión iniciada como"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté en tant que"
+          }
+        }
+      }
+    },
     "Silence your speakers so playback doesn't end up in the transcript": {
       "extractionState": "manual",
       "localizations": {
@@ -17320,6 +20172,29 @@
         }
       }
     },
+    "Speech": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voz"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voix"
+          }
+        }
+      }
+    },
     "Speech Detection": {
       "extractionState": "manual",
       "localizations": {
@@ -17362,6 +20237,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sensibilité à la voix"
+          }
+        }
+      }
+    },
+    "Speech server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spracherkennungsserver"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor de voz"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur vocal"
+          }
+        }
+      }
+    },
+    "Speech stays on your Mac unless you add a server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache bleibt auf deinem Mac, solange du keinen Server hinzufügst"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu voz se queda en tu Mac a menos que añadas un servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre voix reste sur votre Mac, sauf si vous ajoutez un serveur"
           }
         }
       }
@@ -17569,6 +20490,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvre Whispera automatiquement à la connexion"
+          }
+        }
+      }
+    },
+    "Start recording": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufnahme starten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empezar a grabar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démarrer l'enregistrement"
           }
         }
       }
@@ -18378,6 +21322,29 @@
         }
       }
     },
+    "Test": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Testen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tester"
+          }
+        }
+      }
+    },
     "Test Your Setup": {
       "extractionState": "manual",
       "localizations": {
@@ -18397,6 +21364,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Testez votre configuration"
+          }
+        }
+      }
+    },
+    "Test passed: %@ answered.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test bestanden: %@ hat geantwortet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prueba superada: %@ respondió."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test réussi : %@ a répondu."
+          }
+        }
+      }
+    },
+    "Test passed: %@ transcribed a test clip.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test bestanden: %@ hat einen Testclip transkribiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prueba superada: %@ transcribió un clip de prueba."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test réussi : %@ a transcrit un extrait de test."
           }
         }
       }
@@ -18539,6 +21552,121 @@
         }
       }
     },
+    "The Mac link didn't accept the confirmation. Try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Mac-Verbindung hat die Bestätigung nicht angenommen. Versuche es erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El enlace del Mac no aceptó la confirmación. Inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le lien Mac n’a pas accepté la confirmation. Réessayez."
+          }
+        }
+      }
+    },
+    "The Mac link didn't send a safety number for this iPhone. Try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Mac-Link hat für dieses iPhone keine Sicherheitsnummer gesendet. Versuche es noch einmal."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El enlace del Mac no envió un número de seguridad para este iPhone. Inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le lien du Mac n’a pas envoyé de numéro de sécurité pour cet iPhone. Réessayez."
+          }
+        }
+      }
+    },
+    "The Mac link is starting…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Mac-Verbindung startet …"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El enlace con el Mac se está iniciando…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le lien avec le Mac démarre…"
+          }
+        }
+      }
+    },
+    "The Mac link isn't running.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Mac-Verbindung läuft nicht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El enlace del Mac no está en marcha."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le lien Mac n’est pas actif."
+          }
+        }
+      }
+    },
+    "The Mac link isn't running. Turn it on above, then try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Mac-Verbindung läuft nicht. Schalte sie oben ein und versuche es erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El enlace con el Mac no está activo. Actívalo arriba y vuelve a intentarlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le lien avec le Mac n’est pas actif. Activez-le ci-dessus, puis réessayez."
+          }
+        }
+      }
+    },
     "The Parakeet vocabulary file is damaged.": {
       "extractionState": "manual",
       "localizations": {
@@ -18581,6 +21709,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le binaire de l'app fait aussi office de CLI sans interface. Il utilise les modèles déjà téléchargés et n'ouvre jamais de fenêtre."
+          }
+        }
+      }
+    },
+    "The broker refused this approval (%@).": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Broker hat diese Freigabe abgelehnt (%@)."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El broker rechazó esta aprobación (%@)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le broker a refusé cette autorisation (%@)."
           }
         }
       }
@@ -19022,6 +22173,75 @@
         }
       }
     },
+    "The request expired.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anfrage ist abgelaufen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La solicitud caducó."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La demande a expiré."
+          }
+        }
+      }
+    },
+    "The request was withdrawn.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anfrage wurde zurückgezogen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La solicitud se retiró."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La demande a été retirée."
+          }
+        }
+      }
+    },
+    "The server rejected this API key": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server hat diesen API-Schlüssel abgelehnt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servidor rechazó esta clave de API"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur a refusé cette clé d'API"
+          }
+        }
+      }
+    },
     "The shortcut \"%@\" could not be read, so it was reset to %@. Choose another one in Settings > General.": {
       "extractionState": "manual",
       "localizations": {
@@ -19064,6 +22284,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "La transcription reste dans le presse-papiers au moins aussi longtemps après Cmd-V avant que le contenu précédent revienne"
+          }
+        }
+      }
+    },
+    "The transcript stays on the clipboard at least this long after ⌘V before the previous clipboard returns": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Transkript bleibt nach ⌘V mindestens so lange in der Zwischenablage, bevor der vorherige Inhalt zurückkehrt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcripción permanece en el portapapeles al menos este tiempo después de ⌘V antes de que vuelva el contenido anterior"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transcription reste dans le presse-papiers au moins aussi longtemps après ⌘V avant que le contenu précédent revienne"
           }
         }
       }
@@ -19114,6 +22357,52 @@
         }
       }
     },
+    "This Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Mac"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce Mac"
+          }
+        }
+      }
+    },
+    "This Mac approves as %@ · key %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Mac erlaubt als %@ · Schlüssel %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac aprueba como %@ · clave %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce Mac autorise en tant que %@ · clé %@"
+          }
+        }
+      }
+    },
     "This Mac does not support Apple Intelligence": {
       "extractionState": "manual",
       "localizations": {
@@ -19133,6 +22422,98 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce Mac ne prend pas en charge Apple Intelligence"
+          }
+        }
+      }
+    },
+    "This Mac hasn't joined your account yet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Mac ist deinem Konto noch nicht beigetreten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac aún no se ha unido a tu cuenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce Mac n’a pas encore rejoint votre compte."
+          }
+        }
+      }
+    },
+    "This Mac is on your account.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Mac ist mit deinem Konto verbunden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac está en tu cuenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce Mac est associé à votre compte."
+          }
+        }
+      }
+    },
+    "This Mac was removed from your account. Sign in again to add it back.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Mac wurde aus deinem Konto entfernt. Melde dich erneut an, um ihn wieder hinzuzufügen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac se quitó de tu cuenta. Vuelve a iniciar sesión para añadirlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce Mac a été retiré de votre compte. Reconnectez-vous pour l’ajouter à nouveau."
+          }
+        }
+      }
+    },
+    "This Mac's approval key is missing. Set it up again in Settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Freigabeschlüssel dieses Mac fehlt. Richte ihn in den Einstellungen neu ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta la clave de aprobación de este Mac. Vuelve a configurarla en Ajustes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La clé d’autorisation de ce Mac est introuvable. Configurez-la de nouveau dans les réglages."
           }
         }
       }
@@ -19183,6 +22564,29 @@
         }
       }
     },
+    "This device's keys changed. If you didn't reinstall Whispera on it, don't confirm.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Schlüssel dieses Geräts haben sich geändert. Wenn du Whispera darauf nicht neu installiert hast, bestätige nicht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las claves de este dispositivo cambiaron. Si no reinstalaste Whispera en él, no lo confirmes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les clés de cet appareil ont changé. Si vous n’y avez pas réinstallé Whispera, ne confirmez pas."
+          }
+        }
+      }
+    },
     "This entry has no transcript to post-process.": {
       "extractionState": "manual",
       "localizations": {
@@ -19225,6 +22629,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cette fonctionnalité est en cours de développement et des améliorations arrivent bientôt."
+          }
+        }
+      }
+    },
+    "This iPhone's keys changed while the card was open. Compare the new safety number before you confirm.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Schlüssel dieses iPhones haben sich geändert, während die Karte offen war. Vergleiche die neue Sicherheitsnummer, bevor du bestätigst."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las claves de este iPhone cambiaron mientras la tarjeta estaba abierta. Compara el nuevo número de seguridad antes de confirmar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les clés de cet iPhone ont changé pendant que la carte était ouverte. Comparez le nouveau numéro de sécurité avant de confirmer."
           }
         }
       }
@@ -19505,6 +22932,29 @@
         }
       }
     },
+    "Too late to approve here.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu spät, um hier zu erlauben."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es demasiado tarde para aprobar aquí."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trop tard pour autoriser ici."
+          }
+        }
+      }
+    },
     "Top": {
       "extractionState": "manual",
       "localizations": {
@@ -19570,6 +23020,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "Total : %@"
+          }
+        }
+      }
+    },
+    "Touch ID didn't match.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID wurde nicht erkannt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID no coincide."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID n’a pas reconnu votre empreinte."
+          }
+        }
+      }
+    },
+    "Touch ID isn't available.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID ist nicht verfügbar."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID no está disponible."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID n’est pas disponible."
+          }
+        }
+      }
+    },
+    "Touch ID was cancelled. Nothing was sent.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID wurde abgebrochen. Es wurde nichts gesendet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se canceló Touch ID. No se envió nada."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch ID a été annulé. Rien n’a été envoyé."
           }
         }
       }
@@ -20678,6 +24197,29 @@
         }
       }
     },
+    "Try it": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausprobieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essayer"
+          }
+        }
+      }
+    },
     "Turn Off History": {
       "extractionState": "manual",
       "localizations": {
@@ -21069,6 +24611,29 @@
         }
       }
     },
+    "Untitled": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ohne Titel"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin título"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sans titre"
+          }
+        }
+      }
+    },
     "Update": {
       "extractionState": "manual",
       "localizations": {
@@ -21249,6 +24814,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Utiliser le script"
+          }
+        }
+      }
+    },
+    "Use Server Token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Token verwenden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar token del servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser le jeton du serveur"
           }
         }
       }
@@ -21575,6 +25163,29 @@
         }
       }
     },
+    "Wait after writing the clipboard before sending ⌘V": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartezeit nach dem Schreiben in die Zwischenablage, bevor ⌘V gesendet wird"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espera tras escribir en el portapapeles antes de enviar ⌘V"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Délai après l'écriture dans le presse-papiers avant d'envoyer ⌘V"
+          }
+        }
+      }
+    },
     "Wait before restoring the clipboard; raise it if an app pastes your old clipboard": {
       "extractionState": "manual",
       "localizations": {
@@ -21805,6 +25416,75 @@
         }
       }
     },
+    "When off, dictation is pasted exactly as you said it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn aus, wird das Diktat genau so eingefügt, wie du es gesagt hast."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si está desactivado, el dictado se pega tal como lo dijiste."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé, la dictée est collée exactement telle que vous l'avez dite."
+          }
+        }
+      }
+    },
+    "Where recipes run, Clean up included. Any OpenAI-compatible server: a local runtime (ollama, llama-server, LM Studio) or a cloud with your own key.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hier laufen Rezepte, auch „Clean up“. Jeder OpenAI-kompatible Server: eine lokale Laufzeit (ollama, llama-server, LM Studio) oder eine Cloud mit eigenem Schlüssel."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donde se ejecutan las recetas, «Clean up» incluida. Cualquier servidor compatible con OpenAI: un entorno local (ollama, llama-server, LM Studio) o una nube con tu propia clave."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Là où s'exécutent les recettes, « Clean up » comprise. Tout serveur compatible OpenAI : un moteur local (ollama, llama-server, LM Studio) ou un cloud avec votre propre clé."
+          }
+        }
+      }
+    },
+    "Where speech-to-text runs. On-device needs no network.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wo die Spracherkennung läuft. Auf dem Gerät braucht kein Netzwerk."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dónde se ejecuta la conversión de voz a texto. En el dispositivo no necesita red."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Où s'exécute la reconnaissance vocale. Sur l'appareil, aucun réseau n'est nécessaire."
+          }
+        }
+      }
+    },
     "Where start and stop sounds play": {
       "extractionState": "manual",
       "localizations": {
@@ -21824,6 +25504,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Où les sons de début et de fin sont lus"
+          }
+        }
+      }
+    },
+    "Where your account's devices meet. Self-hosters point this at their own server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hier finden sich die Geräte deines Kontos. Wer selbst hostet, trägt den eigenen Server ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donde se encuentran los dispositivos de tu cuenta. Si lo alojas tú, apunta a tu propio servidor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Là où les appareils de votre compte se retrouvent. En auto-hébergement, indiquez votre propre serveur."
           }
         }
       }
@@ -22127,6 +25830,29 @@
         }
       }
     },
+    "Whispera account": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera-Konto"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuenta de Whispera"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte Whispera"
+          }
+        }
+      }
+    },
     "Whispera couldn't paste because Accessibility access is off. The transcript is on the clipboard. Turn Whispera on in System Settings > Privacy & Security > Accessibility.": {
       "extractionState": "manual",
       "localizations": {
@@ -22288,6 +26014,29 @@
         }
       }
     },
+    "Whispera server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whispera-Server"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor de Whispera"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur Whispera"
+          }
+        }
+      }
+    },
     "Window Corner Radius": {
       "extractionState": "manual",
       "localizations": {
@@ -22422,6 +26171,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mot"
+          }
+        }
+      }
+    },
+    "Write token": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schreib-Token"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token de escritura"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeton d’écriture"
           }
         }
       }
@@ -22725,6 +26497,52 @@
         }
       }
     },
+    "Your paired iPhone can reach your agents, approve secret requests and transcribe with this Mac's model.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein gekoppeltes iPhone kann deine Agenten erreichen, Anfragen nach Geheimnissen genehmigen und mit dem Modell dieses Macs transkribieren."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu iPhone vinculado puede acceder a tus agentes, aprobar solicitudes de secretos y transcribir con el modelo de este Mac."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre iPhone jumelé peut joindre vos agents, approuver les demandes de secrets et transcrire avec le modèle de ce Mac."
+          }
+        }
+      }
+    },
+    "Your recipes": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Rezepte"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus recetas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos recettes"
+          }
+        }
+      }
+    },
     "Your transcription history could not be opened, so Whispera started a new one. The old history was kept as %@ in the History folder.": {
       "extractionState": "manual",
       "localizations": {
@@ -22767,6 +26585,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Votre voix, transcrite localement"
+          }
+        }
+      }
+    },
+    "Your voice, transcribed on your Mac by default": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Stimme, standardmäßig auf deinem Mac transkribiert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu voz, transcrita en tu Mac de forma predeterminada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre voix, transcrite sur votre Mac par défaut"
+          }
+        }
+      }
+    },
+    "allow %@ to approve secrets on this Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ erlauben, Geheimnisse auf diesem Mac freizugeben"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "permitir que %@ apruebe secretos en este Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "autoriser %@ à approuver des secrets sur ce Mac"
           }
         }
       }
@@ -22836,6 +26700,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "macOS agit aussi sur la touche globe. Dans Réglages Système > Clavier, réglez « Appuyer sur la touche 🌐 pour » sur « Ne rien faire » pour qu’elle lance seulement la dictée."
+          }
+        }
+      }
+    },
+    "macOS blocked Whispera from reaching %@. Allow it under System Settings > Privacy & Security > Local Network.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS hat Whispera den Zugriff auf %@ verweigert. Erlaube ihn unter Systemeinstellungen > Datenschutz & Sicherheit > Lokales Netzwerk."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS impidió que Whispera llegara a %@. Permítelo en Ajustes del Sistema > Privacidad y seguridad > Red local."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS a empêché Whispera de joindre %@. Autorisez-le dans Réglages Système > Confidentialité et sécurité > Réseau local."
           }
         }
       }
@@ -23204,6 +27091,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "⌥⌘D ouvre les préférences du Dock"
+          }
+        }
+      }
+    },
+    "Search settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search settings"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen suchen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar ajustes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher dans les réglages"
           }
         }
       }
