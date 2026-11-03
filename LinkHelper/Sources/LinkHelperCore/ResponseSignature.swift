@@ -40,12 +40,13 @@ public struct ResponseSigner: Sendable {
 		return header
 	}
 
-	/// One line per field: any byte outside visible ASCII is percent-encoded, so no request field
-	/// can contain the newline that separates them.
+	/// One line per field: `%` (0x25) and any byte outside visible ASCII are percent-encoded as
+	/// `%XX` (uppercase hex), so no request field can contain the newline that separates them and
+	/// the encoding is unambiguous (a literal `%0A` reads `%250A`, a newline `%0A`).
 	static func field(_ value: String) -> String {
 		var out = ""
 		for byte in value.utf8 {
-			if (0x21...0x7e).contains(byte) {
+			if (0x21...0x7e).contains(byte) && byte != 0x25 {
 				out.unicodeScalars.append(Unicode.Scalar(byte))
 			} else {
 				out += String(format: "%%%02X", byte)

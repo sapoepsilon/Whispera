@@ -56,9 +56,25 @@ final class ResponseSignatureTests: XCTestCase {
 		let message = ResponseSigner.responseMessage(
 			timestamp: 42, nonce: nonce, method: "post", target: "/v1/a b\n", status: 404, bodyHash: "h")
 		XCTAssertEqual(String(decoding: message, as: UTF8.self), "WL1-RESP\n42\n\(nonce)\nPOST\n/v1/a%20b%0A\n404\nh")
+		// `%` itself is escaped, so a literal `%0A` and a newline sign differently.
+		let literal = ResponseSigner.responseMessage(
+			timestamp: 42, nonce: "", method: "GET", target: "/v1/q?x=%0A", status: 200, bodyHash: "h")
+		XCTAssertEqual(String(decoding: literal, as: UTF8.self), "WL1-RESP\n42\n\nGET\n/v1/q?x=%250A\n200\nh")
+		let newline = ResponseSigner.responseMessage(
+			timestamp: 42, nonce: "", method: "GET", target: "/v1/q?x=\n", status: 200, bodyHash: "h")
+		XCTAssertNotEqual(literal, newline)
+		XCTAssertEqual(ResponseSigner.field("a%b\u{7F}é"), "a%25b%7F%C3%A9")
 		let event = ResponseSigner.eventMessage(timestamp: 42, nonce: "", seq: 3, event: Data())
 		XCTAssertEqual(
 			String(decoding: event, as: UTF8.self), "WL1-RESP-EVENT\n42\n\n3\n" + LinkCrypto.emptyBodySHA256)
+	}
+
+	/// SSE parsers end a line at `\r` as well as `\n`; the helper's events never contain a CR, so
+	/// the bytes a client splits into lines are the bytes that were signed.
+	func testEventsNeverContainACarriageReturn() {
+		let frame = EventHub.frame("agent.transcript", ["text": "line one\r\nline two\r", "id": "a\rb"], seq: 7)
+		XCTAssertFalse(frame.contains(0x0D))
+		XCTAssertTrue(String(decoding: frame, as: UTF8.self).contains(#"line one\r\nline two\r"#), "escaped inside the JSON")
 	}
 
 	func testOnlyAWellFormedNonceIsBound() {

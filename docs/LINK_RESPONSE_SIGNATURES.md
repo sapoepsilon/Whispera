@@ -62,9 +62,12 @@ WL1-RESP
 - `sha256hex(body)`: lowercase hex SHA-256 of the exact body bytes sent (for `HEAD`, of the
   empty body: `e3b0c442…b855`).
 
-In `nonce`, `METHOD` and `target`, any byte outside visible ASCII (0x21–0x7E) is written as
-`%XX` (uppercase hex) so no field can contain the separator. A real client's fields never
-contain such bytes, so for it they are used as sent.
+In `nonce`, `METHOD` and `target`, every byte of the UTF-8 field that is `%` (0x25) or outside
+visible ASCII (0x21–0x7E) is written as `%XX` (two uppercase hex digits); every other byte is
+copied. So no field can contain the separator, and the encoding is one-to-one: a target with a
+literal `%0A` signs as `%250A`, one with a newline as `%0A`. This applies to a percent-encoded
+target too: `/v1/agents/tmux%3Ap1` signs as `/v1/agents/tmux%253Ap1`. A client applies the same
+encoding to the target it sent (byte for byte, after nothing else) before it verifies.
 
 A client verifies:
 
@@ -124,7 +127,14 @@ a reorder means events were dropped, replayed or shuffled: drop the stream and r
 stream, so events cannot be spliced in from another response.
 
 Comment-only events (the `: ping` keep-alives) carry no `wl-sig` and take no `seq`; they hold
-no data. The `hello` event is the first signed event (`seq` 1) of `/v1/events`. The
+no data.
+
+Events never contain a carriage return (0x0D). SSE parsers end a line at `\r`, `\n` or `\r\n`,
+so a CR would let the lines a client sees differ from the bytes that were signed; the helper's
+events are `event:`, `id:` and `data:` lines with fixed event names, decimal ids and `data` that
+is either JSON (`JSONSerialization` escapes a CR inside a string as `\r`) or base64, and
+`ResponseSignatureTests.testEventsNeverContainACarriageReturn` holds it. A client may treat any
+CR in a signed stream as a failure. The `hello` event is the first signed event (`seq` 1) of `/v1/events`. The
 safety-critical notifications (`approval.pending`, `approval.resolved`, `agent.permission`,
 `agent.ask`) arrive as ordinary events, so each is signed, as are `resync` and the rest. The
 permission, ask, dialog and approval payloads themselves (`GET /v1/agents/{id}/permission`,
