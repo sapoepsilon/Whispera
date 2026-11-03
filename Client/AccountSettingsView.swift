@@ -397,6 +397,13 @@ struct ApproveConfirmCard: View {
 			: nil
 	}
 
+	/// The warning for a Mac that saw safety-number attempts end without a number, nil otherwise.
+	static func unfinishedWarning(for item: PendingApproveConfirmation) -> String? {
+		item.sasUnfinished > 0
+			? String(localized: "A pairing attempt didn't finish. If you didn't start it, don't confirm.")
+			: nil
+	}
+
 	/// What the card says while it has no number to compare.
 	static func missingNumberText(for item: PendingApproveConfirmation) -> String {
 		switch item.sasStatus {
@@ -422,6 +429,13 @@ struct ApproveConfirmCard: View {
 						.font(.caption)
 						.foregroundColor(.secondary)
 				}
+			}
+			if let warning = Self.unfinishedWarning(for: item) {
+				Label(warning, systemImage: "exclamationmark.triangle")
+					.font(.callout.weight(.semibold))
+					.foregroundColor(.orange)
+					.fixedSize(horizontal: false, vertical: true)
+					.accessibilityIdentifier("approve-confirm-sas-unfinished")
 			}
 			if let warning = Self.keyChangeWarning(for: item) {
 				Label(warning, systemImage: "exclamationmark.triangle")

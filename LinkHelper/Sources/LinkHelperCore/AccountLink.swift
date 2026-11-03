@@ -71,8 +71,20 @@ public actor AccountLink {
 		var pending_revokes: [String]?
 		/// Per phone: its latest safety-number attempt (`SASResponder`). Optional so older files load.
 		var sas: [String: SASResponder]?
-		/// Per phone: when its recent attempts started (Unix seconds), to cap them.
+		/// Per phone: when its recent attempts started (Unix seconds); the cap counts all phones.
 		var sas_starts: [String: [Int]]?
+		/// Attempts that ended without a number (abandoned, superseded or failed), for the warning
+		/// every card shows.
+		var sas_unfinished: [UnfinishedAttempt]?
+	}
+
+	/// A safety-number attempt that ended without a number.
+	struct UnfinishedAttempt: Codable, Equatable {
+		var device_id: String
+		var at: Int
+		/// `abandoned` (no reveal within `sasRevealTimeout`), `superseded` (a new commit replaced
+		/// it before its reveal) or `failed` (the reveal was refused).
+		var reason: String
 	}
 
 	/// The account side of revoking a device here (`devices.revoke`).
@@ -92,9 +104,18 @@ public actor AccountLink {
 		}
 	}
 
-	/// New safety-number attempts accepted per phone per hour. Each one is a fresh 2^-40 guess
-	/// for a backend that substitutes keys, and changes the number the card shows.
+	/// New safety-number attempts accepted per hour on this Mac, all phones together. Each one is
+	/// a fresh 2^-40 guess for a backend that substitutes keys, whatever device id it lists, and a
+	/// guess it abandons (never reveals) still counts.
 	static let sasAttemptsPerHour = 10
+	/// An attempt whose reveal has not come this long after its commit is abandoned: it counts as
+	/// unfinished and a late reveal is refused.
+	static let sasRevealTimeout = 60
+	/// How long an unfinished attempt keeps the warning on every card.
+	static let sasUnfinishedWindow = 3600
+	/// Account iPhones pinned here waiting for the owner at once; more listed phones wait until
+	/// one is confirmed or goes.
+	static let maxPendingAccountPhones = 3
 	/// A pending phone that has not committed this long after it was pinned is taken for one that
 	/// predates the exchange: its card says to update Whispera on the iPhone.
 	static let sasUpdateHintAfter = 60
@@ -108,6 +129,8 @@ public actor AccountLink {
 		public var keyChanged: [String] = []
 		/// Unconfirmed phones a linked Mac vouches for: their card asks for Touch ID, not a number.
 		public var vouched: [String] = []
+		/// Listed phones not pinned yet because `maxPendingAccountPhones` wait already.
+		public var deferred: [String] = []
 	}
 
 	private let paths: HelperConfig.Paths
@@ -228,10 +251,15 @@ public actor AccountLink {
 	/// with Touch ID instead of the safety number. The vouch confirms nothing by itself.
 	public func pendingConfirmations() -> [[String: Any]] {
 		let macLink = macLinkKey()
+		expireSafetyNumberAttempts()
+		// On every card: an attempt that ended without a number (one a substituting backend gave
+		// up on, for instance) means "if you didn't start it, don't confirm".
+		let unfinished = unfinishedSafetyNumberAttempts().count
 		let vouches = vouchesForPending()
 		let names = circle?.vouchHints() ?? [:]
 		return devices.pendingApproveConfirmations().map { record in
 			var card = confirmationObject(record, macLink: macLink)
+			card["sas_unfinished"] = unfinished
 			if let vouch = vouches[record.deviceID] {
 				card["vouched_by"] = vouch.voucher_id
 				card["vouched_by_name"] = names[record.deviceID] ?? NSNull()
@@ -301,6 +329,31 @@ public actor AccountLink {
 	/// What the card says about the number: `ready`, `waiting` (the exchange is under way or not
 	/// started yet), `failed` (the phone's reveal did not open its commitment, or named other
 	/// keys: it has to start over) or `update_required` (the phone never started one).
+	/// Unfinished attempts within `sasUnfinishedWindow`, all phones.
+	func unfinishedSafetyNumberAttempts(now: Int? = nil) -> [UnfinishedAttempt] {
+		let now = now ?? clock()
+		return (state?.sas_unfinished ?? []).filter { now - $0.at < Self.sasUnfinishedWindow }
+	}
+
+	private func noteUnfinished(_ deviceID: String, _ reason: String, now: Int) {
+		guard state != nil else { return }
+		var list = (state?.sas_unfinished ?? []).filter { now - $0.at < Self.sasUnfinishedWindow }
+		list.append(UnfinishedAttempt(device_id: deviceID, at: now, reason: reason))
+		state?.sas_unfinished = Array(list.suffix(100))
+		log("account.sas_unfinished", ["device": deviceID, "detail": reason])
+	}
+
+	/// Abandons every attempt still waiting for its reveal `sasRevealTimeout` after its commit.
+	func expireSafetyNumberAttempts(now: Int? = nil) {
+		let now = now ?? clock()
+		for (id, attempt) in state?.sas ?? [:]
+		where attempt.stage == .awaitingReveal && now - attempt.started_at >= Self.sasRevealTimeout {
+			state?.sas?[id] = nil
+			noteUnfinished(id, "abandoned", now: now)
+		}
+		saveState()
+	}
+
 	func safetyNumberStatus(_ record: DeviceRecord, macLink: LinkPublicKey?, now: Int? = nil) -> String {
 		if safetyNumber(record, macLink: macLink) != nil { return "ready" }
 		if let attempt = state?.sas?[record.deviceID] {
@@ -324,6 +377,7 @@ public actor AccountLink {
 			throw APIError(400, "bad_request", "safety_number must be the 12 digits the owner compared")
 		}
 		let macLink = macLinkKey()
+		expireSafetyNumberAttempts()
 		let attempts = state?.sas ?? [:]
 		if let pending = devices.get(deviceID), !pending.isRevoked, attempts[deviceID] == nil {
 			// No committed exchange at all: an older iPhone, or one that has not started it. Never
@@ -686,6 +740,16 @@ public actor AccountLink {
 				log("account.skip", ["device": phone.id, "detail": "no approve key"])
 				continue
 			}
+			if devices.get(phone.id) == nil,
+				devices.pendingApproveConfirmations().filter({ $0.origin == .account }).count
+					>= Self.maxPendingAccountPhones
+			{
+				// Each pending phone is another card and another device id to guess under: a
+				// backend listing many new iPhones gets only a few at a time.
+				log("account.skip", ["device": phone.id, "detail": "too many unconfirmed iPhones"])
+				report.deferred.append(phone.id)
+				continue
+			}
 			let pinned: DeviceRegistry.PinResult
 			do {
 				pinned = try devices.pinAccountDevice(
@@ -921,14 +985,18 @@ public actor AccountLink {
 			log("account.sas_refused", ["device": sender.id, "detail": "not an account iPhone"])
 			return
 		}
+		guard let record = devices.get(sender.id), record.origin == .account, !record.isRevoked else {
+			log("account.sas_refused", ["device": sender.id, "detail": "not pinned here"])
+			return
+		}
 		if myState.sas?[sender.id]?.attempt == commit.attempt {
 			log("account.sas_refused", ["device": sender.id, "detail": "attempt already used"])
 			return
 		}
 		let now = clock()
-		var starts = (myState.sas_starts?[sender.id] ?? []).filter { now - $0 < 3600 }
-		guard starts.count < Self.sasAttemptsPerHour else {
-			log("account.sas_refused", ["device": sender.id, "detail": "too many attempts"])
+		let windowed = (myState.sas_starts ?? [:]).mapValues { $0.filter { now - $0 < 3600 } }.filter { !$0.value.isEmpty }
+		guard windowed.values.map(\.count).reduce(0, +) < Self.sasAttemptsPerHour else {
+			log("account.sas_refused", ["device": sender.id, "detail": "too many attempts on this Mac"])
 			return
 		}
 		let attempt: SASResponder
@@ -938,10 +1006,10 @@ public actor AccountLink {
 			log("account.sas_refused", ["device": sender.id, "detail": "\(error)"])
 			return
 		}
-		starts.append(now)
-		var updated = myState
-		updated.sas_starts = (myState.sas_starts ?? [:]).merging([sender.id: starts]) { $1 }
-		updated.sas = (myState.sas ?? [:]).merging([sender.id: attempt]) { $1 }
+		if myState.sas?[sender.id]?.stage == .awaitingReveal { noteUnfinished(sender.id, "superseded", now: now) }
+		guard var updated = state else { return }
+		updated.sas_starts = windowed.merging([sender.id: (windowed[sender.id] ?? []) + [now]]) { $1 }
+		updated.sas = (updated.sas ?? [:]).merging([sender.id: attempt]) { $1 }
 		state = updated
 		saveState()
 		log("account.sas_started", ["device": sender.id])
@@ -956,6 +1024,7 @@ public actor AccountLink {
 	/// sender. Refused without an attempt (a reveal before any commit); a reveal that does not
 	/// open it, or names other keys, fails the attempt for good.
 	private func finishSafetyNumber(_ reveal: SASReveal, from sender: TrustedDevice) {
+		expireSafetyNumberAttempts()
 		guard sender.platform == .ios, var attempt = state?.sas?[sender.id], let myID = state?.device_id,
 			let macLink = macLinkKey()
 		else {
@@ -972,6 +1041,7 @@ public actor AccountLink {
 			return
 		} catch {
 			log("account.sas_failed", ["device": sender.id, "detail": "\(error)"])
+			noteUnfinished(sender.id, "failed", now: clock())
 		}
 		state?.sas?[sender.id] = attempt
 		saveState()

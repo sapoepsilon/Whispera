@@ -322,6 +322,83 @@ final class SafetyNumberCommitmentTests: XCTestCase {
 		XCTAssertNotEqual(current?.attempt, over.attempt)
 	}
 
+	/// A backend that lists fake device ids and drops every attempt whose number doesn't suit it
+	/// still gets only `sasAttemptsPerHour` guesses on this Mac, and every abandoned one leaves a
+	/// warning on the cards.
+	func testTheAttemptCapCountsEveryPhoneAndAbandonedAttemptsWarn() async throws {
+		let (first, macID) = try await listedPhone()
+		var phones = [first]
+		for index in 1..<AccountLink.maxPendingAccountPhones {
+			let phone = AccountPhone(backend: backend)
+			try await phone.register(bearer: "tok-alice", name: "Fake \(index)")
+			phones.append(phone)
+		}
+		_ = try await account.syncNow()
+		for index in 0..<AccountLink.sasAttemptsPerHour {
+			let phone = phones[index % phones.count]
+			let attempt = try await phone.commit(toMac: macID)
+			try await account.processMessages()
+			_ = try await phone.nextNonce(attempt: attempt.attempt)
+		}
+		let over = try await phones[1].commit(toMac: macID)
+		try await account.processMessages()
+		let none = try await phones[1].receive()
+		XCTAssertFalse(none.contains { if case .sasNonce = $0 { return true } else { return false } })
+		let current = await account.safetyNumberAttempt(phones[1].deviceID)
+		XCTAssertNotEqual(current?.attempt, over.attempt, "the cap is per Mac, not per device id")
+
+		// Never revealed: past the timeout each open attempt is abandoned, and late reveals fail.
+		let superseded = await account.unfinishedSafetyNumberAttempts().count
+		XCTAssertEqual(superseded, AccountLink.sasAttemptsPerHour - phones.count, "each replaced attempt counted")
+		await account.expireSafetyNumberAttempts(now: Int(Date().timeIntervalSince1970) + AccountLink.sasRevealTimeout)
+		let unfinished = await account.unfinishedSafetyNumberAttempts()
+		XCTAssertEqual(unfinished.count, AccountLink.sasAttemptsPerHour)
+		XCTAssertEqual(unfinished.filter { $0.reason == "abandoned" }.count, phones.count)
+		let gone = await account.safetyNumberAttempt(first.deviceID)
+		XCTAssertNil(gone)
+		let cards = await account.pendingConfirmations()
+		XCTAssertEqual(cards.count, phones.count)
+		XCTAssertTrue(cards.allSatisfy { $0["sas_unfinished"] as? Int == AccountLink.sasAttemptsPerHour })
+	}
+
+	func testALateRevealAfterTheTimeoutIsRefused() async throws {
+		let (phone, macID) = try await listedPhone()
+		var attempt = try await phone.commit(toMac: macID)
+		try await account.processMessages()
+		let nonce = try await phone.nextNonce(attempt: attempt.attempt)
+		let reveal = try attempt.receive(nonce, listedMacLink: try XCTUnwrap(account.macLinkKey()))
+		await account.expireSafetyNumberAttempts(now: Int(Date().timeIntervalSince1970) + AccountLink.sasRevealTimeout)
+		try await phone.send(.sasReveal(reveal), toDevice: macID)
+		try await account.processMessages()
+		let card = await card(phone)
+		XCTAssertTrue(card?["safety_number"] is NSNull)
+		XCTAssertEqual(card?["sas_unfinished"] as? Int, 1)
+		await expectRefusal("peer_update_required", phone, number: try XCTUnwrap(attempt.number))
+	}
+
+	func testOnlyAFewUnconfirmedAccountPhonesArePinnedAtOnce() async throws {
+		let (first, _) = try await listedPhone()
+		var extra: [AccountPhone] = []
+		for index in 0..<AccountLink.maxPendingAccountPhones {
+			let phone = AccountPhone(backend: backend)
+			try await phone.register(bearer: "tok-alice", name: "Phone \(index)")
+			extra.append(phone)
+		}
+		let report = try await account.syncNow()
+		XCTAssertEqual(report.deferred.count, 1)
+		let pending = await account.pendingConfirmations()
+		XCTAssertEqual(pending.count, AccountLink.maxPendingAccountPhones)
+		let waiting = try XCTUnwrap(report.deferred.first)
+		XCTAssertNil(helper.daemon.devices.get(waiting))
+
+		// Confirming one frees a slot.
+		let number = try await first.safetyNumber(with: account)
+		_ = try await account.confirmApprove(first.deviceID, safetyNumber: number)
+		let next = try await account.syncNow()
+		XCTAssertEqual(next.deferred, [])
+		XCTAssertNotNil(helper.daemon.devices.get(waiting))
+	}
+
 	// MARK: Helpers
 
 	/// Seals `message` as `phoneID` with `key`: a backend holding the substituted keys.

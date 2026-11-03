@@ -345,6 +345,10 @@ struct ApproveConfirmModelTests {
 		#expect(ApproveConfirmCard.missingNumberText(for: failed).contains("didn't match"))
 		failed.sasStatus = nil
 		#expect(ApproveConfirmCard.missingNumberText(for: failed).contains("Waiting for the iPhone"))
+		#expect(ApproveConfirmCard.unfinishedWarning(for: item) == nil)
+		let warned = try #require(PendingApproveConfirmation.decodeList(Data(
+			#"{"devices":[{"device_id":"dev_b","name":"n","fingerprint":"f","approve_fp":"a","sas_unfinished":2}]}"#.utf8))?.first)
+		#expect(ApproveConfirmCard.unfinishedWarning(for: warned)?.contains("didn't finish") == true)
 	}
 
 	@Test func anIPhoneWithoutACommittedExchangeIsNotConfirmed() async {
