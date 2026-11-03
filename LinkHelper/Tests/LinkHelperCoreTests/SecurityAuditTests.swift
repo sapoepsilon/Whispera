@@ -102,6 +102,7 @@ final class SecurityAuditTests: XCTestCase {
 		XCTAssertNil(helper.daemon.lastDevice.current)
 
 		// A confirm bound to another safety number (what a substituted key would show) is refused.
+		let number = try await phone.safetyNumber(with: account)
 		do {
 			_ = try await account.confirmApprove(phone.deviceID, safetyNumber: "1111 2222 3333")
 			XCTFail("a wrong safety number must not confirm")
@@ -112,7 +113,7 @@ final class SecurityAuditTests: XCTestCase {
 		XCTAssertFalse(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
 
 		// The owner compares the number on both screens and confirms: now it may.
-		_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+		_ = try await account.confirmApprove(phone.deviceID, safetyNumber: number)
 		let agents = try await attacker.call("GET", "/v1/agents")
 		XCTAssertEqual(agents.errorCode, "herdr_unavailable", "past the gate; only herdr is missing here")
 		let pending = try await attacker.call("GET", "/v1/approvals/pending")
@@ -166,7 +167,7 @@ final class SecurityAuditTests: XCTestCase {
 
 	func testAKeyChangeOnAConfirmedPhoneMakesItUnconfirmedAndSendsItNothing() async throws {
 		let (phone, macID) = try await listedPhone()
-		_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+		_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try await phone.safetyNumber(with: account))
 		_ = try await phone.receive()
 		XCTAssertTrue(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
 
@@ -202,7 +203,7 @@ final class SecurityAuditTests: XCTestCase {
 		let old = try await soft(phone).call("GET", "/v1/devices/me")
 		XCTAssertEqual(old.errorCode, "auth_bad_signature")
 		do {
-			_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+			_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try await phone.safetyNumber(with: account))
 			XCTFail("the old safety number must not confirm new keys")
 		} catch let error as APIError {
 			XCTAssertEqual(error.code, "keys_changed")
@@ -211,7 +212,7 @@ final class SecurityAuditTests: XCTestCase {
 
 	func testAnAgreementKeyOnlyChangeAlsoUnconfirms() async throws {
 		let (phone, macID) = try await listedPhone()
-		_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+		_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try await phone.safetyNumber(with: account))
 		_ = try await phone.receive()
 		let substitute = SoftwareAgreementKey()
 		backend.setKEMRecord(
@@ -234,7 +235,7 @@ final class SecurityAuditTests: XCTestCase {
 		try await rogue.register(bearer: "tok-alice", name: "Rogue")
 		_ = try await account.syncNow()
 		_ = try await account.confirmApprove(
-			confirmed.deviceID, safetyNumber: try confirmed.safetyNumber(macID: macID))
+			confirmed.deviceID, safetyNumber: try await confirmed.safetyNumber(with: account))
 		XCTAssertNil(
 			helper.daemon.pushSealer.seal(ApprovalPush(requestID: "apr_x", expiresAt: 0), phoneID: rogue.deviceID))
 

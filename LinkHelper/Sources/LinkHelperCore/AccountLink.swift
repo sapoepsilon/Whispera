@@ -11,9 +11,14 @@ import WhisperaLink
 ///   active, well-formed iPhone under its account device id, unconfirmed. The backend supplies
 ///   both the keys and their fingerprints, so a listed phone is only a candidate: it gets no
 ///   link offer, STT key, push or API access until the owner compares its safety number with
-///   the iPhone's screen and confirms it on the Mac. A confirmed phone gets a sealed
-///   `link_offer`, again only when what the offer says changes. A known phone whose link,
-///   approve or agreement key changes is unconfirmed again (`device.key_changed`). Phones
+///   the iPhone's screen and confirms it on the Mac. The number exists only after the phone
+///   ran a committed exchange with this Mac (`sas_commit`, `sas_nonce`, `sas_reveal`; see
+///   `SafetyNumber`), so a backend that substitutes keys gets one guess at matching the two
+///   screens, not a search. A phone that never commits (an older Whispera) gets no number and
+///   cannot be confirmed by one: its card says to update Whispera on the iPhone. A confirmed
+///   phone gets a sealed `link_offer`, again only when what the offer says changes. A known
+///   phone whose link, approve or agreement key changes is unconfirmed again
+///   (`device.key_changed`). Phones
 ///   revoked or gone from the list are revoked here, so the HTTP API answers `auth_revoked`,
 ///   and nothing is sent to them.
 /// - Relay messages are read by one `RelayMailbox` (long poll, open, ack): `unpaired` from a
@@ -61,7 +66,18 @@ public actor AccountLink {
 		var unpaired: [String] = []
 		var last_sync_at: Int?
 		var last_error: String?
+		/// Per phone: its latest safety-number attempt (`SASResponder`). Optional so older files load.
+		var sas: [String: SASResponder]?
+		/// Per phone: when its recent attempts started (Unix seconds), to cap them.
+		var sas_starts: [String: [Int]]?
 	}
+
+	/// New safety-number attempts accepted per phone per hour. Each one is a fresh 2^-40 guess
+	/// for a backend that substitutes keys, and changes the number the card shows.
+	static let sasAttemptsPerHour = 10
+	/// A pending phone that has not committed this long after it was pinned is taken for one that
+	/// predates the exchange: its card says to update Whispera on the iPhone.
+	static let sasUpdateHintAfter = 60
 
 	public struct SyncReport: Sendable, Equatable {
 		public var pinned: [String] = []
@@ -181,7 +197,7 @@ public actor AccountLink {
 		let vouches = vouchesForPending()
 		let names = circle?.vouchHints() ?? [:]
 		return devices.pendingApproveConfirmations().map { record in
-			var card = Self.confirmationObject(record, macLink: macLink)
+			var card = confirmationObject(record, macLink: macLink)
 			if let vouch = vouches[record.deviceID] {
 				card["vouched_by"] = vouch.voucher_id
 				card["vouched_by_name"] = names[record.deviceID] ?? NSNull()
@@ -241,12 +257,23 @@ public actor AccountLink {
 		return key.publicKey
 	}
 
-	/// The number the owner compares with the iPhone's screen, from the keys pinned here.
-	static func safetyNumber(_ record: DeviceRecord, macLink: LinkPublicKey?) -> String? {
-		guard let macLink, let link = try? LinkPublicKey(x963Base64: record.linkPubkey),
-			let approve = try? LinkPublicKey(x963Base64: record.approvePubkey)
-		else { return nil }
-		return SafetyNumber.compute(macLink: macLink, phoneLink: link, phoneApprove: approve)
+	/// The number the owner compares with the iPhone's screen: only from an exchange the phone
+	/// finished with this Mac for exactly the keys pinned here.
+	func safetyNumber(_ record: DeviceRecord, macLink: LinkPublicKey?) -> String? {
+		state?.sas?[record.deviceID]?.number(
+			phoneLink: record.linkPubkey, phoneApprove: record.approvePubkey, macLink: macLink)
+	}
+
+	/// What the card says about the number: `ready`, `waiting` (the exchange is under way or not
+	/// started yet), `failed` (the phone's reveal did not open its commitment, or named other
+	/// keys: it has to start over) or `update_required` (the phone never started one).
+	func safetyNumberStatus(_ record: DeviceRecord, macLink: LinkPublicKey?, now: Int? = nil) -> String {
+		if safetyNumber(record, macLink: macLink) != nil { return "ready" }
+		if let attempt = state?.sas?[record.deviceID] {
+			return attempt.stage == .failed ? "failed" : "waiting"
+		}
+		let since = max(record.createdAt, record.keyChangedAt ?? 0)
+		return (now ?? clock()) - since >= Self.sasUpdateHintAfter ? "update_required" : "waiting"
 	}
 
 	static func normalizedSafetyNumber(_ text: String) -> String {
@@ -263,10 +290,22 @@ public actor AccountLink {
 			throw APIError(400, "bad_request", "safety_number must be the 12 digits the owner compared")
 		}
 		let macLink = macLinkKey()
+		let attempts = state?.sas ?? [:]
+		if let pending = devices.get(deviceID), !pending.isRevoked, attempts[deviceID] == nil {
+			// No committed exchange at all: an older iPhone, or one that has not started it. Never
+			// fall back to a number computed from the listed keys alone.
+			log("device.confirm_refused", ["device": deviceID, "detail": "no_safety_number"])
+			throw APIError(
+				409, "peer_update_required",
+				"no safety number from this iPhone yet; open Whispera on it, and update it if this persists")
+		}
 		let record: DeviceRecord?
 		do {
 			record = try devices.confirmApprove(deviceID) { current in
-				guard let expected = Self.safetyNumber(current, macLink: macLink) else { return false }
+				guard
+					let expected = attempts[current.deviceID]?.number(
+						phoneLink: current.linkPubkey, phoneApprove: current.approvePubkey, macLink: macLink)
+				else { return false }
 				return Self.normalizedSafetyNumber(expected) == shown
 			}
 		} catch let error as APIError {
@@ -346,7 +385,7 @@ public actor AccountLink {
 		circle.start { [weak self] in Task { await self?.syncSoon() } }
 	}
 
-	static func confirmationObject(_ record: DeviceRecord, macLink: LinkPublicKey?) -> [String: Any] {
+	func confirmationObject(_ record: DeviceRecord, macLink: LinkPublicKey?) -> [String: Any] {
 		let fingerprint =
 			(try? LinkPublicKey(x963Base64: record.approvePubkey).displayFingerprint) ?? record.approveFP
 		let linkFingerprint = (try? LinkPublicKey(x963Base64: record.linkPubkey).displayFingerprint) ?? record.linkFP
@@ -354,6 +393,7 @@ public actor AccountLink {
 			"device_id": record.deviceID, "name": record.name, "platform": "ios", "approve_fp": record.approveFP,
 			"fingerprint": fingerprint, "link_fingerprint": linkFingerprint, "created_at": record.createdAt,
 			"safety_number": safetyNumber(record, macLink: macLink) ?? NSNull(),
+			"sas_status": safetyNumberStatus(record, macLink: macLink),
 			"key_changed": record.keyChangedAt != nil, "key_changed_at": record.keyChangedAt ?? NSNull(),
 		]
 	}
@@ -730,7 +770,7 @@ public actor AccountLink {
 		_ = try await ensureMailbox().pumpOnce(wait: wait)
 	}
 
-	private func handle(_ received: ReceivedLinkMessage) {
+	private func handle(_ received: ReceivedLinkMessage) async {
 		let sender = received.sender
 		switch received.message {
 		case .unpaired(let id):
@@ -743,6 +783,7 @@ public actor AccountLink {
 			}
 			if state?.unpaired.contains(sender.id) == false { state?.unpaired.append(sender.id) }
 			state?.offers[sender.id] = nil
+			state?.sas?[sender.id] = nil
 			saveState()
 			log("device.revoked", ["device": sender.id, "detail": "phone unpaired"])
 		case .apiRequest(let request):
@@ -755,9 +796,91 @@ public actor AccountLink {
 			}
 		case .apiCancel(let id):
 			ingress?.cancel(id: id, sender: sender.id)
-		case .linkOffer, .approveConfirmed, .apiResponse:
+		case .sasCommit(let commit):
+			await startSafetyNumber(commit, from: sender)
+		case .sasReveal(let reveal):
+			finishSafetyNumber(reveal, from: sender)
+		case .linkOffer, .approveConfirmed, .apiResponse, .sasNonce:
 			log("account.message_ignored", ["device": sender.id, "detail": received.message.type])
 		}
+	}
+
+	// MARK: Safety number
+
+	/// `sas_commit`: records the phone's commitment as its new attempt (replacing any earlier
+	/// one), then answers with this Mac's nonce. The nonce leaves only after the commitment is
+	/// stored, and a commitment is never accepted twice for the same attempt.
+	private func startSafetyNumber(_ commit: SASCommit, from sender: TrustedDevice) async {
+		guard sender.platform == .ios, sender.approveKey != nil, let myState = state, !myState.unpaired.contains(sender.id),
+			let macLink = macLinkKey(), let client = try? client()
+		else {
+			log("account.sas_refused", ["device": sender.id, "detail": "not an account iPhone"])
+			return
+		}
+		if myState.sas?[sender.id]?.attempt == commit.attempt {
+			log("account.sas_refused", ["device": sender.id, "detail": "attempt already used"])
+			return
+		}
+		let now = clock()
+		var starts = (myState.sas_starts?[sender.id] ?? []).filter { now - $0 < 3600 }
+		guard starts.count < Self.sasAttemptsPerHour else {
+			log("account.sas_refused", ["device": sender.id, "detail": "too many attempts"])
+			return
+		}
+		let attempt: SASResponder
+		do {
+			attempt = try SASResponder(commit: commit, startedAt: now)
+		} catch {
+			log("account.sas_refused", ["device": sender.id, "detail": "\(error)"])
+			return
+		}
+		starts.append(now)
+		var updated = myState
+		updated.sas_starts = (myState.sas_starts ?? [:]).merging([sender.id: starts]) { $1 }
+		updated.sas = (myState.sas ?? [:]).merging([sender.id: attempt]) { $1 }
+		state = updated
+		saveState()
+		log("account.sas_started", ["device": sender.id])
+		do {
+			try await client.send(.sasNonce(attempt.nonceMessage(macLink: macLink)), to: sender)
+		} catch {
+			log("account.sas_send_failed", ["device": sender.id, "detail": (error as? LinkError)?.code ?? "\(type(of: error))"])
+		}
+	}
+
+	/// `sas_reveal`: opens the attempt's commitment with the keys the account lists for the
+	/// sender. Refused without an attempt (a reveal before any commit); a reveal that does not
+	/// open it, or names other keys, fails the attempt for good.
+	private func finishSafetyNumber(_ reveal: SASReveal, from sender: TrustedDevice) {
+		guard sender.platform == .ios, var attempt = state?.sas?[sender.id], let myID = state?.device_id,
+			let macLink = macLinkKey()
+		else {
+			log("account.sas_refused", ["device": sender.id, "detail": "reveal without a commitment"])
+			return
+		}
+		do {
+			_ = try attempt.receive(
+				reveal, phoneID: sender.id, macID: myID, macLink: macLink, listedLink: sender.linkKey,
+				listedApprove: sender.approveKey)
+			log("account.sas_ready", ["device": sender.id])
+		} catch SASError.attemptMismatch {
+			log("account.sas_refused", ["device": sender.id, "detail": "reveal for another attempt"])
+			return
+		} catch {
+			log("account.sas_failed", ["device": sender.id, "detail": "\(error)"])
+		}
+		state?.sas?[sender.id] = attempt
+		saveState()
+	}
+
+	/// The latest attempt with `deviceID` (tests).
+	func safetyNumberAttempt(_ deviceID: String) -> SASResponder? {
+		state?.sas?[deviceID]
+	}
+
+	/// Opens and handles whatever the relay holds now (tests drive the exchange with it).
+	func processMessages() async throws {
+		try await serialized { try await self.pollMessagesLocked(wait: 0) }
 	}
 
 	// MARK: Helpers

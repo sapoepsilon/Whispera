@@ -397,6 +397,18 @@ struct ApproveConfirmCard: View {
 			: nil
 	}
 
+	/// What the card says while it has no number to compare.
+	static func missingNumberText(for item: PendingApproveConfirmation) -> String {
+		switch item.sasStatus {
+		case "update_required":
+			return String(localized: "Update Whispera on the iPhone, then open it. This version of the iPhone app can't show a safety number this Mac accepts.")
+		case "failed":
+			return String(localized: "The iPhone's keys didn't match what it committed to. Open Whispera on the iPhone to start over, and don't confirm if this repeats.")
+		default:
+			return String(localized: "Waiting for the iPhone. Open Whispera on it to show the number.")
+		}
+	}
+
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
 			HStack(alignment: .top, spacing: 12) {
@@ -427,9 +439,11 @@ struct ApproveConfirmCard: View {
 						.textSelection(.enabled)
 						.accessibilityIdentifier("approve-confirm-safety-number")
 				} else {
-					Text("Not available yet")
+					Text(Self.missingNumberText(for: item))
 						.font(.callout)
-						.foregroundColor(.secondary)
+						.foregroundColor(item.sasStatus == "waiting" || item.sasStatus == nil ? .secondary : .orange)
+						.fixedSize(horizontal: false, vertical: true)
+						.accessibilityIdentifier("approve-confirm-sas-status")
 				}
 				HStack(spacing: 6) {
 					Text("Fingerprint")

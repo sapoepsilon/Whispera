@@ -207,7 +207,7 @@ final class PushDeliveryTests: XCTestCase {
 		let macID = try XCTUnwrap(id)
 		for phone in phones {
 			_ = try await helper.daemon.account.confirmApprove(
-				phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+				phone.deviceID, safetyNumber: try await phone.safetyNumber(with: helper.daemon.account))
 		}
 	}
 
