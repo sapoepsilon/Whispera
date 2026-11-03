@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import WhisperaLink
 
 /// One request on one connection (HTTP/1.0 semantics, PROTOCOL §5.0: one request per
 /// connection, `Content-Length` bodies, SSE ends when the connection closes).
@@ -29,6 +30,10 @@ public final class HTTPExchange: @unchecked Sendable {
 	private var watching = false
 	/// Flips when the peer closes its side (`watchForDisconnect`), or the connection fails.
 	public let cancelToken = CancelToken()
+	/// Signs every response and SSE event with the daemon key (`ResponseSigner`); nil sends
+	/// them unsigned.
+	var responseSigner: ResponseSigner?
+	private var eventSigner: SSEEventSigner?
 
 	init(
 		method: String, target: String, version: String, headers: [(String, String)], remoteHost: String,
@@ -145,8 +150,14 @@ public final class HTTPExchange: @unchecked Sendable {
 			("Content-Type", contentType), ("Content-Length", String(body.count)), ("Cache-Control", "no-store"),
 		]
 		headers.append(contentsOf: extra)
+		let sent = method == "HEAD" ? Data() : body
+		if let responseSigner {
+			headers.append(
+				contentsOf: responseSigner.headers(
+					nonce: boundNonce, method: method, target: target, status: status, body: sent))
+		}
 		var data = head(status, headers)
-		if method != "HEAD" { data.append(body) }
+		data.append(sent)
 		let semaphore = DispatchSemaphore(value: 0)
 		connection.send(
 			content: data, contentContext: .finalMessage, isComplete: true,
@@ -163,8 +174,25 @@ public final class HTTPExchange: @unchecked Sendable {
 		headersSent = true
 		self.status = status
 		lock.unlock()
+		var headers = headers
+		if let responseSigner {
+			headers.append(
+				contentsOf: responseSigner.headers(
+					nonce: boundNonce, method: method, target: target, status: status, body: nil))
+		}
 		try write(head(status, headers))
+		let eventStream = headers.contains {
+			$0.0.caseInsensitiveCompare("Content-Type") == .orderedSame && $0.1.lowercased().hasPrefix("text/event-stream")
+		}
+		if let responseSigner, eventStream {
+			lock.lock()
+			eventSigner = SSEEventSigner(signer: responseSigner, nonce: boundNonce)
+			lock.unlock()
+		}
 	}
+
+	/// The nonce a signed response is bound to: the request's own `X-WL-Nonce`, or none.
+	private var boundNonce: String { ResponseSigner.boundNonce(header(SignedHeaders.nonceHeader)) }
 
 	/// Answers `101 Switching Protocols` for a WebSocket handshake and hands the connection over:
 	/// the returned bytes are what the client already sent past the request head. The server
@@ -193,8 +221,11 @@ public final class HTTPExchange: @unchecked Sendable {
 	public func write(_ data: Data, timeout: TimeInterval = 60) throws {
 		lock.lock()
 		let dead = failed
+		let events = eventSigner
 		lock.unlock()
 		if dead { throw ConnectionGone() }
+		let data = events?.process(data) ?? data
+		if data.isEmpty { return }
 		let semaphore = DispatchSemaphore(value: 0)
 		let box = ReceiveBox()
 		connection.send(
@@ -271,6 +302,8 @@ public final class HTTPServer: @unchecked Sendable {
 	public var admit: ((_ peer: String, _ local: String?, _ interface: String?) -> Bool)?
 	/// A refused peer, for the ops log.
 	public var onRefused: ((String) -> Void)?
+	/// Signs every response this server sends (`ResponseSigner`); nil leaves them unsigned.
+	public var responseSigner: ResponseSigner?
 	private let queue = DispatchQueue(label: "link.http.listener")
 	private var listener: NWListener?
 	public private(set) var boundPort = 0
@@ -374,7 +407,7 @@ public final class HTTPServer: @unchecked Sendable {
 	private func accept(_ connection: NWConnection) {
 		let connectionQueue = DispatchQueue(label: "link.http.connection")
 		connection.start(queue: connectionQueue)
-		let thread = Thread { [handler, admit, onRefused] in
+		let thread = Thread { [handler, admit, onRefused, responseSigner] in
 			let local = Self.localHost(connection)
 			let interface = Self.localInterface(connection)
 			if let admit {
@@ -389,6 +422,7 @@ public final class HTTPServer: @unchecked Sendable {
 				connection.cancel()
 				return
 			}
+			exchange.responseSigner = responseSigner
 			handler(exchange)
 			if exchange.status == 0 { connection.cancel() }
 		}

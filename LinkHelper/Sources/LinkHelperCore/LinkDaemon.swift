@@ -50,6 +50,8 @@ public final class LinkDaemon: @unchecked Sendable {
 	public let macApprovers: MacApproverStore
 	public let macCard = MacCardOffer()
 	public let daemonFP: String
+	/// Signs every direct-path response with the daemon key (docs/LINK_RESPONSE_SIGNATURES.md).
+	let responseSigner: ResponseSigner
 	/// X9.63 base64 of the daemon key: what a link offer pins.
 	public let daemonPubkeyB64: String
 	/// Account pairing (step 11).
@@ -111,6 +113,7 @@ public final class LinkDaemon: @unchecked Sendable {
 		let key = try Self.loadOrCreateDaemonKey(config.paths.daemonKey, log: opsLog)
 		let daemonPublic = LinkPublicKey(key.privateKey.publicKey)
 		let daemonFP = daemonPublic.fingerprint
+		responseSigner = ResponseSigner(key: key)
 		let daemonPubkeyB64 = daemonPublic.x963Base64
 		self.daemonFP = daemonFP
 		self.daemonPubkeyB64 = daemonPubkeyB64
@@ -438,6 +441,7 @@ public final class LinkDaemon: @unchecked Sendable {
 		let gate = directAccess
 		server.admit = { gate.admits(peer: $0, local: $1, interface: $2) }
 		let refusals = RateLimiter(limit: 0, window: 60, blockFor: 60)
+		server.responseSigner = responseSigner
 		server.onRefused = { [log] peer in
 			// One line per peer per minute: a scanner on the LAN must not flood the log.
 			guard !refusals.isBlocked(peer) else { return }
