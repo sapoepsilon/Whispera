@@ -10,7 +10,8 @@ struct AudioInputSettingsRows: View {
 			"Mute Audio While Recording",
 			description: "Silence your speakers so playback doesn't end up in the transcript"
 		) {
-			Toggle("", isOn: $muteOutputWhileRecording)
+			Toggle("Mute Audio While Recording", isOn: $muteOutputWhileRecording)
+				.labelsHidden()
 		}
 	}
 
@@ -48,14 +49,14 @@ struct InputChannelSettingsRow: View {
 				"Input Channel",
 				description: InputChannelSelection.settingsDescription(on: captureRoute)
 			) {
-				Picker("", selection: $selectedChannel) {
+				Picker("Input Channel", selection: $selectedChannel) {
 					Text("All channels").tag(InputChannelSelection.mixAllChannels)
 					ForEach(1...count, id: \.self) { channel in
 						Text("Channel \(channel)").tag(channel)
 					}
 				}
 				.labelsHidden()
-				.frame(width: 140)
+				.frame(width: 140, alignment: .trailing)
 			}
 		}
 	}
@@ -72,14 +73,14 @@ struct ClamshellMicrophoneSettingsRow: View {
 				"Microphone When Lid Is Closed",
 				description: "Use a different microphone while your Mac runs in clamshell mode"
 			) {
-				Picker("", selection: $clamshellDeviceUID) {
+				Picker("Microphone When Lid Is Closed", selection: $clamshellDeviceUID) {
 					Text("Same as above").tag("")
 					ForEach(deviceManager.availableDevices) { device in
 						Label(device.name, systemImage: device.iconName).tag(device.uid)
 					}
 				}
 				.labelsHidden()
-				.frame(maxWidth: 200)
+				.frame(maxWidth: 200, alignment: .trailing)
 			}
 		}
 	}
@@ -98,7 +99,8 @@ struct VoiceActivitySettingsRows: View {
 			description:
 				"Skip clips with no speech and trim silence from them. A skipped clip shows \"No speech detected\" in the menu bar. On by default for new installs; left off when updating from a version without it."
 		) {
-			Toggle("", isOn: $vadEnabled)
+			Toggle("Skip Silence", isOn: $vadEnabled)
+				.labelsHidden()
 		}
 
 		if vadEnabled {
@@ -107,13 +109,13 @@ struct VoiceActivitySettingsRows: View {
 				description:
 					"Neural uses the Silero model (downloaded once, about 1 MB) for recorded clips and is better at ignoring noise"
 			) {
-				Picker("", selection: $vadEngine) {
+				Picker("Speech Detection", selection: $vadEngine) {
 					ForEach(VADEngine.allCases) { engine in
 						Text(engine.displayName).tag(engine.rawValue)
 					}
 				}
 				.labelsHidden()
-				.frame(width: 150)
+				.frame(width: 150, alignment: .trailing)
 				.onChange(of: vadEngine) { _, newValue in
 					guard newValue == VADEngine.neural.rawValue else { return }
 					// Fetch the model now so the first dictation does not wait for the download
@@ -131,13 +133,13 @@ struct VoiceActivitySettingsRows: View {
 				"Speech Sensitivity",
 				description: "Raise it if quiet speech gets skipped; lower it in noisy rooms"
 			) {
-				Picker("", selection: $vadSensitivity) {
+				Picker("Speech Sensitivity", selection: $vadSensitivity) {
 					ForEach(VADSensitivity.allCases) { level in
 						Text(level.displayName).tag(level.rawValue)
 					}
 				}
 				.labelsHidden()
-				.frame(width: 120)
+				.frame(width: 120, alignment: .trailing)
 			}
 		}
 	}
@@ -171,7 +173,7 @@ struct FeedbackSoundSettingsRows: View {
 		}
 
 		SettingRow("Sound Output", description: "Where start and stop sounds play") {
-			Picker("", selection: $outputDeviceUID) {
+			Picker("Sound Output", selection: $outputDeviceUID) {
 				Text("System Output").tag(FeedbackSoundSettings.systemOutputUID)
 				ForEach(outputDevices) { device in
 					Text(device.name).tag(device.uid)
@@ -183,7 +185,7 @@ struct FeedbackSoundSettingsRows: View {
 				}
 			}
 			.labelsHidden()
-			.frame(width: 180)
+			.frame(width: 180, alignment: .trailing)
 			.onChange(of: outputDeviceUID) {
 				FeedbackSoundPlayer.shared.play(start: true)
 			}

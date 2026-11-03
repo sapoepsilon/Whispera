@@ -1,0 +1,199 @@
+# Source of truth for the vendored Swift packages in this directory.
+# Read by scripts/verify-vendored.sh; the human-readable table is VENDORED.md.
+#
+#   git  <dir> <upstream git URL> <commit>
+#   zip  <dir> <release asset URL> <sha256 of the asset>
+#   rm   <dir> <path or glob, relative to the package root>   paths deleted when vendoring
+#   local <dir> <exact path>   a file changed or added here on purpose (see VENDORED.md)
+#
+# Package.swift / Package@swift-*.swift files are expected to differ (local path deps, trimmed
+# targets) and are diffed separately. Everything else must be byte-identical to upstream,
+# except the files a `local` line names.
+
+git whispera-components https://github.com/sapoepsilon/whispera-components af7dd7fc549cede4d5270b390b6b09530aacec04
+rm  whispera-components .gitignore
+rm  whispera-components BRIEF-dictation.md
+rm  whispera-components LATENCY-RESULT.md
+rm  whispera-components RESULT.md
+rm  whispera-components docs
+rm  whispera-components package.json
+rm  whispera-components pnpm-lock.yaml
+rm  whispera-components pnpm-workspace.yaml
+rm  whispera-components scripts
+rm  whispera-components tokens
+rm  whispera-components web
+rm  whispera-components apple/Tests
+rm  whispera-components apple/Sources/WhisperaComponents
+rm  whispera-components apple/Sources/WhisperaDictationUI
+rm  whispera-components apple/Sources/DictationDemo
+rm  whispera-components apple/Sources/DictationChecks
+rm  whispera-components apple/Sources/DictationSelfTest
+rm  whispera-components apple/Sources/PackageChecks
+rm  whispera-components apple/Sources/PackageSelfTest
+
+git agent-tui-protocol https://github.com/sapoepsilon/agent-tui-protocol a9a23135b784c0621af6507c2de08d4506d66e76
+rm  agent-tui-protocol .gitignore
+rm  agent-tui-protocol Tests
+
+git agent-herdr https://github.com/sapoepsilon/agent-herdr 3dff1f2352fea16160ec8f332d45ee92bc201c08
+rm  agent-herdr .gitignore
+rm  agent-herdr Package.resolved
+rm  agent-herdr Tests
+local agent-herdr Sources/WhisperaHerdr/HerdrCore.swift
+local whispera-components apple/Sources/WhisperaLink/LinkMessage.swift
+local whispera-components apple/Sources/WhisperaDictation/RealtimeProtocol.swift
+
+git agent-tmux https://github.com/sapoepsilon/agent-tmux f52f9be2063e4a2d0225e1ab3cc7100b5b6d6c1e
+rm  agent-tmux .gitignore
+rm  agent-tmux Package.resolved
+rm  agent-tmux Tests
+
+git WhisperKit https://github.com/argmaxinc/WhisperKit 3817d2833f73ceb30586cb285e0e0439a3860536
+rm  WhisperKit .*
+rm  WhisperKit BENCHMARKS.md
+rm  WhisperKit CONTRIBUTING.md
+rm  WhisperKit Examples
+rm  WhisperKit fastlane
+rm  WhisperKit Makefile
+rm  WhisperKit Package.resolved
+rm  WhisperKit scripts
+rm  WhisperKit Tests
+rm  WhisperKit Sources/TTSKit
+rm  WhisperKit Sources/SpeakerKit
+rm  WhisperKit Sources/WhisperKitCLI
+
+git swift-transformers https://github.com/huggingface/swift-transformers.git 150169bfba0889c229a2ce7494cf8949f18e6906
+rm  swift-transformers .*
+rm  swift-transformers Examples
+rm  swift-transformers media
+rm  swift-transformers Tests
+rm  swift-transformers Sources/Generation
+rm  swift-transformers Sources/Models
+
+git swift-jinja https://github.com/huggingface/swift-jinja.git f731f03bf746481d4fda07f817c3774390c4d5b9
+rm  swift-jinja .*
+rm  swift-jinja Package.resolved
+rm  swift-jinja Tests
+
+git swift-collections https://github.com/apple/swift-collections.git 8d9834a6189db730f6264db7556a7ffb751e99ee
+rm  swift-collections .*
+rm  swift-collections Benchmarks
+rm  swift-collections cmake
+rm  swift-collections CMakeLists.txt
+rm  swift-collections CODE_OF_CONDUCT.md
+rm  swift-collections CODEOWNERS
+rm  swift-collections CONTRIBUTING.md
+rm  swift-collections Documentation
+rm  swift-collections Tests
+rm  swift-collections Utils
+rm  swift-collections Xcode
+rm  swift-collections Package@swift-6.0.swift
+rm  swift-collections Sources/CMakeLists.txt
+rm  swift-collections Sources/BasicContainers
+rm  swift-collections Sources/BitCollections
+rm  swift-collections Sources/Collections
+rm  swift-collections Sources/ContainersPreview
+rm  swift-collections Sources/DequeModule
+rm  swift-collections Sources/HashTreeCollections
+rm  swift-collections Sources/HeapModule
+rm  swift-collections Sources/RopeModule
+rm  swift-collections Sources/SortedCollections
+rm  swift-collections Sources/TrailingElementsModule
+
+git swift-crypto https://github.com/apple/swift-crypto.git fa308c07a6fa04a727212d793e761460e41049c3
+rm  swift-crypto .*
+rm  swift-crypto Benchmarks
+rm  swift-crypto cmake
+rm  swift-crypto CMakeLists.txt
+rm  swift-crypto CODE_OF_CONDUCT.md
+rm  swift-crypto CONTRIBUTING.md
+rm  swift-crypto SECURITY.md
+rm  swift-crypto dev
+rm  swift-crypto scripts
+rm  swift-crypto Tests
+rm  swift-crypto Sources/crypto-shasum
+rm  swift-crypto Sources/CryptoExtras
+rm  swift-crypto Sources/_CryptoExtras
+rm  swift-crypto Sources/CCryptoBoringSSL
+rm  swift-crypto Sources/CCryptoBoringSSLShims
+rm  swift-crypto Sources/CryptoBoringWrapper
+rm  swift-crypto Sources/CXKCP
+rm  swift-crypto Sources/CXKCPShims
+
+git yyjson https://github.com/ibireme/yyjson.git 8b4a38dc994a110abaec8a400615567bd996105f
+rm  yyjson .*
+rm  yyjson CHANGELOG.md
+rm  yyjson cmake
+rm  yyjson CMakeLists.txt
+rm  yyjson doc
+rm  yyjson fuzz
+rm  yyjson misc
+rm  yyjson test
+rm  yyjson yyjson.pc.in
+
+git FluidAudio https://github.com/FluidInference/FluidAudio 915a392a3b214205fcf4860cc3608bde35891d03
+rm  FluidAudio .*
+rm  FluidAudio AGENTS.md
+rm  FluidAudio banner.png
+rm  FluidAudio CLAUDE.md
+rm  FluidAudio CONTRIBUTING.md
+rm  FluidAudio DIARIZATION_INVESTIGATION_REPORT.md
+rm  FluidAudio Documentation
+rm  FluidAudio FluidAudio.podspec
+rm  FluidAudio Frameworks
+rm  FluidAudio PLANS.md
+rm  FluidAudio run_benchmarks.py
+rm  FluidAudio Tests
+rm  FluidAudio Sources/FluidAudioCLI
+rm  FluidAudio Sources/FluidAudioTTS
+
+git YouTubeKit https://github.com/alexeichhorn/YouTubeKit 4140995e3485cd691fadb67b2820dbab2d3d84e9
+rm  YouTubeKit .*
+rm  YouTubeKit Scripts
+rm  YouTubeKit Tests
+
+git swift-markdown-ui https://github.com/gonzalezreal/swift-markdown-ui 5f613358148239d0292c0cef674a3c2314737f9e
+rm  swift-markdown-ui .*
+rm  swift-markdown-ui Examples
+rm  swift-markdown-ui Makefile
+rm  swift-markdown-ui Package.resolved
+rm  swift-markdown-ui Tests
+rm  swift-markdown-ui Sources/MarkdownUI/Documentation.docc
+
+git NetworkImage https://github.com/gonzalezreal/NetworkImage 2849f5323265386e200484b0d0f896e73c3411b9
+rm  NetworkImage .*
+rm  NetworkImage Demo
+rm  NetworkImage Makefile
+rm  NetworkImage Tests
+
+git swift-cmark https://github.com/swiftlang/swift-cmark 5d9bdaa4228b381639fff09403e39a04926e2dbe
+rm  swift-cmark .*
+rm  swift-cmark api_test
+rm  swift-cmark appveyor.yml
+rm  swift-cmark bench
+rm  swift-cmark benchmarks.md
+rm  swift-cmark bin
+rm  swift-cmark changelog.txt
+rm  swift-cmark cmake
+rm  swift-cmark CMakeLists.txt
+rm  swift-cmark cmark-gfm-config.cmake.in
+rm  swift-cmark data
+rm  swift-cmark fuzz
+rm  swift-cmark Makefile
+rm  swift-cmark Makefile.nmake
+rm  swift-cmark man
+rm  swift-cmark nmake.bat
+rm  swift-cmark suppressions
+rm  swift-cmark test
+rm  swift-cmark toolchain-mingw32.cmake
+rm  swift-cmark tools
+rm  swift-cmark why-cmark-and-not-x.md
+rm  swift-cmark wrappers
+
+zip Sparkle https://github.com/sparkle-project/Sparkle/releases/download/2.9.0/Sparkle-for-Swift-Package-Manager.zip 44a0d5a00d5bfb6c2ad1755a92b694d948876d61ad44f35a0119eb0e7ace4b65
+rm  Sparkle CHANGELOG
+rm  Sparkle INSTALL
+rm  Sparkle SampleAppcast.xml
+rm  Sparkle bin/BinaryDelta
+rm  Sparkle bin/generate_appcast
+rm  Sparkle bin/old_dsa_scripts

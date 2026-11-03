@@ -5,7 +5,7 @@ import NaturalLanguage
 /// Fed near-silence, Whisper tends to echo its prompt back ("[Zyphora]", "The Quills of the
 /// Quillmar"), and in Live Transcription Mode that echo would be typed.
 ///
-/// Text alone cannot tell the echo from the user saying their custom words: "Kentra Health." on
+/// Text alone cannot tell the echo from the user saying their custom words: "Acme Health." on
 /// its own reads exactly like the echo of that custom word, and "Deploy to production." shares
 /// its words' openings with "Deployment" and "Production". So a segment is only an echo when its
 /// text looks like the prompt and its own stretch of audio holds no speech.

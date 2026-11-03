@@ -1,0 +1,288 @@
+//
+//  PreTokenizer.swift
+//
+//
+//  Created by Pedro Cuenca on 18/7/23.
+//
+
+import Foundation
+import Hub
+
+/// Character class used by punctuation-based pre-tokenizers.
+private let punctuationRegex = #"\p{P}\u0021-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E"#
+
+/// Options that can be passed to pre-tokenization operations.
+public enum PreTokenizerOption: String {
+    /// Indicates this is the first section of text being processed.
+    case firstSection
+}
+
+/// A set of pre-tokenization options.
+public typealias PreTokenizerOptions = Set<PreTokenizerOption>
+
+/// A protocol for pre-tokenization operations that split text before main tokenization.
+///
+/// Pre-tokenizers handle the initial splitting of text into chunks that will be
+/// further processed by the main tokenization algorithm. Common operations include
+/// splitting on whitespace, punctuation, or applying byte-level encoding.
+public protocol PreTokenizer {
+    /// Pre-tokenizes a single text string.
+    ///
+    /// - Parameters:
+    ///   - text: The input text to pre-tokenize
+    ///   - options: Options controlling the pre-tokenization behavior
+    /// - Returns: An array of pre-tokenized text chunks
+    func preTokenize(text: String, options: PreTokenizerOptions) -> [String]
+
+    /// Pre-tokenizes multiple text strings.
+    ///
+    /// - Parameters:
+    ///   - texts: The input texts to pre-tokenize
+    ///   - options: Options controlling the pre-tokenization behavior
+    /// - Returns: An array of pre-tokenized text chunks from all inputs
+    func preTokenize(texts: [String], options: PreTokenizerOptions) -> [String]
+
+    /// Function call syntax for pre-tokenizing multiple texts.
+    ///
+    /// - Parameters:
+    ///   - texts: The input texts to pre-tokenize
+    ///   - options: Options controlling the pre-tokenization behavior
+    /// - Returns: An array of pre-tokenized text chunks
+    func callAsFunction(texts: [String], options: PreTokenizerOptions) -> [String]
+
+    /// Function call syntax for pre-tokenizing a single text.
+    ///
+    /// - Parameters:
+    ///   - text: The input text to pre-tokenize
+    ///   - options: Options controlling the pre-tokenization behavior
+    /// - Returns: An array of pre-tokenized text chunks
+    func callAsFunction(text: String, options: PreTokenizerOptions) -> [String]
+
+    /// Initializes the pre-tokenizer from configuration.
+    ///
+    /// - Parameter config: The configuration for this pre-tokenizer
+    init(config: Config)
+}
+
+extension PreTokenizer {
+    func preTokenize(texts: [String], options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        texts.flatMap { preTokenize(text: $0, options: options) }
+    }
+
+    func callAsFunction(texts: [String], options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        preTokenize(texts: texts, options: options)
+    }
+
+    func callAsFunction(text: String, options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        preTokenize(text: text, options: options)
+    }
+}
+
+enum PreTokenizerType: String {
+    case Sequence
+    case ByteLevel
+    case Punctuation
+    case Digits
+    case Split
+    case Whitespace
+    case WhitespaceSplit
+    case Metaspace
+    case BertPreTokenizer
+    /// Several more to be supported
+    case Unknown = ""
+}
+
+struct PreTokenizerFactory {
+    static func fromConfig(config: Config?) -> PreTokenizer? {
+        guard let config else { return nil }
+        guard let typeName = config.type.string() else { return nil }
+        let type = PreTokenizerType(rawValue: typeName)
+        switch type {
+        case .Sequence: return PreTokenizerSequence(config: config)
+        case .ByteLevel: return ByteLevelPreTokenizer(config: config)
+        case .Punctuation: return PunctuationPreTokenizer(config: config)
+        case .Digits: return DigitsPreTokenizer(config: config)
+        case .Split: return SplitPreTokenizer(config: config)
+        case .Whitespace, .WhitespaceSplit: return WhitespacePreTokenizer(config: config)
+        case .Metaspace: return MetaspacePreTokenizer(config: config)
+        case .BertPreTokenizer: return BertPreTokenizer(config: config)
+        default: fatalError("Unsupported PreTokenizer type: \(typeName)")
+        }
+    }
+}
+
+class BertPreTokenizer: PreTokenizer {
+    let re: String
+
+    required init(config: Config) {
+        // Ref: https://github.com/huggingface/transformers.js/blob/27920d84831e323275b38f0b5186644b7936e1a2/src/tokenizers.js#L1002
+        re = "[^\\s\(punctuationRegex)]+|[\(punctuationRegex)]"
+    }
+
+    func preTokenize(text: String, options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        text.ranges(of: re).map { String(text[$0]) }
+    }
+}
+
+class PreTokenizerSequence: PreTokenizer {
+    let preTokenizers: [PreTokenizer]
+
+    required init(config: Config) {
+        guard let configs = config.pretokenizers.array() else { fatalError("No pretokenizers in Sequence") }
+        preTokenizers = configs.compactMap { PreTokenizerFactory.fromConfig(config: $0) }
+    }
+
+    func preTokenize(text: String, options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        preTokenizers.reduce([text]) { current, preTokenizer in
+            preTokenizer(texts: current, options: options)
+        }
+    }
+}
+
+class WhitespacePreTokenizer: PreTokenizer {
+    let re: String
+
+    required init(config: Config) {
+        re = #"\S+"#
+    }
+
+    func preTokenize(text: String, options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        text.ranges(of: re).map { String(text[$0]) }
+    }
+}
+
+/// PreTokenizer that replaces spaces with the given replacement character, adds a prefix space if requested,
+class MetaspacePreTokenizer: PreTokenizer {
+    /// Whether to add a prefix space to the first token
+    let addPrefixSpace: Bool
+
+    /// Replacement character
+    let replacement: String
+
+    /// Optional string representation of the replacement character.
+    let stringReplacement: String
+
+    enum PrependScheme: String {
+        case first
+        case never
+        case always
+
+        static var defaultScheme: PrependScheme { .always }
+        static func from(rawValue value: String?) -> PrependScheme {
+            guard let value else { return defaultScheme }
+            return PrependScheme(rawValue: value) ?? defaultScheme
+        }
+    }
+
+    /// The metaspace prepend scheme, see https://github.com/huggingface/tokenizers/pull/1357
+    let prependScheme: PrependScheme
+
+    required init(config: Config) {
+        addPrefixSpace = config.addPrefixSpace.boolean(or: false)
+        replacement = config.replacement.string(or: " ")
+        stringReplacement = config.strRep.string(or: replacement)
+
+        // prepend_scheme supersedes add_prefix_space per tokenizers PR #1357.
+        // When prepend_scheme is explicit, use it directly.
+        // Otherwise, derive from add_prefix_space for backward compatibility
+        // (defaulting to .always when both are absent, matching canonical behavior).
+        if let schemeStr = config.prependScheme.string() {
+            prependScheme = PrependScheme(rawValue: schemeStr) ?? .always
+        } else {
+            prependScheme = config.addPrefixSpace.boolean(or: true) ? .always : .never
+        }
+    }
+
+    /// https://github.com/huggingface/tokenizers/blob/accd0650b802f2180df40ef1def3bce32156688e/tokenizers/src/pre_tokenizers/metaspace.rs#L114
+    /// https://github.com/xenova/transformers.js/blob/b07336d8f7ff57453cc164cc68aead2a79cbd57e/src/tokenizers.js#L2153
+    func preTokenize(text: String, options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        let normalized = text.replacingOccurrences(of: " ", with: stringReplacement)
+
+        // Prepend the replacement character based on the prepend scheme.
+        // prepend_scheme is the sole authority (add_prefix_space is resolved in init).
+        var prepend = ""
+        if !normalized.hasPrefix(replacement) {
+            switch prependScheme {
+            case .always:
+                prepend = stringReplacement
+            case .first:
+                if options.contains(.firstSection) {
+                    prepend = stringReplacement
+                }
+            case .never:
+                break
+            }
+        }
+
+        // Split in `MergedWithNext` mode, although usually the input to this function is already pre-tokenized
+        // https://github.com/huggingface/tokenizers/blob/accd0650b802f2180df40ef1def3bce32156688e/tokenizers/src/pre_tokenizers/metaspace.rs#L127
+        return (prepend + normalized).split(by: replacement, behavior: .mergedWithNext)
+    }
+}
+
+class ByteLevelPreTokenizer: PreTokenizer {
+    let addPrefixSpace: Bool
+    let trimOffsets: Bool
+    let useRegex: Bool
+    let RE = #"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"#
+
+    required init(config: Config) {
+        addPrefixSpace = config.addPrefixSpace.boolean(or: false)
+        trimOffsets = config.trimOffsets.boolean(or: true)
+        useRegex = config.useRegex.boolean(or: true)
+    }
+
+    func preTokenize(text: String, options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        // Split on whitespace and punctuation
+        let tokens = useRegex ? text.ranges(of: RE).map { String(text[$0]) } : [text]
+        return tokens.map { token in
+            if addPrefixSpace, !token.hasPrefix(" ") {
+                return " " + token
+            }
+            return token
+        }.map { token in
+            Array(token.utf8).map { byteEncoder[$0]! }.joined()
+        }
+    }
+}
+
+class PunctuationPreTokenizer: PreTokenizer {
+    let re: String
+
+    required init(config: Config) {
+        re = "[^\(punctuationRegex)]+|[\(punctuationRegex)]+"
+    }
+
+    func preTokenize(text: String, options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        // Ref: https://github.com/xenova/transformers.js/blob/27920d84831e323275b38f0b5186644b7936e1a2/src/tokenizers.js#L1138
+        text.ranges(of: re).map { String(text[$0]) }
+    }
+}
+
+class DigitsPreTokenizer: PreTokenizer {
+    let re: String
+
+    required init(config: Config) {
+        let individualDigits = config.individualDigits.boolean(or: false)
+        re = "[^\\d]+|\\d\(individualDigits ? "" : "+")"
+    }
+
+    func preTokenize(text: String, options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        text.ranges(of: re).map { String(text[$0]) }
+    }
+}
+
+class SplitPreTokenizer: PreTokenizer {
+    let pattern: StringSplitPattern?
+    let invert: Bool
+
+    required init(config: Config) {
+        pattern = StringSplitPattern.from(config: config)
+        invert = config.invert.boolean(or: false)
+    }
+
+    func preTokenize(text: String, options: PreTokenizerOptions = [.firstSection]) -> [String] {
+        guard let pattern else { return [text] }
+        return pattern.split(text, invert: invert)
+    }
+}

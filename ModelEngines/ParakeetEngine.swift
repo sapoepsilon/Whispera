@@ -65,7 +65,7 @@ enum ModelFolderRepair {
 /// Parakeet TDT running on CoreML through FluidAudio. Models live next to the WhisperKit ones
 /// under `<modelsBase>/models/FluidInference/`.
 @MainActor
-final class ParakeetEngine: TranscriptionEngine {
+final class ParakeetEngine: LocalModelEngine {
 	/// FluidAudio rejects anything shorter than one second at 16 kHz.
 	nonisolated static let minimumSampleCount = 16_000
 

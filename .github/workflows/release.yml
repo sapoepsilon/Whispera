@@ -22,6 +22,8 @@ permissions:
 
 jobs:
   release:
+    # A manual dispatch from a branch must never publish a release; only a tag ref may
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: macos-15
     permissions:
       contents: write # Creates the release and pushes the appcast to main
@@ -33,12 +35,28 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          # The token is not left in .git/config; the push steps pass it explicitly
+          persist-credentials: false
 
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           # The FoundationModels weak link needs the macOS 26 SDK
           xcode-version: "^26.0"
+
+      # sign_update receives the Sparkle private key, so it has to be the official release binary.
+      # The verified copy goes to RUNNER_TEMP before any build step runs repo code, and its hash
+      # travels as a step output (which later steps cannot rewrite, unlike GITHUB_ENV)
+      - name: Verify vendored Sparkle against the official release
+        id: sparkle
+        run: |
+          set -euo pipefail
+          ./scripts/verify-sparkle.sh "$GITHUB_WORKSPACE"
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          install -m 0555 Packages/Sparkle/bin/sign_update "$RUNNER_TEMP/sparkle/sign_update"
+          SHA=$(shasum -a 256 "$RUNNER_TEMP/sparkle/sign_update" | cut -d' ' -f1)
+          echo "sign_update_sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Verified sign_update: $SHA"
 
       # Free-text input and tag names reach later steps only through env and only after this
       # check, so they are never pasted into a script
@@ -57,6 +75,11 @@ jobs:
             echo "::error::Invalid version (expected MAJOR.MINOR.PATCH)"
             exit 1
           fi
+          # A dispatch runs on a tag ref (job condition); the input must name that same tag
+          if [ "$GITHUB_REF" != "refs/tags/v$VERSION" ]; then
+            echo "::error::Version input does not match the tag this run was dispatched on"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Release version: $VERSION"
@@ -67,15 +90,6 @@ jobs:
         run: |
           chmod +x scripts/bump-version.sh
           ./scripts/bump-version.sh "$VERSION"
-
-      - name: Setup signing keychain
-        env:
-          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
-          DEVELOPER_ID_PASSWORD: ${{ secrets.DEVELOPER_ID_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          chmod +x scripts/setup-keychain.sh
-          ./scripts/setup-keychain.sh
 
       - name: Build and archive
         run: |
@@ -102,15 +116,65 @@ jobs:
                      -exportPath "./build/Release" \
                      -exportOptionsPlist "scripts/ExportOptions-dev.plist"
 
+      # The Developer ID identity exists only from here to the end of notarization: the unsigned
+      # archive and export above (which run repo build code) never have it in reach
+      - name: Setup signing keychain
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_PASSWORD: ${{ secrets.DEVELOPER_ID_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          chmod +x scripts/setup-keychain.sh
+          ./scripts/setup-keychain.sh
+
       - name: Sign and notarize
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
           TEAM_ID: ${{ secrets.TEAM_ID }}
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           chmod +x scripts/release-distribute-ci.sh
           ./scripts/release-distribute-ci.sh
+
+      # Codesigning, notarization and stapling are done; nothing after this needs the identity
+      - name: Delete signing keychain
+        if: always()
+        run: security delete-keychain whispera-signing.keychain-db 2>/dev/null || true
+
+      # Inline, so no repo script runs with the key in its environment, and only the copy verified
+      # before the build, re-hashed here, ever reads it
+      - name: Sign the update for Sparkle
+        id: sparkle_sign
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          EXPECTED_SHA256: ${{ steps.sparkle.outputs.sign_update_sha256 }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          TOOL="$RUNNER_TEMP/sparkle/sign_update"
+          ACTUAL=$(shasum -a 256 "$TOOL" | cut -d' ' -f1)
+          if [ -z "$EXPECTED_SHA256" ] || [ "$ACTUAL" != "$EXPECTED_SHA256" ]; then
+            echo "::error::sign_update changed since it was verified; refusing to sign"
+            exit 1
+          fi
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_PRIVATE_KEY is not set; the update cannot be signed"
+            exit 1
+          fi
+          KEY_FILE=$(mktemp "$RUNNER_TEMP/sparkle-key.XXXXXX")
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+          SIGNATURE=$("$TOOL" "dist/Whispera-${VERSION}.dmg" -f "$KEY_FILE" | tr -d '\r\n')
+          if ! printf '%s' "$SIGNATURE" | grep -Eq '^sparkle:edSignature="[A-Za-z0-9+/=]+" length="[0-9]+"$'; then
+            echo "::error::sign_update did not produce a signature"
+            exit 1
+          fi
+          echo "signature=$SIGNATURE" >> "$GITHUB_OUTPUT"
+
+      - name: Write appcast.xml
+        env:
+          SPARKLE_SIGNATURE: ${{ steps.sparkle_sign.outputs.signature }}
+        run: ./scripts/write-appcast.sh
 
       - name: Create release notes
         id: release_notes
@@ -137,11 +201,12 @@ jobs:
         if: success()
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -e
 
           # The checkout's own appcast.xml is the previous release's; only one written for this
-          # version and signed by release-distribute-ci.sh may reach the update feed
+          # version and signed by the Sparkle step may reach the update feed
           if ! grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" appcast.xml \
             || ! grep -q 'sparkle:edSignature="' appcast.xml; then
             echo "::error::appcast.xml was not generated and signed for $VERSION; the update feed was not published"
@@ -151,7 +216,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git fetch origin main
+          # checkout runs with persist-credentials: false, so the token is passed per command
+          # and never written to .git/config
+          GIT_AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$GIT_AUTH"
+          git_auth() { git -c "http.https://github.com/.extraheader=$GIT_AUTH" "$@"; }
+
+          git_auth fetch origin main
 
           git worktree remove --force main-worktree 2>/dev/null || true
           rm -rf main-worktree
@@ -168,17 +239,15 @@ jobs:
           fi
 
           git commit -m "chore(release): update appcast for v$VERSION"
-          git push origin HEAD:main
+          git_auth push origin HEAD:main
 
           echo "✅ Appcast committed and pushed"
 
       - name: Cleanup keychain
         if: always()
         run: |
-          # Clean up temporary keychain
-          if [ -f "scripts/setup-keychain.sh" ]; then
-            security delete-keychain whispera-signing.keychain-db 2>/dev/null || true
-          fi
+          # Fallback for a run that failed before the keychain step's own cleanup
+          security delete-keychain whispera-signing.keychain-db 2>/dev/null || true
 
       - name: Upload build artifacts
         if: failure()
@@ -204,17 +273,26 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          # The token is not left in .git/config; the push steps pass it explicitly
+          persist-credentials: false
 
       - name: Bump Homebrew cask on main
         env:
           VERSION: ${{ needs.release.outputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -e
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git fetch origin main
+          # checkout runs with persist-credentials: false, so the token is passed per command
+          # and never written to .git/config
+          GIT_AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$GIT_AUTH"
+          git_auth() { git -c "http.https://github.com/.extraheader=$GIT_AUTH" "$@"; }
+
+          git_auth fetch origin main
           git worktree add --detach main-worktree origin/main
 
           if [ ! -f main-worktree/Casks/whispera.rb ]; then
@@ -234,7 +312,7 @@ jobs:
           fi
 
           git commit -m "chore(release): bump Homebrew cask to v$VERSION"
-          git push origin HEAD:main
+          git_auth push origin HEAD:main
 
           echo "✅ Cask committed and pushed"
 

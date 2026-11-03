@@ -1,0 +1,7 @@
+# Vendored packages are committed byte-for-byte, including what the root .gitignore would skip
+# (Sparkle.xcframework ships its dSYMs inside the framework bundle).
+!*.dSYM
+!*.dSYM/**
+# SwiftPM and Xcode state from opening a package; never part of the vendored source.
+.build/
+.swiftpm/

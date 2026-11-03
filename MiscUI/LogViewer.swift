@@ -264,7 +264,7 @@ struct LogViewerView: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
-			SettingsSection("Logging") {
+			SettingsSection("Logging", inForm: false) {
 				LogLevelSettingRow()
 				Text("Press ⇧⌘D in Settings to hide this section.")
 					.font(.caption)

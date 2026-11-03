@@ -1,0 +1,253 @@
+// swift-tools-version:6.2
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift Collections open source project
+//
+// Copyright (c) 2021 - 2026 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See https://swift.org/LICENSE.txt for license information
+//
+// SPDX-License-Identifier: Apache-2.0 WITH Swift-exception
+//
+//===----------------------------------------------------------------------===//
+
+// Vendored into Whispera (see Packages/VENDORED.md): only OrderedCollections and the
+// InternalCollectionsUtilities it depends on are kept; every other module and all tests
+// were removed.
+
+import PackageDescription
+
+// FIXME: This can sometimes induce a runtime crash (rdar://150240032)
+let _traits: Set<Trait> = [
+  .default(
+    enabledTraits: [
+      //"UnstableContainersPreview"
+    ]),
+  .trait(
+    name: "UnstableContainersPreview",
+    description: """
+      Enables source-unstable components of the ContainersPreview module in
+      swift-collections. This allows experimental use of the Container
+      protocols and associated algorithms.
+      """),
+  .trait(
+    name: "UnstableSortedCollections",
+    description: """
+      Enables source-unstable prototypes of `SortedSet` and `SortedDictionary`,
+      two potential new collection types implementing in-memory B-trees.
+      These are early developer drafts, and they not ready for use in 
+      production. We will make significant, source breaking API changes to these
+      types before they ship. 
+      """),
+  .trait(
+    name: "UnstableHashedContainers",
+    description: """
+      Enables support for noncopyable set members and dictionary keys in
+      `BasicContainers`. This requires a Standard Library with generalized
+      `Equatable` and `Hashable` protocols that allow noncopyable conformers;
+      this feature has not shipped in a stable compiler version yet.
+      """),
+]
+
+// This package recognizes the conditional compilation flags listed below.
+// To use enable them, uncomment the corresponding lines or define them
+// from the package manager command line:
+//
+//     swift build -Xswiftc -DCOLLECTIONS_INTERNAL_CHECKS
+var defines: [SwiftSetting] = [
+  .define(
+    "COLLECTIONS_UNSTABLE_CONTAINERS_PREVIEW",
+    .when(traits: ["UnstableContainersPreview"])),
+  .define(
+    "COLLECTIONS_UNSTABLE_SORTED_COLLECTIONS",
+    .when(traits: ["UnstableSortedCollections"])),
+  .define(
+    "COLLECTIONS_UNSTABLE_HASHED_CONTAINERS",
+    .when(traits: ["UnstableHashedContainers"])),
+
+  // Enables internal consistency checks at the end of initializers and
+  // mutating operations. This can have very significant overhead, so enabling
+  // this setting invalidates all documented performance guarantees.
+  //
+  // This is mostly useful while debugging an issue with the implementation of
+  // the hash table itself. This setting should never be enabled in production
+  // code.
+//  .define("COLLECTIONS_INTERNAL_CHECKS"),
+
+  // Hashing collections provided by this package usually seed their hash
+  // function with the address of the memory location of their storage,
+  // to prevent some common hash table merge/copy operations from regressing to
+  // quadratic behavior. This setting turns off this mechanism, seeding
+  // the hash function with the table's size instead.
+  //
+  // When used in conjunction with the SWIFT_DETERMINISTIC_HASHING environment
+  // variable, this enables reproducible hashing behavior.
+  //
+  // This is mostly useful while debugging an issue with the implementation of
+  // the hash table itself. This setting should never be enabled in production
+  // code.
+//  .define("COLLECTIONS_DETERMINISTIC_HASHING"),
+
+  // Enables randomized testing of some data structure implementations.
+  .define("COLLECTIONS_RANDOMIZED_TESTING"),
+
+  // Enable this to build the sources as a single, large module.
+  // This removes the distinct modules for each data structure, instead
+  // putting them all directly into the `Collections` module.
+  // Note: This is a source-incompatible variation of the default configuration.
+//  .define("COLLECTIONS_SINGLE_MODULE"),
+  
+  // Enables longer, more exhaustive tests.
+//  .define("COLLECTIONS_LONG_TESTS"),
+]
+
+let availabilityMacros: KeyValuePairs<String, String> = [
+  "SwiftStdlib 5.0":  "macOS 10.14.4, iOS 12.2, watchOS 5.2, tvOS 12.2",
+  "SwiftStdlib 5.1":  "macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0",
+  "SwiftStdlib 5.6":  "macOS 12.3, iOS 15.4, watchOS 8.5, tvOS 15.4",
+  "SwiftStdlib 5.7":  "macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0",
+  "SwiftStdlib 5.8":  "macOS 13.3, iOS 16.4, watchOS 9.4, tvOS 16.4",
+  "SwiftStdlib 5.9":  "macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0",
+  "SwiftStdlib 5.10": "macOS 14.4, iOS 17.4, watchOS 10.4, tvOS 17.4, visionOS 1.1",
+  "SwiftStdlib 6.0":  "macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0",
+  "SwiftStdlib 6.1":  "macOS 15.4, iOS 18.4, watchOS 11.4, tvOS 18.4, visionOS 2.4",
+  "SwiftStdlib 6.2":  "macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0",
+  "SwiftStdlib 6.3":  "macOS 26.4, iOS 26.4, watchOS 26.4, tvOS 26.4, visionOS 26.4",
+  // Note: if you touch these, please make sure to also update the similar lists in
+  // CMakeLists.txt and Xcode/Shared.xcconfig.
+]
+
+let extraSettings: [SwiftSetting] = [
+  //  .strictMemorySafety(),
+  .enableUpcomingFeature("MemberImportVisibility"),
+  .enableExperimentalFeature("BuiltinModule"),
+  .enableExperimentalFeature("Lifetimes"),
+  .enableExperimentalFeature("InoutLifetimeDependence"),
+  .enableExperimentalFeature("SuppressedAssociatedTypes"),
+  .enableExperimentalFeature("AddressableParameters"),
+  .enableExperimentalFeature("AddressableTypes"),
+
+  // Note: if you touch these, please make sure to also update the similar lists in
+  // CMakeLists.txt and Xcode/Shared.xcconfig.
+]
+
+let _sharedSettings: [SwiftSetting] = (
+  defines
+  + availabilityMacros.map { name, value in
+      .enableExperimentalFeature("AvailabilityMacro=\(name): \(value)")
+  }
+  + extraSettings
+)
+
+let _settings: [SwiftSetting] = _sharedSettings + []
+let _testSettings: [SwiftSetting] = _sharedSettings + []
+
+struct CustomTarget {
+  enum Kind {
+    case exported
+    case hidden
+    case test
+    case testSupport
+  }
+
+  var kind: Kind
+  var name: String
+  var dependencies: [Target.Dependency]
+  var directory: String
+  var exclude: [String]
+  var sources: [String]?
+  var settings: [SwiftSetting]
+}
+
+extension CustomTarget.Kind {
+  func path(for name: String) -> String {
+    switch self {
+    case .exported, .hidden: return "Sources/\(name)"
+    case .test, .testSupport: return "Tests/\(name)"
+    }
+  }
+
+  var isTest: Bool {
+    switch self {
+    case .exported, .hidden: return false
+    case .test, .testSupport: return true
+    }
+  }
+}
+
+extension CustomTarget {
+  static func target(
+    kind: Kind,
+    name: String,
+    dependencies: [Target.Dependency] = [],
+    directory: String? = nil,
+    exclude: [String] = [],
+    sources: [String]? = nil,
+    settings: [SwiftSetting]? = nil
+  ) -> CustomTarget {
+    CustomTarget(
+      kind: kind,
+      name: name,
+      dependencies: dependencies,
+      directory: directory ?? name,
+      exclude: exclude,
+      sources: sources,
+      settings: settings ?? (kind.isTest ? _testSettings : _settings))
+  }
+
+  func toTarget() -> Target {
+    var linkerSettings: [LinkerSetting] = []
+    if kind == .testSupport {
+      linkerSettings.append(
+        .linkedFramework("XCTest", .when(platforms: [.macOS, .iOS, .watchOS, .tvOS])))
+    }
+    switch kind {
+    case .exported, .hidden, .testSupport:
+      return Target.target(
+        name: name,
+        dependencies: dependencies,
+        path: kind.path(for: directory),
+        exclude: exclude,
+        sources: sources,
+        swiftSettings: settings,
+        linkerSettings: linkerSettings)
+    case .test:
+      return Target.testTarget(
+        name: name,
+        dependencies: dependencies,
+        path: kind.path(for: directory),
+        exclude: exclude,
+        swiftSettings: settings,
+        linkerSettings: linkerSettings)
+    }
+  }
+}
+
+let targets: [CustomTarget] = [
+  .target(
+    kind: .hidden,
+    name: "InternalCollectionsUtilities",
+    exclude: [
+      "CMakeLists.txt",
+    ]),
+
+  .target(
+    kind: .exported,
+    name: "OrderedCollections",
+    dependencies: ["InternalCollectionsUtilities"],
+    exclude: ["CMakeLists.txt"]),
+]
+
+let _products: [Product] = targets.compactMap { t in
+  guard t.kind == .exported else { return nil }
+  return .library(name: t.name, targets: [t.name])
+}
+let _targets: [Target] = targets.map { $0.toTarget() }
+
+let package = Package(
+  name: "swift-collections",
+  products: _products,
+  traits: _traits,
+  targets: _targets
+)

@@ -55,7 +55,10 @@ enum RecordingOverlayPolicy {
 	static func shouldShowPill(state: AudioState, mode: RecordingMode, style: RecordingOverlayStyle)
 		-> Bool
 	{
-		style == .pill && RecordingWindowPolicy.shouldShowListeningWindow(state: state, mode: mode)
+		// Live mode shows its own words HUD instead of the pill while it records; after
+		// stop the pill carries the status of a paste that is still coming (WHI-58)
+		style == .pill && (mode != .liveTranscription || state == .transcribing)
+			&& RecordingWindowPolicy.shouldShowListeningWindow(state: state)
 	}
 
 	// The bottom inset matches the pill's historical placement at 10% of the visible height.
@@ -84,7 +87,7 @@ struct RecordingOverlaySettingRows: View {
 			"Recording Overlay",
 			description: "What appears on screen while dictating."
 		) {
-			Picker("", selection: $styleRaw) {
+			Picker("Recording Overlay", selection: $styleRaw) {
 				ForEach(RecordingOverlayStyle.allCases) { style in
 					Text(style.displayName).tag(style.rawValue)
 				}
@@ -96,7 +99,7 @@ struct RecordingOverlaySettingRows: View {
 
 		if styleRaw != RecordingOverlayStyle.none.rawValue {
 			SettingRow("Overlay Position") {
-				Picker("", selection: $positionRaw) {
+				Picker("Overlay Position", selection: $positionRaw) {
 					ForEach(RecordingOverlayPosition.allCases) { position in
 						Text(position.displayName).tag(position.rawValue)
 					}

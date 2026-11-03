@@ -3,13 +3,17 @@ import SwiftUI
 struct ConfettiView: View {
 	@State private var particles: [Particle] = []
 	@State private var startTime: Date?
+	@State private var isSpent = false
 
 	private let colors: [Color] = [.blue, .purple, .green, .orange]
 	private let particleCount = 25
 	private let duration: TimeInterval = 2.5
 
 	var body: some View {
-		TimelineView(.animation) { timeline in
+		// every particle is invisible once its lifetime elapses, but the schedule
+		// would keep redrawing an empty Canvas at display refresh for as long as
+		// the step is on screen; pausing stops the frames without changing a pixel
+		TimelineView(.animation(paused: isSpent)) { timeline in
 			Canvas { context, size in
 				guard let start = startTime else { return }
 				let elapsed = timeline.date.timeIntervalSince(start)
@@ -67,6 +71,11 @@ struct ConfettiView: View {
 				)
 			}
 			startTime = .now
+
+			Task {
+				try? await Task.sleep(for: .seconds(duration))
+				isSpent = true
+			}
 		}
 		.allowsHitTesting(false)
 	}

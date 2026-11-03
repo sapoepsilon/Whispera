@@ -39,7 +39,7 @@ struct AppNotice: Identifiable, Equatable {
 			kind: .historyIntro,
 			message: String(
 				localized:
-					"History is on: Whispera keeps your recent transcripts on this Mac so you can copy or retry them. Recordings are not kept unless you turn that on. You can change this any time in Settings > History."
+					"History keeps recent transcripts on this Mac. Audio is saved only if enabled. Change it in Settings > History."
 			))
 	}
 }

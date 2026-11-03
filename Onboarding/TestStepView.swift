@@ -4,6 +4,7 @@ struct TestStepView: View {
 	@Bindable var audioManager: AudioManager
 	@Binding var selectedLanguage: String
 	@State private var pulseRecord = false
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
 		VStack(spacing: 24) {
@@ -28,6 +29,7 @@ struct TestStepView: View {
 						Text(Constants.localizedLanguageName(for: language)).tag(language)
 					}
 				}
+				.labelsHidden()
 				.frame(minWidth: 140)
 			}
 			.padding(12)
@@ -41,7 +43,7 @@ struct TestStepView: View {
 						Circle()
 							.fill(audioManager.isRecording ? Color.red : Color.blue)
 							.frame(width: 64, height: 64)
-							.scaleEffect(pulseRecord ? 1.08 : 1.0)
+							.scaleEffect(pulseRecord && !reduceMotion ? 1.08 : 1.0)
 							.shadow(
 								color: (audioManager.isRecording ? Color.red : Color.blue)
 									.opacity(0.3),
@@ -54,19 +56,20 @@ struct TestStepView: View {
 					}
 				}
 				.buttonStyle(.plain)
+				.accessibilityLabel(audioManager.isRecording ? Text("Stop recording") : Text("Start recording"))
 				.onChange(of: audioManager.isRecording) { _, recording in
+					let pulse = recording && !reduceMotion
 					withAnimation(
-						recording
+						pulse
 							? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
-							: .default
+							: (reduceMotion ? nil : .default)
 					) {
-						pulseRecord = recording
+						pulseRecord = pulse
 					}
 				}
 
 				if audioManager.isRecording {
-					AudioMeterView(levels: audioManager.audioLevels, fixedHeight: 20)
-						.frame(width: 160)
+					LiveMeter(audioManager: audioManager)
 						.transition(.opacity)
 				}
 
@@ -80,7 +83,7 @@ struct TestStepView: View {
 					}
 				}
 
-				Text(audioManager.isRecording ? String(localized: "Tap to stop") : String(localized: "Tap to record"))
+				Text(recordHint)
 					.font(.caption)
 					.foregroundColor(.secondary)
 			}
@@ -90,9 +93,10 @@ struct TestStepView: View {
 					HStack(spacing: 8) {
 						Image(systemName: "checkmark.circle.fill")
 							.foregroundColor(.green)
+							.accessibilityHidden(true)
 						Text("Transcription Complete")
 							.font(.system(.subheadline, design: .rounded, weight: .medium))
-							.foregroundColor(.green)
+							.foregroundColor(.primary)
 					}
 
 					Text(transcription)
@@ -106,15 +110,41 @@ struct TestStepView: View {
 						NSPasteboard.general.clearContents()
 						NSPasteboard.general.setString(transcription, forType: .string)
 					}
-					.buttonStyle(SecondaryButtonStyle())
+					.buttonStyle(.bordered)
 					.controlSize(.small)
 				}
 				.padding(16)
 				.background(.green.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-				.transition(.move(edge: .bottom).combined(with: .opacity))
+				.transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+			} else if !audioManager.isRecording, !audioManager.isTranscribing,
+				let notice = audioManager.transcriptionError
+			{
+				InfoBox(style: .warning) {
+					Text(notice)
+						.font(.caption)
+				}
 			}
 		}
-		.animation(.spring(duration: 0.4, bounce: 0.15), value: audioManager.isRecording)
-		.animation(.spring(duration: 0.4, bounce: 0.15), value: audioManager.lastTranscription)
+		.onChange(of: reduceMotion) { _, reduced in
+			pulseRecord = audioManager.isRecording && !reduced
+		}
+		.animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: audioManager.isRecording)
+		.animation(
+			reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.15), value: audioManager.lastTranscription)
+	}
+
+	private var recordHint: LocalizedStringKey {
+		audioManager.isRecording ? "Click to stop" : "Click to record"
+	}
+}
+
+private struct LiveMeter: View {
+	// reading audioLevels here keeps the audio-rate invalidation inside this leaf
+	// instead of rebuilding the whole step, 100-row language Picker included
+	let audioManager: AudioManager
+
+	var body: some View {
+		AudioMeterView(levels: audioManager.audioLevels, fixedHeight: 20)
+			.frame(width: 160)
 	}
 }

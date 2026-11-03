@@ -64,10 +64,14 @@ enum AudioState {
 }
 
 // Both recording windows route through this policy so they can never disagree
-// via separate preferences: exactly one surface is eligible per recording mode.
+// via separate preferences. The listening pill is the persistent home for
+// recording/transcribing status in both modes; the live-transcription window
+// layers above it and only shows in live mode, and only once there is
+// something transient to say (words, a waiting-for-model status, or an
+// error) — see PillAnchor for how the two stay glued together on screen.
 enum RecordingWindowPolicy {
-	static func shouldShowListeningWindow(state: AudioState, mode: RecordingMode) -> Bool {
-		state != .idle && mode == .text
+	static func shouldShowListeningWindow(state: AudioState) -> Bool {
+		state != .idle
 	}
 
 	static func shouldShowLiveTranscriptionWindow(
@@ -229,17 +233,48 @@ final class AudioManager: NSObject {
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
 
+	/// The engine the user selected. Resolved per call rather than cached so a
+	/// change in Settings applies to the next dictation without a restart, and
+	/// so remote and on-device reach AudioManager through one interface instead
+	/// of a branch. See WHI-58.
+	@ObservationIgnored
+	var transcriberProvider: () -> SpeechTranscribing = { TranscriptionRouter.shared.active }
+
+	private var transcriber: SpeechTranscribing { transcriberProvider() }
+
+	/// Where a cancelled recording's audio is kept; tests point it at an isolated store.
+	@ObservationIgnored
+	var cancelledRecordingStore: @MainActor () -> CancelledRecordingStore = { .shared }
+
+	/// The engine the current dictation started on. Keeping it means a change in
+	/// Settings mid-recording cannot route stop, or a device switch, at an
+	/// engine that never started — the same reason a session keeps the mode it
+	/// began with.
+	@ObservationIgnored
+	private var sessionTranscriber: SpeechTranscribing?
+
+	/// Options for one dictation. The language is passed for engines that need
+	/// telling; WhisperKit reads its own persisted language, as it always has.
+	fileprivate func dictationOptions(translate: Bool) -> TranscriptionOptions {
+		TranscriptionOptions(
+			mode: translate ? .translate : .transcribe,
+			language: Constants.languageCode(for: selectedLanguage))
+	}
+
+	/// Transforms a finished transcription before it is pasted (recipe matching
+	/// + execution; the Bool asks for Clean up). Returns nil to paste nothing.
+	/// Injected by the app so AudioManager stays free of recipe/network
+	/// dependencies. WHI-41.
+	@ObservationIgnored
+	var dictationProcessor: ((String, Bool) async -> DictationResult?)?
+
 	// MARK: - Initialization
 
 	override init() {
 		super.init()
 		SystemOutputMuter.shared.recoverFromUncleanExit()
 		whisperKitTranscriber.startInitialization()
-		whisperKitTranscriber.onLiveAudioSamples = { [weak self] samples in
-			// WhisperKit delivers per-buffer chunks; cap the window so level
-			// math stays cheap even if a large backlog arrives at once
-			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
-		}
+		whisperKitTranscriber.onLiveAudioSamples = liveAudioSampleHandler()
 		captureBuffer.onLimitReached = { [weak self] in
 			Task { @MainActor in
 				_ = self?.handleCaptureInterruption(.captureLimitReached)
@@ -257,6 +292,14 @@ final class AudioManager: NSObject {
 			MainActor.assumeIsolated {
 				self?.handleInputDeviceLost(name: name)
 			}
+		}
+	}
+
+	private func liveAudioSampleHandler() -> @MainActor ([Float]) -> Void {
+		{ [weak self] samples in
+			// Engines deliver per-buffer chunks; cap the window so level
+			// math stays cheap even if a large backlog arrives at once
+			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
 		}
 	}
 
@@ -283,16 +326,13 @@ final class AudioManager: NSObject {
 	func startRecordingSession(postProcess: Bool = false) {
 		guard !isSessionActive else { return }
 		pendingStopAfterStart = false
-		let postProcessing = PostProcessingSettings()
-		// Post-processing rewrites the whole transcript, so that session must run in text mode.
-		let forceTextMode = postProcess && postProcessing.isEnabled
+		// Clean up rewrites the whole transcript, so a session that asks for it runs in text mode.
+		let cleanUp = postProcess && CleanUpSettings().isOnRequestEnabled
 		let mode: RecordingMode =
-			enableStreaming && whisperKitTranscriber.supportsLiveTranscription && !forceTextMode
+			enableStreaming && whisperKitTranscriber.supportsLiveTranscription && !cleanUp
 			? .liveTranscription : .text
 		currentRecordingMode = mode
-		let shouldPostProcess = postProcessing.shouldPostProcess(
-			requestedByShortcut: postProcess, isLiveMode: mode == .liveTranscription)
-		startRecording(mode: mode, postProcess: shouldPostProcess)
+		startRecording(mode: mode, postProcess: cleanUp)
 	}
 
 	/// Stops the active recording and transcribes it. A stop that arrives while the
@@ -324,8 +364,9 @@ final class AudioManager: NSObject {
 		requestStop()
 	}
 
-	/// Discards the current recording: no transcription, no paste. With no recording
-	/// running, transcriptions still in flight (including VAD) are abandoned instead.
+	/// Stops the current recording without transcribing or pasting it. Its audio is kept in
+	/// `CancelledRecordingStore` so an accidental cancel can be transcribed from the menu bar.
+	/// With no recording running, transcriptions still in flight (including VAD) are abandoned instead.
 	func cancelRecording() {
 		let capturing = isRecording || isMicrophoneInitializing
 		guard capturing || ledger.isTranscribing else { return }
@@ -336,11 +377,11 @@ final class AudioManager: NSObject {
 		abandon(cancelled)
 
 		if capturing {
-			discardCapture()
+			discardCapture(keepingAudio: true)
 		}
 
 		syncTranscribingState()
-		AppLogger.shared.audioManager.info("Recording cancelled; audio discarded")
+		AppLogger.shared.audioManager.info("Recording cancelled")
 	}
 
 	/// The capture being recorded now, if any.
@@ -359,25 +400,45 @@ final class AudioManager: NSObject {
 		AppLogger.shared.audioManager.info("Recording \(sessionID) cancelled; audio discarded")
 	}
 
-	private func discardCapture() {
+	/// `keepingAudio` hands what was captured to `CancelledRecordingStore` instead of deleting it.
+	private func discardCapture(keepingAudio: Bool = false) {
+		// Secure Input means a password field had focus; that audio is not kept, like history
+		let keep = keepingAudio && !SecureDictation.isSecureInputActive
 		pendingStopAfterStart = false
 		tailStop.cancel()
 		deviceActivationTask?.cancel()
 		deviceActivationTask = nil
 		switch activeCapturePath {
 		case .live:
-			whisperKitTranscriber.cancelLiveStream()
+			let engine = sessionTranscriber ?? transcriber
+			sessionTranscriber = nil
+			if engine === whisperKitTranscriber {
+				if keep {
+					keepCancelledAudio(whisperKitTranscriber.cancelLiveStreamKeepingAudio())
+				} else {
+					whisperKitTranscriber.cancelLiveStream()
+				}
+			} else {
+				Task { await engine.stopStreaming() }
+			}
 		case .file:
 			stopMeteringTimer()
 			audioRecorder?.stop()
 			audioRecorder = nil
-			if let audioFileURL {
-				try? FileManager.default.removeItem(at: audioFileURL)
-			}
+			let segments = fileSegments.takeAll(
+				current: audioFileURL.map { .init(url: $0, channel: fileCaptureChannel) })
 			audioFileURL = nil
-			FileRecordingSegments.removeFiles(of: fileSegments.takeAll(current: nil))
+			if keep {
+				keepCancelledAudio(segments: segments)
+			} else {
+				FileRecordingSegments.removeFiles(of: segments)
+			}
 		case .stream:
-			captureBuffer.discard()
+			if keep {
+				keepCancelledAudio(captureBuffer.finishCapture())
+			} else {
+				captureBuffer.discard()
+			}
 			releaseStreamingEngine()
 		case nil:
 			break
@@ -508,7 +569,7 @@ final class AudioManager: NSObject {
 		let session = ledger.capturing?.id
 		deviceActivationTask = Task {
 			if currentRecordingMode == .liveTranscription {
-				await whisperKitTranscriber.switchLiveStreamDevice()
+				await (sessionTranscriber ?? transcriber).switchStreamingDevice()
 				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				isMicrophoneInitializing = false
 			} else if activeCapturePath == .stream {
@@ -1203,13 +1264,16 @@ extension AudioManager {
 		timer.start()
 		playFeedbackSound(start: true)
 		muteOutputAfterStartSound()
-		whisperKitTranscriber.clearLiveTranscriptionState()
-		whisperKitTranscriber.beginLiveTranscriptionWaitingUI()
+		let engine = transcriber
+		sessionTranscriber = engine
+		engine.onLiveAudioSamples = liveAudioSampleHandler()
+		engine.resetStreamingSession()
+		LiveTranscriptionState.shared.beginWaiting()
 		let session = ledger.capturing?.id
 
 		deviceActivationTask = Task {
 			do {
-				try await whisperKitTranscriber.liveStream()
+				try await engine.startStreaming(options: dictationOptions(translate: enableTranslation))
 				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.info("Live transcription started")
@@ -1219,6 +1283,7 @@ extension AudioManager {
 					return
 				}
 				deviceActivationTask = nil
+				sessionTranscriber = nil
 				isMicrophoneInitializing = false
 				isRecording = false
 				timer.stop()
@@ -1245,12 +1310,20 @@ extension AudioManager {
 
 		activeCapturePath = nil
 		ledger.dropCapture()
-		let finishing = whisperKitTranscriber.stopLiveStream()
+		let engine = sessionTranscriber ?? transcriber
+		sessionTranscriber = nil
 		deviceManager.endRecordingSession()
 		levelMonitor.reset()
 		AppLogger.shared.audioManager.info("Live transcription stopped")
 		scheduleTimerReset()
 
+		// The on-device engine typed its words as they were confirmed; a remote
+		// engine pastes its finished transcript once, here. See WHI-58.
+		guard engine === whisperKitTranscriber else {
+			finishRemoteLiveDictation(engine)
+			return
+		}
+		let finishing = whisperKitTranscriber.stopLiveStream()
 		// The words said after the newest live pass are decoded before the session is complete
 		Task { @MainActor [weak self] in
 			guard await finishing.value, let self else { return }
@@ -1265,6 +1338,50 @@ extension AudioManager {
 					source: .liveDictation)
 			}
 		}
+	}
+
+	/// The remote stream is not final until it actually closes (a network round
+	/// trip), so the paste waits for that, then goes through the same recipe
+	/// processor and secure-input rules as a text-mode dictation.
+	private func finishRemoteLiveDictation(_ engine: SpeechTranscribing) {
+		isTranscribing = true
+		Task { @MainActor [weak self] in
+			let draft = await engine.stopStreaming()
+			// The two-pass finalizer, when the engine retained audio for one. It
+			// answers nil with no real suspension on the instant path, so a
+			// finalizer set to off pastes exactly as fast as before; when it is
+			// on, this is the bounded "polishing" wait, and isTranscribing holds
+			// the spinner up until the paste lands.
+			let polished = await engine.finalizeDictation(draft: draft)
+			guard let self else { return }
+			defer { self.syncTranscribingState() }
+			guard let text = Self.textToPaste(afterLiveDictationFinished: polished ?? draft) else { return }
+			let secure = SecureDictation.isSecureInputActive
+			let policy = SecureDictationPolicy.resolve(postProcessRequested: false, secureInput: secure)
+			let processed = await self.applyDictationProcessor(
+				text, mode: .text, secureInput: policy.concealClipboard, cleanUp: false)
+			if policy.rememberAsLastTranscription {
+				self.lastTranscription = text
+			}
+			if let toPaste = processed?.text, !toPaste.isEmpty {
+				self.pasteToFocusedApp(toPaste, concealed: policy.concealClipboard)
+			}
+			if policy.saveToHistory {
+				self.recordHistory(
+					text: text, audio: nil, source: .liveDictation, postProcessing: processed?.history)
+			}
+		}
+	}
+
+	/// What a finished live dictation should paste, if anything. Cancelling
+	/// during startup (`cancelCaptureStartup`) and a failed `startStreaming`
+	/// never reach `stopStreaming` at all, so they never reach this function
+	/// either — the only case left to decide is whether the engine actually
+	/// produced words. An empty or whitespace-only transcript is not an error:
+	/// the user said nothing, or a stream closed before confirming anything.
+	nonisolated static func textToPaste(afterLiveDictationFinished transcript: String) -> String? {
+		let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+		return trimmed.isEmpty ? nil : trimmed
 	}
 }
 
@@ -1347,8 +1464,8 @@ extension AudioManager {
 	) async {
 		guard let audioArray = await applyVoiceActivityDetection(audioArray) else { return }
 		await runTranscription(session: session, historyAudio: .samples(audioArray, sampleRate: 16000)) {
-			try await self.whisperKitTranscriber.transcribeAudioArray(
-				audioArray, enableTranslation: enableTranslation)
+			try await self.transcriber.transcribe(
+				samples: audioArray, options: self.dictationOptions(translate: enableTranslation))
 		}
 	}
 
@@ -1389,8 +1506,8 @@ extension AudioManager {
 		}
 
 		await runTranscription(session: session, historyAudio: .file(fileURL)) {
-			try await self.whisperKitTranscriber.transcribe(
-				audioURL: fileURL, enableTranslation: enableTranslation)
+			try await self.transcriber.transcribe(
+				fileAt: fileURL, options: self.dictationOptions(translate: enableTranslation))
 		}
 		// No-op when history already moved the recording into its own folder
 		try? FileManager.default.removeItem(at: fileURL)
@@ -1420,40 +1537,34 @@ extension AudioManager {
 				finishTranscription(id)
 				return
 			}
-			let secureBeforeProcessing = SecureDictation.isSecureInputActive
-			let processed = await postProcessIfRequested(
-				rawTranscription,
-				requested: SecureDictationPolicy.resolve(
-					postProcessRequested: session.postProcess, secureInput: secureBeforeProcessing
-				).postProcess)
-			let transcription = processed.text
-			guard !ledger.isCancelled(id) else {
-				AppLogger.shared.audioManager.info("Discarding post-processed text of a cancelled recording")
-				return
-			}
 			let policy = SecureDictationPolicy.resolve(
-				postProcessRequested: session.postProcess,
-				secureInput: secureBeforeProcessing || SecureDictation.isSecureInputActive)
+				postProcessRequested: session.postProcess, secureInput: SecureDictation.isSecureInputActive)
 			if let notice = SecureDictationPolicy.skippedPostProcessingNotice(
-				postProcessRequested: session.postProcess,
-				secureInput: secureBeforeProcessing || SecureDictation.isSecureInputActive)
+				postProcessRequested: session.postProcess, secureInput: SecureDictation.isSecureInputActive)
 			{
 				postNotice(notice)
 			}
+			let processed = await applyDictationProcessor(
+				rawTranscription, mode: session.mode, secureInput: policy.concealClipboard,
+				cleanUp: policy.postProcess)
+			guard !ledger.isCancelled(id) else {
+				AppLogger.shared.audioManager.info("Discarding the processed dictation of a cancelled recording")
+				return
+			}
 			if policy.rememberAsLastTranscription {
-				lastTranscription = transcription
+				lastTranscription = processed?.text ?? rawTranscription
 			} else {
 				AppLogger.shared.audioManager.info(
-					"Secure input is on; the dictation is pasted but not kept in history or post-processed")
+					"Secure input is on; the dictation is pasted but not kept in history or sent to a recipe")
 			}
 			finishTranscription(id)
 
-			if session.mode == .text {
-				pasteToFocusedApp(transcription, concealed: policy.concealClipboard)
+			if session.mode == .text, let toPaste = processed?.text {
+				pasteToFocusedApp(toPaste, concealed: policy.concealClipboard)
 			}
 			// After the paste so saving the recording never delays the text
 			if policy.saveToHistory {
-				recordHistory(text: rawTranscription, audio: historyAudio, postProcessing: processed.history)
+				recordHistory(text: rawTranscription, audio: historyAudio, postProcessing: processed?.history)
 			}
 		} catch {
 			guard !ledger.isCancelled(id) else { return }
@@ -1508,6 +1619,18 @@ extension AudioManager {
 		guard sessionsHoldingModel.remove(session) != nil else { return }
 		whisperKitTranscriber.endModelUse()
 	}
+
+	/// Runs the transcription through the dictation processor (recipe matching +
+	/// execution) when in text mode. Returns nil to paste nothing. Never runs on
+	/// a dictation into a secure input field, which stays out of every LLM. WHI-41.
+	fileprivate func applyDictationProcessor(
+		_ transcription: String, mode: RecordingMode, secureInput: Bool, cleanUp: Bool
+	) async -> DictationResult? {
+		guard mode == .text, !secureInput, let processor = dictationProcessor else {
+			return DictationResult(text: transcription, history: nil)
+		}
+		return await processor(transcription, cleanUp)
+	}
 }
 
 // MARK: - Utilities
@@ -1557,7 +1680,23 @@ extension AudioManager {
 		FeedbackSoundPlayer.shared.play(start: start)
 	}
 	fileprivate func pasteToFocusedApp(_ text: String, concealed: Bool = false) {
-		TextInserter.shared.insert(text, context: .finalTranscript, concealed: concealed)
+		// read before the paste moves the caret; observers use it as the
+		// destination for the dictation particle flight
+		let caret = MagnetField.caretRect()
+		NotificationCenter.default.post(
+			name: .dictationWillPaste, object: caret.map { NSValue(rect: $0) })
+
+		// the particle field is already in flight; landing the text as it arrives
+		// reads as one motion, where pasting immediately puts the text on screen
+		// well before the animation catches up
+		let lead = MagnetField.pasteLeadTime(caret: caret)
+		if lead > 0 {
+			DispatchQueue.main.asyncAfter(deadline: .now() + lead) {
+				TextInserter.shared.insert(text, context: .finalTranscript, concealed: concealed)
+			}
+		} else {
+			TextInserter.shared.insert(text, context: .finalTranscript, concealed: concealed)
+		}
 	}
 	fileprivate func checkAndRequestMicrophonePermission() {
 		switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -1616,5 +1755,65 @@ extension AudioManager {
 		try? FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true)
 
 		return appDirectory
+	}
+}
+
+// MARK: - Cancelled Recordings
+extension AudioManager {
+	fileprivate func keepCancelledAudio(_ samples: [Float]) {
+		guard !samples.isEmpty else { return }
+		Task {
+			let kept = await cancelledRecordingStore().save(samples: samples)
+			announceKeptRecording(kept)
+		}
+	}
+
+	fileprivate func keepCancelledAudio(segments: [FileRecordingSegments.Segment]) {
+		guard !segments.isEmpty else { return }
+		Task {
+			let kept = await cancelledRecordingStore().save(segments: segments)
+			announceKeptRecording(kept)
+		}
+	}
+
+	private func announceKeptRecording(_ recording: CancelledRecording?) {
+		guard recording != nil else { return }
+		postNotice(String(localized: "Recording cancelled and kept. Transcribe it from the menu bar."))
+	}
+
+	/// Transcribes a recording kept by a cancel with the selected engine. The text is shown as
+	/// the last dictation and copied rather than pasted: the field that had focus when it was
+	/// cancelled is long gone. Once transcribed, the recording moves to history.
+	func transcribeCancelledRecording(_ recording: CancelledRecording, store: CancelledRecordingStore) async {
+		let options = dictationOptions(translate: enableTranslation)
+		let engine = transcriber
+		whisperKitTranscriber.beginModelUse()
+		whisperKitTranscriber.preloadModelIfIdleUnloaded()
+		defer { whisperKitTranscriber.endModelUse() }
+
+		do {
+			let text = try await store.transcribe(recording) { url in
+				try await engine.transcribe(fileAt: url, options: options)
+			}
+			let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+			guard !trimmed.isEmpty else {
+				postNotice(String(localized: "No speech was found in the cancelled recording."))
+				return
+			}
+			transcriptionError = nil
+			lastTranscription = trimmed
+			NSPasteboard.general.clearContents()
+			NSPasteboard.general.setString(trimmed, forType: .string)
+			if let url = store.url(for: recording) {
+				recordHistory(text: trimmed, audio: .file(url))
+			}
+			store.delete(recording)
+			AppLogger.shared.audioManager.info("Transcribed cancelled recording \(recording.id)")
+		} catch is CancellationError {
+			AppLogger.shared.audioManager.info("Transcription of cancelled recording \(recording.id) cancelled")
+		} catch {
+			AppLogger.shared.audioManager.error("Could not transcribe cancelled recording: \(error)")
+			transcriptionError = error.localizedDescription
+		}
 	}
 }

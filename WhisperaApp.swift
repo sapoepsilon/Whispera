@@ -69,6 +69,37 @@ struct SettingsWithMaterial: View {
 	}
 }
 
+extension Notification.Name {
+	/// Ask the app to open Settings. Surfaces that cannot reach the AppDelegate
+	/// reliably (the pill's floating panels, where `NSApp.delegate` may be
+	/// SwiftUI's adaptor wrapper rather than our class) post this instead of
+	/// casting.
+	static let openSettingsRequested = Notification.Name("OpenSettingsRequested")
+}
+
+/// Settings panes another surface can open Settings on.
+typealias SettingsDestination = SettingsPane
+
+enum SettingsRouting {
+	static let destinationKey = "destination"
+	static let selectedTabDefaultsKey = "whisperaSelectedSettingsTab"
+
+	static func userInfo(destination: SettingsDestination) -> [String: Any] {
+		[destinationKey: destination.rawValue]
+	}
+
+	static func destination(in userInfo: [AnyHashable: Any]?) -> SettingsDestination? {
+		(userInfo?[destinationKey] as? String).flatMap(SettingsDestination.named)
+	}
+
+	/// The pane requested before Settings was on screen, consumed once by the sidebar.
+	static func takeRequestedDestination(defaults: UserDefaults = .standard) -> SettingsDestination? {
+		guard let raw = defaults.string(forKey: selectedTabDefaultsKey) else { return nil }
+		defaults.removeObject(forKey: selectedTabDefaultsKey)
+		return SettingsDestination.named(raw)
+	}
+}
+
 enum StatusMenuAction: String {
 	case settings
 	case activity
@@ -111,6 +142,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	private var settingsWindow: NSWindow?
 	private var swiftUIOpenSettings: (@MainActor () -> Void)?
 	let popoverPresenter = PopoverPresenter()
+	private var onboardingMagnet: OnboardingMagnetController?
+	private var dictationMagnet: DictationMagnetController?
 	private var liveTranscriptionWindow: LiveTranscriptionWindow?
 	private var listeningWindow: ListeningWindow?
 	private static let alphaPulseKey = "whispera.statusItem.alphaPulse"
@@ -145,9 +178,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			VerifiedScriptCopy.removeLeftovers()
 			ScriptApproval.upgradeStoredApproval(in: .standard)
 		}
+		// Before any engine reads a server URL: the shared key splits into
+		// per-mode keys exactly once, keyed off the engine it was typed for.
+		TranscriptionServerURLMigration.migrateIfNeeded(in: .standard)
+		Task { @MainActor in MacLinkHelper.shared.applyAtLaunch() }
+		#if DEBUG
+			Task { @MainActor in ApprovalCardCenter.shared.showDemoIfRequested() }
+		#endif
 
 		Task { @MainActor in
+			// Before the first dictation can run a recipe: installs from before the
+			// recipes switch decide it once, off unless the user set one up.
+			RecipeEnablementMigration.migrateIfNeeded(in: .standard, recipes: RecipeStore.shared.recipes)
+			// After it: Post-Processing turns into the Clean up recipe, and a user
+			// who post-processed every dictation turns recipes on with it.
+			await PostProcessingMigration.migrateIfNeeded(in: .standard, store: RecipeStore.shared)
 			audioManager = AudioManager()
+			let coordinator = DictationCoordinator.shared
+			audioManager.dictationProcessor = { text, cleanUp in
+				await coordinator.processDictation(text, cleanUp: cleanUp)
+			}
 			shortcutManager = GlobalShortcutManager()
 			fileTranscriptionManager = FileTranscriptionManager()
 			networkDownloader = NetworkFileDownloader()
@@ -178,7 +228,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 			liveTranscriptionWindow = LiveTranscriptionWindow(audioManager: audioManager)
 			listeningWindow = ListeningWindow(audioManager: audioManager)
+			dictationMagnet = DictationMagnetController()
+			if let listeningWindow {
+				// the field flies out of wherever the listening window stood
+				dictationMagnet?.attach(sourceWindow: listeningWindow)
+			}
 			recordingGlowController = RecordingGlowController(audioManager: audioManager)
+			onboardingMagnet = OnboardingMagnetController()
+
+			startAutostartDictationIfRequested()
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
@@ -193,6 +251,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 				self?.showOnboarding()
 			}
 
+			NotificationCenter.default.addObserver(
+				forName: .openSettingsRequested,
+				object: nil,
+				queue: .main
+			) { [weak self] notification in
+				Task { @MainActor in
+					if let destination = SettingsRouting.destination(in: notification.userInfo) {
+						UserDefaults.standard.set(
+							destination.rawValue, forKey: SettingsRouting.selectedTabDefaultsKey)
+					}
+					AppLogger.shared.general.info(
+						"Settings open requested via notification, destination: \(SettingsRouting.destination(in: notification.userInfo)?.rawValue ?? "current")")
+					self?.perform(.settings)
+				}
+			}
+
+			// A dictation that failed for a reason the user has to fix. Settings is
+			// where the alert is presented and where every one of those reasons is
+			// changed, so bringing it up is the whole recovery step.
+			NotificationCenter.default.addObserver(
+				forName: .transcriptionFailureRaised,
+				object: nil,
+				queue: .main
+			) { [weak self] _ in
+				Task { @MainActor in
+					UserDefaults.standard.set(
+						SettingsDestination.general.rawValue,
+						forKey: SettingsRouting.selectedTabDefaultsKey)
+					self?.perform(.settings)
+				}
+			}
+
 			// Listen for activation requests from other instances
 			DistributedNotificationCenter.default().addObserver(
 				forName: NSNotification.Name("ActivateApp"),
@@ -203,6 +293,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			}
 		}
 	}
+
+	// MARK: - Test affordance
+
+	/// Starts and stops one dictation on a timer, when — and only when — the
+	/// environment asks for it.
+	///
+	/// Dictation is otherwise reachable only from a real keypress, which a headless
+	/// verification run cannot post without an Accessibility grant. Nothing in the
+	/// app sets this variable and nothing in a normal launch supplies it, so the
+	/// method returns immediately on every user's machine; the log line names it as
+	/// a test affordance so a support log that does contain one is not mistaken for
+	/// the app dictating on its own.
+	///
+	/// `WHISPERA_AUTOSTART_DICTATION=<seconds to record>`.
+	private func startAutostartDictationIfRequested() {
+		guard let raw = ProcessInfo.processInfo.environment["WHISPERA_AUTOSTART_DICTATION"],
+			let requested = Double(raw), requested > 0
+		else { return }
+
+		// Clamped so a stray value cannot hold the microphone open indefinitely.
+		let duration = min(requested, Self.autostartMaximumSeconds)
+		AppLogger.shared.general.info(
+			"Test affordance WHISPERA_AUTOSTART_DICTATION is set: dictating for \(duration)s")
+		Task { @MainActor [weak self] in
+			try? await Task.sleep(nanoseconds: UInt64(Self.autostartWarmupSeconds * 1_000_000_000))
+			self?.audioManager.toggleRecording()
+			try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+			self?.audioManager.toggleRecording()
+			AppLogger.shared.general.info("Test affordance WHISPERA_AUTOSTART_DICTATION: stopped")
+		}
+	}
+
+	/// Long enough for the status item, the windows and the engine to settle before
+	/// the microphone opens.
+	private static let autostartWarmupSeconds: Double = 4
+	private static let autostartMaximumSeconds: Double = 120
 
 	nonisolated static func registerInitialDefaults(in defaults: UserDefaults) {
 		defaults.register(defaults: [
@@ -359,6 +485,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			popover.performClose(nil)
 			return
 		}
+
+		// Cancelled recordings past their 24 h keep would otherwise linger until the next cancel
+		MainActor.assumeIsolated { CancelledRecordingStore.shared.prune() }
 
 		// State often changes while the popover is closed with no layout running;
 		// re-measure and size before showing so it never opens stale and clipped.
@@ -546,8 +675,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 	@MainActor
 	private func settingsSceneWindow() -> NSWindow? {
 		NSApp.windows.first {
-			$0.identifier?.rawValue.hasPrefix("com_apple_SwiftUI_Settings") == true
+			AppDelegate.isSettingsSceneIdentifier($0.identifier?.rawValue)
 		}
+	}
+
+	nonisolated static func isSettingsSceneIdentifier(_ rawIdentifier: String?) -> Bool {
+		rawIdentifier?.hasPrefix("com_apple_SwiftUI_Settings") == true
 	}
 
 	@MainActor
@@ -556,6 +689,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			reveal(window)
 			return
 		}
+		AppLogger.shared.general.info("Creating retained settings window")
 		let hosting = NSHostingController(
 			rootView: SettingsWithMaterial(
 				permissionManager: permissionManager ?? PermissionManager(),
@@ -608,7 +742,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		}
 		let onboardingView = OnboardingView(
 			audioManager: audioManager,
-			shortcutManager: shortcutManager
+			shortcutManager: shortcutManager,
+			magnetController: onboardingMagnet
 		)
 
 		let hostingController = NSHostingController(rootView: onboardingView)
@@ -628,6 +763,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 		onboardingWindow?.titlebarAppearsTransparent = true
 		onboardingWindow?.isOpaque = false
 		onboardingWindow?.backgroundColor = .clear
+		onboardingWindow?.isReleasedWhenClosed = false
+		onboardingWindow?.delegate = self
 		onboardingWindow?.contentViewController = hostingController
 		onboardingWindow?.center()
 		if let window = onboardingWindow, let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
@@ -637,6 +774,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			window.setFrameOrigin(OnboardingWindowSize.origin(for: window.frame.size, in: visible))
 		}
 		onboardingWindow?.makeKeyAndOrderFront(nil)
+		if let onboardingWindow {
+			MainActor.assumeIsolated { onboardingMagnet?.attach(to: onboardingWindow) }
+		}
 
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
@@ -647,6 +787,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			queue: .main
 		) { [weak self] _ in
 			NSApp.setActivationPolicy(.accessory)
+			MainActor.assumeIsolated { self?.onboardingMagnet?.detach() }
 			Task { @MainActor in
 				guard let self else { return }
 				self.onboardingWindow?.close()
@@ -654,6 +795,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 				self.onboardingWindow = nil
 				self.applyStoredModel()
 			}
+		}
+	}
+
+	// Teardown lives here rather than in the completion observer so the title bar
+	// close button is covered too. close() on its own leaves the hosting
+	// controller alive, and with it the whole SwiftUI tree: its schedules and
+	// animations keep driving the update loop off-screen for the rest of the
+	// launch, so the app never returns to its idle baseline.
+	func windowWillClose(_ notification: Notification) {
+		guard let closing = notification.object as? NSWindow, closing === onboardingWindow else {
+			return
+		}
+		MainActor.assumeIsolated { onboardingMagnet?.detach() }
+		onboardingWindow = nil
+		// OnboardingCompleted is posted synchronously from a button action, so the
+		// hosting view is mid-event-dispatch here; release it next runloop turn
+		DispatchQueue.main.async {
+			closing.delegate = nil
+			closing.contentViewController = nil
 		}
 	}
 
@@ -666,6 +826,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			Task { @MainActor in
 				self?.updateStatusIcon()
 				self?.recordingGlowController?.updateVisibility()
+				if let state = self?.audioManager.currentState {
+					self?.onboardingMagnet?.handle(state: state)
+				}
 			}
 		}
 

@@ -26,10 +26,11 @@ enum TranscriptionHistoryError: LocalizedError {
 @MainActor
 @Observable
 final class TranscriptionHistoryStore {
-	typealias PostProcessor = @Sendable (String) async -> PostProcessingRun
+	typealias PostProcessor = @Sendable (String) async -> HistoryPostProcessing
 
+	/// History's LLM pass is the Clean up recipe.
 	static let livePostProcessor: PostProcessor = { transcript in
-		await PostProcessingService().run(transcript)
+		await DictationCoordinator.shared.cleanUpForHistory(transcript)
 	}
 
 	static let shared = TranscriptionHistoryStore(
@@ -396,8 +397,7 @@ final class TranscriptionHistoryStore {
 			let result = try await transcribe(url)
 			var postProcessing: HistoryPostProcessing?
 			if postProcess {
-				let run = await (postProcessor ?? Self.livePostProcessor)(result.text)
-				postProcessing = HistoryPostProcessing(run)
+				postProcessing = await (postProcessor ?? Self.livePostProcessor)(result.text)
 			}
 			// Retention or the user may have deleted the entry while it was transcribing, and
 			// writing to a deleted SwiftData model can trap.
@@ -419,8 +419,8 @@ final class TranscriptionHistoryStore {
 		}
 	}
 
-	/// Runs the LLM pass again over the speech model's original output, without re-transcribing.
-	/// Useful after changing the prompt or provider, and works for entries without audio.
+	/// Runs Clean up again over the speech model's original output, without re-transcribing.
+	/// Useful after changing the prompt or server, and works for entries without audio.
 	func reprocess(_ entry: TranscriptionHistoryEntry, postProcessor: PostProcessor? = nil) async throws {
 		let transcript = entry.transcriptText
 		guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -432,15 +432,15 @@ final class TranscriptionHistoryStore {
 		retranscribingIDs.insert(id)
 		defer { retranscribingIDs.remove(id) }
 
-		let run = await (postProcessor ?? Self.livePostProcessor)(transcript)
+		let postProcessing = await (postProcessor ?? Self.livePostProcessor)(transcript)
 		guard let live = liveEntry(id) else {
 			AppLogger.shared.database.info("History entry \(id) was deleted during post-processing")
 			return
 		}
-		live.apply(transcript: transcript, postProcessing: HistoryPostProcessing(run))
+		live.apply(transcript: transcript, postProcessing: postProcessing)
 		live.retranscribedAt = now()
 		save()
-		AppLogger.shared.database.info("Re-ran post-processing for history entry \(id)")
+		AppLogger.shared.database.info("Re-ran Clean up for history entry \(id)")
 	}
 
 	private func liveEntry(_ id: UUID) -> TranscriptionHistoryEntry? {

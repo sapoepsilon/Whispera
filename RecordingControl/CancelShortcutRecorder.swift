@@ -68,7 +68,7 @@ struct CancelShortcutRecorder: View {
 		let taken = [
 			ShortcutDefaults.dictation(in: defaults),
 			ShortcutDefaults.fileSelection(in: defaults),
-			PostProcessingSettings().shortcut,
+			CleanUpSettings().shortcut,
 		]
 		switch binding.rejection(taken: taken) {
 		case .needsModifier:

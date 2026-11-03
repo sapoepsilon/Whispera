@@ -5,29 +5,23 @@ import Testing
 
 struct RecordingWindowPolicyTests {
 
+	// The listening pill is the persistent home for recording/transcribing
+	// status in both modes now — see WHI-58's presentation pass — so its
+	// visibility depends only on whether a session is active, not on mode.
 	@Test(arguments: [AudioState.initializing, .recording, .transcribing])
-	func liveModeNeverShowsLegacyListeningWindow(state: AudioState) {
-		#expect(
-			!RecordingWindowPolicy.shouldShowListeningWindow(state: state, mode: .liveTranscription),
-			"Live mode renders its own listening surface inside the live transcription window; showing the legacy window too duplicates it"
-		)
+	func anyActiveStateShowsTheListeningPill(state: AudioState) {
+		#expect(RecordingWindowPolicy.shouldShowListeningWindow(state: state))
 	}
 
-	@Test(arguments: [AudioState.initializing, .recording, .transcribing])
-	func textModeShowsLegacyListeningWindow(state: AudioState) {
-		#expect(RecordingWindowPolicy.shouldShowListeningWindow(state: state, mode: .text))
-	}
-
-	@Test(arguments: [RecordingMode.text, .liveTranscription])
-	func idleHidesLegacyListeningWindow(mode: RecordingMode) {
-		#expect(!RecordingWindowPolicy.shouldShowListeningWindow(state: .idle, mode: mode))
+	@Test func idleHidesTheListeningPill() {
+		#expect(!RecordingWindowPolicy.shouldShowListeningWindow(state: .idle))
 	}
 
 	@Test func textModeNeverShowsLiveTranscriptionWindow() {
 		#expect(
 			!RecordingWindowPolicy.shouldShowLiveTranscriptionWindow(
 				mode: .text, transcriberWantsWindow: true),
-			"Text mode renders the legacy listening window; the live window showing too duplicates it"
+			"Text mode has no live words to show; only live mode overlays the pill with them"
 		)
 	}
 

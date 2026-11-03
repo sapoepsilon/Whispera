@@ -117,7 +117,7 @@ struct CancelShortcutBinding: Equatable, Sendable {
 		let relevant = modifiers.intersection(Self.relevantModifiers)
 		self.init(
 			keyCode: keyCode, modifiers: relevant,
-			display: PostProcessingShortcutFormatter.format(modifiers: relevant, key: key))
+			display: ShortcutDisplayFormatter.format(modifiers: relevant, key: key))
 	}
 }
 
