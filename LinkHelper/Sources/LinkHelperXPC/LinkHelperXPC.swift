@@ -98,8 +98,12 @@ public struct PendingApproveConfirmation: Codable, Sendable, Equatable, Identifi
 	public var fingerprint: String
 	public var approveFP: String
 	public var createdAt: Int?
-	/// `1234 5678 9012`: what the owner compares with the iPhone's screen before confirming.
+	/// `1234 5678 9012`: what the owner compares with the iPhone's screen before confirming. Only
+	/// present once the iPhone finished its committed exchange with this Mac.
 	public var safetyNumber: String?
+	/// `ready`, `waiting`, `failed` or `update_required` (an iPhone that predates the committed
+	/// exchange). Nil from an older helper.
+	public var sasStatus: String?
 	/// A device this Mac knew whose keys changed (a reinstall, or keys substituted).
 	public var keyChanged: Bool
 	/// `xxxx-xxxx-xxxx-xxxx` of the link key: what a vouched card shows.
@@ -117,6 +121,7 @@ public struct PendingApproveConfirmation: Codable, Sendable, Equatable, Identifi
 		case approveFP = "approve_fp"
 		case createdAt = "created_at"
 		case safetyNumber = "safety_number"
+		case sasStatus = "sas_status"
 		case keyChanged = "key_changed"
 		case linkFingerprint = "link_fingerprint"
 		case vouchedBy = "vouched_by"
@@ -125,7 +130,7 @@ public struct PendingApproveConfirmation: Codable, Sendable, Equatable, Identifi
 
 	public init(
 		deviceID: String, name: String, fingerprint: String, approveFP: String, createdAt: Int? = nil,
-		safetyNumber: String? = nil, keyChanged: Bool = false
+		safetyNumber: String? = nil, keyChanged: Bool = false, sasStatus: String? = nil
 	) {
 		self.deviceID = deviceID
 		self.name = name
@@ -134,6 +139,7 @@ public struct PendingApproveConfirmation: Codable, Sendable, Equatable, Identifi
 		self.createdAt = createdAt
 		self.safetyNumber = safetyNumber
 		self.keyChanged = keyChanged
+		self.sasStatus = sasStatus
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -144,6 +150,7 @@ public struct PendingApproveConfirmation: Codable, Sendable, Equatable, Identifi
 		approveFP = try container.decode(String.self, forKey: .approveFP)
 		createdAt = try container.decodeIfPresent(Int.self, forKey: .createdAt)
 		safetyNumber = try container.decodeIfPresent(String.self, forKey: .safetyNumber)
+		sasStatus = try container.decodeIfPresent(String.self, forKey: .sasStatus)
 		keyChanged = try container.decodeIfPresent(Bool.self, forKey: .keyChanged) ?? false
 		linkFingerprint = try container.decodeIfPresent(String.self, forKey: .linkFingerprint)
 		vouchedBy = try container.decodeIfPresent(String.self, forKey: .vouchedBy)

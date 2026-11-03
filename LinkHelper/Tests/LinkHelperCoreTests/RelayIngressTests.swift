@@ -116,7 +116,7 @@ final class RelayIngressTests: XCTestCase {
 		let macID = try XCTUnwrap(status["device_id"] as? String)
 		_ = try await account.syncNow()
 		if confirmed {
-			_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+			_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try await phone.safetyNumber(with: account))
 		}
 		_ = try await phone.receive()
 		return (RelayPhone(phone, macID: macID), phone)

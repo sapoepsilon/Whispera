@@ -12,9 +12,13 @@ import Foundation
 /// {"type":"api_request","v":1,"id":"rq_…","method":"GET","target":"/v1/agents","headers":{…},"body":"","stream":false}
 /// {"type":"api_response","v":1,"id":"rq_…","part":0,"status":200,"headers":{…},"body":"…","final":true}
 /// {"type":"api_cancel","v":1,"id":"rq_…"}
+/// {"type":"sas_commit","v":1,"attempt":"sas_…","commitment":"…"}
+/// {"type":"sas_nonce","v":1,"attempt":"sas_…","mac_link":"…","mac_nonce":"…"}
+/// {"type":"sas_reveal","v":1,"attempt":"sas_…","phone_link":"…","phone_approve":"…","phone_nonce":"…"}
 /// ```
 ///
-/// The `api_*` messages carry the LinkAPI over the relay — see `RelayAPI`.
+/// The `api_*` messages carry the LinkAPI over the relay — see `RelayAPI`. The `sas_*` ones fix
+/// the safety number — see `SafetyNumber`.
 ///
 /// Receivers accept a message only from a verified peer of their own account
 /// (`RelayClient.openLinkMessage`).
@@ -33,6 +37,12 @@ public enum LinkMessage: Equatable, Sendable {
 	case apiResponse(RelayAPIResponse)
 	/// Phone → Mac: stop that stream, or abandon that request.
 	case apiCancel(id: String)
+	/// Phone → Mac: the commitment that opens a safety-number attempt.
+	case sasCommit(SASCommit)
+	/// Mac → phone: the Mac's nonce, only after it recorded the commitment.
+	case sasNonce(SASNonce)
+	/// Phone → Mac: the keys and nonce behind the commitment.
+	case sasReveal(SASReveal)
 
 	public static let version = 1
 
@@ -44,6 +54,9 @@ public enum LinkMessage: Equatable, Sendable {
 		case .apiRequest: return "api_request"
 		case .apiResponse: return "api_response"
 		case .apiCancel: return "api_cancel"
+		case .sasCommit: return "sas_commit"
+		case .sasNonce: return "sas_nonce"
+		case .sasReveal: return "sas_reveal"
 		}
 	}
 
@@ -78,6 +91,12 @@ public enum LinkMessage: Equatable, Sendable {
 				let id = try JSONDecoder().decode(IDBody.self, from: data).id
 				guard RelayAPI.isValidRequestID(id) else { throw LinkMessageError.malformed("api_cancel id") }
 				self = .apiCancel(id: id)
+			case "sas_commit":
+				self = .sasCommit(try JSONDecoder().decode(SASCommit.self, from: data))
+			case "sas_nonce":
+				self = .sasNonce(try JSONDecoder().decode(SASNonce.self, from: data))
+			case "sas_reveal":
+				self = .sasReveal(try JSONDecoder().decode(SASReveal.self, from: data))
 			default:
 				throw LinkMessageError.unknownType(head.type)
 			}
@@ -112,13 +131,16 @@ public enum LinkMessage: Equatable, Sendable {
 			case .linkOffer(let offer): try offer.encode(to: encoder)
 			case .apiRequest(let request): try request.encode(to: encoder)
 			case .apiResponse(let response): try response.encode(to: encoder)
+			case .sasCommit(let commit): try commit.encode(to: encoder)
+			case .sasNonce(let nonce): try nonce.encode(to: encoder)
+			case .sasReveal(let reveal): try reveal.encode(to: encoder)
 			default: break
 			}
 			var c = encoder.container(keyedBy: Keys.self)
 			try c.encode(message.type, forKey: .type)
 			try c.encode(LinkMessage.version, forKey: .v)
 			switch message {
-			case .linkOffer, .apiRequest, .apiResponse: break
+			case .linkOffer, .apiRequest, .apiResponse, .sasCommit, .sasNonce, .sasReveal: break
 			case .approveConfirmed(let id), .unpaired(let id): try c.encode(id, forKey: .device_id)
 			case .apiCancel(let id): try c.encode(id, forKey: .id)
 			}

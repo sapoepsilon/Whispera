@@ -50,10 +50,10 @@ final class AccountRevokeTests: XCTestCase {
 		try await phone.register(bearer: "tok-alice", name: "Sam's iPhone")
 		let trustedID = try await join(trusted)
 		let peerID = try await join(peer)
-		for (helper, macID) in [(trusted!, trustedID), (peer!, peerID)] {
+		for (helper, _) in [(trusted!, trustedID), (peer!, peerID)] {
 			_ = try await helper.daemon.account.syncNow()
 			_ = try await helper.daemon.account.confirmApprove(
-				phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+				phone.deviceID, safetyNumber: try await phone.safetyNumber(with: helper.daemon.account))
 			_ = try await helper.daemon.account.syncNow()
 		}
 		XCTAssertTrue(trusted.daemon.circle.publishedVouches().contains { $0.subject_id == phone.deviceID })

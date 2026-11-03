@@ -77,10 +77,35 @@ func accountRegister(_ args: [String], state: URL) async throws {
 	print(String(decoding: try JSONSerialization.data(withJSONObject: ["device_id": device.device_id]), as: UTF8.self))
 }
 
+/// Runs the committed exchange with the Mac (commit, wait for its nonce, reveal) the way the
+/// iPhone does, then prints the number both screens show.
 func accountSafety(state: URL) async throws {
 	let phone = try AccountPhone(state: state)
 	let mac = try await phone.mac()
-	let number = SafetyNumber.compute(macLink: mac.linkKey, phoneLink: phone.link.publicKey, phoneApprove: phone.approve.publicKey)
+	let relay = phone.relay
+	let account = try await phone.devices()
+	var after = try await relay.messages(after: 0, limit: 100).map(\.seq).max() ?? 0
+	var attempt = SASInitiator(
+		phoneID: phone.deviceID, macID: mac.id, phoneLink: phone.link.publicKey, phoneApprove: phone.approve.publicKey)
+	try await relay.send(.sasCommit(attempt.commit), to: mac)
+	let deadline = Date().addingTimeInterval(60)
+	var reveal: SASReveal?
+	while reveal == nil, Date() < deadline {
+		for relayed in try await relay.messages(after: after, limit: 100) {
+			after = max(after, relayed.seq)
+			guard relayed.from == mac.id,
+				let opened = try? relay.openLinkMessage(relayed, devices: account, agreementKey: phone.agreement),
+				case .sasNonce(let nonce) = opened.message, nonce.attempt == attempt.attempt
+			else { continue }
+			reveal = try attempt.receive(nonce, listedMacLink: mac.linkKey)
+			break
+		}
+		if reveal == nil { try await Task.sleep(nanoseconds: 500_000_000) }
+	}
+	guard let reveal, let number = attempt.number else {
+		throw Failure(description: "the Mac did not answer the safety-number commitment; update Whispera on it")
+	}
+	try await relay.send(.sasReveal(reveal), to: mac)
 	print(String(decoding: try JSONSerialization.data(withJSONObject: [
 		"device_id": phone.deviceID, "mac_id": mac.id, "safety_number": number,
 	], options: [.sortedKeys]), as: UTF8.self))

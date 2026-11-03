@@ -45,6 +45,8 @@ rm  agent-herdr Tests
 local agent-herdr Sources/WhisperaHerdr/HerdrCore.swift
 local whispera-components apple/Sources/WhisperaLink/LinkMessage.swift
 local whispera-components apple/Sources/WhisperaDictation/RealtimeProtocol.swift
+local whispera-components apple/Sources/WhisperaLink/SafetyNumber.swift
+local whispera-components apple/Sources/WhisperaLink/SASExchange.swift
 
 git agent-tmux https://github.com/sapoepsilon/agent-tmux f52f9be2063e4a2d0225e1ab3cc7100b5b6d6c1e
 rm  agent-tmux .gitignore

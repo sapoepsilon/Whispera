@@ -89,7 +89,7 @@ final class LargeAgentListTests: XCTestCase {
 		let macID = try XCTUnwrap(status["device_id"] as? String)
 		_ = try await account.syncNow()
 		_ = try await account.confirmApprove(
-			accountPhone.deviceID, safetyNumber: try accountPhone.safetyNumber(macID: macID))
+			accountPhone.deviceID, safetyNumber: try await accountPhone.safetyNumber(with: account))
 		_ = try await accountPhone.receive()
 		let relay = RelayPhone(accountPhone, macID: macID)
 

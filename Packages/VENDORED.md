@@ -99,6 +99,14 @@ Files changed or added here on purpose, not yet upstream. Each has a `local` lin
   pasted prompt cannot press Enter or Ctrl-C; `TmuxClient.send` pastes the sanitized text (the
   key APIs are unchanged) and the helper's prompt route uses the same function for herdr and
   hc. Upstream both, then drop the `local` lines.
+- whispera-components: safety number with a commitment. `apple/Sources/WhisperaLink/SafetyNumber.swift`
+  (changed) computes the number as `WL2-SAS` over both link keys, the phone's approve key, the
+  attempt, both device ids and two 32-byte nonces, and adds the phone's `WL2-SAS-COMMIT`
+  commitment; the keys-only `WL1-SAS` form is gone. `apple/Sources/WhisperaLink/SASExchange.swift`
+  (added) holds the `sas_commit` / `sas_nonce` / `sas_reveal` bodies and the two state machines
+  (`SASInitiator` on the phone, `SASResponder` on the Mac), and `LinkMessage.swift` carries the
+  three messages. Byte-identical to the iOS app's copies of these files and of the `LinkMessage`
+  hunks. Upstream them, then bump the pin and drop the `local` lines.
 
 ## Updating a package
 

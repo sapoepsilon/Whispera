@@ -38,7 +38,7 @@ final class AccountPairingTests: XCTestCase {
 	private func confirm(_ phone: AccountPhone) async throws -> [String: Any] {
 		let id = await account.deviceID
 		let macID = try XCTUnwrap(id)
-		return try await account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+		return try await account.confirmApprove(phone.deviceID, safetyNumber: try await phone.safetyNumber(with: account))
 	}
 
 	private func offers(_ messages: [LinkMessage]) -> [LinkOffer] {
@@ -94,7 +94,12 @@ final class AccountPairingTests: XCTestCase {
 		// The card shows the same safety number the iPhone computes from the keys it was given.
 		let pending = await account.pendingConfirmations()
 		XCTAssertEqual(pending.map { $0["device_id"] as? String }, [phone.deviceID])
-		XCTAssertEqual(pending.first?["safety_number"] as? String, try phone.safetyNumber(macID: macID))
+		XCTAssertTrue(pending.first?["safety_number"] is NSNull, "no number before the phone's committed exchange")
+		XCTAssertEqual(pending.first?["sas_status"] as? String, "waiting")
+		let shown = try await phone.safetyNumber(with: account)
+		let card = await account.pendingConfirmations()
+		XCTAssertEqual(card.first?["safety_number"] as? String, shown)
+		XCTAssertEqual(card.first?["sas_status"] as? String, "ready")
 		XCTAssertEqual(pending.first?["key_changed"] as? Bool, false)
 
 		let confirmed = try await confirm(phone)
@@ -367,7 +372,7 @@ final class AccountPairingTests: XCTestCase {
 
 		let refused = try admin([
 			"op": "approve.confirm", "device_id": phone.deviceID,
-			"safety_number": try phone.safetyNumber(macID: XCTUnwrap(joined["device_id"] as? String)),
+			"safety_number": try await phone.safetyNumber(with: account),
 		])
 		XCTAssertEqual(refused["ok"] as? Bool, false)
 		XCTAssertEqual((refused["error"] as? [String: Any])?["code"] as? String, "forbidden")
@@ -387,11 +392,12 @@ final class AccountPairingTests: XCTestCase {
 		try await phone.register(bearer: "tok-alice")
 		let macID = try await joinAccount()
 		_ = try await account.syncNow()
+		let number = try await phone.safetyNumber(with: account)
 		let wrong = try admin(["op": "approve.confirm", "device_id": phone.deviceID, "safety_number": "0000 0000 0000"])
 		XCTAssertEqual((wrong["error"] as? [String: Any])?["code"] as? String, "keys_changed")
 		XCTAssertFalse(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
 		let confirmed = try admin([
-			"op": "approve.confirm", "device_id": phone.deviceID, "safety_number": try phone.safetyNumber(macID: macID),
+			"op": "approve.confirm", "device_id": phone.deviceID, "safety_number": number,
 		])
 		XCTAssertEqual(confirmed["ok"] as? Bool, true)
 		XCTAssertTrue(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)

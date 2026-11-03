@@ -260,7 +260,7 @@ final class AccountCircleTests: XCTestCase {
 		let newID = try await join(newMac)
 		_ = try await trusted.daemon.account.syncNow()
 		_ = try await trusted.daemon.account.confirmApprove(
-			phone.deviceID, safetyNumber: try phone.safetyNumber(macID: trustedID))
+			phone.deviceID, safetyNumber: try await phone.safetyNumber(with: trusted.daemon.account))
 		_ = try await phone.receive()
 		_ = try await newMac.daemon.account.syncNow()
 		_ = try await trusted.daemon.account.syncNow()
@@ -379,7 +379,7 @@ final class AccountCircleTests: XCTestCase {
 		let attackerID = try await join(attacker)
 		_ = try await attacker.daemon.account.syncNow()
 		_ = try await attacker.daemon.account.confirmApprove(
-			fakePhone.deviceID, safetyNumber: try fakePhone.safetyNumber(macID: attackerID))
+			fakePhone.deviceID, safetyNumber: try await fakePhone.safetyNumber(with: attacker.daemon.account))
 		newTailnet.set(nodes: [trusted.port: Self.macA, attacker.port: TailnetNode(id: "n-backend", name: "whispera-backend")])
 		let (phone, _, _) = try await scene()
 		_ = try await attacker.daemon.account.syncNow()
@@ -491,7 +491,7 @@ final class AccountCircleTests: XCTestCase {
 
 	func testAPhoneConfirmedByItsSafetyNumberIsVouchedOnwardOneAllowedOnAVouchIsNot() async throws {
 		let (phone, _, newID) = try await scene()
-		_ = try await newMac.daemon.account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: newID))
+		_ = try await newMac.daemon.account.confirmApprove(phone.deviceID, safetyNumber: try await phone.safetyNumber(with: newMac.daemon.account))
 		XCTAssertEqual(newMac.daemon.devices.get(phone.deviceID)?.confirmEvidence, "safety_number")
 		XCTAssertTrue(newMac.daemon.circle.publishedVouches().contains { $0.subject_id == phone.deviceID })
 	}
@@ -595,7 +595,7 @@ final class AccountCircleTests: XCTestCase {
 	/// M3: a confirmation taken back closes what the phone has open.
 	func testAKeyChangeRunsTheTrustLostHooks() async throws {
 		let (phone, _, newID) = try await scene()
-		_ = try await newMac.daemon.account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: newID))
+		_ = try await newMac.daemon.account.confirmApprove(phone.deviceID, safetyNumber: try await phone.safetyNumber(with: newMac.daemon.account))
 		let lost = LockedBox<[String]>([])
 		newMac.daemon.devices.onTrustLost { id in lost.mutate { $0.append(id) } }
 		let reinstall = AccountPhone(backend: backend)

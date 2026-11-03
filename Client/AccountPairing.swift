@@ -81,6 +81,8 @@ enum HelperConfirmResult: Equatable, Sendable {
 	case confirmed
 	/// The device's keys are no longer the ones behind the safety number the owner compared.
 	case keysChanged
+	/// The phone never ran the committed safety-number exchange (an older Whispera on it).
+	case peerUpdateRequired
 	case failed(String?)
 
 	/// Reads a `confirmApprove` / `approve.confirm` reply.
@@ -90,7 +92,11 @@ enum HelperConfirmResult: Equatable, Sendable {
 		}
 		if object["ok"] as? Bool == true { return .confirmed }
 		let code = (object["error"] as? [String: Any])?["code"] as? String
-		return code == "keys_changed" ? .keysChanged : .failed(code)
+		switch code {
+		case "keys_changed": return .keysChanged
+		case "peer_update_required": return .peerUpdateRequired
+		default: return .failed(code)
+		}
 	}
 }
 
@@ -779,6 +785,11 @@ final class ApproveConfirmModel {
 				localized: "This iPhone's keys changed while the card was open. Compare the new safety number before you confirm.")
 			await refresh()
 			return false
+		case .peerUpdateRequired:
+			lastError = String(
+				localized: "This iPhone hasn't sent a safety number this Mac can check. Update Whispera on the iPhone and open it.")
+			await refresh()
+			return false
 		case .failed:
 			lastError = String(localized: "The Mac link didn't accept the confirmation. Try again.")
 			return false
@@ -818,7 +829,7 @@ final class ApproveConfirmModel {
 			lastError = String(localized: "The vouch for this iPhone no longer holds. Compare the safety number instead.")
 			await refresh()
 			return false
-		case .failed:
+		case .failed, .peerUpdateRequired:
 			lastError = String(localized: "The Mac link didn't accept the confirmation. Try again.")
 			return false
 		}
@@ -884,7 +895,7 @@ final class MacLinkModel {
 			lastError = String(localized: "This Mac changed while the card was open. Check the new card before you link it.")
 			await refresh()
 			return false
-		case .failed:
+		case .failed, .peerUpdateRequired:
 			lastError = String(localized: "The Mac link didn't accept the link. Try again.")
 			return false
 		}

@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import WhisperaLink
+import XCTest
 
 @testable import LinkHelperCore
 
@@ -284,6 +285,10 @@ final class AccountPhone {
 	let agreementKey = SoftwareAgreementKey()
 	var deviceID = ""
 	private var cursor: Int64 = 0
+	/// Messages `receive` read while an exchange waited for its nonce: handed out by the next `receive`.
+	private var held: [LinkMessage] = []
+	/// Finished safety-number exchanges, by `Mac id|Mac link key`.
+	private(set) var numbers: [String: String] = [:]
 
 	init(backend: FakeAccountBackend) {
 		self.backend = backend
@@ -298,12 +303,44 @@ final class AccountPhone {
 		return device
 	}
 
-	/// The safety number the iPhone shows for the Mac `macID`, from the keys the account lists.
-	func safetyNumber(macID: String) throws -> String {
-		guard let mac = backend.device(macID) else { throw RelayError.unknownSender(macID) }
-		return SafetyNumber.compute(
-			macLink: try LinkPublicKey(x963Base64: mac.link_pubkey), phoneLink: linkKey.publicKey,
-			phoneApprove: approveKey.publicKey)
+	/// The safety number the iPhone shows for `mac`: runs the committed exchange the iOS app runs
+	/// (commit, the Mac's nonce, reveal) against the helper, once per Mac.
+	func safetyNumber(with mac: AccountLink) async throws -> String {
+		let id = await mac.deviceID
+		let macID = try XCTUnwrap(id)
+		let listed = try XCTUnwrap(backend.device(macID))
+		let key = macID + "|" + listed.link_pubkey
+		if let number = numbers[key] { return number }
+		var attempt = try await commit(toMac: macID)
+		try await mac.processMessages()
+		let nonce = try await nextNonce(attempt: attempt.attempt)
+		let reveal = try attempt.receive(nonce, listedMacLink: try LinkPublicKey(x963Base64: listed.link_pubkey))
+		try await send(.sasReveal(reveal), toDevice: macID)
+		try await mac.processMessages()
+		let number = try XCTUnwrap(attempt.number)
+		numbers[key] = number
+		return number
+	}
+
+	/// Sends a fresh `sas_commit` to `macID`; the attempt is the phone's side of it.
+	func commit(toMac macID: String) async throws -> SASInitiator {
+		let attempt = SASInitiator(
+			phoneID: deviceID, macID: macID, phoneLink: linkKey.publicKey, phoneApprove: approveKey.publicKey)
+		try await send(.sasCommit(attempt.commit), toDevice: macID)
+		return attempt
+	}
+
+	/// The `sas_nonce` for `attempt` among the new messages; anything else waits for `receive`.
+	func nextNonce(attempt: String) async throws -> SASNonce {
+		var found: SASNonce?
+		for message in try await receiveRaw() {
+			if case .sasNonce(let nonce) = message, nonce.attempt == attempt, found == nil {
+				found = nonce
+			} else {
+				held.append(message)
+			}
+		}
+		return try XCTUnwrap(found, "the Mac answered the commitment with its nonce")
 	}
 
 	var relay: RelayClient {
@@ -312,6 +349,12 @@ final class AccountPhone {
 
 	/// New messages, opened against this phone's own account's verified peers.
 	func receive() async throws -> [LinkMessage] {
+		let earlier = held
+		held = []
+		return earlier + (try await receiveRaw())
+	}
+
+	private func receiveRaw() async throws -> [LinkMessage] {
 		let client = relay
 		let peers = AccountDevices(classifying: try await client.peers(), selfID: deviceID)
 		let messages = try await client.messages(after: cursor)
