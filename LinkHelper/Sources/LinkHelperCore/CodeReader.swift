@@ -108,8 +108,9 @@ struct CodeReader {
 	// MARK: Scripts
 
 	/// Prints `\u{1}name\n` sections; the last section of `fileScript` (`content`) is raw bytes.
-	/// `$1` is the agent's directory, `$2` the relative path, `$3` the byte cap.
-	static let prelude = """
+	/// `$1` is the agent's directory, `$2` the relative path, `$3` the byte cap. Every git
+	/// runs hardened against the workspace's own config (`GitSafety`).
+	static let prelude = GitSafety.shellPrelude + """
 		section() { printf '\\001%s\\n' "$1"; }
 		fail() { section error; printf '%s' "$1"; exit 0; }
 		cd -- "$1" 2>/dev/null || fail no_repository
@@ -123,7 +124,7 @@ struct CodeReader {
 
 		section files; git -c core.quotepath=off ls-files -z --cached --others --exclude-standard 2>/dev/null | head -c 6000000
 		section ignored; git ls-files -z --cached 2>/dev/null | git check-ignore --no-index -z --stdin 2>/dev/null | head -c 1000000
-		section status; git status --porcelain=v1 -z --untracked-files=all 2>/dev/null | head -c 1000000
+		section status; git status --porcelain=v1 -z --untracked-files=all --ignore-submodules=dirty 2>/dev/null | head -c 1000000
 		section recent; git log -n 25 --name-only --format= -z 2>/dev/null | head -c 200000
 		section branch; git rev-parse --abbrev-ref HEAD 2>/dev/null
 		"""
@@ -148,10 +149,10 @@ struct CodeReader {
 		section resolved; printf '%s' "$rel"
 		size=$(wc -c < "$f" | tr -d ' ')
 		section size; printf '%s' "$size"
-		section status; git status --porcelain=v1 -z -- ":(literal)$p" 2>/dev/null | head -c 2
+		section status; git status --porcelain=v1 -z --ignore-submodules=dirty -- ":(literal)$p" 2>/dev/null | head -c 2
 		section hunks
 		if git rev-parse -q --verify HEAD >/dev/null 2>&1; then
-			git diff -U0 --no-color --no-ext-diff --no-textconv HEAD -- ":(literal)$p" 2>/dev/null | grep '^@@' | head -c 200000
+			git diff -U0 --no-color --no-ext-diff --no-textconv --ignore-submodules=dirty HEAD -- ":(literal)$p" 2>/dev/null | grep '^@@' | head -c 200000
 		fi
 		[ "$size" -le "$3" ] || exit 0
 		section content; head -c "$3" "$f"

@@ -228,7 +228,8 @@ extension AgentDirectory {
 		let cwd = try? workingDirectory(id)
 		var top: String?
 		if let cwd {
-			let result = try? HerdrCLI.spawn("/usr/bin/git", ["-C", cwd, "rev-parse", "--show-toplevel"], timeout: 5)
+			let git = GitSafety.envCommand(["-C", cwd, "rev-parse", "--show-toplevel"])
+			let result = try? HerdrCLI.spawn(git.path, git.arguments, timeout: 5)
 			if let result, result.status == 0 {
 				let line = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
 				if line.hasPrefix("/") { top = line }
