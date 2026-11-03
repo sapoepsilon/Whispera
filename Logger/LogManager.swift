@@ -49,7 +49,7 @@ class LogManager {
 		guard let logsDir = logsDirectory else { return }
 
 		do {
-			try fileManager.createDirectory(at: logsDir, withIntermediateDirectories: true)
+			try LogFileWriter.secureLogsDirectory(logsDir)
 		} catch {
 			print("Failed to create logs directory: \(error)")
 		}
@@ -219,8 +219,11 @@ class LogManager {
 		{
 			do {
 				if !FileManager.default.fileExists(atPath: logFile.path) {
-					FileManager.default.createFile(atPath: logFile.path, contents: nil)
+					FileManager.default.createFile(
+						atPath: logFile.path, contents: nil,
+						attributes: [.posixPermissions: LogFileWriter.filePermissions])
 				}
+				chmod(logFile.path, LogFileWriter.filePermissions)
 				let handle = try FileHandle(forWritingTo: logFile)
 				defer { try? handle.close() }
 				try handle.seekToEnd()
@@ -261,6 +264,23 @@ final class LogFileWriter {
 		self.openHandle = openHandle
 	}
 
+	/// Logs carry file names, model and device names and error text: owner-only, like the folder.
+	static let filePermissions: mode_t = 0o600
+	static let directoryPermissions: mode_t = 0o700
+
+	/// Creates the logs folder owner-only and tightens the folder and every log already in it
+	/// (earlier versions and rotated archives were created world-readable).
+	static func secureLogsDirectory(_ directory: URL, fileManager: FileManager = .default) throws {
+		try fileManager.createDirectory(
+			at: directory, withIntermediateDirectories: true,
+			attributes: [.posixPermissions: directoryPermissions])
+		chmod(directory.path, directoryPermissions)
+		let files = (try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+		for file in files where file.pathExtension == "log" {
+			chmod(file.path, filePermissions)
+		}
+	}
+
 	/// The app, the headless CLI and test hosts write the same daily file. O_APPEND makes every
 	/// write land at the current end of the file; a handle positioned once at open overwrote
 	/// lines the other processes had appended since.
@@ -283,10 +303,14 @@ final class LogFileWriter {
 			if handle == nil || handleURL != url {
 				close()
 				if !fileManager.fileExists(atPath: url.path),
-					!fileManager.createFile(atPath: url.path, contents: nil)
+					!fileManager.createFile(
+						atPath: url.path, contents: nil,
+						attributes: [.posixPermissions: Self.filePermissions])
 				{
 					throw CocoaError(.fileWriteUnknown)
 				}
+				// Also a file an earlier version, the CLI or a rename left world-readable.
+				chmod(url.path, Self.filePermissions)
 				let opened = try openHandle(url)
 				handle = opened
 				handleURL = url
