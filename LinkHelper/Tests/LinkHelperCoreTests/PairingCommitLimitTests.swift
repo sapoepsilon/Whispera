@@ -3,8 +3,9 @@ import XCTest
 
 @testable import LinkHelperCore
 
-/// Commits need no code, so they must not let a stranger burn or crowd out a pairing: a code
-/// holds a few candidate commitments, and commits are rate limited per address and in total.
+/// Commits need no code, so a stray one must not burn the owner's pairing, and a code read off
+/// the owner's reveal must not pair other keys: a code holds one commitment, later commits are
+/// refused without burning, and commits are rate limited per address and in total.
 final class PairingCommitLimitTests: XCTestCase {
 	private final class Clock: @unchecked Sendable {
 		var now = 1_800_000_000
@@ -66,53 +67,84 @@ final class PairingCommitLimitTests: XCTestCase {
 
 	private var phone: SoftPhone { SoftPhone(baseURL: URL(string: "http://127.0.0.1:1")!) }
 
-	func testCommitsFromOtherAddressesBeforeAndAfterDoNotBreakTheOwnersPairing() throws {
+	func testALaterCommitIsRefusedWithoutBurningAndTheOwnerStillPairs() throws {
 		let code = begin()
-		_ = try garbageCommit(from: "192.0.2.66")
 		let owner = phone
 		let reveal = try commit(owner, code: code, from: "192.0.2.10")
-		_ = try garbageCommit(from: "192.0.2.67")
-		XCTAssertTrue(pairing.isLive)
+		XCTAssertEqual(errorCode { try garbageCommit(from: "192.0.2.67") }, "pair_busy")
+		XCTAssertTrue(pairing.isLive, "a refused commit does not burn the code")
 		let (out, _) = try pairing.handlePair(WireJSON.encode(reveal), from: "192.0.2.10")
 		XCTAssertNotNil(WireJSON.decodeObject(out)?["device_id"] as? String)
 		XCTAssertEqual(registry.all().count, 1)
 	}
 
+	/// The on-path attack spare slots would open: the attacker holds back the owner's reveal,
+	/// reads the code in it, and commits its own keys under that code. With one slot its commit
+	/// is refused, and its reveal under the owner's pair_id does not open the owner's commitment.
+	func testACodeReadOffTheOwnersRevealCannotPairOtherKeys() throws {
+		let code = begin()
+		let owner = phone
+		let stolen = try commit(owner, code: code, from: "192.0.2.10")
+		let attacker = phone
+		XCTAssertEqual(errorCode { try commit(attacker, code: code, from: "192.0.2.66") }, "pair_busy")
+		let forged = try attacker.pairingBody(
+			code: code, daemonFP: pairing.daemonFP, pairID: stolen["pair_id"] as! String,
+			nonce: LinkCrypto.randomBytes(32))
+		XCTAssertEqual(errorCode { try pairing.handlePair(WireJSON.encode(forged), from: "192.0.2.66") }, "pair_locked")
+		XCTAssertEqual(registry.all().count, 0)
+	}
+
+	func testTheSameCommitmentSentAgainGetsTheSamePairID() throws {
+		let code = begin()
+		let nonce = LinkCrypto.randomBytes(32)
+		let owner = phone
+		let commitment = owner.commitment(code: code, daemonFP: pairing.daemonFP, nonce: nonce)
+		let body = WireJSON.encode(["v": 2, "commitment": commitment])
+		let (first, _) = try pairing.handleCommit(body, from: "192.0.2.10")
+		let (again, _) = try pairing.handleCommit(body, from: "192.0.2.10")
+		let id = try XCTUnwrap(WireJSON.decodeObject(first)?["pair_id"] as? String)
+		XCTAssertEqual(WireJSON.decodeObject(again)?["pair_id"] as? String, id)
+		let reveal = try owner.pairingBody(code: code, daemonFP: pairing.daemonFP, pairID: id, nonce: nonce)
+		_ = try pairing.handlePair(WireJSON.encode(reveal), from: "192.0.2.10")
+		XCTAssertEqual(registry.all().count, 1)
+	}
+
+	/// What one slot costs: a stranger who commits first holds the code. Nothing burns and nothing
+	/// pairs; the owner starts a new code.
+	func testAStrangerWhoCommitsFirstOnlyCostsTheOwnerANewCode() throws {
+		let code = begin()
+		_ = try garbageCommit(from: "192.0.2.66")
+		XCTAssertEqual(errorCode { try commit(phone, code: code, from: "192.0.2.10") }, "pair_busy")
+		XCTAssertTrue(pairing.isLive)
+		XCTAssertEqual(registry.all().count, 0)
+		let fresh = begin()
+		let reveal = try commit(phone, code: fresh, from: "192.0.2.10")
+		_ = try pairing.handlePair(WireJSON.encode(reveal), from: "192.0.2.10")
+		XCTAssertEqual(registry.all().count, 1)
+	}
+
 	func testCommitsArePerAddressRateLimitedAndTheWindowSlides() throws {
+		for _ in 0..<PairingManager.maxCommitsPerAddress {
+			_ = begin()
+			_ = try garbageCommit(from: "192.0.2.66")
+		}
 		_ = begin()
-		for _ in 0..<PairingManager.maxCommitsPerAddress { _ = try garbageCommit(from: "192.0.2.66") }
 		XCTAssertEqual(errorCode { try garbageCommit(from: "192.0.2.66") }, "pair_rate_limited")
 		XCTAssertTrue(pairing.isLive, "a refused commit does not burn the code")
 		XCTAssertNil(errorCode { try garbageCommit(from: "192.0.2.10") }, "other addresses are unaffected")
+		_ = begin()
 		clock.now += PairingManager.commitWindow + 1
 		XCTAssertNil(errorCode { try garbageCommit(from: "192.0.2.66") })
 	}
 
-	func testCommitFloodIsCappedGloballyAndPerCode() throws {
-		_ = begin()
-		for index in 0..<PairingManager.maxCandidates { _ = try garbageCommit(from: "198.51.100.\(index)") }
-		XCTAssertEqual(
-			errorCode { try garbageCommit(from: "198.51.100.200") }, "pair_rate_limited",
-			"a code holds at most maxCandidates commitments")
-		XCTAssertTrue(pairing.isLive)
-
-		// A new code starts with no candidates, but the global window still counts.
-		_ = begin()
-		var accepted = PairingManager.maxCandidates
-		while accepted < PairingManager.maxCommitsTotal {
-			XCTAssertNil(errorCode { try garbageCommit(from: "203.0.113.\(accepted)") })
-			accepted += 1
-			if accepted % PairingManager.maxCandidates == 0 { _ = begin() }
-		}
-		XCTAssertEqual(errorCode { try garbageCommit(from: "203.0.113.250") }, "pair_rate_limited")
-	}
-
-	func testTheOwnerStillPairsAfterAFloodOnceTheWindowPasses() throws {
-		let code = begin()
+	func testCommitsAreCappedGloballyAcrossCodes() throws {
+		XCTAssertEqual(PairingManager.maxCandidates, 1)
 		for index in 0..<PairingManager.maxCommitsTotal {
-			_ = errorCode { try garbageCommit(from: "198.51.100.\(index)") }
+			_ = begin()
+			XCTAssertNil(errorCode { try garbageCommit(from: "203.0.113.\(index)") })
 		}
-		XCTAssertEqual(errorCode { try commit(phone, code: code, from: "192.0.2.10") }, "pair_rate_limited")
+		_ = begin()
+		XCTAssertEqual(errorCode { try garbageCommit(from: "203.0.113.250") }, "pair_rate_limited")
 		XCTAssertTrue(pairing.isLive)
 	}
 

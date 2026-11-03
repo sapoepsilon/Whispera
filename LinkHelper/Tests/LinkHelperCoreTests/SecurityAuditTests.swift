@@ -341,7 +341,8 @@ final class SecurityAuditTests: XCTestCase {
 		XCTAssertEqual(first.commit.status, 201)
 		let second = try await SoftPhone(baseURL: helper.baseURL).pairV2(
 			code: code, daemonFP: helper.daemon.daemonFP, reveal: false)
-		XCTAssertEqual(second.commit.status, 201)
+		XCTAssertEqual(second.commit.status, 409)
+		XCTAssertEqual(second.commit.errorCode, "pair_busy")
 		XCTAssertTrue(helper.daemon.pairing.isLive)
 		let reveal = try await SoftPhone(baseURL: helper.baseURL).reveal(first.reveal)
 		XCTAssertEqual(reveal.status, 201)

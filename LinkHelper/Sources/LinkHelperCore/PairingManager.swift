@@ -6,22 +6,29 @@ import WhisperaLinkServer
 /// live in memory only; at most one live code; single use; TTL.
 ///
 /// Commit, then reveal: the phone first sends only a commitment to (code, daemon fp, its link
-/// and approve keys, a secret nonce), and the daemon holds one commitment per live code. The
-/// code goes on the wire only in the reveal, which must open one of the commitments the code
-/// holds; anyone who reads it there cannot pair other keys with it, and a reveal that does not
-/// open its commitment or names an unknown `pair_id` burns the code. A code holds a few
-/// commitments (`maxCandidates`) rather than one, so a stranger who commits first, or later,
-/// cannot burn the owner's pairing; commits are rate limited per source address and in total.
-/// Wrong codes count per source address (five lock that address out) and in total (twenty burn
-/// the code), so one LAN peer cannot lock the owner out by guessing.
+/// and approve keys, a secret nonce), and the daemon holds exactly one commitment per live code.
+/// The code goes on the wire only in the reveal, which must open that commitment; a reveal that
+/// does not open it or names another `pair_id` burns the code.
+///
+/// One commitment, not several: code pairing shows no safety number, so the single slot is
+/// what stops a stolen code. An on-path party that holds back the owner's reveal reads the code
+/// in it, but by then the owner's commitment holds the slot, so it cannot commit its own keys
+/// under that code; with spare slots it could, and would pair instead of the owner. A commit
+/// after the slot is taken is refused with 409 `pair_busy` and burns nothing (the owner's
+/// commitment stays valid); the same commitment sent again (a retry after a lost answer) gets
+/// the same `pair_id`. A stranger who commits first can still hold the slot, which only costs
+/// the owner a new code. Commits are rate limited per source address and in total. Wrong codes
+/// count per source address (five lock that address out) and in total (twenty burn the code),
+/// so one LAN peer cannot lock the owner out by guessing.
 public final class PairingManager: @unchecked Sendable {
 	static let alphabet = Array("23456789ABCDEFGHJKMNPQRSTVWXYZ")
 	/// Wrong codes from one address before that address is refused for this code.
 	static let maxFails = 5
 	/// Wrong codes from everyone before the code burns.
 	static let maxTotalFails = 20
-	/// Commitments one code holds; further commits are refused (not burned) until a reveal.
-	static let maxCandidates = 8
+	/// Commitments one code holds; further commits are refused (not burned). Keep it at one: see
+	/// the type's comment.
+	static let maxCandidates = 1
 	/// Commits accepted per source address, and from everyone, within `commitWindow` seconds.
 	static let maxCommitsPerAddress = 3
 	static let maxCommitsTotal = 20
@@ -201,13 +208,21 @@ public final class PairingManager: @unchecked Sendable {
 		if (entry.failsByAddress[address] ?? 0) >= Self.maxFails {
 			throw APIError(429, "pair_locked", "too many failed attempts from this address")
 		}
-		guard entry.candidates.count < Self.maxCandidates else {
-			log("pair.commit_refused", ["detail": "candidates_full"])
-			throw APIError(429, "pair_rate_limited", "too many pairing attempts for this code; try again shortly")
+		let pairID: String
+		if let held = entry.candidates.first(where: { $0.commitment == commitment }) {
+			// A retry of the commitment already held: same slot, same id.
+			pairID = held.pairID
+		} else {
+			guard entry.candidates.count < Self.maxCandidates else {
+				log("pair.commit_refused", ["detail": "busy"])
+				throw APIError(
+					409, "pair_busy",
+					"another device already started pairing with this code; if it isn't yours, start pairing again on the Mac")
+			}
+			try admitCommit(from: address)
+			pairID = LinkCrypto.newPrefixedID("pc")
+			entry.candidates.append((pairID, commitment))
 		}
-		try admitCommit(from: address)
-		let pairID = LinkCrypto.newPrefixedID("pc")
-		entry.candidates.append((pairID, commitment))
 		let ack: [String: Any] = [
 			"v": 2, "pair_id": pairID, "commitment": commitment,
 			"daemon_pubkey": LinkPublicKey(daemonKey.privateKey.publicKey).x963Base64, "daemon_fp": daemonFP,
