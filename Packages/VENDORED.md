@@ -16,7 +16,9 @@ The agent-tui-protocol, agent-herdr and agent-tmux pins were moved on 2026-11-03
 repositories' history was rewritten: the new commits have the same trees as the old ones apart
 from scrubbed test fixtures (agent-tui-protocol `Tests/`) and `Package.resolved` (agent-herdr,
 agent-tmux), all of which are removed here, so the vendored files did not change. The
-whispera-components commit is kept reachable on GitHub by the branch `pin/whispera-1.5.0`.
+whispera-components commit is kept reachable on GitHub by the branch `pin/whispera-1.5.0`, and
+each agent pin by a `pin/whispera-1.5.0-mac` branch in its repository. Don't delete those
+branches: they are what keeps the pinned commits fetchable for `scripts/verify-vendored.sh`.
 
 Directory names match the upstream package identities (`whispera-components`, `swift-transformers`,
 ...), so every `.product(name:package:)` reference kept its original spelling.
