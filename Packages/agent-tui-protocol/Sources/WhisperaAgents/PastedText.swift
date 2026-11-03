@@ -6,11 +6,20 @@ import Foundation
 /// as Ctrl-C (`\u{03}`) or Esc would act as a key, so they never reach the terminal as part of
 /// pasted text. Keys go through the hosts' explicit key APIs instead.
 public enum PastedText {
-	/// `\r\n` becomes `\n`; every other C0 control except tab and newline, DEL and the C1
-	/// controls (`0x80`–`0x9F`, which some terminals read as CSI and friends) are removed.
+	/// `\r\n` and a lone `\r` both become `\n` (old Mac line endings keep their line breaks);
+	/// every other C0 control except tab and newline, DEL and the C1 controls (`0x80`–`0x9F`,
+	/// which some terminals read as CSI and friends) are removed.
 	public static func sanitize(_ text: String) -> String {
 		var scalars = String.UnicodeScalarView()
-		for scalar in text.unicodeScalars where isAllowed(scalar) { scalars.append(scalar) }
+		let input = Array(text.unicodeScalars)
+		for (index, scalar) in input.enumerated() {
+			if scalar == "\r" {
+				if index + 1 < input.count, input[index + 1] == "\n" { continue }
+				scalars.append("\n")
+			} else if isAllowed(scalar) {
+				scalars.append(scalar)
+			}
+		}
 		return String(scalars)
 	}
 

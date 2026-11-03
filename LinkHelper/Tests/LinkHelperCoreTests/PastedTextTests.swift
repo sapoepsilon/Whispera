@@ -8,11 +8,13 @@ import XCTest
 /// (Enter, Ctrl-C) go through the explicit key APIs, unchanged.
 final class PastedTextTests: XCTestCase {
 	func testSanitizeStripsControlsButKeepsNewlinesAndTabs() {
-		XCTAssertEqual(PastedText.sanitize("one\r\ntwo\rthree\u{03}four"), "one\ntwothreefour")
+		XCTAssertEqual(PastedText.sanitize("one\r\ntwo\rthree\u{03}four"), "one\ntwo\nthreefour")
 		XCTAssertEqual(PastedText.sanitize("a\tb\nc"), "a\tb\nc")
 		XCTAssertEqual(PastedText.sanitize("x\u{04}\u{1A}\u{7F}\u{9B}y\u{08}"), "xy")
 		XCTAssertEqual(PastedText.sanitize("héllo ✓ 日本"), "héllo ✓ 日本")
-		XCTAssertEqual(PastedText.sanitize("\r\u{03}"), "")
+		XCTAssertEqual(PastedText.sanitize("\r\u{03}"), "\n", "a lone carriage return is a line break, never Enter")
+		XCTAssertEqual(PastedText.sanitize("a\r\r\nb"), "a\n\nb")
+		XCTAssertEqual(PastedText.sanitize("\u{03}\u{7F}"), "")
 	}
 
 	final class Recorder: @unchecked Sendable {
@@ -27,9 +29,9 @@ final class PastedTextTests: XCTestCase {
 		}
 		try client.send("echo hi\r\nrm -rf /\r\u{03}done", to: "%1")
 		XCTAssertEqual(recorder.calls.count, 2)
-		XCTAssertEqual(recorder.calls[0], ["send-keys", "-t", "%1", "-l", "--", "\u{1B}[200~echo hi\nrm -rf /done\u{1B}[201~"])
+		XCTAssertEqual(recorder.calls[0], ["send-keys", "-t", "%1", "-l", "--", "\u{1B}[200~echo hi\nrm -rf /\ndone\u{1B}[201~"])
 		XCTAssertEqual(recorder.calls[1], ["send-keys", "-t", "%1", "Enter"])
-		XCTAssertThrowsError(try client.send("\r\u{03}", to: "%1"))
+		XCTAssertThrowsError(try client.send("\u{03}\u{7F}", to: "%1"))
 
 		recorder.calls = []
 		try client.sendKeys(["enter", "ctrl+c"], to: "%1")
@@ -65,10 +67,10 @@ final class PastedTextTests: XCTestCase {
 		let calls = try String(contentsOf: log, encoding: .utf8).split(separator: "\u{1D}").map {
 			$0.split(separator: "\u{1E}", omittingEmptySubsequences: false).dropLast().map(String.init)
 		}
-		XCTAssertEqual(calls.first, ["send-keys", "-t", "%1", "-l", "--", "\u{1B}[200~first line\nsecond\u{1B}[201~"])
+		XCTAssertEqual(calls.first, ["send-keys", "-t", "%1", "-l", "--", "\u{1B}[200~first line\nsecond\n\u{1B}[201~"])
 		XCTAssertEqual(calls.last, ["send-keys", "-t", "%1", "Enter"])
 
-		XCTAssertThrowsError(try directory.prompt("tmux:p1", text: "\r\u{03}", wait: nil))
+		XCTAssertThrowsError(try directory.prompt("tmux:p1", text: "\u{03}\u{7F}", wait: nil))
 		XCTAssertThrowsError(try directory.prompt("tmux:p1", text: "bad\u{1B}[201~payload", wait: nil))
 	}
 }
