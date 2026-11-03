@@ -91,6 +91,12 @@ Files changed or added here on purpose, not yet upstream. Each has a `local` lin
   (JSON `truncated`, false when an older payload leaves it out) say a field was clipped, detail
   lines were dropped, a Codex command goes on below its `$` line, or the 40-line window cut the
   dialog. Upstream both, then drop the `local` lines.
+- agent-tui-protocol: `Sources/WhisperaAgents/PastedText.swift` (added) and agent-tmux:
+  `Sources/WhisperaTmux/TmuxProvider.swift` (changed). `PastedText.sanitize` turns `\r\n` into
+  `\n` and drops every other C0 control but tab and newline, DEL and the C1 controls, so a
+  pasted prompt cannot press Enter or Ctrl-C; `TmuxClient.send` pastes the sanitized text (the
+  key APIs are unchanged) and the helper's prompt route uses the same function for herdr and
+  hc. Upstream both, then drop the `local` lines.
 
 ## Updating a package
 

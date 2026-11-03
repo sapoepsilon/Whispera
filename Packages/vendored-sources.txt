@@ -36,6 +36,7 @@ rm  agent-tui-protocol .gitignore
 rm  agent-tui-protocol Tests
 local agent-tui-protocol Sources/WhisperaAgents/Asks/ChoiceMenu.swift
 local agent-tui-protocol Sources/WhisperaAgents/Asks/AgentAsk.swift
+local agent-tui-protocol Sources/WhisperaAgents/PastedText.swift
 
 git agent-herdr https://github.com/sapoepsilon/agent-herdr 3dff1f2352fea16160ec8f332d45ee92bc201c08
 rm  agent-herdr .gitignore
@@ -49,6 +50,7 @@ git agent-tmux https://github.com/sapoepsilon/agent-tmux f52f9be2063e4a2d0225e1a
 rm  agent-tmux .gitignore
 rm  agent-tmux Package.resolved
 rm  agent-tmux Tests
+local agent-tmux Sources/WhisperaTmux/TmuxProvider.swift
 
 git WhisperKit https://github.com/argmaxinc/WhisperKit 3817d2833f73ceb30586cb285e0e0439a3860536
 rm  WhisperKit .*
