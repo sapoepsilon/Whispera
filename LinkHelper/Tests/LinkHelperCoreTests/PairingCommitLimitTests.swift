@@ -75,6 +75,7 @@ final class PairingCommitLimitTests: XCTestCase {
 		XCTAssertTrue(pairing.isLive, "a refused commit does not burn the code")
 		let (out, _) = try pairing.handlePair(WireJSON.encode(reveal), from: "192.0.2.10")
 		XCTAssertNotNil(WireJSON.decodeObject(out)?["device_id"] as? String)
+		XCTAssertEqual(WireJSON.decodeObject(out)?["signs_responses"] as? Bool, true, "inside the signed pair response")
 		XCTAssertEqual(registry.all().count, 1)
 	}
 

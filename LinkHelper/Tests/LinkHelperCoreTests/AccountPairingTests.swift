@@ -115,6 +115,7 @@ final class AccountPairingTests: XCTestCase {
 		XCTAssertEqual(offer.mac_name, "Test Mac")
 		XCTAssertTrue(offer.approve_confirmed)
 		XCTAssertNil(offer.allow_lan_http, "plain-LAN access is off, so the offer does not mention it")
+		XCTAssertEqual(offer.signs_responses, true, "sealed, so the phone can require WL1-RESP from this Mac")
 		let issued = try XCTUnwrap(offer.issued_at, "every offer says when it was made")
 		XCTAssertLessThanOrEqual(abs(issued - Int64(Date().timeIntervalSince1970)), 5)
 

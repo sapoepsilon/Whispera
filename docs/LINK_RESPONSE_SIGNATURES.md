@@ -174,7 +174,18 @@ refusal for someone else's request does not verify.
 
 ## Compatibility
 
-A helper that signs lists `response_signatures` in the `capabilities` of the signed
-`GET /v1/health`. A helper that does not sign sends neither header. A client should require
-WL1-RESP from a helper that advertises it (and remember that per paired Mac, so a downgrade
-on the LAN is noticed), and treat it as optional for older helpers.
+A helper that signs says so in three places:
+
+- `"signs_responses": true` in the `link_offer` it seals to an account phone (`LinkOffer.signs_responses`,
+  optional Bool; absent from older Macs). The offer is sealed and signed with the Mac's link key,
+  so nobody on the path can strip it.
+- `"signs_responses": true` in the code-pairing response (`POST /v1/pair`, 201), which is signed
+  with the daemon key (`X-WL-Server-Signature` over `WL1-PAIR-RESP`), so it cannot be stripped
+  either.
+- `response_signatures` in the `capabilities` of `GET /v1/health`. Health travels unsigned
+  before pairing, so on its own it only hints.
+
+A helper that does not sign sends neither header. A client that saw `signs_responses: true` in
+an offer or pair response from a Mac must require WL1-RESP from that Mac from then on, and keep
+that per paired Mac so a downgrade on the LAN is refused rather than noticed late. Without the
+field (older Macs), treat signatures as optional.

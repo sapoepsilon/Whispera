@@ -182,11 +182,16 @@ public struct LinkOffer: Codable, Equatable, Sendable {
 	/// When the Mac made this offer (Unix seconds, Mac clock), so a phone can refuse an older
 	/// offer replayed after a newer one. Absent from older Macs.
 	public var issued_at: Int64?
+	/// The Mac signs every direct-path response and SSE event with its daemon key (WL1-RESP,
+	/// docs/LINK_RESPONSE_SIGNATURES.md in the Mac app). Sealed in the offer, so a LAN party
+	/// cannot strip it: a phone that saw `true` requires the signatures from this Mac. Absent
+	/// (older Macs) means unknown, not "doesn't sign".
+	public var signs_responses: Bool?
 
 	public init(
 		helper_device_id: String, base_urls: [String], daemon_pubkey: String, daemon_fp: String, stt_key: String? = nil,
 		stt_base_url: String? = nil, mac_name: String, approve_confirmed: Bool, allow_lan_http: Bool? = nil,
-		issued_at: Int64? = nil
+		issued_at: Int64? = nil, signs_responses: Bool? = nil
 	) {
 		self.helper_device_id = helper_device_id
 		self.base_urls = base_urls
@@ -198,11 +203,12 @@ public struct LinkOffer: Codable, Equatable, Sendable {
 		self.approve_confirmed = approve_confirmed
 		self.allow_lan_http = allow_lan_http
 		self.issued_at = issued_at
+		self.signs_responses = signs_responses
 	}
 
 	enum CodingKeys: String, CodingKey {
 		case helper_device_id, base_urls, daemon_pubkey, daemon_fp, stt_key, stt_base_url, mac_name, approve_confirmed
-		case allow_lan_http, issued_at
+		case allow_lan_http, issued_at, signs_responses
 	}
 
 	public func encode(to encoder: Encoder) throws {
@@ -217,6 +223,7 @@ public struct LinkOffer: Codable, Equatable, Sendable {
 		try c.encode(approve_confirmed, forKey: .approve_confirmed)
 		try c.encodeIfPresent(allow_lan_http, forKey: .allow_lan_http)
 		try c.encodeIfPresent(issued_at, forKey: .issued_at)
+		try c.encodeIfPresent(signs_responses, forKey: .signs_responses)
 	}
 
 	/// The `http`/`https` entries of `base_urls`, in order.

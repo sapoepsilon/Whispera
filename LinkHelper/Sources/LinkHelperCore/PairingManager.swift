@@ -369,6 +369,9 @@ public final class PairingManager: @unchecked Sendable {
 			"stt_key": sttKey,
 			"stt_base_url": url + "/v1",
 			"server_time": clock(),
+			// Signed with the rest (X-WL-Server-Signature), so it can't be stripped on the LAN:
+			// the phone then requires WL1-RESP from this Mac.
+			"signs_responses": true,
 		]
 		let out = WireJSON.encode(response)
 		let signature = try LinkSignatures.signPairResponse(out, daemonKey: daemonKey)

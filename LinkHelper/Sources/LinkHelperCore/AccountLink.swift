@@ -816,7 +816,8 @@ public actor AccountLink {
 			daemon_fp: context.daemonFP, stt_key: sttKey,
 			stt_base_url: context.baseURLs.first.map { Self.trimmed($0) + "/v1" },
 			mac_name: context.macName, approve_confirmed: record.approveConfirmed,
-			allow_lan_http: context.allowLANHTTP ? true : nil, issued_at: Int64(Date().timeIntervalSince1970))
+			allow_lan_http: context.allowLANHTTP ? true : nil, issued_at: Int64(Date().timeIntervalSince1970),
+			signs_responses: true)
 		do {
 			try devices.setSTTKeySHA256(phone.id, LinkCrypto.sha256Hex(Data(sttKey.utf8)))
 			try await client.send(.linkOffer(offer), to: phone)
@@ -1080,7 +1081,11 @@ public actor AccountLink {
 	}
 
 	static func offerDigest(_ context: OfferContext, approveConfirmed: Bool) -> String {
-		var parts = [context.baseURLs.joined(separator: ","), context.daemonFP, context.macName, "\(approveConfirmed)"]
+		// `signs_responses` is in every offer now: part of the digest, so phones that got an offer
+		// before it existed are sent a fresh one once.
+		var parts = [
+			context.baseURLs.joined(separator: ","), context.daemonFP, context.macName, "\(approveConfirmed)", "signs_responses",
+		]
 		// Only when on, so turning it off restores the digest offers already sent had.
 		if context.allowLANHTTP { parts.append("allow_lan_http") }
 		return LinkCrypto.sha256Hex(Data(parts.joined(separator: "\n").utf8))
