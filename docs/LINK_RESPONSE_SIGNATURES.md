@@ -155,6 +155,8 @@ refusal for someone else's request does not verify.
 - Comment-only SSE events (`: ping`).
 - Connections closed without any response: a refused peer, a malformed or slow request head,
   a request whose phone went away.
+- The bare `503` sent, before any request byte is read, to a connection over the per-peer
+  (16) or total (128) connection cap.
 - `100 Continue` interim responses.
 - Response headers other than the status: `Content-Type`, `X-WL-Request-Id` and the rest are
   outside the message.

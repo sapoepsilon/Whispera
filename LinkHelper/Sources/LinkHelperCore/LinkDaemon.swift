@@ -448,6 +448,18 @@ public final class LinkDaemon: @unchecked Sendable {
 			refusals.fail(peer)
 			log("http.refused", ["detail": "direct connection from \(peer): not loopback or this Mac's tailnet address"])
 		}
+		let busy = RateLimiter(limit: 0, window: 60, blockFor: 60)
+		let (perPeer, total) = (server.connections.perPeer, server.connections.total)
+		server.onBusy = { [log] peer in
+			guard !busy.isBlocked(peer) else { return }
+			busy.fail(peer)
+			log(
+				"http.busy",
+				[
+					"detail":
+						"direct connection from \(peer) refused: over \(perPeer) per peer or \(total) in total"
+				])
+		}
 		let port = try server.start()
 		http = server
 		tailnetName.refresh()

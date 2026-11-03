@@ -304,14 +304,22 @@ public final class HTTPServer: @unchecked Sendable {
 	public var onRefused: ((String) -> Void)?
 	/// Signs every response this server sends (`ResponseSigner`); nil leaves them unsigned.
 	public var responseSigner: ResponseSigner?
+	/// Connections served at once, per peer address and in total.
+	public let connections: ConnectionLimiter
+	/// A peer turned away at the connection cap, for the ops log.
+	public var onBusy: ((String) -> Void)?
 	private let queue = DispatchQueue(label: "link.http.listener")
 	private var listener: NWListener?
 	public private(set) var boundPort = 0
 
-	public init(host: String, port: Int, advertisement: Advertisement?, handler: @escaping (HTTPExchange) -> Void) {
+	public init(
+		host: String, port: Int, advertisement: Advertisement?, connections: ConnectionLimiter = ConnectionLimiter(),
+		handler: @escaping (HTTPExchange) -> Void
+	) {
 		self.host = host
 		self.port = port
 		self.advertisement = advertisement
+		self.connections = connections
 		self.handler = handler
 	}
 
@@ -404,20 +412,62 @@ public final class HTTPServer: @unchecked Sendable {
 		listener = nil
 	}
 
+	/// Runs on the listener queue and never blocks: the connection cap is taken from the peer
+	/// address before the connection starts, and the access check runs on the connection's own
+	/// queue once it is ready (when its local address and interface are known). Only an admitted
+	/// connection inside the cap gets a thread; its slot comes back when the handler returns, or
+	/// when the connection fails before that.
 	private func accept(_ connection: NWConnection) {
 		let connectionQueue = DispatchQueue(label: "link.http.connection")
-		connection.start(queue: connectionQueue)
-		let thread = Thread { [handler, admit, onRefused, responseSigner] in
-			let local = Self.localHost(connection)
-			let interface = Self.localInterface(connection)
-			if let admit {
-				let peer = Self.remoteHost(connection)
-				guard admit(peer, local, interface) else {
+		let peer = Self.remoteHost(connection)
+		guard let slot = connections.slot(for: peer) else {
+			onBusy?(peer)
+			Self.refuseBusy(connection, queue: connectionQueue)
+			return
+		}
+		let started = StartedBox()
+		connection.stateUpdateHandler = { [weak self] state in
+			switch state {
+			case .ready:
+				guard !started.value else { return }
+				started.value = true
+				connection.stateUpdateHandler = nil
+				guard let self else {
+					slot.release()
 					connection.cancel()
-					onRefused?(peer)
 					return
 				}
+				self.serve(connection, slot: slot)
+			case .waiting:
+				// An inbound connection that cannot get ready is not worth its slot.
+				connection.cancel()
+			case .failed, .cancelled:
+				connection.stateUpdateHandler = nil
+				slot.release()
+				connection.cancel()
+			default: break
 			}
+		}
+		connection.start(queue: connectionQueue)
+	}
+
+	private final class StartedBox: @unchecked Sendable {
+		var value = false
+	}
+
+	/// The access check, then the request on a thread of its own; called on the connection's
+	/// queue once it is ready.
+	private func serve(_ connection: NWConnection, slot: ConnectionLimiter.Slot) {
+		let local = Self.localHost(connection)
+		let interface = Self.localInterface(connection)
+		if let admit, !admit(slot.peer, local, interface) {
+			slot.release()
+			connection.cancel()
+			onRefused?(slot.peer)
+			return
+		}
+		let thread = Thread { [handler, responseSigner] in
+			defer { slot.release() }
 			guard let exchange = Self.readHead(connection, localHost: local, localInterface: interface) else {
 				connection.cancel()
 				return
@@ -428,6 +478,17 @@ public final class HTTPServer: @unchecked Sendable {
 		}
 		thread.name = "link-http"
 		thread.start()
+	}
+
+	static let busyResponse = Data(
+		"HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\nRetry-After: 1\r\n\r\n".utf8)
+
+	/// Over the cap: a bare 503 and close, without reading the request or spawning anything.
+	static func refuseBusy(_ connection: NWConnection, queue: DispatchQueue) {
+		connection.start(queue: queue)
+		connection.send(
+			content: busyResponse, contentContext: .finalMessage, isComplete: true,
+			completion: .contentProcessed { _ in connection.cancel() })
 	}
 
 	/// The local address once the connection is ready (up to 2 s), before any byte is read.
