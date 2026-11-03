@@ -79,8 +79,10 @@ Files changed or added here on purpose, not yet upstream. Each has a `local` lin
 - whispera-components: `apple/Sources/WhisperaLink/LinkMessage.swift` (changed). `LinkOffer`
   carries the optional `allow_lan_http` flag the iOS app reads to decide whether the Mac's plain
   `http://` LAN addresses may be used directly, and `issued_at` (Unix seconds) so the phone can
-  refuse a rolled-back offer; the same fields as the iOS app's copy. Drop the
-  `local` line once upstream has it.
+  refuse a rolled-back offer; the same fields as the iOS app's copy. `ReceivedLinkMessage`
+  also carries the envelope's signed `messageID` and `createdAt` (with a public init that
+  defaults them), which the Mac helper uses to drop relay messages delivered twice. Drop the
+  `local` line once upstream has both.
 - whispera-components: `apple/Sources/WhisperaDictation/RealtimeProtocol.swift` (changed). One
   doc comment no longer names a private test machine; no code changed. Upstream the
   same wording.

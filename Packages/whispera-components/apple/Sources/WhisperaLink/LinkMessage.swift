@@ -254,6 +254,18 @@ public struct ReceivedLinkMessage: Equatable, Sendable {
 	public let seq: Int64
 	public let sender: TrustedDevice
 	public let message: LinkMessage
+	/// The envelope's signed `message_id` and `created_at`, so a receiver can drop a message the
+	/// relay delivers again under a new sequence number (the envelope stays valid for its max age).
+	public let messageID: Data
+	public let createdAt: Int64
+
+	public init(seq: Int64, sender: TrustedDevice, message: LinkMessage, messageID: Data = Data(), createdAt: Int64 = 0) {
+		self.seq = seq
+		self.sender = sender
+		self.message = message
+		self.messageID = messageID
+		self.createdAt = createdAt
+	}
 }
 
 extension RelayClient {
@@ -277,6 +289,8 @@ extension RelayClient {
 		guard envelope.senderID == relayed.from else { throw EnvelopeError.badSignature }
 		let plaintext = try envelope.open(
 			as: deviceID, agreementKey: agreementKey, senderKey: sender.linkKey, now: serverNow)
-		return ReceivedLinkMessage(seq: relayed.seq, sender: sender, message: try LinkMessage(decoding: plaintext))
+		return ReceivedLinkMessage(
+			seq: relayed.seq, sender: sender, message: try LinkMessage(decoding: plaintext), messageID: envelope.messageID,
+			createdAt: envelope.createdAt)
 	}
 }

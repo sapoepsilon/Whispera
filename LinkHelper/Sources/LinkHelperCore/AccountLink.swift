@@ -105,6 +105,8 @@ public actor AccountLink {
 	private let ingress: RelayIngress?
 	private let pushSealer: PushSealer
 	private let approvalFallback: TimeInterval
+	/// Drops relay messages delivered twice (persisted across launches).
+	nonisolated let replayGuard: RelayReplayGuard
 	/// Zero-touch linking through devices the owner already trusts; nil turns it off.
 	public let circle: AccountCircle?
 	private var state: State?
@@ -134,6 +136,7 @@ public actor AccountLink {
 		self.log = log
 		self.clock = clock
 		self.offerContext = offerContext
+		replayGuard = RelayReplayGuard(path: paths.relaySeen, clock: { Int64(clock()) })
 		if let data = FileManager.default.contents(atPath: paths.accountState),
 			let loaded = try? JSONDecoder().decode(State.self, from: data),
 			LinkCrypto.isValidDeviceID(loaded.device_id)
@@ -792,6 +795,7 @@ public actor AccountLink {
 	private var cursor: Int64 { state?.cursor ?? 0 }
 
 	private func saveCursor(_ value: Int64) {
+		replayGuard.flush()
 		guard state != nil, value > (state?.cursor ?? 0) else { return }
 		state?.cursor = value
 		saveState()
@@ -814,13 +818,27 @@ public actor AccountLink {
 
 	private func handle(_ received: ReceivedLinkMessage) {
 		let sender = received.sender
+		guard replayGuard.firstSeen(sender: sender.id, messageID: received.messageID, createdAt: received.createdAt) else {
+			log("account.message_ignored", ["device": sender.id, "detail": "replayed \(received.message.type)"])
+			return
+		}
 		switch received.message {
 		case .unpaired(let id):
+			replayGuard.flush()
 			guard sender.platform == .ios, id == sender.id || id == state?.device_id else {
 				log("account.message_ignored", ["device": sender.id, "detail": "unpaired for another device"])
 				return
 			}
 			if let record = devices.get(sender.id), record.origin == .account {
+				// Bound to the pairing as it is here: signed with the key pinned now, and sealed
+				// after that key was pinned (an older `unpaired` is from an earlier pairing).
+				let pinnedAt = Int64(record.keyChangedAt ?? record.createdAt)
+				guard record.linkPubkey == sender.linkKey.x963Base64,
+					received.createdAt == 0 || received.createdAt + SealedEnvelope.defaultFutureSkew >= pinnedAt
+				else {
+					log("account.message_ignored", ["device": sender.id, "detail": "unpaired from an earlier pairing"])
+					return
+				}
 				devices.revoke(sender.id)
 			}
 			if state?.unpaired.contains(sender.id) == false { state?.unpaired.append(sender.id) }

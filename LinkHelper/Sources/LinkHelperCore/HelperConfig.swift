@@ -89,6 +89,8 @@ public struct HelperConfig: Sendable {
 		public var accountState: String { stateDir + "/account.json" }
 		/// Tailnet-verified Macs and the vouches they served (`AccountCircle`).
 		public var circleState: String { stateDir + "/circle.json" }
+		/// Relay messages already handled (`RelayReplayGuard`).
+		public var relaySeen: String { stateDir + "/relay_seen.json" }
 	}
 
 	public static let loopbackHosts: Set<String> = ["127.0.0.1", "::1", "localhost"]

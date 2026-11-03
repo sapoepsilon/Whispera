@@ -48,6 +48,15 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 		lock.unlock()
 	}
 
+	/// Every message `POST /v1/relay/send` queued, with its recipient, in order.
+	private var sentLog: [(to: String, message: RelayMessage)] = []
+
+	func sent(to recipient: String) -> [RelayMessage] {
+		lock.lock()
+		defer { lock.unlock() }
+		return sentLog.filter { $0.to == recipient }.map(\.message)
+	}
+
 	var revokeCalls: [String] {
 		lock.lock()
 		defer { lock.unlock() }
@@ -227,8 +236,9 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 			seq += 1
 			sendCount += 1
 			let now = Int64(Date().timeIntervalSince1970)
-			queues[req.to, default: []].append(
-				RelayMessage(seq: seq, from: caller, ciphertext: req.ciphertext, expires_at: now + 3600, created_at: now))
+			let queued = RelayMessage(seq: seq, from: caller, ciphertext: req.ciphertext, expires_at: now + 3600, created_at: now)
+			queues[req.to, default: []].append(queued)
+			sentLog.append((req.to, queued))
 			return json(201, RelaySendResponse(seq: seq, expires_at: now + 3600))
 		case ("GET", "/v1/relay/messages"):
 			let after = Int64(query["after"] ?? "0") ?? 0
