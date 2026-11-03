@@ -7,17 +7,25 @@ import WhisperaLinkServer
 ///
 /// Commit, then reveal: the phone first sends only a commitment to (code, daemon fp, its link
 /// and approve keys, a secret nonce), and the daemon holds one commitment per live code. The
-/// code goes on the wire only in the reveal, which must open that commitment; anyone who reads
-/// it there cannot pair other keys with it, and a reveal that does not open the commitment, a
-/// second commitment or a wrong `pair_id` burns the code. Wrong codes count per source address
-/// (five lock that address out) and in total (twenty burn the code), so one LAN peer cannot
-/// lock the owner out by guessing.
+/// code goes on the wire only in the reveal, which must open one of the commitments the code
+/// holds; anyone who reads it there cannot pair other keys with it, and a reveal that does not
+/// open its commitment or names an unknown `pair_id` burns the code. A code holds a few
+/// commitments (`maxCandidates`) rather than one, so a stranger who commits first, or later,
+/// cannot burn the owner's pairing; commits are rate limited per source address and in total.
+/// Wrong codes count per source address (five lock that address out) and in total (twenty burn
+/// the code), so one LAN peer cannot lock the owner out by guessing.
 public final class PairingManager: @unchecked Sendable {
 	static let alphabet = Array("23456789ABCDEFGHJKMNPQRSTVWXYZ")
 	/// Wrong codes from one address before that address is refused for this code.
 	static let maxFails = 5
 	/// Wrong codes from everyone before the code burns.
 	static let maxTotalFails = 20
+	/// Commitments one code holds; further commits are refused (not burned) until a reveal.
+	static let maxCandidates = 8
+	/// Commits accepted per source address, and from everyone, within `commitWindow` seconds.
+	static let maxCommitsPerAddress = 3
+	static let maxCommitsTotal = 20
+	static let commitWindow = 60
 
 	private final class Code {
 		enum State { case live, used, locked, superseded }
@@ -27,9 +35,8 @@ public final class PairingManager: @unchecked Sendable {
 		var failsByAddress: [String: Int] = [:]
 		var state = State.live
 		var device: [String: Any]?
-		/// The one commitment this code takes, and the id its acknowledgement handed out.
-		var commitment: String?
-		var pairID: String?
+		/// The commitments this code holds, each with the id its acknowledgement handed out.
+		var candidates: [(pairID: String, commitment: String)] = []
 
 		init(code: String, expiresAt: Int) {
 			self.code = code
@@ -49,6 +56,9 @@ public final class PairingManager: @unchecked Sendable {
 	private let log: OpsLog
 	private let condition = NSCondition()
 	private var current: Code?
+	/// Recent accepted commit times, per source address and in total (guarded by `condition`).
+	private var commitsByAddress: [String: [Int]] = [:]
+	private var commitsTotal: [Int] = []
 
 	public init(
 		devices: DeviceRegistry, daemonKey: SoftwareSigningKey, publicURL: @escaping @Sendable () -> String,
@@ -142,6 +152,29 @@ public final class PairingManager: @unchecked Sendable {
 		return APIError(409, "pair_locked", "pairing code burned (\(reason)); start pairing again on the Mac")
 	}
 
+	/// Sliding-window commit limits (caller holds the lock). Only accepted commits count.
+	private func admitCommit(from address: String) throws {
+		let now = clock()
+		let cutoff = now - Self.commitWindow
+		commitsTotal.removeAll { $0 <= cutoff }
+		var mine = (commitsByAddress[address] ?? []).filter { $0 > cutoff }
+		if mine.count >= Self.maxCommitsPerAddress {
+			commitsByAddress[address] = mine
+			log("pair.commit_refused", ["detail": "address_rate_limited"])
+			throw APIError(429, "pair_rate_limited", "too many pairing attempts from this address; try again shortly")
+		}
+		if commitsTotal.count >= Self.maxCommitsTotal {
+			log("pair.commit_refused", ["detail": "rate_limited"])
+			throw APIError(429, "pair_rate_limited", "too many pairing attempts; try again shortly")
+		}
+		mine.append(now)
+		commitsByAddress[address] = mine
+		commitsTotal.append(now)
+		if commitsByAddress.count > 1024 {
+			commitsByAddress = commitsByAddress.filter { entry in entry.value.contains { $0 > cutoff } }
+		}
+	}
+
 	/// `POST /v1/pair/commit` `{"v":2,"commitment":"<64 hex>"}`. Returns the 201 body bytes (a
 	/// `PairCommitAck`) and the server signature header value over `WL1-PAIR-COMMIT-ACK`.
 	public func handleCommit(_ body: Data, from address: String = "-") throws -> (Data, String) {
@@ -168,13 +201,13 @@ public final class PairingManager: @unchecked Sendable {
 		if (entry.failsByAddress[address] ?? 0) >= Self.maxFails {
 			throw APIError(429, "pair_locked", "too many failed attempts from this address")
 		}
-		guard entry.commitment == nil else {
-			// Two phones (or a phone and someone else) raced for one code: neither gets it.
-			throw burn(entry, "second commitment")
+		guard entry.candidates.count < Self.maxCandidates else {
+			log("pair.commit_refused", ["detail": "candidates_full"])
+			throw APIError(429, "pair_rate_limited", "too many pairing attempts for this code; try again shortly")
 		}
+		try admitCommit(from: address)
 		let pairID = LinkCrypto.newPrefixedID("pc")
-		entry.commitment = commitment
-		entry.pairID = pairID
+		entry.candidates.append((pairID, commitment))
 		let ack: [String: Any] = [
 			"v": 2, "pair_id": pairID, "commitment": commitment,
 			"daemon_pubkey": LinkPublicKey(daemonKey.privateKey.publicKey).x963Base64, "daemon_fp": daemonFP,
@@ -227,12 +260,14 @@ public final class PairingManager: @unchecked Sendable {
 			if clock() >= entry.expiresAt { throw APIError(410, "pair_code_expired", "pairing code expired") }
 			// The right code: from here on every mismatch burns it, since whoever sent it may have
 			// read it off the wire.
-			guard let held = entry.commitment, let pairID = entry.pairID else {
-				throw burn(entry, "reveal without a commitment")
+			guard !entry.candidates.isEmpty else { throw burn(entry, "reveal without a commitment") }
+			let sentID = Data((request["pair_id"] as? String ?? "").utf8)
+			var held: String?
+			for candidate in entry.candidates
+			where DeviceRegistry.constantTimeEqual(sentID, Data(candidate.pairID.utf8)) {
+				held = candidate.commitment
 			}
-			guard let sentID = request["pair_id"] as? String,
-				DeviceRegistry.constantTimeEqual(Data(sentID.utf8), Data(pairID.utf8))
-			else { throw burn(entry, "wrong pair_id") }
+			guard let held else { throw burn(entry, "wrong pair_id") }
 			guard let nonce = (request["nonce"] as? String).flatMap({ Data(base64Encoded: $0) }), nonce.count == 32
 			else { throw burn(entry, "bad nonce") }
 

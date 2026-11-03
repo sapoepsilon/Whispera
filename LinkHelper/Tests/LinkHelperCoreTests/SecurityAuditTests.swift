@@ -333,18 +333,18 @@ final class SecurityAuditTests: XCTestCase {
 		XCTAssertEqual(helper.daemon.devices.all().count, 0)
 	}
 
-	func testASecondCommitmentBurnsTheCode() async throws {
+	func testASecondCommitmentDoesNotBurnTheOwnersCode() async throws {
 		let code = liveCode()
 		let first = try await SoftPhone(baseURL: helper.baseURL).pairV2(
 			code: code, daemonFP: helper.daemon.daemonFP, reveal: false)
 		XCTAssertEqual(first.commit.status, 201)
 		let second = try await SoftPhone(baseURL: helper.baseURL).pairV2(
 			code: code, daemonFP: helper.daemon.daemonFP, reveal: false)
-		XCTAssertEqual(second.commit.status, 409)
-		XCTAssertEqual(second.commit.errorCode, "pair_locked")
-		XCTAssertFalse(helper.daemon.pairing.isLive)
+		XCTAssertEqual(second.commit.status, 201)
+		XCTAssertTrue(helper.daemon.pairing.isLive)
 		let reveal = try await SoftPhone(baseURL: helper.baseURL).reveal(first.reveal)
-		XCTAssertEqual(reveal.errorCode, "pair_locked")
+		XCTAssertEqual(reveal.status, 201)
+		XCTAssertEqual(helper.daemon.devices.all().count, 1)
 	}
 
 	func testARevealWithoutItsCommitmentOrWithAnotherPairIDBurnsTheCode() async throws {
