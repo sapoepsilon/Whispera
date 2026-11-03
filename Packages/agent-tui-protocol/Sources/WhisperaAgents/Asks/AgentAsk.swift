@@ -98,12 +98,17 @@ public struct AgentAsk: Codable, Equatable, Sendable {
 	public var cancelKey: String?
 	/// For a menu ask: `permission`, `trust`, `notice` or `menu` (`ChoiceMenu.Purpose`).
 	public var purpose: String?
+	/// The ask as shown is not the whole dialog (`ChoiceMenu.truncated`): a client should not
+	/// offer a one-tap approval. Always encoded; false when an older payload leaves it out.
+	public var truncated: Bool
 
 	public init(
 		source: Source, kind: Kind, title: String? = nil, detail: String? = nil, questions: [Question], step: Int = 0,
-		hasSubmitStep: Bool = false, cancelKey: String? = nil, id: String? = nil, purpose: String? = nil
+		hasSubmitStep: Bool = false, cancelKey: String? = nil, id: String? = nil, purpose: String? = nil,
+		truncated: Bool = false
 	) {
 		self.purpose = purpose
+		self.truncated = truncated
 		self.source = source
 		self.kind = kind
 		self.title = title
@@ -119,9 +124,25 @@ public struct AgentAsk: Codable, Equatable, Sendable {
 
 	enum CodingKeys: String, CodingKey {
 		case id = "prompt_id"
-		case source, kind, title, detail, questions, step, complete, purpose
+		case source, kind, title, detail, questions, step, complete, purpose, truncated
 		case hasSubmitStep = "has_submit_step"
 		case cancelKey = "cancel_key"
+	}
+
+	public init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		id = try container.decode(String.self, forKey: .id)
+		source = try container.decode(Source.self, forKey: .source)
+		kind = try container.decode(Kind.self, forKey: .kind)
+		title = try container.decodeIfPresent(String.self, forKey: .title)
+		detail = try container.decodeIfPresent(String.self, forKey: .detail)
+		questions = try container.decode([Question].self, forKey: .questions)
+		step = try container.decode(Int.self, forKey: .step)
+		hasSubmitStep = try container.decode(Bool.self, forKey: .hasSubmitStep)
+		complete = try container.decode(Bool.self, forKey: .complete)
+		cancelKey = try container.decodeIfPresent(String.self, forKey: .cancelKey)
+		purpose = try container.decodeIfPresent(String.self, forKey: .purpose)
+		truncated = try container.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
 	}
 
 	/// A digest of what the ask asks: its source, headers, questions and option labels.
@@ -155,7 +176,7 @@ public struct AgentAsk: Codable, Equatable, Sendable {
 		self.init(
 			source: .menu, kind: confirm ? .confirm : .menu, title: menu.title, detail: menu.detail,
 			questions: [Question(header: menu.title, text: menu.question, options: options)], cancelKey: menu.cancelKey,
-			id: menu.id, purpose: menu.purpose.rawValue)
+			id: menu.id, purpose: menu.purpose.rawValue, truncated: menu.truncated)
 	}
 
 	/// The ask as a JSON object (snake_case keys), for hosts that build `[String: Any]` replies.

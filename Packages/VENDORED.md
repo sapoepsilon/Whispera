@@ -84,6 +84,13 @@ Files changed or added here on purpose, not yet upstream. Each has a `local` lin
 - whispera-components: `apple/Sources/WhisperaDictation/RealtimeProtocol.swift` (changed). One
   doc comment no longer names a private test machine; no code changed. Upstream the
   same wording.
+- agent-tui-protocol: `Sources/WhisperaAgents/Asks/ChoiceMenu.swift` and
+  `Sources/WhisperaAgents/Asks/AgentAsk.swift` (changed). A menu's prompt id also hashes the
+  dialog's full, unclipped text (`contentDigest`, cursor excluded), so two dialogs that differ
+  only past a display clip get different ids; `ChoiceMenu.truncated` / `AgentAsk.truncated`
+  (JSON `truncated`, false when an older payload leaves it out) say a field was clipped, detail
+  lines were dropped, a Codex command goes on below its `$` line, or the 40-line window cut the
+  dialog. Upstream both, then drop the `local` lines.
 
 ## Updating a package
 

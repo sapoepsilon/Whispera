@@ -34,6 +34,8 @@ rm  whispera-components apple/Sources/PackageSelfTest
 git agent-tui-protocol https://github.com/sapoepsilon/agent-tui-protocol a9a23135b784c0621af6507c2de08d4506d66e76
 rm  agent-tui-protocol .gitignore
 rm  agent-tui-protocol Tests
+local agent-tui-protocol Sources/WhisperaAgents/Asks/ChoiceMenu.swift
+local agent-tui-protocol Sources/WhisperaAgents/Asks/AgentAsk.swift
 
 git agent-herdr https://github.com/sapoepsilon/agent-herdr 3dff1f2352fea16160ec8f332d45ee92bc201c08
 rm  agent-herdr .gitignore
