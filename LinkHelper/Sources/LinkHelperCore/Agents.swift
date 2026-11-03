@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import WhisperaLink
+import WhisperaAgents
 import WhisperaHerdr
 
 /// `POST /v1/agents`, validated.
@@ -959,6 +960,14 @@ final class AgentDirectory: @unchecked Sendable {
 	}
 
 	func prompt(_ id: String, text: String, wait: (until: [String], timeoutMS: Int)?) throws -> [String: Any] {
+		// Every backend pastes the prompt and then presses Enter itself: a \r or Ctrl-C in the
+		// text would be a key press (an early submit, an interrupt), so the text only types.
+		// Esc would end a bracketed paste early (tmux refuses it too) and no keyboard types NUL.
+		guard !text.contains("\u{1B}"), !text.contains("\u{0}") else {
+			throw APIError(400, "bad_request", "text cannot contain escape or NUL characters")
+		}
+		let text = PastedText.sanitize(text)
+		guard !text.isEmpty else { throw APIError(400, "bad_request", "text has nothing to type once control characters are removed") }
         if id.hasPrefix("tmux:") {
             guard let transport = tmux else { throw APIError(503, "tmux_unavailable", "tmux is not installed on this Mac") }
             let agent = try transport.get(id)

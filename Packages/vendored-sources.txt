@@ -31,22 +31,28 @@ rm  whispera-components apple/Sources/DictationSelfTest
 rm  whispera-components apple/Sources/PackageChecks
 rm  whispera-components apple/Sources/PackageSelfTest
 
-git agent-tui-protocol https://github.com/sapoepsilon/agent-tui-protocol a9a23135b784c0621af6507c2de08d4506d66e76
+git agent-tui-protocol https://github.com/sapoepsilon/agent-tui-protocol 74faaad61dfe93cedab0233d184905946229d14b
 rm  agent-tui-protocol .gitignore
 rm  agent-tui-protocol Tests
+local agent-tui-protocol Sources/WhisperaAgents/Asks/ChoiceMenu.swift
+local agent-tui-protocol Sources/WhisperaAgents/Asks/AgentAsk.swift
+local agent-tui-protocol Sources/WhisperaAgents/PastedText.swift
 
-git agent-herdr https://github.com/sapoepsilon/agent-herdr 3dff1f2352fea16160ec8f332d45ee92bc201c08
+git agent-herdr https://github.com/sapoepsilon/agent-herdr b7be30cc8a779b1f3846b5643603f9b0b7d93535
 rm  agent-herdr .gitignore
 rm  agent-herdr Package.resolved
 rm  agent-herdr Tests
 local agent-herdr Sources/WhisperaHerdr/HerdrCore.swift
 local whispera-components apple/Sources/WhisperaLink/LinkMessage.swift
 local whispera-components apple/Sources/WhisperaDictation/RealtimeProtocol.swift
+local whispera-components apple/Sources/WhisperaLink/SafetyNumber.swift
+local whispera-components apple/Sources/WhisperaLink/SASExchange.swift
 
-git agent-tmux https://github.com/sapoepsilon/agent-tmux f52f9be2063e4a2d0225e1ab3cc7100b5b6d6c1e
+git agent-tmux https://github.com/sapoepsilon/agent-tmux 9887145f64b50fd7fbc5fc78048586d1cdd24a00
 rm  agent-tmux .gitignore
 rm  agent-tmux Package.resolved
 rm  agent-tmux Tests
+local agent-tmux Sources/WhisperaTmux/TmuxProvider.swift
 
 git WhisperKit https://github.com/argmaxinc/WhisperKit 3817d2833f73ceb30586cb285e0e0439a3860536
 rm  WhisperKit .*

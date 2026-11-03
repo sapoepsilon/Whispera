@@ -4,15 +4,13 @@
 
 Releases are cut by `.github/workflows/release.yml`. Push a `vX.Y.Z` tag (or run the workflow with a version) and it:
 
-1. checks that the version is `MAJOR.MINOR.PATCH`, then runs `scripts/bump-version.sh X.Y.Z` on the runner, so the tag is the source of truth for the version and the run number becomes the build,
-2. imports the Developer ID certificate into a temporary keychain with `scripts/setup-keychain.sh`,
-3. archives and exports the app with `xcodebuild` (steps in the workflow itself, using `scripts/ExportOptions-dev.plist`),
-4. signs, notarizes, staples and packages it with `scripts/release-distribute-ci.sh`, which also writes a Sparkle-signed `appcast.xml` (with `SPARKLE_PRIVATE_KEY` set it stops the release when the EdDSA signature is missing or `sign_update` is not found, and takes `minimumSystemVersion` from the built app's `LSMinimumSystemVersion`),
-5. writes the release body with `scripts/release-notes.sh` and publishes the GitHub release with `Whispera.dmg`, `Whispera-X.Y.Z.dmg` and `Whispera.app.zip`,
-6. commits `appcast.xml` to `main`, but only one generated and signed for this version,
-7. in a separate `homebrew-cask` job, bumps `Casks/whispera.rb` on `main` with `scripts/update-cask.sh X.Y.Z`, hashing the published DMG. A failure there fails that job with a warning and a run summary, without touching the release or the appcast.
+1. `build` job: checks that the version is `MAJOR.MINOR.PATCH`, runs `scripts/bump-version.sh X.Y.Z` on the runner (the tag is the source of truth for the version and the run number becomes the build), archives and exports the app unsigned with `xcodebuild` (`scripts/ExportOptions-dev.plist`) and uploads it as an artifact. This job runs the repo's build code, so it holds no signing secret,
+2. `sign` job: runs no repo code (its only checkout is `Whispera.entitlements`; every step is inline in the workflow). It imports the Developer ID certificate into a throwaway keychain that only `codesign` may use (no `-A`, re-locked after 20 minutes), signs the app inside-out, notarizes and staples it, builds, signs, notarizes and staples the DMG, and deletes the keychain. Any notarization status other than Accepted, or a failed staple, `stapler validate` or `spctl` check, stops the release,
+3. `sparkle-sign` job: verifies the DMG and signs it for Sparkle with the official `sign_update` (the only job with `SPARKLE_PRIVATE_KEY`),
+4. `release` job: writes `appcast.xml` (`scripts/write-appcast.sh`) and the release body (`scripts/release-notes.sh`), publishes the GitHub release with `Whispera.dmg`, `Whispera-X.Y.Z.dmg` and `Whispera.app.zip`, and commits `appcast.xml` to `main`, but only one generated and signed for this version,
+5. `homebrew-cask` job: bumps `Casks/whispera.rb` on `main` with `scripts/update-cask.sh X.Y.Z`, hashing the published DMG. A failure there fails that job with a warning and a run summary, without touching the release or the appcast.
 
-`release-distribute-ci.sh` does not build: it expects the exported app at `build/Release/Whispera.app`.
+`release-distribute-ci.sh` and `setup-keychain.sh` are no longer used by the workflow; they remain for signing by hand (below). `release-distribute-ci.sh` does not build: it expects the exported app at `build/Release/Whispera.app`.
 
 ## Build numbers
 
@@ -39,13 +37,13 @@ SIGNING_KEYCHAIN=login.keychain-db APPLE_ID=... APP_SPECIFIC_PASSWORD=... TEAM_I
   SPARKLE_PRIVATE_KEY=... ./scripts/release-distribute-ci.sh
 ```
 
-`SIGNING_KEYCHAIN` names the keychain that holds the Developer ID Application identity (the workflow uses the temporary one from `setup-keychain.sh`). Without `SPARKLE_PRIVATE_KEY` no appcast is written. This sequence is what CI runs; it has not been exercised outside CI. Always test the DMG, including the microphone and Accessibility prompts, before distributing it. After uploading the DMGs to a GitHub release, commit `appcast.xml` and run `./scripts/update-cask.sh X.Y.Z` (see below).
+`SIGNING_KEYCHAIN` names the keychain that holds the Developer ID Application identity (or the temporary one `setup-keychain.sh` makes). Without `SPARKLE_PRIVATE_KEY` no appcast is written. The workflow runs the same signing and notarization inline; this script path has not been exercised outside CI. Always test the DMG, including the microphone and Accessibility prompts, before distributing it. After uploading the DMGs to a GitHub release, commit `appcast.xml` and run `./scripts/update-cask.sh X.Y.Z` (see below).
 
 ## Files
 
 - `bump-version.sh` - Sets the version and build number
-- `setup-keychain.sh` - Imports the Developer ID certificate into a temporary keychain (CI)
-- `release-distribute-ci.sh` - Signs, notarizes, staples and packages an exported app and writes the appcast
+- `setup-keychain.sh` - Imports the Developer ID certificate into a temporary keychain (by hand; CI does it inline)
+- `release-distribute-ci.sh` - Signs, notarizes, staples and packages an exported app (by hand; CI does it inline)
 - `release-distribute.template.sh` - Credential variables of the private local script (tracked in git)
 - `release-distribute.sh` - The private local script (NOT tracked in git)
 - `release-notes.sh` - Writes the GitHub release body that What's New shows

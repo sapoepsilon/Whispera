@@ -50,6 +50,8 @@ public final class LinkDaemon: @unchecked Sendable {
 	public let macApprovers: MacApproverStore
 	public let macCard = MacCardOffer()
 	public let daemonFP: String
+	/// Signs every direct-path response with the daemon key (docs/LINK_RESPONSE_SIGNATURES.md).
+	let responseSigner: ResponseSigner
 	/// X9.63 base64 of the daemon key: what a link offer pins.
 	public let daemonPubkeyB64: String
 	/// Account pairing (step 11).
@@ -111,6 +113,7 @@ public final class LinkDaemon: @unchecked Sendable {
 		let key = try Self.loadOrCreateDaemonKey(config.paths.daemonKey, log: opsLog)
 		let daemonPublic = LinkPublicKey(key.privateKey.publicKey)
 		let daemonFP = daemonPublic.fingerprint
+		responseSigner = ResponseSigner(key: key)
 		let daemonPubkeyB64 = daemonPublic.x963Base64
 		self.daemonFP = daemonFP
 		self.daemonPubkeyB64 = daemonPubkeyB64
@@ -438,11 +441,24 @@ public final class LinkDaemon: @unchecked Sendable {
 		let gate = directAccess
 		server.admit = { gate.admits(peer: $0, local: $1, interface: $2) }
 		let refusals = RateLimiter(limit: 0, window: 60, blockFor: 60)
+		server.responseSigner = responseSigner
 		server.onRefused = { [log] peer in
 			// One line per peer per minute: a scanner on the LAN must not flood the log.
 			guard !refusals.isBlocked(peer) else { return }
 			refusals.fail(peer)
 			log("http.refused", ["detail": "direct connection from \(peer): not loopback or this Mac's tailnet address"])
+		}
+		let busy = RateLimiter(limit: 0, window: 60, blockFor: 60)
+		let (perPeer, total) = (server.connections.perPeer, server.connections.total)
+		server.onBusy = { [log] peer in
+			guard !busy.isBlocked(peer) else { return }
+			busy.fail(peer)
+			log(
+				"http.busy",
+				[
+					"detail":
+						"direct connection from \(peer) refused: over \(perPeer) per peer or \(total) in total"
+				])
 		}
 		let port = try server.start()
 		http = server
@@ -742,7 +758,16 @@ public final class LinkDaemon: @unchecked Sendable {
 					return ["ok": false, "error": ["code": "not_found", "message": "no such device"]]
 				}
 				log("device.revoked", ["device": id, "detail": "admin"])
-				return ["ok": true, "device": record.publicJSON]
+				var reply: [String: Any] = ["ok": true, "device": record.publicJSON]
+				// An account phone is revoked on the backend too (and this Mac's vouch for it is
+				// withdrawn); the local revoke above stands whatever that answers.
+				if record.origin == .account {
+					let bearer = request["bearer"] as? String
+					let outcome = (try? blocking(30) { [account] in await account.revokeInAccount(id, bearer: bearer).json })
+					reply["account_revoke"] =
+						outcome ?? ["ok": false, "error": ["code": "timed_out", "message": "account revoke timed out"], "queued": true]
+				}
+				return reply
 			},
 			"apns.reload": { [unowned self] _ in
 				["ok": true, "apns": push.isConfigured ? "configured" : "unconfigured"]

@@ -44,6 +44,10 @@ public struct TmuxClient: AgentSessionTransport {
     public func send(_ text: String, to paneID: String) throws {
         try validate(paneID)
         guard !text.isEmpty, text.unicodeScalars.count <= 12000, !text.contains("\u{0}"), !text.contains("\u{1B}") else { throw Failure.textTooLong }
+        // A \r or Ctrl-C inside the paste would act as a key (Enter, interrupt), and not every
+        // program honours bracketed paste: pasted text only types. Enter below is the one key.
+        let text = PastedText.sanitize(text)
+        guard !text.isEmpty else { throw Failure.textTooLong }
         // Bracketed paste prevents multiline prompts becoming separate shell commands.
         // Text remains a single literal argument; nothing is evaluated by a shell.
         _ = try run(["send-keys", "-t", paneID, "-l", "--", "\u{1B}[200~" + text + "\u{1B}[201~"])

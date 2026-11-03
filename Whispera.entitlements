@@ -21,12 +21,8 @@
     <!-- Network access is unrestricted without sandbox -->
     <!-- File access is unrestricted without sandbox -->
     
-    <!-- Hardened Runtime entitlements for notarization -->
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
-    <true/>
+    <!-- No hardened-runtime exceptions: WhisperKit, Core ML and Metal run without JIT or
+         unsigned executable memory, JavaScriptCore (YouTubeKit) falls back to its interpreter,
+         and nothing loads through DYLD_* variables. -->
 </dict>
 </plist>

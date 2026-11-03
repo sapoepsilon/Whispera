@@ -203,7 +203,7 @@ final class RequestCancelTests: XCTestCase {
 		let status = try await account.connect(bearer: "tok-alice", backendURL: backend.baseURL)
 		let macID = try XCTUnwrap(status["device_id"] as? String)
 		_ = try await account.syncNow()
-		_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try phone.safetyNumber(macID: macID))
+		_ = try await account.confirmApprove(phone.deviceID, safetyNumber: try await phone.safetyNumber(with: account))
 		_ = try await phone.receive()
 		return (helper, RelayPhone(phone, macID: macID), phone, backend)
 	}

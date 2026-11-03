@@ -22,7 +22,7 @@ extension ChoiceMenu {
 			"cancel_key": cancelKey ?? NSNull(), "created_at": createdAt ?? NSNull(),
 			"purpose": purpose.rawValue, "action": action?.rawValue ?? NSNull(), "tool": tool ?? NSNull(),
 			"summary": summary ?? NSNull(), "command": command ?? NSNull(), "file": file ?? NSNull(),
-			"diff": diff ?? NSNull(),
+			"diff": diff ?? NSNull(), "truncated": truncated,
 		]
 	}
 

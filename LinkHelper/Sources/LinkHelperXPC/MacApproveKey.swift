@@ -4,14 +4,22 @@ import LocalAuthentication
 import Security
 
 /// The Mac's approve key (PROTOCOL §8.1): a Secure Enclave P-256 key that only signs after
-/// `LAContext` confirms the owner — Touch ID, with the login password as the fallback. The file
-/// holds the enclave's wrapped handle, which no other Mac and no other key can use.
+/// `LAContext` confirms the owner — Touch ID, with the login password as the fallback. The
+/// Keychain item (`MacApproveKeyStoring`) holds the enclave's wrapped handle, which no other Mac
+/// and no other key can use.
 public final class MacApproveKey: ApprovalAuthenticator, @unchecked Sendable {
 	public struct Identity: Codable, Equatable, Sendable {
 		public var deviceID: String
 		public var keyBlob: Data
 		public var publicKeyX963: Data
 		public var createdAt: Int
+
+		public init(deviceID: String, keyBlob: Data, publicKeyX963: Data, createdAt: Int) {
+			self.deviceID = deviceID
+			self.keyBlob = keyBlob
+			self.publicKeyX963 = publicKeyX963
+			self.createdAt = createdAt
+		}
 
 		enum CodingKeys: String, CodingKey {
 			case deviceID = "device_id"
@@ -21,22 +29,97 @@ public final class MacApproveKey: ApprovalAuthenticator, @unchecked Sendable {
 		}
 	}
 
-	public static var defaultURL: URL {
+	/// Where earlier versions kept the identity as a plain file; moved into `store` on first read.
+	public static var legacyFileURL: URL {
 		FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
 			.appendingPathComponent("Whispera/link-approve-key.json")
 	}
 
-	public let fileURL: URL
+	public let store: MacApproveKeyStoring
+	public let legacyFileURL: URL
+	private let opensInEnclave: @Sendable (Identity) -> Bool
+	private let log: @Sendable (String) -> Void
 	private let lock = NSLock()
+	private let storeLock = NSLock()
 	private var context: LAContext?
 
-	public init(fileURL: URL = MacApproveKey.defaultURL) {
-		self.fileURL = fileURL
+	/// - Parameters:
+	///   - opensInEnclave: whether a legacy file's key handle still opens as this Mac's enclave key
+	///     with the recorded public key; checked before the file is imported and deleted.
+	///   - log: one line per migration step or failure (the app passes its logger).
+	public init(
+		store: MacApproveKeyStoring = KeychainMacApproveKeyStore(),
+		legacyFileURL: URL = MacApproveKey.legacyFileURL,
+		opensInEnclave: @escaping @Sendable (Identity) -> Bool = MacApproveKey.opensInEnclave,
+		log: @escaping @Sendable (String) -> Void = { _ in }
+	) {
+		self.store = store
+		self.legacyFileURL = legacyFileURL
+		self.opensInEnclave = opensInEnclave
+		self.log = log
 	}
 
 	public var identity: Identity? {
-		guard let data = try? Data(contentsOf: fileURL) else { return nil }
-		return try? JSONDecoder().decode(Identity.self, from: data)
+		storeLock.lock()
+		defer { storeLock.unlock() }
+		let stored: Data?
+		do {
+			stored = try store.load()
+		} catch {
+			log("Approve key: cannot read the Keychain item (\(error))")
+			return nil
+		}
+		if let stored, let identity = try? JSONDecoder().decode(Identity.self, from: stored) {
+			removeLegacyFile(reason: "the Keychain already holds the key")
+			return identity
+		}
+		return migrateLegacyFile()
+	}
+
+	/// The legacy file into the Keychain: imported only when its key still opens in the enclave,
+	/// and deleted only once the Keychain gives the same bytes back. Any failure keeps the file,
+	/// so the key is never lost.
+	private func migrateLegacyFile() -> Identity? {
+		guard let data = try? Data(contentsOf: legacyFileURL) else { return nil }
+		guard let identity = try? JSONDecoder().decode(Identity.self, from: data) else {
+			log("Approve key: the legacy key file is unreadable; leaving it in place")
+			return nil
+		}
+		guard opensInEnclave(identity) else {
+			log("Approve key: the legacy key file does not open in this Mac's Secure Enclave; not migrating it")
+			return identity
+		}
+		do {
+			try store.save(data)
+			guard try store.load() == data else {
+				log("Approve key: the Keychain did not return the migrated key; keeping the legacy file")
+				return identity
+			}
+		} catch {
+			log("Approve key: cannot move the key into the Keychain (\(error)); keeping the legacy file")
+			return identity
+		}
+		removeLegacyFile(reason: "migrated into the Keychain")
+		return identity
+	}
+
+	private func removeLegacyFile(reason: String) {
+		guard FileManager.default.fileExists(atPath: legacyFileURL.path) else { return }
+		do {
+			try FileManager.default.removeItem(at: legacyFileURL)
+			log("Approve key: removed the legacy key file (\(reason))")
+		} catch {
+			log("Approve key: cannot remove the legacy key file: \(error.localizedDescription)")
+		}
+	}
+
+	/// The handle opens as an enclave key (no prompt: only signing asks for the owner) and its
+	/// public key is the one the file recorded.
+	public static let opensInEnclave: @Sendable (Identity) -> Bool = { identity in
+		guard SecureEnclave.isAvailable,
+			let key = try? SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: identity.keyBlob)
+		else { return false }
+		return key.publicKey.x963Representation == identity.publicKeyX963
 	}
 
 	public static var isAvailable: Bool { SecureEnclave.isAvailable }
@@ -57,16 +140,27 @@ public final class MacApproveKey: ApprovalAuthenticator, @unchecked Sendable {
 		let identity = Identity(
 			deviceID: Self.newDeviceID(), keyBlob: key.dataRepresentation,
 			publicKeyX963: key.publicKey.x963Representation, createdAt: now)
-		try FileManager.default.createDirectory(
-			at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 		let data = try JSONEncoder().encode(identity)
-		try data.write(to: fileURL, options: [.atomic])
-		chmod(fileURL.path, 0o600)
+		storeLock.lock()
+		defer { storeLock.unlock() }
+		do {
+			try store.save(data)
+		} catch {
+			throw ApprovalAuthenticationError.failed("Couldn't save the approval key in the Keychain: \(error)")
+		}
+		removeLegacyFile(reason: "replaced by a new key")
 		return identity
 	}
 
 	public func remove() {
-		try? FileManager.default.removeItem(at: fileURL)
+		storeLock.lock()
+		defer { storeLock.unlock() }
+		do {
+			try store.delete()
+		} catch {
+			log("Approve key: cannot delete the Keychain item (\(error))")
+		}
+		removeLegacyFile(reason: "key removed")
 	}
 
 	/// What `enrollMacApprover` sends the helper.

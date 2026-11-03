@@ -61,9 +61,11 @@ public final class OpsLog: @unchecked Sendable {
 			}.joined(separator: " ") + "\n"
 		lock.lock()
 		defer { lock.unlock() }
-		let fd = open(path, O_WRONLY | O_APPEND | O_CREAT, 0o600)
+		let fd = open(path, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0o600)
 		guard fd >= 0 else { return }
 		defer { close(fd) }
+		// A log an earlier version (or the Python daemon) created world-readable.
+		fchmod(fd, 0o600)
 		_ = line.utf8CString.withUnsafeBufferPointer { buffer in
 			write(fd, buffer.baseAddress, buffer.count - 1)
 		}

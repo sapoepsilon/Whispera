@@ -236,7 +236,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			recordingGlowController = RecordingGlowController(audioManager: audioManager)
 			onboardingMagnet = OnboardingMagnetController()
 
-			startAutostartDictationIfRequested()
+			#if DEBUG
+				startAutostartDictationIfRequested()
+			#endif
 			if !hasCompletedOnboarding {
 				showOnboarding()
 			}
@@ -296,39 +298,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 	// MARK: - Test affordance
 
-	/// Starts and stops one dictation on a timer, when — and only when — the
-	/// environment asks for it.
-	///
-	/// Dictation is otherwise reachable only from a real keypress, which a headless
-	/// verification run cannot post without an Accessibility grant. Nothing in the
-	/// app sets this variable and nothing in a normal launch supplies it, so the
-	/// method returns immediately on every user's machine; the log line names it as
-	/// a test affordance so a support log that does contain one is not mistaken for
-	/// the app dictating on its own.
-	///
-	/// `WHISPERA_AUTOSTART_DICTATION=<seconds to record>`.
-	private func startAutostartDictationIfRequested() {
-		guard let raw = ProcessInfo.processInfo.environment["WHISPERA_AUTOSTART_DICTATION"],
-			let requested = Double(raw), requested > 0
-		else { return }
+	#if DEBUG
+		/// Starts and stops one dictation on a timer, when — and only when — the
+		/// environment asks for it (`AutostartDictationAffordance`). Debug builds only.
+		///
+		/// Dictation is otherwise reachable only from a real keypress, which a headless
+		/// verification run cannot post without an Accessibility grant. The log line names
+		/// it as a test affordance so a log that does contain one is not mistaken for the
+		/// app dictating on its own.
+		private func startAutostartDictationIfRequested() {
+			guard
+				let duration = AutostartDictationAffordance.requestedSeconds(
+					environment: ProcessInfo.processInfo.environment)
+			else { return }
 
-		// Clamped so a stray value cannot hold the microphone open indefinitely.
-		let duration = min(requested, Self.autostartMaximumSeconds)
-		AppLogger.shared.general.info(
-			"Test affordance WHISPERA_AUTOSTART_DICTATION is set: dictating for \(duration)s")
-		Task { @MainActor [weak self] in
-			try? await Task.sleep(nanoseconds: UInt64(Self.autostartWarmupSeconds * 1_000_000_000))
-			self?.audioManager.toggleRecording()
-			try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
-			self?.audioManager.toggleRecording()
-			AppLogger.shared.general.info("Test affordance WHISPERA_AUTOSTART_DICTATION: stopped")
+			AppLogger.shared.general.info(
+				"Test affordance WHISPERA_AUTOSTART_DICTATION is set: dictating for \(duration)s")
+			Task { @MainActor [weak self] in
+				try? await Task.sleep(nanoseconds: UInt64(Self.autostartWarmupSeconds * 1_000_000_000))
+				self?.audioManager.toggleRecording()
+				try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+				self?.audioManager.toggleRecording()
+				AppLogger.shared.general.info("Test affordance WHISPERA_AUTOSTART_DICTATION: stopped")
+			}
 		}
-	}
 
-	/// Long enough for the status item, the windows and the engine to settle before
-	/// the microphone opens.
-	private static let autostartWarmupSeconds: Double = 4
-	private static let autostartMaximumSeconds: Double = 120
+		/// Long enough for the status item, the windows and the engine to settle before
+		/// the microphone opens.
+		private static let autostartWarmupSeconds: Double = 4
+	#endif
 
 	nonisolated static func registerInitialDefaults(in defaults: UserDefaults) {
 		defaults.register(defaults: [

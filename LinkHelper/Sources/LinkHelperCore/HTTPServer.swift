@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import WhisperaLink
 
 /// One request on one connection (HTTP/1.0 semantics, PROTOCOL §5.0: one request per
 /// connection, `Content-Length` bodies, SSE ends when the connection closes).
@@ -29,6 +30,10 @@ public final class HTTPExchange: @unchecked Sendable {
 	private var watching = false
 	/// Flips when the peer closes its side (`watchForDisconnect`), or the connection fails.
 	public let cancelToken = CancelToken()
+	/// Signs every response and SSE event with the daemon key (`ResponseSigner`); nil sends
+	/// them unsigned.
+	var responseSigner: ResponseSigner?
+	private var eventSigner: SSEEventSigner?
 
 	init(
 		method: String, target: String, version: String, headers: [(String, String)], remoteHost: String,
@@ -145,8 +150,14 @@ public final class HTTPExchange: @unchecked Sendable {
 			("Content-Type", contentType), ("Content-Length", String(body.count)), ("Cache-Control", "no-store"),
 		]
 		headers.append(contentsOf: extra)
+		let sent = method == "HEAD" ? Data() : body
+		if let responseSigner {
+			headers.append(
+				contentsOf: responseSigner.headers(
+					nonce: boundNonce, method: method, target: target, status: status, body: sent))
+		}
 		var data = head(status, headers)
-		if method != "HEAD" { data.append(body) }
+		data.append(sent)
 		let semaphore = DispatchSemaphore(value: 0)
 		connection.send(
 			content: data, contentContext: .finalMessage, isComplete: true,
@@ -163,8 +174,25 @@ public final class HTTPExchange: @unchecked Sendable {
 		headersSent = true
 		self.status = status
 		lock.unlock()
+		var headers = headers
+		if let responseSigner {
+			headers.append(
+				contentsOf: responseSigner.headers(
+					nonce: boundNonce, method: method, target: target, status: status, body: nil))
+		}
 		try write(head(status, headers))
+		let eventStream = headers.contains {
+			$0.0.caseInsensitiveCompare("Content-Type") == .orderedSame && $0.1.lowercased().hasPrefix("text/event-stream")
+		}
+		if let responseSigner, eventStream {
+			lock.lock()
+			eventSigner = SSEEventSigner(signer: responseSigner, nonce: boundNonce)
+			lock.unlock()
+		}
 	}
+
+	/// The nonce a signed response is bound to: the request's own `X-WL-Nonce`, or none.
+	private var boundNonce: String { ResponseSigner.boundNonce(header(SignedHeaders.nonceHeader)) }
 
 	/// Answers `101 Switching Protocols` for a WebSocket handshake and hands the connection over:
 	/// the returned bytes are what the client already sent past the request head. The server
@@ -193,8 +221,11 @@ public final class HTTPExchange: @unchecked Sendable {
 	public func write(_ data: Data, timeout: TimeInterval = 60) throws {
 		lock.lock()
 		let dead = failed
+		let events = eventSigner
 		lock.unlock()
 		if dead { throw ConnectionGone() }
+		let data = events?.process(data) ?? data
+		if data.isEmpty { return }
 		let semaphore = DispatchSemaphore(value: 0)
 		let box = ReceiveBox()
 		connection.send(
@@ -271,14 +302,24 @@ public final class HTTPServer: @unchecked Sendable {
 	public var admit: ((_ peer: String, _ local: String?, _ interface: String?) -> Bool)?
 	/// A refused peer, for the ops log.
 	public var onRefused: ((String) -> Void)?
+	/// Signs every response this server sends (`ResponseSigner`); nil leaves them unsigned.
+	public var responseSigner: ResponseSigner?
+	/// Connections served at once, per peer address and in total.
+	public let connections: ConnectionLimiter
+	/// A peer turned away at the connection cap, for the ops log.
+	public var onBusy: ((String) -> Void)?
 	private let queue = DispatchQueue(label: "link.http.listener")
 	private var listener: NWListener?
 	public private(set) var boundPort = 0
 
-	public init(host: String, port: Int, advertisement: Advertisement?, handler: @escaping (HTTPExchange) -> Void) {
+	public init(
+		host: String, port: Int, advertisement: Advertisement?, connections: ConnectionLimiter = ConnectionLimiter(),
+		handler: @escaping (HTTPExchange) -> Void
+	) {
 		self.host = host
 		self.port = port
 		self.advertisement = advertisement
+		self.connections = connections
 		self.handler = handler
 	}
 
@@ -371,29 +412,83 @@ public final class HTTPServer: @unchecked Sendable {
 		listener = nil
 	}
 
+	/// Runs on the listener queue and never blocks: the connection cap is taken from the peer
+	/// address before the connection starts, and the access check runs on the connection's own
+	/// queue once it is ready (when its local address and interface are known). Only an admitted
+	/// connection inside the cap gets a thread; its slot comes back when the handler returns, or
+	/// when the connection fails before that.
 	private func accept(_ connection: NWConnection) {
 		let connectionQueue = DispatchQueue(label: "link.http.connection")
-		connection.start(queue: connectionQueue)
-		let thread = Thread { [handler, admit, onRefused] in
-			let local = Self.localHost(connection)
-			let interface = Self.localInterface(connection)
-			if let admit {
-				let peer = Self.remoteHost(connection)
-				guard admit(peer, local, interface) else {
+		let peer = Self.remoteHost(connection)
+		guard let slot = connections.slot(for: peer) else {
+			onBusy?(peer)
+			Self.refuseBusy(connection, queue: connectionQueue)
+			return
+		}
+		let started = StartedBox()
+		connection.stateUpdateHandler = { [weak self] state in
+			switch state {
+			case .ready:
+				guard !started.value else { return }
+				started.value = true
+				connection.stateUpdateHandler = nil
+				guard let self else {
+					slot.release()
 					connection.cancel()
-					onRefused?(peer)
 					return
 				}
+				self.serve(connection, slot: slot)
+			case .waiting:
+				// An inbound connection that cannot get ready is not worth its slot.
+				connection.cancel()
+			case .failed, .cancelled:
+				connection.stateUpdateHandler = nil
+				slot.release()
+				connection.cancel()
+			default: break
 			}
+		}
+		connection.start(queue: connectionQueue)
+	}
+
+	private final class StartedBox: @unchecked Sendable {
+		var value = false
+	}
+
+	/// The access check, then the request on a thread of its own; called on the connection's
+	/// queue once it is ready.
+	private func serve(_ connection: NWConnection, slot: ConnectionLimiter.Slot) {
+		let local = Self.localHost(connection)
+		let interface = Self.localInterface(connection)
+		if let admit, !admit(slot.peer, local, interface) {
+			slot.release()
+			connection.cancel()
+			onRefused?(slot.peer)
+			return
+		}
+		let thread = Thread { [handler, responseSigner] in
+			defer { slot.release() }
 			guard let exchange = Self.readHead(connection, localHost: local, localInterface: interface) else {
 				connection.cancel()
 				return
 			}
+			exchange.responseSigner = responseSigner
 			handler(exchange)
 			if exchange.status == 0 { connection.cancel() }
 		}
 		thread.name = "link-http"
 		thread.start()
+	}
+
+	static let busyResponse = Data(
+		"HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\nRetry-After: 1\r\n\r\n".utf8)
+
+	/// Over the cap: a bare 503 and close, without reading the request or spawning anything.
+	static func refuseBusy(_ connection: NWConnection, queue: DispatchQueue) {
+		connection.start(queue: queue)
+		connection.send(
+			content: busyResponse, contentContext: .finalMessage, isComplete: true,
+			completion: .contentProcessed { _ in connection.cancel() })
 	}
 
 	/// The local address once the connection is ready (up to 2 s), before any byte is read.

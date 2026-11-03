@@ -440,7 +440,7 @@ final class LinkAPI: @unchecked Sendable {
 	func health() -> [String: Any] {
 		[
 			"ok": true, "service": "whispera-link", "version": LinkDaemon.version,
-			"protocol": LinkDaemon.protocolVersion, "capabilities": ["prompt_receipts", "image_uploads", "file_uploads", "recipes", "herdr_tui", "agent_permissions", "agent_asks", "code_reader", "agent_transcript", "agent_subagents", "notification_prefs", "terminal_beta", "device_vouches", "agents_remove", "audio_translations", "text_translate", "mac_files", "uploads_abort", "agent_dialogs", "audio_by_file", "herdr_core"],
+			"protocol": LinkDaemon.protocolVersion, "capabilities": ["prompt_receipts", "image_uploads", "file_uploads", "recipes", "herdr_tui", "agent_permissions", "agent_asks", "code_reader", "agent_transcript", "agent_subagents", "notification_prefs", "terminal_beta", "device_vouches", "agents_remove", "audio_translations", "text_translate", "mac_files", "uploads_abort", "agent_dialogs", "audio_by_file", "herdr_core", "response_signatures"],
 			"daemon_fp": daemon.daemonFP, "server_time": daemon.now(), "herdr": daemon.herdrState(), "hc": daemon.hcState(),
 			"broker": daemon.approvals.isConnected ? "connected" : "idle",
 			"apns": daemon.push.isConfigured ? "configured" : "unconfigured",

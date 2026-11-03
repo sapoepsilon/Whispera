@@ -28,9 +28,17 @@ func launchWhisperaForApprovalCard() {
 	}
 }
 
+#if DEBUG
+	// Debug builds keep the `WHISPERA_LINK_*` overrides so the e2e scripts can drive this binary.
+	let environment = ProcessInfo.processInfo.environment
+#else
+	let environment = HelperEnvironment.withoutOverrides(ProcessInfo.processInfo.environment)
+#endif
+
 /// Phones transcribe with whatever engine is selected in Whispera, read from Whispera's own settings.
 let appDomain = AppSpeechSelection.appDomain(helperBundleIdentifier: Bundle.main.bundleIdentifier)
 exit(
 	HelperRuntime.serve(
-		engine: WhisperKitSpeechEngine(appDomain: appDomain), selection: AppSpeechSelection(domain: appDomain),
-		speechKeys: KeychainSpeechKeyStore(), launchApp: launchWhisperaForApprovalCard))
+		engine: WhisperKitSpeechEngine(appDomain: appDomain, environment: environment), environment: environment,
+		selection: AppSpeechSelection(domain: appDomain), speechKeys: KeychainSpeechKeyStore(),
+		launchApp: launchWhisperaForApprovalCard))

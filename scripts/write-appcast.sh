@@ -1,32 +1,40 @@
 #!/bin/bash
-# Writes appcast.xml for the DMG release-distribute-ci.sh produced, with the EdDSA signature
-# release.yml made using the verified sign_update. Takes the signature from SPARKLE_SIGNATURE
-# (`sparkle:edSignature="…" length="…"`); never sees the private key.
+# Writes appcast.xml for the release DMG. Every value comes from the environment, set by
+# release.yml from the outputs of the job that built the app and the job that signed the DMG:
+#   VERSION            CFBundleShortVersionString of the built app (MAJOR.MINOR.PATCH)
+#   BUILD              CFBundleVersion of the built app
+#   MINIMUM_SYSTEM     LSMinimumSystemVersion of the built app
+#   SPARKLE_SIGNATURE  sign_update output (`sparkle:edSignature="…" length="…"`)
+# Never sees the private key, and reads nothing from the checkout: the checked-out Info.plist
+# still has the previous build number, which the build job bumped only on its own runner.
 
 set -euo pipefail
 
 APP_NAME="Whispera"
-DIST_PATH="./dist"
-VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "Info.plist")
-BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "Info.plist")
-DMG_VERSIONED="${APP_NAME}-${VERSION}.dmg"
+VERSION="${VERSION:-}"
+BUILD="${BUILD:-}"
+MINIMUM_SYSTEM="${MINIMUM_SYSTEM:-}"
 SIGNATURE="${SPARKLE_SIGNATURE:-}"
+DMG_VERSIONED="${APP_NAME}-${VERSION}.dmg"
+
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "error: VERSION is not MAJOR.MINOR.PATCH"
+    exit 1
+fi
+if ! [[ "$BUILD" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+    echo "error: BUILD is not a CFBundleVersion"
+    exit 1
+fi
+# Sparkle must not offer the update to a macOS the app cannot launch on
+if ! [[ "$MINIMUM_SYSTEM" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+    echo "error: MINIMUM_SYSTEM is not the built app's LSMinimumSystemVersion"
+    exit 1
+fi
 
 # Every Sparkle client rejects an enclosure without an EdDSA signature, so an unsigned appcast
 # must never be written, let alone published
 if ! printf '%s' "$SIGNATURE" | grep -Eq '^sparkle:edSignature="[A-Za-z0-9+/=]+" length="[0-9]+"$'; then
     echo "error: SPARKLE_SIGNATURE is not a sign_update signature"
-    exit 1
-fi
-if [ ! -f "${DIST_PATH}/${DMG_VERSIONED}" ]; then
-    echo "error: ${DIST_PATH}/${DMG_VERSIONED} is missing"
-    exit 1
-fi
-
-# Sparkle must not offer the update to a macOS the app cannot launch on
-MINIMUM_SYSTEM=$(/usr/libexec/PlistBuddy -c "Print LSMinimumSystemVersion" "${DIST_PATH}/${APP_NAME}.app/Contents/Info.plist")
-if [ -z "$MINIMUM_SYSTEM" ]; then
-    echo "error: LSMinimumSystemVersion missing from the built app"
     exit 1
 fi
 

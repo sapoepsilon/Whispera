@@ -5,6 +5,9 @@
 #
 #   LinkHelper/e2e/voice-server.sh <path to WhisperaLinkHelper binary>
 #
+# The binary must be a Debug build: a Release login item ignores every WHISPERA_LINK_* variable
+# (HelperEnvironment), so it would use the real state directory and Whispera's own settings.
+#
 # The helper serves whatever engine is selected in Whispera; the script selects it in a throwaway
 # preferences domain (WHISPERA_LINK_APP_DEFAULTS), never in the installed app's:
 #   VOICE_ENGINE=whisperKit (default)            the on-device WhisperKit model

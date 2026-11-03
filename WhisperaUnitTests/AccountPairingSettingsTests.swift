@@ -327,6 +327,37 @@ struct ApproveConfirmModelTests {
 			HelperConfirmResult.decode(Data(#"{"ok":false,"error":{"code":"keys_changed","message":"m"}}"#.utf8))
 				== .keysChanged)
 		#expect(HelperConfirmResult.decode(nil) == .failed(nil))
+		#expect(
+			HelperConfirmResult.decode(Data(#"{"ok":false,"error":{"code":"peer_update_required","message":"m"}}"#.utf8))
+				== .peerUpdateRequired)
+	}
+
+	@Test func aCardWithoutANumberSaysWhyAndAnOlderIPhoneIsToldToUpdate() throws {
+		let list = Data(
+			#"{"devices":[{"device_id":"dev_b","name":"n","fingerprint":"f","approve_fp":"a","safety_number":null,"sas_status":"update_required"}]}"#
+				.utf8)
+		let item = try #require(PendingApproveConfirmation.decodeList(list)?.first)
+		#expect(item.safetyNumber == nil)
+		#expect(item.sasStatus == "update_required")
+		#expect(ApproveConfirmCard.missingNumberText(for: item).contains("Update Whispera on the iPhone"))
+		var failed = item
+		failed.sasStatus = "failed"
+		#expect(ApproveConfirmCard.missingNumberText(for: failed).contains("didn't match"))
+		failed.sasStatus = nil
+		#expect(ApproveConfirmCard.missingNumberText(for: failed).contains("Waiting for the iPhone"))
+		#expect(ApproveConfirmCard.unfinishedWarning(for: item) == nil)
+		let warned = try #require(PendingApproveConfirmation.decodeList(Data(
+			#"{"devices":[{"device_id":"dev_b","name":"n","fingerprint":"f","approve_fp":"a","sas_unfinished":2}]}"#.utf8))?.first)
+		#expect(ApproveConfirmCard.unfinishedWarning(for: warned)?.contains("didn't finish") == true)
+	}
+
+	@Test func anIPhoneWithoutACommittedExchangeIsNotConfirmed() async {
+		let helper = FakeHelperAccountLink()
+		helper.pending = [AccountFixtures.pendingPhone]
+		helper.confirmAnswer = .peerUpdateRequired
+		let model = ApproveConfirmModel(helper: helper, authenticator: FakeAuthenticator(result: .success))
+		#expect(!(await model.confirm(AccountFixtures.pendingPhone)))
+		#expect(model.lastError?.contains("Update Whispera on the iPhone") == true)
 	}
 }
 

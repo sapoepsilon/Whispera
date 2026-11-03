@@ -294,8 +294,9 @@ final class DirectAccessTests: XCTestCase {
 			AccountLink.offerDigest(context(false), approveConfirmed: true), "turning it on re-sends the offer")
 		XCTAssertEqual(
 			AccountLink.offerDigest(context(false), approveConfirmed: true),
-			LinkCrypto.sha256Hex(Data(["http://mac-a.example.ts.net:7000", "f", "Mac", "true"].joined(separator: "\n").utf8)),
-			"off keeps the digest offers already sent had")
+			LinkCrypto.sha256Hex(
+				Data(["http://mac-a.example.ts.net:7000", "f", "Mac", "true", "signs_responses"].joined(separator: "\n").utf8)),
+			"off adds nothing beyond signs_responses, which every offer now carries")
 
 		func encoded(_ flag: Bool?) throws -> [String: Any] {
 			let offer = LinkOffer(

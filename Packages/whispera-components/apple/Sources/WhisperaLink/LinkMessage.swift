@@ -12,9 +12,13 @@ import Foundation
 /// {"type":"api_request","v":1,"id":"rq_…","method":"GET","target":"/v1/agents","headers":{…},"body":"","stream":false}
 /// {"type":"api_response","v":1,"id":"rq_…","part":0,"status":200,"headers":{…},"body":"…","final":true}
 /// {"type":"api_cancel","v":1,"id":"rq_…"}
+/// {"type":"sas_commit","v":1,"attempt":"sas_…","commitment":"…"}
+/// {"type":"sas_nonce","v":1,"attempt":"sas_…","mac_link":"…","mac_nonce":"…"}
+/// {"type":"sas_reveal","v":1,"attempt":"sas_…","phone_link":"…","phone_approve":"…","phone_nonce":"…"}
 /// ```
 ///
-/// The `api_*` messages carry the LinkAPI over the relay — see `RelayAPI`.
+/// The `api_*` messages carry the LinkAPI over the relay — see `RelayAPI`. The `sas_*` ones fix
+/// the safety number — see `SafetyNumber`.
 ///
 /// Receivers accept a message only from a verified peer of their own account
 /// (`RelayClient.openLinkMessage`).
@@ -33,6 +37,12 @@ public enum LinkMessage: Equatable, Sendable {
 	case apiResponse(RelayAPIResponse)
 	/// Phone → Mac: stop that stream, or abandon that request.
 	case apiCancel(id: String)
+	/// Phone → Mac: the commitment that opens a safety-number attempt.
+	case sasCommit(SASCommit)
+	/// Mac → phone: the Mac's nonce, only after it recorded the commitment.
+	case sasNonce(SASNonce)
+	/// Phone → Mac: the keys and nonce behind the commitment.
+	case sasReveal(SASReveal)
 
 	public static let version = 1
 
@@ -44,6 +54,9 @@ public enum LinkMessage: Equatable, Sendable {
 		case .apiRequest: return "api_request"
 		case .apiResponse: return "api_response"
 		case .apiCancel: return "api_cancel"
+		case .sasCommit: return "sas_commit"
+		case .sasNonce: return "sas_nonce"
+		case .sasReveal: return "sas_reveal"
 		}
 	}
 
@@ -78,6 +91,12 @@ public enum LinkMessage: Equatable, Sendable {
 				let id = try JSONDecoder().decode(IDBody.self, from: data).id
 				guard RelayAPI.isValidRequestID(id) else { throw LinkMessageError.malformed("api_cancel id") }
 				self = .apiCancel(id: id)
+			case "sas_commit":
+				self = .sasCommit(try JSONDecoder().decode(SASCommit.self, from: data))
+			case "sas_nonce":
+				self = .sasNonce(try JSONDecoder().decode(SASNonce.self, from: data))
+			case "sas_reveal":
+				self = .sasReveal(try JSONDecoder().decode(SASReveal.self, from: data))
 			default:
 				throw LinkMessageError.unknownType(head.type)
 			}
@@ -112,13 +131,16 @@ public enum LinkMessage: Equatable, Sendable {
 			case .linkOffer(let offer): try offer.encode(to: encoder)
 			case .apiRequest(let request): try request.encode(to: encoder)
 			case .apiResponse(let response): try response.encode(to: encoder)
+			case .sasCommit(let commit): try commit.encode(to: encoder)
+			case .sasNonce(let nonce): try nonce.encode(to: encoder)
+			case .sasReveal(let reveal): try reveal.encode(to: encoder)
 			default: break
 			}
 			var c = encoder.container(keyedBy: Keys.self)
 			try c.encode(message.type, forKey: .type)
 			try c.encode(LinkMessage.version, forKey: .v)
 			switch message {
-			case .linkOffer, .apiRequest, .apiResponse: break
+			case .linkOffer, .apiRequest, .apiResponse, .sasCommit, .sasNonce, .sasReveal: break
 			case .approveConfirmed(let id), .unpaired(let id): try c.encode(id, forKey: .device_id)
 			case .apiCancel(let id): try c.encode(id, forKey: .id)
 			}
@@ -160,11 +182,16 @@ public struct LinkOffer: Codable, Equatable, Sendable {
 	/// When the Mac made this offer (Unix seconds, Mac clock), so a phone can refuse an older
 	/// offer replayed after a newer one. Absent from older Macs.
 	public var issued_at: Int64?
+	/// The Mac signs every direct-path response and SSE event with its daemon key (WL1-RESP,
+	/// docs/LINK_RESPONSE_SIGNATURES.md in the Mac app). Sealed in the offer, so a LAN party
+	/// cannot strip it: a phone that saw `true` requires the signatures from this Mac. Absent
+	/// (older Macs) means unknown, not "doesn't sign".
+	public var signs_responses: Bool?
 
 	public init(
 		helper_device_id: String, base_urls: [String], daemon_pubkey: String, daemon_fp: String, stt_key: String? = nil,
 		stt_base_url: String? = nil, mac_name: String, approve_confirmed: Bool, allow_lan_http: Bool? = nil,
-		issued_at: Int64? = nil
+		issued_at: Int64? = nil, signs_responses: Bool? = nil
 	) {
 		self.helper_device_id = helper_device_id
 		self.base_urls = base_urls
@@ -176,11 +203,12 @@ public struct LinkOffer: Codable, Equatable, Sendable {
 		self.approve_confirmed = approve_confirmed
 		self.allow_lan_http = allow_lan_http
 		self.issued_at = issued_at
+		self.signs_responses = signs_responses
 	}
 
 	enum CodingKeys: String, CodingKey {
 		case helper_device_id, base_urls, daemon_pubkey, daemon_fp, stt_key, stt_base_url, mac_name, approve_confirmed
-		case allow_lan_http, issued_at
+		case allow_lan_http, issued_at, signs_responses
 	}
 
 	public func encode(to encoder: Encoder) throws {
@@ -195,6 +223,7 @@ public struct LinkOffer: Codable, Equatable, Sendable {
 		try c.encode(approve_confirmed, forKey: .approve_confirmed)
 		try c.encodeIfPresent(allow_lan_http, forKey: .allow_lan_http)
 		try c.encodeIfPresent(issued_at, forKey: .issued_at)
+		try c.encodeIfPresent(signs_responses, forKey: .signs_responses)
 	}
 
 	/// The `http`/`https` entries of `base_urls`, in order.
@@ -254,6 +283,18 @@ public struct ReceivedLinkMessage: Equatable, Sendable {
 	public let seq: Int64
 	public let sender: TrustedDevice
 	public let message: LinkMessage
+	/// The envelope's signed `message_id` and `created_at`, so a receiver can drop a message the
+	/// relay delivers again under a new sequence number (the envelope stays valid for its max age).
+	public let messageID: Data
+	public let createdAt: Int64
+
+	public init(seq: Int64, sender: TrustedDevice, message: LinkMessage, messageID: Data = Data(), createdAt: Int64 = 0) {
+		self.seq = seq
+		self.sender = sender
+		self.message = message
+		self.messageID = messageID
+		self.createdAt = createdAt
+	}
 }
 
 extension RelayClient {
@@ -277,6 +318,8 @@ extension RelayClient {
 		guard envelope.senderID == relayed.from else { throw EnvelopeError.badSignature }
 		let plaintext = try envelope.open(
 			as: deviceID, agreementKey: agreementKey, senderKey: sender.linkKey, now: serverNow)
-		return ReceivedLinkMessage(seq: relayed.seq, sender: sender, message: try LinkMessage(decoding: plaintext))
+		return ReceivedLinkMessage(
+			seq: relayed.seq, sender: sender, message: try LinkMessage(decoding: plaintext), messageID: envelope.messageID,
+			createdAt: envelope.createdAt)
 	}
 }

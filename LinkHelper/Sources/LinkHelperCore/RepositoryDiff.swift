@@ -41,7 +41,7 @@ struct RepositoryDiff {
 	/// `$1` the agent's directory, `$2` the scope. Lists, without reading any file: the root,
 	/// `HEAD`, the index's mtime, the tracked names, then the untracked entries twice, folded
 	/// into whole untracked folders (`folders`) and file by file (`untracked`).
-	static let listScript = """
+	static let listScript = GitSafety.shellPrelude + """
 		section() { printf '\\001%s\\n' "$1"; }
 		fail() { section error; printf '%s' "$1"; exit 0; }
 		cd -- "$1" 2>/dev/null || fail no_repository
@@ -57,9 +57,9 @@ struct RepositoryDiff {
 		case $scope in
 			staged) set -- --cached ;;
 			unstaged) set -- ;;
-			*) set -- "${head:-$(git hash-object -t tree /dev/null)}" ;;
+			*) set -- "${head:-$(git hash-object --no-filters -t tree /dev/null)}" ;;
 		esac
-		section names; git -c core.quotepath=off --no-pager diff -M --no-ext-diff --name-only -z "$@" -- 2>/dev/null | head -c 2000000
+		section names; git -c core.quotepath=off --no-pager diff -M --no-ext-diff --no-textconv --ignore-submodules=dirty --name-only -z "$@" -- 2>/dev/null | head -c 2000000
 		[ "$scope" = staged ] && exit 0
 		section folders; git -c core.quotepath=off ls-files -z --others --exclude-standard --directory --no-empty-directory 2>/dev/null | head -c 2000000
 		section untracked; git -c core.quotepath=off ls-files -z --others --exclude-standard 2>/dev/null | head -c \(maxUntrackedNameBytes)
@@ -68,7 +68,7 @@ struct RepositoryDiff {
 	/// `$1` the root, `$2` the per-file cap, then `./`-prefixed untracked paths. Names the ones
 	/// Git should not read (`skip`: gone or unreadable; `large`: over the cap, with `sizes`
 	/// from `wc -c`) in a handful of processes, without opening any file.
-	static let measureScript = """
+	static let measureScript = GitSafety.shellPrelude + """
 		section() { printf '\\001%s\\n' "$1"; }
 		cd -- "$1" 2>/dev/null || exit 0
 		cap=$2; shift 2
@@ -84,7 +84,7 @@ struct RepositoryDiff {
 	/// `$1` the root, `$2` the scope, `$3` the byte cap for the patch, then the `./`-prefixed
 	/// untracked files to show. They are marked intent-to-add in a copy of the index, so one
 	/// `git diff` prints them with the tracked changes; the real index is never written.
-	static let patchScript = """
+	static let patchScript = GitSafety.shellPrelude + """
 		section() { printf '\\001%s\\n' "$1"; }
 		cd -- "$1" 2>/dev/null || exit 0
 		scope=$2; cap=$3; shift 3
@@ -96,7 +96,7 @@ struct RepositoryDiff {
 			if work=$(mktemp -d "$tmpdir/whispera-diff.XXXXXX" 2>/dev/null); then
 				trap 'rm -rf "$work"' EXIT
 				[ -f "$index" ] && cp "$index" "$work/index"
-				if GIT_INDEX_FILE="$work/index" GIT_LITERAL_PATHSPECS=1 git add -N -- "$@" >/dev/null 2>&1; then
+				if (export GIT_INDEX_FILE="$work/index" GIT_LITERAL_PATHSPECS=1; git add -N -- "$@") >/dev/null 2>&1; then
 					export GIT_INDEX_FILE="$work/index"
 					section added
 				fi
@@ -105,15 +105,15 @@ struct RepositoryDiff {
 		case $scope in
 			staged) set -- --cached ;;
 			unstaged) set -- ;;
-			*) head=$(git rev-parse -q --verify HEAD 2>/dev/null) || head=$(git hash-object -t tree /dev/null); set -- "$head" ;;
+			*) head=$(git rev-parse -q --verify HEAD 2>/dev/null) || head=$(git hash-object --no-filters -t tree /dev/null); set -- "$head" ;;
 		esac
-		section names; git -c core.quotepath=off --no-pager diff -M --no-ext-diff --name-only -z "$@" -- 2>/dev/null | head -c 2000000
-		section patch; git -c core.quotepath=off --no-pager diff -M --no-ext-diff --no-textconv --no-color "$@" -- 2>/dev/null | head -c "$cap"
+		section names; git -c core.quotepath=off --no-pager diff -M --no-ext-diff --no-textconv --ignore-submodules=dirty --name-only -z "$@" -- 2>/dev/null | head -c 2000000
+		section patch; git -c core.quotepath=off --no-pager diff -M --no-ext-diff --no-textconv --ignore-submodules=dirty --no-color "$@" -- 2>/dev/null | head -c "$cap"
 		"""
 
 	/// `$1` the agent's directory, `$2` the scope, `$3` one path from the root, `$4` the
 	/// per-file cap, `$5` the byte cap. One file's patch, for a file the list left out.
-	static let fileScript = """
+	static let fileScript = GitSafety.shellPrelude + """
 		section() { printf '\\001%s\\n' "$1"; }
 		fail() { section error; printf '%s' "$1"; exit 0; }
 		cd -- "$1" 2>/dev/null || fail no_repository
@@ -138,9 +138,9 @@ struct RepositoryDiff {
 		case $scope in
 			staged) set -- --cached ;;
 			unstaged) set -- ;;
-			*) head=$(git rev-parse -q --verify HEAD 2>/dev/null) || head=$(git hash-object -t tree /dev/null); set -- "$head" ;;
+			*) head=$(git rev-parse -q --verify HEAD 2>/dev/null) || head=$(git hash-object --no-filters -t tree /dev/null); set -- "$head" ;;
 		esac
-		section patch; git -c core.quotepath=off --no-pager diff --no-ext-diff --no-textconv --no-color "$@" -- "$p" 2>/dev/null | head -c "$cap"
+		section patch; git -c core.quotepath=off --no-pager diff --no-ext-diff --no-textconv --ignore-submodules=dirty --no-color "$@" -- "$p" 2>/dev/null | head -c "$cap"
 		"""
 
 	// MARK: Changes

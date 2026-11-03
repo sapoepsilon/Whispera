@@ -64,6 +64,13 @@ public struct ChoiceMenu: Equatable, Sendable {
 	public var command: String?
 	public var file: String?
 	public var diff: String?
+	/// What the phone shows is not the whole dialog: a field was clipped to its display limit,
+	/// detail lines were dropped, or the dialog may continue above the lines the parser reads.
+	/// A one-tap approval should not be offered for a dialog the owner cannot see in full.
+	public var truncated: Bool = false
+	/// A digest of the dialog's full, unclipped text as drawn on screen (cursor excluded), set by
+	/// the parser. It goes into `id`, so two dialogs that differ only past a display clip differ.
+	public var contentDigest: String?
 
 	public init(
 		title: String? = nil, question: String, detail: String? = nil, options: [Option], selectedIndex: Int? = nil,
@@ -85,6 +92,7 @@ public struct ChoiceMenu: Equatable, Sendable {
 	public var id: String {
 		var parts = [title ?? "", question, detail ?? ""]
 		parts += options.map { "\($0.id)\u{1F}\($0.label)" }
+		if let contentDigest { parts.append(contentDigest) }
 		let digest = SHA256.hash(data: Data(parts.joined(separator: "\u{1E}").utf8))
 		return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
 	}
@@ -125,7 +133,9 @@ public enum ChoiceMenuParser {
 	}
 
 	public static func parse(_ screen: String) -> ChoiceMenu? {
-		let (region, ruled) = promptRegion(screen)
+		let raw = screenLines(screen)
+		let top = regionStart(raw)
+		let (region, ruled) = (regionLines(raw, from: top.start), top.ruled)
 		guard let block = optionBlock(region) else { return nil }
 		let before = Array(region[..<block.start])
 		let after = region[block.end...].map(\.text).joined(separator: "\n").lowercased()
@@ -154,21 +164,26 @@ public enum ChoiceMenuParser {
 		if lines[q].text.count >= wrapWidth {
 			while last + 1 < lines.count, lines[last + 1].group == lines[q].group { last += 1 }
 		}
-		let question = clip(lines[first...last].map(\.text).joined(separator: " "))
+		let fullQuestion = lines[first...last].map(\.text).joined(separator: " ")
+		var clipped = isClipped(fullQuestion)
+		let question = clip(fullQuestion)
 		// The spinner or turn-status line ("✻ Sautéed for 3s") is never a dialog's question.
 		if isStatusLine(question), !hasKeyHint(after) { return nil }
 		var title: String?
 		var restStart = 0
 		if ruled, first > 0 {
 			title = clip(lines[0].text)
+			clipped = clipped || isClipped(lines[0].text)
 			restStart = 1
 		}
 		let rest = (lines[..<first].dropFirst(restStart) + lines[(last + 1)...]).map(\.text)
 			.filter { !$0.lowercased().hasPrefix("tip:") }
 		let detail = rest.prefix(maxDetailLines).joined(separator: "\n")
+		let detailClipped = rest.count > maxDetailLines || isClipped(detail)
 
 		var cancel: String?
 		if after.contains("esc to cancel") || after.contains("esc to exit") { cancel = "esc" }
+		clipped = clipped || block.options.contains { isClipped($0.label) }
 		let options = block.options.enumerated().map { index, option in
 			ChoiceMenu.Option(
 				id: String(index + 1), label: clip(option.label), kind: kind(of: option.label), number: option.number)
@@ -176,8 +191,30 @@ public enum ChoiceMenuParser {
 		var menu = ChoiceMenu(
 			title: title, question: question, detail: detail.isEmpty ? nil : clip(detail), options: options,
 			selectedIndex: block.selected, cancelKey: cancel)
-		classify(&menu, raw: rawRegion(screen), before: before.map(\.text))
+		let shownDetail = menu.detail
+		classify(&menu, raw: Array(raw[top.start...]), before: before.map(\.text))
+		// The parser's own detail was shown unless the agent-specific reader replaced it.
+		if menu.detail == shownDetail, detailClipped { clipped = true }
+		// Without a rule the dialog's top is unknown: when the line window cuts a paragraph the
+		// parser reads (the question's, or the Codex patch whose header scrolled away), part
+		// of the dialog may be above it.
+		let cut = top.windowed && isFilled(raw[top.start - 1]) && isFilled(raw[top.start])
+		let firstGroupUsed = lines.first?.group == 0
+		if cut, firstGroupUsed || (menu.action == .edit && menu.diff == nil) { clipped = true }
+		menu.truncated = menu.truncated || clipped
+		menu.contentDigest = digest(region[..<block.start].map(\.text) + block.options.map { "\($0.number ?? 0)\u{1F}\($0.label)" })
 		return menu
+	}
+
+	static func isClipped(_ text: String, limit: Int = maxText) -> Bool { text.count > limit }
+
+	static func isFilled(_ line: String) -> Bool {
+		line.contains { !($0 == " " || $0 == "\t" || borders.contains($0)) }
+	}
+
+	static func digest(_ parts: [String]) -> String {
+		let hash = SHA256.hash(data: Data(parts.joined(separator: "\u{1E}").utf8))
+		return hash.map { String(format: "%02x", $0) }.joined()
 	}
 
 	/// The footer a real dialog draws under its options ("Enter to confirm · Esc to cancel",
@@ -292,6 +329,7 @@ public enum ChoiceMenuParser {
 			menu.tool = lower.contains("create") || lower.contains("write") ? "Write" : "Edit"
 			menu.file = rest.first
 			menu.diff = body.isEmpty ? nil : clip(body.joined(separator: "\n"), limit: 4000)
+			if isClipped(body.joined(separator: "\n"), limit: 4000) { menu.truncated = true }
 		} else {
 			let fetch = lower.contains("fetch") || lower.contains("web")
 			menu.action = fetch ? .fetch : lower.contains("bash") || lower.contains("command") ? .run : .other
@@ -299,6 +337,7 @@ public enum ChoiceMenuParser {
 			menu.summary = rest.isEmpty ? nil : clip(rest.joined(separator: " "))
 			let command = body.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
 			menu.command = command.isEmpty ? nil : clip(command, limit: 2000)
+			if isClipped(rest.joined(separator: " ")) || isClipped(command, limit: 2000) { menu.truncated = true }
 		}
 		// The detail an older phone shows: the command (or file) first, without the boilerplate.
 		let detail = [menu.command ?? menu.file, menu.summary].compactMap { $0 }.joined(separator: "\n")
@@ -324,23 +363,37 @@ public enum ChoiceMenuParser {
 			menu.tool = "Edit"
 			if let destination = field("Destination") { menu.file = (destination as NSString).lastPathComponent }
 			menu.summary = field("Reason")
-			menu.diff = codexDiff(raw)
+			let diff = codexDiff(raw)
+			menu.diff = diff.text
+			if diff.clipped { menu.truncated = true }
 		} else {
 			menu.action = lower.contains("command") || lower.contains("run") ? .run : .other
 			menu.tool = "Command"
 			menu.summary = field("Reason")
-			if let command = after.first(where: { $0.hasPrefix("$ ") }) { menu.command = clip(String(command.dropFirst(2))) }
+			if let index = after.firstIndex(where: { $0.hasPrefix("$ ") }) {
+				let command = String(after[index].dropFirst(2))
+				menu.command = clip(command)
+				// Only the `$` line is read: a command that goes on below it is not shown in full.
+				let next = after.index(after: index)
+				let continues = next < after.endIndex && !after[next].isEmpty
+					&& after[next].range(of: #"^[A-Z][A-Za-z ]*:"#, options: .regularExpression) == nil
+					&& option(Line(text: after[next], indent: 0))?.number == nil
+				if isClipped(command) || continues { menu.truncated = true }
+			}
 		}
 		let detail = [menu.command ?? field("Destination"), menu.summary].compactMap { $0 }.joined(separator: "\n")
-		if !detail.isEmpty { menu.detail = clip(detail) }
+		if !detail.isEmpty {
+			menu.detail = clip(detail)
+			if isClipped(detail) { menu.truncated = true }
+		}
 	}
 
 	/// The numbered patch lines under the last `• Edited`/`• Proposed` item on screen.
-	static func codexDiff(_ raw: [String]) -> String? {
+	static func codexDiff(_ raw: [String]) -> (text: String?, clipped: Bool) {
 		guard let start = raw.lastIndex(where: {
 			let t = $0.trimmingCharacters(in: .whitespaces)
 			return t.hasPrefix("• Edited ") || t.hasPrefix("• Proposed ") || t.hasPrefix("• Added ") || t.hasPrefix("• Deleted ")
-		}) else { return nil }
+		}) else { return (nil, false) }
 		var body: [String] = []
 		for line in raw[(start + 1)...] {
 			let t = line.trimmingCharacters(in: .whitespaces)
@@ -348,7 +401,9 @@ public enum ChoiceMenuParser {
 			body.append(line)
 		}
 		let trimmed = trimCommonIndent(body)
-		return trimmed.isEmpty ? nil : clip(trimmed.joined(separator: "\n"), limit: 4000)
+		guard !trimmed.isEmpty else { return (nil, false) }
+		let text = trimmed.joined(separator: "\n")
+		return (clip(text, limit: 4000), isClipped(text, limit: 4000))
 	}
 
 	static func trimCommonIndent(_ lines: [String]) -> [String] {
@@ -367,16 +422,24 @@ public enum ChoiceMenuParser {
 
 	/// The dialog's lines as drawn (dashed separators kept), from the same top as `promptRegion`.
 	static func rawRegion(_ screen: String) -> [String] {
-		let raw = screen.replacingOccurrences(of: "\r", with: "").components(separatedBy: "\n")
+		let raw = screenLines(screen)
 		return Array(raw[regionStart(raw).start...])
+	}
+
+	static func screenLines(_ screen: String) -> [String] {
+		screen.replacingOccurrences(of: "\r", with: "").components(separatedBy: "\n")
 	}
 
 	/// The dialog sits below the screen's last full-width rule (Claude Code draws one above
 	/// it); without a rule, the bottom of the screen.
 	static func promptRegion(_ screen: String) -> (lines: [Line], ruled: Bool) {
-		let raw = screen.replacingOccurrences(of: "\r", with: "").components(separatedBy: "\n")
-		let (start, ruled) = regionStart(raw)
-		let lines = raw[start...].compactMap { line -> Line? in
+		let raw = screenLines(screen)
+		let top = regionStart(raw)
+		return (regionLines(raw, from: top.start), top.ruled)
+	}
+
+	static func regionLines(_ raw: [String], from start: Int) -> [Line] {
+		raw[start...].compactMap { line -> Line? in
 			var text = Substring(line)
 			while let first = text.first, first == " " || borders.contains(first) { text = text.dropFirst() }
 			let indent = line.count - text.count
@@ -384,11 +447,16 @@ public enum ChoiceMenuParser {
 			if !text.isEmpty, isRule(String(text), minimum: 3) { return nil }
 			return Line(text: String(text), indent: indent)
 		}
-		return (lines, ruled)
 	}
 
-	static func regionStart(_ raw: [String]) -> (start: Int, ruled: Bool) {
-		var start = max(0, raw.count - 40)
+	/// The lines read when no rule marks the dialog's top.
+	static let window = 40
+
+	/// Where the dialog region starts; `windowed` when that is the line window's top (no rule,
+	/// and lines above it were not read), so the dialog may continue above `start`.
+	static func regionStart(_ raw: [String]) -> (start: Int, ruled: Bool, windowed: Bool) {
+		var floor = 0
+		var start = max(0, raw.count - window)
 		var rule = raw.lastIndex { isDialogTop($0) }
 		// A box that closes above the options (Codex's update notice) is not the dialog.
 		if let top = rule, let edge = raw[top].trimmingCharacters(in: .whitespaces).first, edge == "╭" || edge == "┌",
@@ -399,10 +467,11 @@ public enum ChoiceMenuParser {
 			raw[(close + 1)...].contains(where: { option(Line(text: $0.trimmingCharacters(in: .whitespaces), indent: 0)) != nil })
 		{
 			rule = nil
-			start = max(close + 1, raw.count - 40)
+			floor = close + 1
+			start = max(close + 1, raw.count - window)
 		}
-		if let rule { start = rule + 1 }
-		return (start, rule != nil)
+		if let rule { return (rule + 1, true, false) }
+		return (start, false, start > floor)
 	}
 
 	static func isDialogTop(_ line: String) -> Bool {

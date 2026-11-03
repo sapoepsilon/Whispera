@@ -21,21 +21,25 @@ permissions:
   contents: read
 
 jobs:
-  release:
+  # Builds and exports the unsigned app. It runs the repo's build code (and every package it
+  # compiles), so it holds no signing secret at all: no Developer ID, no notary credentials, no
+  # Sparkle key, and it cannot push. Its only output is the unsigned app as an artifact.
+  build:
     # A manual dispatch from a branch must never publish a release; only a tag ref may
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: macos-15
     permissions:
-      contents: write # Creates the release and pushes the appcast to main
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      unsigned_sha256: ${{ steps.package.outputs.unsigned_sha256 }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-          # The token is not left in .git/config; the push steps pass it explicitly
           persist-credentials: false
 
       - name: Setup Xcode
@@ -44,19 +48,9 @@ jobs:
           # The FoundationModels weak link needs the macOS 26 SDK
           xcode-version: "^26.0"
 
-      # sign_update receives the Sparkle private key, so it has to be the official release binary.
-      # The verified copy goes to RUNNER_TEMP before any build step runs repo code, and its hash
-      # travels as a step output (which later steps cannot rewrite, unlike GITHUB_ENV)
+      # The Sparkle framework embedded in the app must be the official release
       - name: Verify vendored Sparkle against the official release
-        id: sparkle
-        run: |
-          set -euo pipefail
-          ./scripts/verify-sparkle.sh "$GITHUB_WORKSPACE"
-          mkdir -p "$RUNNER_TEMP/sparkle"
-          install -m 0555 Packages/Sparkle/bin/sign_update "$RUNNER_TEMP/sparkle/sign_update"
-          SHA=$(shasum -a 256 "$RUNNER_TEMP/sparkle/sign_update" | cut -d' ' -f1)
-          echo "sign_update_sha256=$SHA" >> "$GITHUB_OUTPUT"
-          echo "Verified sign_update: $SHA"
+        run: ./scripts/verify-sparkle.sh "$GITHUB_WORKSPACE"
 
       # Free-text input and tag names reach later steps only through env and only after this
       # check, so they are never pasted into a script
@@ -116,83 +110,479 @@ jobs:
                      -exportPath "./build/Release" \
                      -exportOptionsPlist "scripts/ExportOptions-dev.plist"
 
-      # The Developer ID identity exists only from here to the end of notarization: the unsigned
-      # archive and export above (which run repo build code) never have it in reach
-      - name: Setup signing keychain
+      - name: Package the unsigned app
+        id: package
+        run: |
+          set -euo pipefail
+          test -d "build/Release/${APP_NAME}.app"
+          /usr/bin/ditto -c -k --keepParent "build/Release/${APP_NAME}.app" "build/${APP_NAME}-unsigned.zip"
+          SHA=$(/usr/bin/shasum -a 256 "build/${APP_NAME}-unsigned.zip")
+          echo "unsigned_sha256=${SHA%% *}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the unsigned app
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-app
+          path: build/${{ env.APP_NAME }}-unsigned.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-logs
+          path: |
+            build/
+            *.log
+          retention-days: 7
+
+  # Signs with the Developer ID, notarizes and staples the app and the DMG. It runs no repo build
+  # code: the only checkout is the app's entitlements file (data), and every step is inline. The
+  # identity goes into a throwaway keychain usable by codesign only (no `-A`), unlocked for a
+  # short while, and deleted when the job ends.
+  sign:
+    needs: build
+    runs-on: macos-15
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ needs.build.outputs.version }}
+      tag: ${{ needs.build.outputs.tag }}
+      build: ${{ steps.artifacts.outputs.build }}
+      minimum_system: ${{ steps.artifacts.outputs.minimum_system }}
+      dmg_sha256: ${{ steps.artifacts.outputs.dmg_sha256 }}
+      zip_sha256: ${{ steps.artifacts.outputs.zip_sha256 }}
+
+    steps:
+      - name: Checkout the entitlements only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            Whispera.entitlements
+          sparse-checkout-cone-mode: false
+          path: repo
+
+      - name: Download the unsigned app
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-app
+          path: ${{ runner.temp }}/unsigned
+
+      - name: Unpack the unsigned app
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          EXPECTED_SHA256: ${{ needs.build.outputs.unsigned_sha256 }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version from the build job"
+            exit 1
+          fi
+          ZIP="$RUNNER_TEMP/unsigned/${APP_NAME}-unsigned.zip"
+          ACTUAL=$(/usr/bin/shasum -a 256 "$ZIP")
+          if [ -z "$EXPECTED_SHA256" ] || [ "${ACTUAL%% *}" != "$EXPECTED_SHA256" ]; then
+            echo "::error::The downloaded app is not the one the build job packaged"
+            exit 1
+          fi
+          /bin/rm -rf dist
+          /bin/mkdir -p dist
+          /usr/bin/ditto -x -k "$ZIP" dist
+          SHORT=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "dist/${APP_NAME}.app/Contents/Info.plist")
+          if [ "$SHORT" != "$VERSION" ]; then
+            echo "::error::The built app is version $SHORT, not $VERSION"
+            exit 1
+          fi
+
+      # One step from import to delete, so the identity is never left in a keychain between
+      # steps. Fails the release unless the app and the DMG are both notarized (status
+      # Accepted), stapled, and accepted by stapler validate and spctl.
+      - name: Sign, notarize and staple
         env:
           DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
           DEVELOPER_ID_PASSWORD: ${{ secrets.DEVELOPER_ID_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          chmod +x scripts/setup-keychain.sh
-          ./scripts/setup-keychain.sh
-
-      - name: Sign and notarize
-        env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
           TEAM_ID: ${{ secrets.TEAM_ID }}
-        run: |
-          chmod +x scripts/release-distribute-ci.sh
-          ./scripts/release-distribute-ci.sh
-
-      # Codesigning, notarization and stapling are done; nothing after this needs the identity
-      - name: Delete signing keychain
-        if: always()
-        run: security delete-keychain whispera-signing.keychain-db 2>/dev/null || true
-
-      # Inline, so no repo script runs with the key in its environment, and only the copy verified
-      # before the build, re-hashed here, ever reads it
-      - name: Sign the update for Sparkle
-        id: sparkle_sign
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          EXPECTED_SHA256: ${{ steps.sparkle.outputs.sign_update_sha256 }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          TOOL="$RUNNER_TEMP/sparkle/sign_update"
-          ACTUAL=$(shasum -a 256 "$TOOL" | cut -d' ' -f1)
-          if [ -z "$EXPECTED_SHA256" ] || [ "$ACTUAL" != "$EXPECTED_SHA256" ]; then
+          for var in DEVELOPER_ID_P12 APPLE_ID APP_SPECIFIC_PASSWORD TEAM_ID; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::$var is not set"
+              exit 1
+            fi
+          done
+          if ! [[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "::error::TEAM_ID is not a ten-character team identifier"
+            exit 1
+          fi
+
+          KEYCHAIN="$RUNNER_TEMP/whispera-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(/usr/bin/openssl rand -hex 32)
+          CERT="$RUNNER_TEMP/developer-id.p12"
+          cleanup() {
+            /bin/rm -f "$CERT"
+            /usr/bin/security delete-keychain "$KEYCHAIN" 2>/dev/null || :
+          }
+          trap cleanup EXIT
+
+          printf '%s' "$DEVELOPER_ID_P12" | /usr/bin/base64 --decode > "$CERT"
+          unset DEVELOPER_ID_P12
+          /usr/bin/security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Locks itself after 20 minutes (and on sleep); unlocked again right before each signing
+          /usr/bin/security set-keychain-settings -l -u -t 1200 "$KEYCHAIN"
+          /usr/bin/security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Only codesign may use the key; no -A
+          /usr/bin/security import "$CERT" -k "$KEYCHAIN" -P "${DEVELOPER_ID_PASSWORD:-}" -f pkcs12 -T /usr/bin/codesign
+          /bin/rm -f "$CERT"
+          unset DEVELOPER_ID_PASSWORD
+          /usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          SEARCH=()
+          while IFS= read -r entry; do
+            entry="${entry//\"/}"
+            entry="${entry#"${entry%%[![:space:]]*}"}"
+            [ -n "$entry" ] && SEARCH+=("$entry")
+          done < <(/usr/bin/security list-keychains -d user)
+          /usr/bin/security list-keychains -d user -s "$KEYCHAIN" ${SEARCH[@]+"${SEARCH[@]}"}
+
+          IDENTITY=$(/usr/bin/security find-identity -v -p codesigning "$KEYCHAIN" \
+            | /usr/bin/awk -F'"' '/Developer ID Application/ { print $2; exit }')
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No Developer ID Application identity in the certificate"
+            exit 1
+          fi
+
+          sign() {
+            /usr/bin/codesign --force --options runtime --timestamp --keychain "$KEYCHAIN" --sign "$IDENTITY" "$@"
+          }
+          json_field() {
+            /usr/bin/plutil -extract "$2" raw -o - - <<< "$1" 2>/dev/null || :
+          }
+          NOTARY_AUTH=(--apple-id "$APPLE_ID" --password "$APP_SPECIFIC_PASSWORD" --team-id "$TEAM_ID")
+          # Fails unless Apple reports exactly "Accepted" (the info call is the final status)
+          notarize() {
+            local file="$1" output submit_status=0 id status
+            echo "Submitting $(basename "$file") for notarization..."
+            output=$(/usr/bin/xcrun notarytool submit "$file" "${NOTARY_AUTH[@]}" --wait --output-format json) \
+              || submit_status=$?
+            echo "Notarization response: $output"
+            id=$(json_field "$output" id)
+            if [ -z "$id" ]; then
+              echo "::error::notarytool returned no submission id (exit $submit_status)"
+              exit 1
+            fi
+            status=$(json_field "$(/usr/bin/xcrun notarytool info "$id" "${NOTARY_AUTH[@]}" --output-format json)" status)
+            echo "Notarization status for $id: ${status:-unknown}"
+            if [ "$status" != "Accepted" ] || [ "$submit_status" -ne 0 ]; then
+              echo "::error::Notarization of $(basename "$file") was not accepted"
+              /usr/bin/xcrun notarytool log "$id" "${NOTARY_AUTH[@]}" "$RUNNER_TEMP/notary-log-$id.json" \
+                && /bin/cat "$RUNNER_TEMP/notary-log-$id.json"
+              exit 1
+            fi
+          }
+          staple() {
+            /usr/bin/xcrun stapler staple "$1"
+            /usr/bin/xcrun stapler validate "$1"
+          }
+
+          APP="dist/${APP_NAME}.app"
+          # Sign inside-out; --deep would strip Sparkle's XPC entitlements
+          /bin/rm -rf "$APP/Contents/XPCServices"
+          /usr/bin/security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+          for item in "$SPARKLE"/Versions/*/XPCServices/*.xpc "$SPARKLE"/Versions/*/Updater.app "$SPARKLE"/Versions/*/Autoupdate \
+            "$APP"/Contents/Frameworks/*.framework "$APP"/Contents/Library/LoginItems/*.app; do
+            [ -e "$item" ] || continue
+            echo "Signing $(basename "$item")"
+            sign "$item"
+          done
+          sign --entitlements "repo/${APP_NAME}.entitlements" "$APP"
+          REQUIREMENT="=anchor apple generic and certificate leaf[subject.OU] = \"$TEAM_ID\""
+          /usr/bin/codesign --verify --deep --strict --verbose=2 -R "$REQUIREMENT" "$APP"
+
+          /usr/bin/ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/${APP_NAME}-notarize.zip"
+          notarize "$RUNNER_TEMP/${APP_NAME}-notarize.zip"
+          staple "$APP"
+          /usr/sbin/spctl -a -vv -t exec "$APP"
+          /usr/bin/ditto -c -k --keepParent "$APP" "dist/${APP_NAME}.app.zip"
+
+          STAGE="$RUNNER_TEMP/dmg-stage"
+          /bin/rm -rf "$STAGE"
+          /bin/mkdir -p "$STAGE"
+          /usr/bin/ditto "$APP" "$STAGE/${APP_NAME}.app"
+          /bin/ln -s /Applications "$STAGE/Applications"
+          DMG="dist/${APP_NAME}-${VERSION}.dmg"
+          /usr/bin/hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+          /usr/bin/security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          /usr/bin/codesign --force --timestamp --keychain "$KEYCHAIN" --sign "$IDENTITY" "$DMG"
+          /usr/bin/codesign --verify --strict --verbose=2 -R "$REQUIREMENT" "$DMG"
+          # Nothing signs after this point: the keychain goes before the long DMG notarization
+          cleanup
+          trap - EXIT
+          notarize "$DMG"
+          staple "$DMG"
+          /usr/sbin/spctl -a -vv -t open --context context:primary-signature "$DMG"
+          echo "Signed, notarized and stapled ${APP_NAME} ${VERSION}"
+
+      # Fallback for a run that died before the step's own cleanup
+      - name: Delete signing keychain
+        if: always()
+        run: /usr/bin/security delete-keychain "$RUNNER_TEMP/whispera-signing.keychain-db" 2>/dev/null || true
+
+      # The checkout's Info.plist keeps the previous build number (the bump is local to the build
+      # runner), so the appcast takes its values from the signed app via these outputs
+      - name: Record release artifacts
+        id: artifacts
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          PLIST="dist/${APP_NAME}.app/Contents/Info.plist"
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$PLIST")
+          MINIMUM_SYSTEM=$(/usr/libexec/PlistBuddy -c "Print LSMinimumSystemVersion" "$PLIST")
+          if ! [[ "$BUILD" =~ ^[0-9]+(\.[0-9]+)*$ ]] || ! [[ "$MINIMUM_SYSTEM" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::The built app has an invalid CFBundleVersion or LSMinimumSystemVersion"
+            exit 1
+          fi
+          DMG_SHA=$(/usr/bin/shasum -a 256 "dist/${APP_NAME}-${VERSION}.dmg")
+          ZIP_SHA=$(/usr/bin/shasum -a 256 "dist/${APP_NAME}.app.zip")
+          {
+            echo "build=$BUILD"
+            echo "minimum_system=$MINIMUM_SYSTEM"
+            echo "dmg_sha256=${DMG_SHA%% *}"
+            echo "zip_sha256=${ZIP_SHA%% *}"
+          } >> "$GITHUB_OUTPUT"
+          echo "DMG SHA-256: ${DMG_SHA%% *}"
+
+      - name: Upload the release DMG
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dmg
+          path: dist/${{ env.APP_NAME }}-${{ needs.build.outputs.version }}.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload the zipped app
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-zip
+          path: dist/${{ env.APP_NAME }}.app.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  # The only job that sees SPARKLE_PRIVATE_KEY. It checks out nothing and runs no repo code:
+  # it takes the DMG from the sign job, checks it is the notarized Developer ID build that job
+  # hashed, fetches the official sign_update by pinned hash, and signs with it.
+  sparkle-sign:
+    needs: sign
+    runs-on: macos-15
+    permissions:
+      contents: read
+    outputs:
+      signature: ${{ steps.sign.outputs.signature }}
+      ed_signature: ${{ steps.sign.outputs.ed_signature }}
+      length: ${{ steps.sign.outputs.length }}
+
+    steps:
+      - name: Download the release DMG
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-dmg
+          path: ${{ runner.temp }}/dmg
+
+      - name: Verify the DMG
+        env:
+          VERSION: ${{ needs.sign.outputs.version }}
+          BUILD: ${{ needs.sign.outputs.build }}
+          EXPECTED_SHA256: ${{ needs.sign.outputs.dmg_sha256 }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version from the sign job"
+            exit 1
+          fi
+          if ! [[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "::error::TEAM_ID is not a ten-character team identifier"
+            exit 1
+          fi
+          DMG="$RUNNER_TEMP/dmg/${APP_NAME}-${VERSION}.dmg"
+          ACTUAL=$(/usr/bin/shasum -a 256 "$DMG")
+          if [ -z "$EXPECTED_SHA256" ] || [ "${ACTUAL%% *}" != "$EXPECTED_SHA256" ]; then
+            echo "::error::The downloaded DMG is not the one the sign job hashed"
+            exit 1
+          fi
+          REQUIREMENT="=anchor apple generic and certificate leaf[subject.OU] = \"$TEAM_ID\""
+
+          /usr/bin/codesign --verify --strict --verbose=2 -R "$REQUIREMENT" "$DMG"
+          /usr/sbin/spctl -a -vv -t open --context context:primary-signature "$DMG"
+          /usr/bin/xcrun stapler validate "$DMG"
+
+          MOUNT=$(/usr/bin/mktemp -d "$RUNNER_TEMP/dmg-mount.XXXXXX")
+          /usr/bin/hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MOUNT" "$DMG" > /dev/null
+          trap '/usr/bin/hdiutil detach "$MOUNT" -force > /dev/null || :' EXIT
+          APP="$MOUNT/${APP_NAME}.app"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 -R "$REQUIREMENT" "$APP"
+          /usr/sbin/spctl -a -vv -t exec "$APP"
+          /usr/bin/xcrun stapler validate "$APP"
+          SHORT=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
+          BUNDLE_BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Contents/Info.plist")
+          if [ "$SHORT" != "$VERSION" ] || [ "$BUNDLE_BUILD" != "$BUILD" ]; then
+            echo "::error::The app in the DMG is $SHORT ($BUNDLE_BUILD), expected $VERSION ($BUILD)"
+            exit 1
+          fi
+          echo "DMG verified: notarized, stapled, signed by team $TEAM_ID"
+
+      # sign_update receives the private key, so it must be the official release binary: the
+      # Sparkle 2.9.0 SwiftPM zip, pinned to the SHA-256 recorded in Packages/VENDORED.md
+      - name: Download and verify Sparkle sign_update
+        id: sparkle
+        env:
+          SPARKLE_URL: https://github.com/sparkle-project/Sparkle/releases/download/2.9.0/Sparkle-for-Swift-Package-Manager.zip
+          SPARKLE_SHA256: 44a0d5a00d5bfb6c2ad1755a92b694d948876d61ad44f35a0119eb0e7ace4b65
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/sparkle"
+          /bin/rm -rf "$WORK"
+          /bin/mkdir -p "$WORK/unpacked"
+          /usr/bin/curl -fsSL --proto '=https' --retry 3 -o "$WORK/sparkle.zip" "$SPARKLE_URL"
+          ACTUAL=$(/usr/bin/shasum -a 256 "$WORK/sparkle.zip")
+          if [ "${ACTUAL%% *}" != "$SPARKLE_SHA256" ]; then
+            echo "::error::Sparkle zip SHA-256 is ${ACTUAL%% *}, expected $SPARKLE_SHA256"
+            exit 1
+          fi
+          /usr/bin/ditto -x -k "$WORK/sparkle.zip" "$WORK/unpacked"
+          TOOL="$WORK/unpacked/bin/sign_update"
+          /bin/test -x "$TOOL"
+          TOOL_SHA=$(/usr/bin/shasum -a 256 "$TOOL")
+          echo "sign_update_sha256=${TOOL_SHA%% *}" >> "$GITHUB_OUTPUT"
+          echo "Verified sign_update: ${TOOL_SHA%% *}"
+
+      # The key goes to sign_update on stdin (--ed-key-file -), never in argv, a file or the
+      # tool's environment, which env -i empties
+      - name: Sign the update for Sparkle
+        id: sign
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          EXPECTED_TOOL_SHA256: ${{ steps.sparkle.outputs.sign_update_sha256 }}
+          EXPECTED_SHA256: ${{ needs.sign.outputs.dmg_sha256 }}
+          VERSION: ${{ needs.sign.outputs.version }}
+        run: |
+          set -euo pipefail
+          TOOL="$RUNNER_TEMP/sparkle/unpacked/bin/sign_update"
+          DMG="$RUNNER_TEMP/dmg/${APP_NAME}-${VERSION}.dmg"
+          ACTUAL_TOOL=$(/usr/bin/shasum -a 256 "$TOOL")
+          if [ -z "$EXPECTED_TOOL_SHA256" ] || [ "${ACTUAL_TOOL%% *}" != "$EXPECTED_TOOL_SHA256" ]; then
             echo "::error::sign_update changed since it was verified; refusing to sign"
+            exit 1
+          fi
+          ACTUAL_DMG=$(/usr/bin/shasum -a 256 "$DMG")
+          if [ "${ACTUAL_DMG%% *}" != "$EXPECTED_SHA256" ]; then
+            echo "::error::The DMG changed since it was verified; refusing to sign"
             exit 1
           fi
           if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
             echo "::error::SPARKLE_PRIVATE_KEY is not set; the update cannot be signed"
             exit 1
           fi
-          KEY_FILE=$(mktemp "$RUNNER_TEMP/sparkle-key.XXXXXX")
-          trap 'rm -f "$KEY_FILE"' EXIT
-          printf '%s\n' "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
-          SIGNATURE=$("$TOOL" "dist/Whispera-${VERSION}.dmg" -f "$KEY_FILE" | tr -d '\r\n')
-          if ! printf '%s' "$SIGNATURE" | grep -Eq '^sparkle:edSignature="[A-Za-z0-9+/=]+" length="[0-9]+"$'; then
+          OUTPUT=$(printf '%s\n' "$SPARKLE_PRIVATE_KEY" \
+            | /usr/bin/env -i PATH=/usr/bin:/bin "$TOOL" --ed-key-file - "$DMG")
+          unset SPARKLE_PRIVATE_KEY
+          SIGNATURE=$(printf '%s' "$OUTPUT" | /usr/bin/tr -d '\r\n')
+          PATTERN='^sparkle:edSignature="([A-Za-z0-9+/=]+)" length="([0-9]+)"$'
+          if ! [[ "$SIGNATURE" =~ $PATTERN ]]; then
             echo "::error::sign_update did not produce a signature"
             exit 1
           fi
-          echo "signature=$SIGNATURE" >> "$GITHUB_OUTPUT"
+          ED_SIGNATURE="${BASH_REMATCH[1]}"
+          LENGTH="${BASH_REMATCH[2]}"
+          if [ "$LENGTH" != "$(/usr/bin/stat -f %z "$DMG")" ]; then
+            echo "::error::The signed length does not match the DMG size"
+            exit 1
+          fi
+          {
+            echo "signature=$SIGNATURE"
+            echo "ed_signature=$ED_SIGNATURE"
+            echo "length=$LENGTH"
+          } >> "$GITHUB_OUTPUT"
+          echo "Signed ${APP_NAME}-${VERSION}.dmg ($LENGTH bytes)"
+
+  # Publishes what the two jobs above produced: the GitHub release with the verified files, and
+  # appcast.xml on main. Holds no signing secret.
+  release:
+    needs: [sign, sparkle-sign]
+    runs-on: macos-15
+    permissions:
+      contents: write # Creates the release and pushes the appcast to main
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          # The token is not left in .git/config; the push steps pass it explicitly
+          persist-credentials: false
+
+      - name: Download the release DMG
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-dmg
+          path: dist
+
+      - name: Download the zipped app
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-zip
+          path: dist
+
+      # The release must carry exactly the DMG that was verified and Sparkle-signed
+      - name: Verify release files
+        env:
+          VERSION: ${{ needs.sign.outputs.version }}
+          DMG_SHA256: ${{ needs.sign.outputs.dmg_sha256 }}
+          ZIP_SHA256: ${{ needs.sign.outputs.zip_sha256 }}
+        run: |
+          set -euo pipefail
+          DMG="dist/${APP_NAME}-${VERSION}.dmg"
+          ACTUAL_DMG=$(shasum -a 256 "$DMG")
+          ACTUAL_ZIP=$(shasum -a 256 "dist/${APP_NAME}.app.zip")
+          if [ -z "$DMG_SHA256" ] || [ "${ACTUAL_DMG%% *}" != "$DMG_SHA256" ] \
+            || [ -z "$ZIP_SHA256" ] || [ "${ACTUAL_ZIP%% *}" != "$ZIP_SHA256" ]; then
+            echo "::error::The downloaded release files are not the ones the sign job hashed"
+            exit 1
+          fi
+          # Unversioned copy for the releases/latest/download/Whispera.dmg link
+          cp "$DMG" "dist/${APP_NAME}.dmg"
 
       - name: Write appcast.xml
         env:
-          SPARKLE_SIGNATURE: ${{ steps.sparkle_sign.outputs.signature }}
+          VERSION: ${{ needs.sign.outputs.version }}
+          BUILD: ${{ needs.sign.outputs.build }}
+          MINIMUM_SYSTEM: ${{ needs.sign.outputs.minimum_system }}
+          SPARKLE_SIGNATURE: ${{ needs.sparkle-sign.outputs.signature }}
         run: ./scripts/write-appcast.sh
 
       - name: Create release notes
-        id: release_notes
         # The release body is what the app shows in What's New. Curate it in
         # release-notes/vX.Y.Z.md; without that file the feat/fix/perf subjects are used.
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.sign.outputs.version }}
         run: ./scripts/release-notes.sh "$VERSION" release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: "Whispera ${{ steps.version.outputs.version }}"
+          tag_name: ${{ needs.sign.outputs.tag }}
+          name: "Whispera ${{ needs.sign.outputs.version }}"
           body_path: release_notes.md
           files: |
             dist/Whispera.dmg
-            dist/Whispera-${{ steps.version.outputs.version }}.dmg
+            dist/Whispera-${{ needs.sign.outputs.version }}.dmg
             dist/Whispera.app.zip
           draft: false
           prerelease: false
@@ -200,13 +590,13 @@ jobs:
       - name: Publish appcast.xml to main
         if: success()
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.sign.outputs.version }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -e
 
           # The checkout's own appcast.xml is the previous release's; only one written for this
-          # version and signed by the Sparkle step may reach the update feed
+          # version and signed by the Sparkle job may reach the update feed
           if ! grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" appcast.xml \
             || ! grep -q 'sparkle:edSignature="' appcast.xml; then
             echo "::error::appcast.xml was not generated and signed for $VERSION; the update feed was not published"
@@ -241,29 +631,13 @@ jobs:
           git commit -m "chore(release): update appcast for v$VERSION"
           git_auth push origin HEAD:main
 
-          echo "✅ Appcast committed and pushed"
-
-      - name: Cleanup keychain
-        if: always()
-        run: |
-          # Fallback for a run that failed before the keychain step's own cleanup
-          security delete-keychain whispera-signing.keychain-db 2>/dev/null || true
-
-      - name: Upload build artifacts
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: build-logs
-          path: |
-            build/
-            *.log
-          retention-days: 7
+          echo "Appcast committed and pushed"
 
   # A job of its own so a cask problem never holds back the release or Sparkle updates, yet
   # still fails visibly instead of hiding behind continue-on-error. The hash comes from the
   # published asset, so the cask matches what users download.
   homebrew-cask:
-    needs: release
+    needs: [sign, release]
     runs-on: macos-15
     permissions:
       contents: write # Pushes the cask bump to main
@@ -278,7 +652,7 @@ jobs:
 
       - name: Bump Homebrew cask on main
         env:
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ needs.sign.outputs.version }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -e
@@ -319,7 +693,7 @@ jobs:
       - name: Report a failed cask bump
         if: failure()
         env:
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ needs.sign.outputs.version }}
         run: |
           echo "::warning::The Homebrew cask was not bumped to $VERSION. The release and appcast are published; run ./scripts/update-cask.sh $VERSION and push Casks/whispera.rb."
           {

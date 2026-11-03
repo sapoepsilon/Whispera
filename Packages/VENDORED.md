@@ -12,6 +12,14 @@ local files in machine-readable form, and `scripts/verify-vendored.sh` re-fetche
 and prints anything that differs beyond those deletions, the manifests and the local files
 (`--manifests` shows the manifest diffs).
 
+The agent-tui-protocol, agent-herdr and agent-tmux pins were moved on 2026-11-03 after those
+repositories' history was rewritten: the new commits have the same trees as the old ones apart
+from scrubbed test fixtures (agent-tui-protocol `Tests/`) and `Package.resolved` (agent-herdr,
+agent-tmux), all of which are removed here, so the vendored files did not change. The
+whispera-components commit is kept reachable on GitHub by the branch `pin/whispera-1.5.0`, and
+each agent pin by a `pin/whispera-1.5.0-mac` branch in its repository. Don't delete those
+branches: they are what keeps the pinned commits fetchable for `scripts/verify-vendored.sh`.
+
 Directory names match the upstream package identities (`whispera-components`, `swift-transformers`,
 ...), so every `.product(name:package:)` reference kept its original spelling.
 
@@ -21,10 +29,10 @@ swift-markdown-ui's tests used it).
 
 | Package | Upstream | Version | Commit | License | Removed | Package.swift edits |
 |---|---|---|---|---|---|---|
-| whispera-components | https://github.com/sapoepsilon/whispera-components (private) | unversioned | `af7dd7fc549cede4d5270b390b6b09530aacec04` | none in the repo (owner's code) | web/, docs/, tokens/, scripts/, pnpm/package files, result and brief notes, apple/Tests, and the WhisperaComponents, WhisperaDictationUI, DictationDemo, DictationChecks, DictationSelfTest, PackageChecks, PackageSelfTest targets | dropped those products and targets and every test target |
-| agent-tui-protocol | https://github.com/sapoepsilon/agent-tui-protocol | unversioned | `a9a23135b784c0621af6507c2de08d4506d66e76` | MIT | Tests/ (with Fixtures), .gitignore | dropped the test target |
-| agent-herdr | https://github.com/sapoepsilon/agent-herdr | unversioned | `3dff1f2352fea16160ec8f332d45ee92bc201c08` | MIT | Tests/, Package.resolved, .gitignore | agent-tui-protocol by path; dropped the test target |
-| agent-tmux | https://github.com/sapoepsilon/agent-tmux | unversioned | `f52f9be2063e4a2d0225e1ab3cc7100b5b6d6c1e` | MIT | Tests/, Package.resolved, .gitignore | agent-tui-protocol by path; dropped the test target |
+| whispera-components | https://github.com/sapoepsilon/whispera-components (private) | unversioned (branch `pin/whispera-1.5.0`) | `af7dd7fc549cede4d5270b390b6b09530aacec04` | none in the repo (owner's code) | web/, docs/, tokens/, scripts/, pnpm/package files, result and brief notes, apple/Tests, and the WhisperaComponents, WhisperaDictationUI, DictationDemo, DictationChecks, DictationSelfTest, PackageChecks, PackageSelfTest targets | dropped those products and targets and every test target |
+| agent-tui-protocol | https://github.com/sapoepsilon/agent-tui-protocol | unversioned | `74faaad61dfe93cedab0233d184905946229d14b` | MIT | Tests/ (with Fixtures), .gitignore | dropped the test target |
+| agent-herdr | https://github.com/sapoepsilon/agent-herdr | unversioned | `b7be30cc8a779b1f3846b5643603f9b0b7d93535` | MIT | Tests/, Package.resolved, .gitignore | agent-tui-protocol by path; dropped the test target |
+| agent-tmux | https://github.com/sapoepsilon/agent-tmux | unversioned | `9887145f64b50fd7fbc5fc78048586d1cdd24a00` | MIT | Tests/, Package.resolved, .gitignore | agent-tui-protocol by path; dropped the test target |
 | WhisperKit | https://github.com/argmaxinc/WhisperKit | `main` | `3817d2833f73ceb30586cb285e0e0439a3860536` | MIT | Sources/TTSKit, Sources/SpeakerKit, Sources/WhisperKitCLI, Tests, Examples, fastlane, scripts, Makefile, BENCHMARKS/CONTRIBUTING, Package.resolved, dotfiles | WhisperKit product only (ArgmaxCore + WhisperKit targets); removed the CLI's server-mode packages (vapor, swift-openapi-*) and swift-argument-parser; swift-transformers by path |
 | swift-transformers | https://github.com/huggingface/swift-transformers.git | 1.1.9 | `150169bfba0889c229a2ce7494cf8949f18e6906` | Apache-2.0 | Sources/Generation, Sources/Models, Tests, Examples, media, dotfiles | Hub and Tokenizers products only (dropped Transformers, Generation, Models, test targets); swift-jinja, swift-collections, swift-crypto, yyjson by path |
 | swift-jinja | https://github.com/huggingface/swift-jinja.git | 2.3.2 | `f731f03bf746481d4fda07f817c3774390c4d5b9` | Apache-2.0 | Tests, Package.resolved, dotfiles | swift-collections by path; dropped the test target |
@@ -79,11 +87,36 @@ Files changed or added here on purpose, not yet upstream. Each has a `local` lin
 - whispera-components: `apple/Sources/WhisperaLink/LinkMessage.swift` (changed). `LinkOffer`
   carries the optional `allow_lan_http` flag the iOS app reads to decide whether the Mac's plain
   `http://` LAN addresses may be used directly, and `issued_at` (Unix seconds) so the phone can
-  refuse a rolled-back offer; the same fields as the iOS app's copy. Drop the
-  `local` line once upstream has it.
+  refuse a rolled-back offer; the same fields as the iOS app's copy. `signs_responses` (optional
+  Bool) says the Mac signs direct-path responses (WL1-RESP); the iOS app's copy needs the same
+  field. `ReceivedLinkMessage`
+  also carries the envelope's signed `messageID` and `createdAt` (with a public init that
+  defaults them), which the Mac helper uses to drop relay messages delivered twice. Drop the
+  `local` line once upstream has both.
 - whispera-components: `apple/Sources/WhisperaDictation/RealtimeProtocol.swift` (changed). One
   doc comment no longer names a private test machine; no code changed. Upstream the
   same wording.
+- agent-tui-protocol: `Sources/WhisperaAgents/Asks/ChoiceMenu.swift` and
+  `Sources/WhisperaAgents/Asks/AgentAsk.swift` (changed). A menu's prompt id also hashes the
+  dialog's full, unclipped text (`contentDigest`, cursor excluded), so two dialogs that differ
+  only past a display clip get different ids; `ChoiceMenu.truncated` / `AgentAsk.truncated`
+  (JSON `truncated`, false when an older payload leaves it out) say a field was clipped, detail
+  lines were dropped, a Codex command goes on below its `$` line, or the 40-line window cut the
+  dialog. Upstream both, then drop the `local` lines.
+- agent-tui-protocol: `Sources/WhisperaAgents/PastedText.swift` (added) and agent-tmux:
+  `Sources/WhisperaTmux/TmuxProvider.swift` (changed). `PastedText.sanitize` turns `\r\n` and a
+  lone `\r` into `\n` and drops every other C0 control but tab and newline, DEL and the C1 controls, so a
+  pasted prompt cannot press Enter or Ctrl-C; `TmuxClient.send` pastes the sanitized text (the
+  key APIs are unchanged) and the helper's prompt route uses the same function for herdr and
+  hc. Upstream both, then drop the `local` lines.
+- whispera-components: safety number with a commitment. `apple/Sources/WhisperaLink/SafetyNumber.swift`
+  (changed) computes the number as `WL2-SAS` over both link keys, the phone's approve key, the
+  attempt, both device ids and two 32-byte nonces, and adds the phone's `WL2-SAS-COMMIT`
+  commitment; the keys-only `WL1-SAS` form is gone. `apple/Sources/WhisperaLink/SASExchange.swift`
+  (added) holds the `sas_commit` / `sas_nonce` / `sas_reveal` bodies and the two state machines
+  (`SASInitiator` on the phone, `SASResponder` on the Mac), and `LinkMessage.swift` carries the
+  three messages. Byte-identical to the iOS app's copies of these files and of the `LinkMessage`
+  hunks. Upstream them, then bump the pin and drop the `local` lines.
 
 ## Updating a package
 
