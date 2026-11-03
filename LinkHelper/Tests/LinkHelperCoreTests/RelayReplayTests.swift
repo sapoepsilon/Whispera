@@ -49,16 +49,61 @@ final class RelayReplayGuardTests: XCTestCase {
 		XCTAssertFalse(restarted.firstSeen(sender: "dev_a", messageID: id, createdAt: clock.now))
 	}
 
-	func testTheSetIsBounded() {
+	func testTheSetIsBoundedAndAnEvictedEnvelopeStaysRefused() {
 		let seen = guardian(capacity: 100)
+		let start = clock.now
 		for index in 0..<250 {
 			clock.now += 1
 			XCTAssertTrue(seen.firstSeen(sender: "dev_a", messageID: Data("m\(index)".utf8), createdAt: clock.now))
 			XCTAssertLessThanOrEqual(seen.count, 100)
 		}
-		// The newest stay, the oldest went first.
 		XCTAssertFalse(seen.firstSeen(sender: "dev_a", messageID: Data("m249".utf8), createdAt: clock.now))
-		XCTAssertTrue(seen.firstSeen(sender: "dev_a", messageID: Data("m0".utf8), createdAt: clock.now))
+		// m0's id was forgotten, but its envelope is below the low-water mark: still refused.
+		XCTAssertFalse(seen.firstSeen(sender: "dev_a", messageID: Data("m0".utf8), createdAt: start + 1))
+		XCTAssertNotNil(seen.lowWaterMark(of: "dev_a"))
+		XCTAssertTrue(seen.firstSeen(sender: "dev_a", messageID: Data("new".utf8), createdAt: clock.now + 1))
+	}
+
+	/// The backend can list any number of fake devices: their messages never evict the entries of
+	/// a phone the owner confirmed, and they share one bounded pool.
+	func testFakeDevicesCannotFlushAConfirmedPhonesEntries() {
+		let seen = guardian()
+		let real = LinkCrypto.randomBytes(16)
+		let createdAt = clock.now
+		XCTAssertTrue(seen.firstSeen(sender: "dev_real", messageID: real, createdAt: createdAt, trusted: true))
+		for index in 0..<10_000 {
+			_ = seen.firstSeen(
+				sender: "dev_fake\(index % 500)", messageID: Data("f\(index)".utf8), createdAt: clock.now + Int64(index),
+				trusted: false)
+		}
+		XCTAssertLessThanOrEqual(seen.count - 1, RelayReplayGuard.untrustedTotal)
+		XCTAssertEqual(seen.entries(of: "dev_real"), 1)
+		XCTAssertFalse(seen.firstSeen(sender: "dev_real", messageID: real, createdAt: createdAt, trusted: true))
+		XCTAssertNil(seen.lowWaterMark(of: "dev_real"))
+	}
+
+	func testOneUnconfirmedSenderIsCappedOnItsOwn() {
+		let seen = guardian()
+		for index in 0..<(RelayReplayGuard.untrustedPerSender * 3) {
+			_ = seen.firstSeen(
+				sender: "dev_x", messageID: Data("x\(index)".utf8), createdAt: clock.now + Int64(index), trusted: false)
+		}
+		XCTAssertLessThanOrEqual(seen.entries(of: "dev_x"), RelayReplayGuard.untrustedPerSender)
+		XCTAssertFalse(
+			seen.firstSeen(sender: "dev_x", messageID: Data("x0".utf8), createdAt: clock.now, trusted: false),
+			"an evicted envelope is refused by the mark")
+	}
+
+	func testMarksAndUnconfirmedEntriesSurviveARestart() {
+		let first = guardian(capacity: 10)
+		for index in 0..<30 {
+			_ = first.firstSeen(sender: "dev_a", messageID: Data("m\(index)".utf8), createdAt: clock.now + Int64(index))
+		}
+		XCTAssertTrue(first.firstSeen(sender: "dev_u", messageID: Data("u".utf8), createdAt: clock.now, trusted: false))
+		first.flush()
+		let restarted = guardian(capacity: 10)
+		XCTAssertEqual(restarted.lowWaterMark(of: "dev_a"), first.lowWaterMark(of: "dev_a"))
+		XCTAssertFalse(restarted.firstSeen(sender: "dev_u", messageID: Data("u".utf8), createdAt: clock.now, trusted: false))
 	}
 
 	func testAnEntryExpiresOnlyAfterTheEnvelopeMaxAge() {

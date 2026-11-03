@@ -858,7 +858,11 @@ public actor AccountLink {
 
 	private func handle(_ received: ReceivedLinkMessage) async {
 		let sender = received.sender
-		guard replayGuard.firstSeen(sender: sender.id, messageID: received.messageID, createdAt: received.createdAt) else {
+		let confirmed = devices.get(sender.id).map { $0.approveConfirmed && !$0.isRevoked } ?? false
+		guard
+			replayGuard.firstSeen(
+				sender: sender.id, messageID: received.messageID, createdAt: received.createdAt, trusted: confirmed)
+		else {
 			log("account.message_ignored", ["device": sender.id, "detail": "replayed \(received.message.type)"])
 			return
 		}
