@@ -569,6 +569,18 @@ public final class AccountCircle: @unchecked Sendable {
 		}
 	}
 
+	/// The device was revoked here: stop serving this helper's vouch for it now, not at the next
+	/// sync (which no longer re-signs it, since only unrevoked confirmed phones are vouched for).
+	func withdraw(_ deviceID: String) {
+		let removed: Bool = lock.withLock {
+			let had = issued[deviceID] != nil || published.contains { $0.subject_id == deviceID }
+			issued[deviceID] = nil
+			published.removeAll { $0.subject_id == deviceID }
+			return had
+		}
+		if removed { log("circle.vouch_withdrawn", ["device": deviceID]) }
+	}
+
 	func publishedVouches() -> [DeviceVouch] {
 		lock.withLock { published }
 	}

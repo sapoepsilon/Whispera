@@ -61,6 +61,26 @@ public actor AccountLink {
 		var unpaired: [String] = []
 		var last_sync_at: Int?
 		var last_error: String?
+		/// Devices revoked here whose backend revoke has not gone through yet: retried with the
+		/// next account bearer the app hands over (`connect`), since the bearer is never stored.
+		var pending_revokes: [String]?
+	}
+
+	/// The account side of revoking a device here (`devices.revoke`).
+	public struct AccountRevoke: Sendable, Equatable {
+		/// The backend revoked it (or no longer lists it for this account).
+		public var ok: Bool
+		public var code: String?
+		public var message: String?
+		/// Kept to retry with the next bearer.
+		public var queued: Bool
+
+		public var json: [String: Any] {
+			var out: [String: Any] = ["ok": ok]
+			if let code { out["error"] = ["code": code, "message": message ?? code] }
+			if queued { out["queued"] = true }
+			return out
+		}
 	}
 
 	public struct SyncReport: Sendable, Equatable {
@@ -171,6 +191,17 @@ public actor AccountLink {
 			try await self.pollMessagesLocked(wait: 0)
 			return report
 		}
+	}
+
+	/// `deviceID` (an account phone) was revoked in the registry here: withdraw this Mac's vouch
+	/// for it at once, and revoke it on the account backend too, so the relay and the account's
+	/// other Macs drop it. That needs the account bearer (`bearer`, used once and never stored);
+	/// without one, or when the backend call fails, the revoke is queued and retried with the
+	/// next bearer `connect` gets. The local revoke stands either way.
+	public func revokeInAccount(_ deviceID: String, bearer: String?) async -> AccountRevoke {
+		circle?.withdraw(deviceID)
+		let result = try? await serialized { await self.revokeInAccountLocked(deviceID, bearer: bearer) }
+		return result ?? AccountRevoke(ok: false, code: "internal", message: "account revoke did not run", queued: false)
 	}
 
 	/// The confirm cards. One a linked Mac vouches for (with exactly the keys pinned here) says
@@ -443,6 +474,7 @@ public actor AccountLink {
 				status = "registered"
 				activatePush()
 				log("account.connected", ["device": state.device_id, "detail": "already registered"])
+				await flushPendingRevokes(bearer: bearer)
 				return
 			}
 			// Signed into another account, or this Mac was revoked: start over with new keys.
@@ -484,6 +516,56 @@ public actor AccountLink {
 		push.replace(with: UnconfiguredPush())
 		pushSealer.configure(macID: nil, agreementKey: nil, macName: "")
 		log("account.disconnected")
+	}
+
+	private func revokeInAccountLocked(_ deviceID: String, bearer: String?) async -> AccountRevoke {
+		guard state != nil else {
+			return AccountRevoke(
+				ok: false, code: "not_registered", message: "this Mac has not joined an account", queued: false)
+		}
+		state?.offers[deviceID] = nil
+		var pending = state?.pending_revokes ?? []
+		if !pending.contains(deviceID) { pending.append(deviceID) }
+		state?.pending_revokes = Array(pending.suffix(256))
+		saveState()
+		let bearer = (bearer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !bearer.isEmpty else {
+			log("account.revoke_queued", ["device": deviceID, "detail": "no bearer"])
+			return AccountRevoke(
+				ok: false, code: "bearer_required",
+				message: "revoked on this Mac; the account revoke runs when Whispera next signs the helper in",
+				queued: true)
+		}
+		return await backendRevoke(deviceID, bearer: bearer)
+	}
+
+	/// One backend revoke; on success (or when the account no longer has the device) it leaves
+	/// the queue.
+	private func backendRevoke(_ deviceID: String, bearer: String) async -> AccountRevoke {
+		guard let base = state.flatMap({ URL(string: $0.base_url) }) else {
+			return AccountRevoke(ok: false, code: "not_registered", message: "this Mac has not joined an account", queued: false)
+		}
+		do {
+			try await RelayClient.revoke(baseURL: base, accountToken: bearer, deviceID: deviceID, transport: transport)
+		} catch {
+			let code = (error as? LinkError)?.code ?? (error as? APIError)?.code ?? "\(type(of: error))"
+			if code != "not_found" {
+				log("account.revoke_failed", ["device": deviceID, "detail": code])
+				return AccountRevoke(
+					ok: false, code: code, message: "revoked on this Mac; the account revoke failed and will be retried",
+					queued: true)
+			}
+		}
+		state?.pending_revokes?.removeAll { $0 == deviceID }
+		if state?.pending_revokes?.isEmpty == true { state?.pending_revokes = nil }
+		saveState()
+		log("account.revoked_device", ["device": deviceID])
+		return AccountRevoke(ok: true, code: nil, message: nil, queued: false)
+	}
+
+	/// Retries queued backend revokes with a fresh bearer (best effort).
+	private func flushPendingRevokes(bearer: String) async {
+		for id in state?.pending_revokes ?? [] { _ = await backendRevoke(id, bearer: bearer) }
 	}
 
 	private func dropAccountPins(reason: String) {

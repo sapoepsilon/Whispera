@@ -29,6 +29,30 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 	var notifyResults: [String: String] = [:]
 
 	let baseURL = URL(string: "http://127.0.0.1:18080")!
+	/// When set, `DELETE /v1/devices/{id}` answers 503 (the backend is down).
+	var failRevokes = false
+	/// When set, `GET /v1/device/peers` answers 503.
+	var failPeers = false
+	/// Every device id a bearer `DELETE /v1/devices/{id}` named, in order (failed ones too).
+	private(set) var revokeRequests: [String] = []
+
+	func setFailRevokes(_ on: Bool) {
+		lock.lock()
+		failRevokes = on
+		lock.unlock()
+	}
+
+	func setFailPeers(_ on: Bool) {
+		lock.lock()
+		failPeers = on
+		lock.unlock()
+	}
+
+	var revokeCalls: [String] {
+		lock.lock()
+		defer { lock.unlock() }
+		return revokeRequests
+	}
 
 	func addAccount(_ account: String, bearer: String) {
 		lock.lock()
@@ -166,6 +190,8 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 					DeviceList(devices: order.compactMap { devices[$0] }.filter { $0.account == account }.map(\.device)))
 			case ("DELETE", _):
 				let id = String(path.dropFirst("/v1/devices/".count))
+				revokeRequests.append(id)
+				if failRevokes { return error(503, "unavailable") }
 				guard devices[id]?.account == account else { return error(404, "not_found") }
 				devices[id]?.device.revoked_at = Int64(Date().timeIntervalSince1970)
 				return (204, Data())
@@ -182,6 +208,7 @@ final class FakeAccountBackend: LinkTransport, @unchecked Sendable {
 		guard !me.device.isRevoked else { return error(401, "auth_revoked") }
 		switch (method, path) {
 		case ("GET", "/v1/device/peers"):
+			if failPeers { return error(503, "unavailable") }
 			return json(
 				200,
 				DeviceList(devices: order.compactMap { devices[$0] }.filter { $0.account == me.account }.map(\.device)))

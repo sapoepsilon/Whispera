@@ -746,7 +746,16 @@ public final class LinkDaemon: @unchecked Sendable {
 					return ["ok": false, "error": ["code": "not_found", "message": "no such device"]]
 				}
 				log("device.revoked", ["device": id, "detail": "admin"])
-				return ["ok": true, "device": record.publicJSON]
+				var reply: [String: Any] = ["ok": true, "device": record.publicJSON]
+				// An account phone is revoked on the backend too (and this Mac's vouch for it is
+				// withdrawn); the local revoke above stands whatever that answers.
+				if record.origin == .account {
+					let bearer = request["bearer"] as? String
+					let outcome = (try? blocking(30) { [account] in await account.revokeInAccount(id, bearer: bearer).json })
+					reply["account_revoke"] =
+						outcome ?? ["ok": false, "error": ["code": "timed_out", "message": "account revoke timed out"], "queued": true]
+				}
+				return reply
 			},
 			"apns.reload": { [unowned self] _ in
 				["ok": true, "apns": push.isConfigured ? "configured" : "unconfigured"]
