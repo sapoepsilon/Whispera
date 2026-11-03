@@ -22,7 +22,10 @@ final class WhisperKitSpeechEngine: LocalSpeechEngine, @unchecked Sendable {
 	var engineName: String { "WhisperKit" }
 	private let runner = Runner()
 
-	init(appDomain: String, environment: [String: String] = ProcessInfo.processInfo.environment) {
+	/// - Parameter environment: `WHISPERA_LINK_APP_DEFAULTS`, `_STT_MODELS_BASE` and `_STT_MODEL`
+	///   point the engine at the e2e scripts' settings and models; `main.swift` strips them in
+	///   release builds (`HelperEnvironment`).
+	init(appDomain: String, environment: [String: String]) {
 		self.appDomain = environment["WHISPERA_LINK_APP_DEFAULTS"].flatMap { $0.isEmpty ? nil : $0 } ?? appDomain
 		let support =
 			FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
