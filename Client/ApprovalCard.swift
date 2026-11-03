@@ -23,7 +23,7 @@ final class ApprovalCardCenter: ObservableObject {
 	@Published private(set) var enrollment: Enrollment?
 	@Published var lastError: String?
 
-	let key = MacApproveKey()
+	let key = MacApproveKey(log: { AppLogger.shared.general.info($0) })
 	private var connection: NSXPCConnection?
 	private var link: XPCApprovalLink?
 	private var current: ApprovalCardSession?
