@@ -606,10 +606,11 @@ final class AudioManager: NSObject {
 				await deviceManager.activateSelectedDevice()
 				guard !Task.isCancelled, isCurrentCapture(session) else { return }
 				do {
-					try openFileRecorder()
+					try await openFileRecorder()
 					isMicrophoneInitializing = false
 					AppLogger.shared.audioManager.info("Switched input device while recording to a file")
 				} catch {
+					guard !(error is CancellationError), !Task.isCancelled else { return }
 					AppLogger.shared.audioManager.error("Failed to reopen the recording on the new device: \(error)")
 					deviceActivationTask = nil
 					finishInterruptedRecording(
@@ -725,7 +726,7 @@ extension AudioManager {
 			guard !Task.isCancelled, isCurrentCapture(session) else { return }
 
 			do {
-				try openFileRecorder()
+				try await openFileRecorder()
 				isMicrophoneInitializing = false
 				isRecording = true
 				timer.start()
@@ -735,6 +736,8 @@ extension AudioManager {
 				AppLogger.shared.audioManager.debug("File-based recording started")
 				applyPendingStopIfNeeded()
 			} catch {
+				// A user cancel must not surface as a failed recording.
+				guard !(error is CancellationError), !Task.isCancelled else { return }
 				isMicrophoneInitializing = false
 				AppLogger.shared.audioManager.error("Failed to start recording: \(error)")
 				pendingStopAfterStart = false
@@ -748,8 +751,9 @@ extension AudioManager {
 			}
 		}
 	}
-	/// Opens a new recording file on the current system input.
-	private func openFileRecorder() throws {
+	/// Opens a new recording file on the current system input. `record()` blocks for seconds while a
+	/// cold Continuity or wireless mic connects, so the recorder starts off the main actor. WHI-54
+	private func openFileRecorder() async throws {
 		let audioFilename = getApplicationSupportDirectory()
 			.appendingPathComponent("recordings")
 			.appendingPathComponent("recording_\(Date().timeIntervalSince1970)_\(UUID().uuidString.prefix(8)).wav")
@@ -769,12 +773,24 @@ extension AudioManager {
 			AVNumberOfChannelsKey: recordedChannels,
 			AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
 		]
-		let recorder = try AVAudioRecorder(url: audioFilename, settings: settings)
-		recorder.isMeteringEnabled = true
-		recorder.record()
+		let recorder = try await Task.detached(priority: .userInitiated) {
+			try Self.startFileRecorder(url: audioFilename, settings: settings)
+		}.value
+		guard !Task.isCancelled else {
+			recorder.stop()
+			try? FileManager.default.removeItem(at: audioFilename)
+			throw CancellationError()
+		}
 		audioRecorder = recorder
 		audioFileURL = audioFilename
 		fileCaptureChannel = channel
+	}
+
+	private nonisolated static func startFileRecorder(url: URL, settings: [String: Any]) throws -> AVAudioRecorder {
+		let recorder = try AVAudioRecorder(url: url, settings: settings)
+		recorder.isMeteringEnabled = true
+		recorder.record()
+		return recorder
 	}
 
 	/// Closes the file being recorded and keeps it as a finished part of this recording.
