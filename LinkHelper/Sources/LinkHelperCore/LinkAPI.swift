@@ -3,6 +3,7 @@ import WhisperaHerdr
 import WhisperaAgents
 import WhisperaLink
 import WhisperaLinkServer
+import WhisperaRecipes
 
 /// The HTTP API (PROTOCOL §5): routing, the §4.3 authentication order, limits and the §13
 /// error envelope. Components arrive through `LinkDaemon`; nothing here owns state.
@@ -440,7 +441,7 @@ final class LinkAPI: @unchecked Sendable {
 	func health() -> [String: Any] {
 		[
 			"ok": true, "service": "whispera-link", "version": LinkDaemon.version,
-			"protocol": LinkDaemon.protocolVersion, "capabilities": ["prompt_receipts", "image_uploads", "file_uploads", "recipes", "herdr_tui", "agent_permissions", "agent_asks", "code_reader", "agent_transcript", "agent_subagents", "notification_prefs", "terminal_beta", "device_vouches", "agents_remove", "audio_translations", "text_translate", "mac_files", "uploads_abort", "agent_dialogs", "audio_by_file", "herdr_core", "response_signatures"],
+			"protocol": LinkDaemon.protocolVersion, "capabilities": ["prompt_receipts", "image_uploads", "file_uploads", "recipes", "herdr_tui", "agent_permissions", "agent_asks", "code_reader", "agent_transcript", "agent_subagents", "notification_prefs", "terminal_beta", "device_vouches", "agents_remove", "audio_translations", "text_translate", "mac_files", "uploads_abort", "agent_dialogs", "audio_by_file", "herdr_core", "response_signatures", MacRecipeService.appStyleCapability],
 			"daemon_fp": daemon.daemonFP, "server_time": daemon.now(), "herdr": daemon.herdrState(), "hc": daemon.hcState(),
 			"broker": daemon.approvals.isConnected ? "connected" : "idle",
 			"apns": daemon.push.isConfigured ? "configured" : "unconfigured",
@@ -698,7 +699,15 @@ final class LinkAPI: @unchecked Sendable {
 		case "recipes.run":
 			let request = try parseJSON(body)
 			guard let text = request["text"] as? String, let id = route.requestID else { throw APIError(400, "bad_request", "Recipe id and text are required") }
-			json(["text": try recipes.run(id, text: text)])
+			// Optional (recipes.app_style.v1): the keyboard's host app and the quick-switch style.
+			let host = request["host_bundle_id"] as? String
+			let override = (request["style_override"] as? String).flatMap(DictationStyle.init(rawValue:))
+			let result = try recipes.runStyled(id, text: text, hostBundleID: host, styleOverride: override)
+			if let style = result.style {
+				let app = host.flatMap { $0.isEmpty ? nil : $0 } ?? "unknown"
+				daemon.log("recipes.style", ["device": device.deviceID, "detail": "category=\(style.category.rawValue) style=\(style.style.rawValue) app=\(app) override=\(override != nil)"])
+			}
+			json(["text": result.text])
 		case "text.translate":
 			let request = try parseJSON(body)
 			guard let text = request["text"] as? String, let target = request["target_language"] as? String else {

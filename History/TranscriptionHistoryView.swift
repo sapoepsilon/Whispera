@@ -463,6 +463,11 @@ private struct HistoryEntryRow: View {
 			}
 			.help(entry.postProcessPrompt ?? "")
 		}
+		if let summary = entry.styleSummary {
+			Label(summary, systemImage: "textformat")
+				.font(.caption)
+				.foregroundColor(.secondary)
+		}
 	}
 
 	private var actions: some View {

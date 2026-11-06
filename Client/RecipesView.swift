@@ -52,6 +52,8 @@ struct RecipesView: View {
 				Text("Recipes")
 			}
 
+			AppStylesSection()
+
 			Section {
 				Toggle(isOn: $cleanUpOnRequest) {
 					VStack(alignment: .leading, spacing: 2) {
@@ -301,6 +303,9 @@ private struct RecipeEditor: View {
 				TextField("Name", text: $draft.name)
 				TextField("Trigger phrase (optional)", text: triggerBinding)
 				TextField("Model (optional, e.g. gpt-5.4-mini)", text: modelBinding)
+				if !CleanUpRecipe.isBuiltIn(draft) {
+					Toggle("Format for the app (Styles)", isOn: $draft.applyAppStyle)
+				}
 				VStack(alignment: .leading) {
 					Text("Prompt").font(.caption).foregroundColor(.secondary)
 					TextEditor(text: promptBinding)

@@ -32,6 +32,7 @@ final class DictationCoordinator {
 	private let run: (Recipe, String) async throws -> String
 	private let isEnabled: () -> Bool
 	private let defaultCommandId: () -> String
+	private let styleSettings: () -> AppStyleSettings
 	private var currentTask: Task<DictationResult?, Never>?
 
 	init(
@@ -39,6 +40,7 @@ final class DictationCoordinator {
 		health: RecipeRunHealth = .shared,
 		isEnabled: @escaping () -> Bool = { WhisperaSettings.recipesEnabled },
 		defaultCommandId: @escaping () -> String = { WhisperaSettings.defaultCommandId },
+		styleSettings: @escaping () -> AppStyleSettings = { AppStyleSettingsStore().load() },
 		run: @escaping (Recipe, String) async throws -> String = { recipe, input in
 			try await RecipeRouter.shared.run(recipe: recipe, input: input)
 		}
@@ -47,6 +49,7 @@ final class DictationCoordinator {
 		self.health = health
 		self.isEnabled = isEnabled
 		self.defaultCommandId = defaultCommandId
+		self.styleSettings = styleSettings
 		self.run = run
 	}
 
@@ -88,6 +91,14 @@ final class DictationCoordinator {
 	/// The reason goes to `RecipeRunHealth`, which Settings shows until the next
 	/// run succeeds.
 	func processDictation(_ transcription: String, cleanUp: Bool) async -> DictationResult? {
+		await processDictation(transcription, cleanUp: cleanUp, context: nil)
+	}
+
+	/// `context` is the app the dictation started in; with "Match style to app" on, a recipe
+	/// that qualifies is formatted for that app's category (nil counts as "other").
+	func processDictation(
+		_ transcription: String, cleanUp: Bool, context: DictationAppContext?
+	) async -> DictationResult? {
 		currentTask?.cancel()
 
 		// Empty/whitespace dictation: do nothing — never spend a model call.
@@ -98,7 +109,8 @@ final class DictationCoordinator {
 		guard let selected = selectRecipe(for: transcription, cleanUp: cleanUp) else {
 			return DictationResult(text: transcription, history: nil)
 		}
-		let (recipe, input) = selected
+		let (selectedRecipe, input) = selected
+		let (recipe, style) = styled(selectedRecipe, context: context)
 
 		isRunning = true
 		runningRecipeName = recipe.name
@@ -109,7 +121,7 @@ final class DictationCoordinator {
 
 		let task = Task { () -> DictationResult? in
 			guard let outcome = await execute(recipe, input: input) else { return nil }
-			let history = HistoryPostProcessing(recipe: recipe, outcome: outcome)
+			let history = HistoryPostProcessing(recipe: recipe, outcome: outcome, context: context, style: style)
 			switch outcome {
 			case .processed(let text): return DictationResult(text: text, history: history)
 			case .failed: return DictationResult(text: transcription, history: history)
@@ -121,12 +133,25 @@ final class DictationCoordinator {
 
 	/// Runs Clean up once, outside the dictation flow (History's "Clean Up
 	/// Again"), without cancelling a dictation that is still running.
-	func cleanUpForHistory(_ transcript: String) async -> HistoryPostProcessing {
-		let recipe = store.recipes.first(where: CleanUpRecipe.isBuiltIn) ?? CleanUpRecipe.make()
+	/// `context` is the app the original dictation went to, so the redo is formatted the same way.
+	func cleanUpForHistory(_ transcript: String, context: DictationAppContext? = nil) async -> HistoryPostProcessing {
+		let builtIn = store.recipes.first(where: CleanUpRecipe.isBuiltIn) ?? CleanUpRecipe.make()
+		let (recipe, style) = styled(builtIn, context: context)
 		guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
 			let outcome = await execute(recipe, input: transcript)
-		else { return HistoryPostProcessing(recipe: recipe, outcome: nil) }
-		return HistoryPostProcessing(recipe: recipe, outcome: outcome)
+		else { return HistoryPostProcessing(recipe: recipe, outcome: nil, context: context, style: style) }
+		return HistoryPostProcessing(recipe: recipe, outcome: outcome, context: context, style: style)
+	}
+
+	/// The recipe with the app's style fragment, when styles are on and the recipe qualifies.
+	private func styled(_ recipe: Recipe, context: DictationAppContext?) -> (Recipe, AppStyleApplication?) {
+		guard let result = AppStyleComposer.apply(to: recipe, settings: styleSettings(), context: context) else {
+			return (recipe, nil)
+		}
+		let app = context?.bundleID ?? "unknown"
+		AppLogger.shared.recipes.info(
+			"style category=\(result.application.category.rawValue) style=\(result.application.style.rawValue) app=\(app)")
+		return (result.recipe, result.application)
 	}
 
 	/// `nil` when the run was cancelled; a failure is recorded for Settings.

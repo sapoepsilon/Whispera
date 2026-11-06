@@ -6,14 +6,18 @@ import WhisperaOpenAI
 /// expose labels only; credentials and prompt templates stay on this Mac.
 public final class MacRecipeService: @unchecked Sendable {
     private let file: URL
+    private let styles: AppStyleSettingsStore
     private let domain: String
     let keyStore: SpeechKeyStoring
     private let session: URLSession?
-    public init(file: URL? = nil, domain: String = "com.macwhisper.app", keyStore: SpeechKeyStoring = KeychainSpeechKeyStore(service: "com.whispera.link.recipe-server"), session: URLSession? = nil) {
+    /// `stylesFile` defaults to `app-styles.json` next to `file`, the one Whispera's Settings → Styles writes.
+    public init(file: URL? = nil, stylesFile: URL? = nil, domain: String = "com.macwhisper.app", keyStore: SpeechKeyStoring = KeychainSpeechKeyStore(service: "com.whispera.link.recipe-server"), session: URLSession? = nil) {
         self.session = session
         self.keyStore = keyStore
-        self.file = file ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let file = file ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Whispera/recipes.json")
+        self.file = file
+        self.styles = AppStyleSettingsStore(fileURL: stylesFile ?? file.deletingLastPathComponent().appendingPathComponent("app-styles.json"))
         self.domain = domain
     }
     private func recipes() throws -> [Recipe] {
@@ -36,8 +40,11 @@ public final class MacRecipeService: @unchecked Sendable {
     public func catalog() throws -> [String: Any] {
         let entries = try recipes()
         let issue = configurationIssue()
+        let styleSettings = styles.load()
         return ["recipes": entries.map { ["id": $0.id, "name": $0.name, "description": $0.description ?? ""] },
-                "ready": issue == nil, "message": issue ?? NSNull()]
+                "ready": issue == nil, "message": issue ?? NSNull(),
+                "app_styles": ["enabled": styleSettings.enabled,
+                               "styles": Dictionary(uniqueKeysWithValues: AppCategory.allCases.map { ($0.rawValue, styleSettings.style(for: $0).rawValue) })]]
     }
     private func configurationIssue() -> String? {
         guard let (url, _) = server() else { return "Add an LLM server and model in Whispera Settings → Servers on the Mac to run recipes." }
@@ -49,6 +56,13 @@ public final class MacRecipeService: @unchecked Sendable {
         return nil
     }
     public func run(_ id: String, text: String) throws -> String {
+        try runStyled(id, text: text, hostBundleID: nil, styleOverride: nil).text
+    }
+
+    /// Runs a recipe for a dictation into `hostBundleID` (the phone's keyboard host app). With
+    /// styles on, or a `styleOverride` from the keyboard's quick switcher, a qualifying recipe gets
+    /// the category's style fragment; an unknown or missing host formats as "other".
+    public func runStyled(_ id: String, text: String, hostBundleID: String?, styleOverride: DictationStyle?) throws -> (text: String, style: AppStyleApplication?) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.unicodeScalars.count <= 8000 else {
             throw APIError(400, "bad_request", "Recipe text must contain 1–8000 characters.")
         }
@@ -56,7 +70,11 @@ public final class MacRecipeService: @unchecked Sendable {
         guard !recipe.steps.isEmpty, recipe.steps.count <= 8, recipe.steps.allSatisfy({ $0.type == "llm" }) else {
             throw APIError(422, "recipe_unavailable", "This recipe isn't supported on the phone. Your original text is safe.")
         }
-        return try execute(recipe, text: text)
+        let context = DictationAppContext(bundleID: hostBundleID, platform: .ios)
+        guard let styled = AppStyleComposer.apply(to: recipe, settings: styles.load(), context: context, styleOverride: styleOverride) else {
+            return (try execute(recipe, text: text), nil)
+        }
+        return (try execute(styled.recipe, text: text), styled.application)
     }
 
     /// Translates dictated text with the Mac's LLM server, the one recipes run on, into
@@ -114,4 +132,10 @@ public final class MacRecipeService: @unchecked Sendable {
             throw APIError(504, "recipe_timeout", "The Mac's LLM server took too long. Your original text is safe; try again.")
         }
     }
+}
+
+extension MacRecipeService {
+    /// Advertised in the capabilities list: `POST /v1/recipes/{id}/run` takes optional
+    /// `host_bundle_id` and `style_override`, and `GET /v1/recipes` carries `app_styles`.
+    public static let appStyleCapability = "recipes.app_style.v1"
 }

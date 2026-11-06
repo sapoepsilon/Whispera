@@ -41,6 +41,11 @@ final class TranscriptionHistoryEntry {
 	var postProcessPrompt: String?
 	var postProcessError: String?
 	var postProcessRequested: Bool = false
+	/// The app the dictation went to and the style Clean up formatted it with, when known.
+	var appBundleID: String?
+	var appName: String?
+	var appCategory: String?
+	var appStyle: String?
 
 	init(
 		id: UUID = UUID(),
@@ -94,6 +99,8 @@ final class TranscriptionHistoryEntry {
 			postProcessPrompt = nil
 			postProcessError = nil
 			postProcessRequested = false
+			appCategory = nil
+			appStyle = nil
 			return
 		}
 		let processed = postProcessing.processedText?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -104,6 +111,24 @@ final class TranscriptionHistoryEntry {
 		postProcessPrompt = postProcessing.promptTemplate
 		postProcessError = postProcessing.errorMessage
 		postProcessRequested = true
+		if let bundleID = postProcessing.appBundleID {
+			appBundleID = bundleID
+			appName = postProcessing.appName
+		}
+		appCategory = postProcessing.style?.category.rawValue
+		appStyle = postProcessing.style?.style.rawValue
+	}
+
+	/// The app the original dictation went to, for "Clean Up Again".
+	var appContext: DictationAppContext? {
+		appBundleID.map { DictationAppContext(bundleID: $0, appName: appName, platform: .mac) }
+	}
+
+	/// "Formatted for Messages (casual)", when a style was applied.
+	var styleSummary: String? {
+		guard let style = appStyle.flatMap(DictationStyle.init(rawValue:)), style != .verbatim else { return nil }
+		let target = appName ?? appCategory.flatMap(AppCategory.init(rawValue:))?.displayName ?? ""
+		return String(localized: "Formatted for \(target) (\(style.displayName.lowercased()))")
 	}
 }
 
@@ -113,24 +138,38 @@ struct HistoryPostProcessing: Equatable, Sendable {
 	var promptName: String
 	var promptTemplate: String
 	var errorMessage: String?
+	var appBundleID: String?
+	var appName: String?
+	var style: AppStyleApplication?
 
-	init(processedText: String?, promptName: String, promptTemplate: String, errorMessage: String? = nil) {
+	init(
+		processedText: String?, promptName: String, promptTemplate: String, errorMessage: String? = nil,
+		appBundleID: String? = nil, appName: String? = nil, style: AppStyleApplication? = nil
+	) {
 		self.processedText = processedText
 		self.promptName = promptName
 		self.promptTemplate = promptTemplate
 		self.errorMessage = errorMessage
+		self.appBundleID = appBundleID
+		self.appName = appName
+		self.style = style
 	}
 
 	/// `outcome` is nil when nothing was sent (an empty transcript, a cancelled run).
-	init(recipe: Recipe, outcome: RecipeRunOutcome?) {
+	init(
+		recipe: Recipe, outcome: RecipeRunOutcome?, context: DictationAppContext? = nil,
+		style: AppStyleApplication? = nil
+	) {
 		let template = recipe.steps.first?.config.prompt ?? ""
+		var error: String?
+		var processed: String?
 		switch outcome {
-		case .processed(let text):
-			self.init(processedText: text, promptName: recipe.name, promptTemplate: template)
-		case .failed(let error):
-			self.init(processedText: nil, promptName: recipe.name, promptTemplate: template, errorMessage: error)
-		case nil:
-			self.init(processedText: nil, promptName: recipe.name, promptTemplate: template)
+		case .processed(let text): processed = text
+		case .failed(let reason): error = reason
+		case nil: break
 		}
+		self.init(
+			processedText: processed, promptName: recipe.name, promptTemplate: template, errorMessage: error,
+			appBundleID: context?.bundleID, appName: context?.appName, style: style)
 	}
 }

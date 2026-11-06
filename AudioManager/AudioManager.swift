@@ -266,7 +266,11 @@ final class AudioManager: NSObject {
 	/// Injected by the app so AudioManager stays free of recipe/network
 	/// dependencies. WHI-41.
 	@ObservationIgnored
-	var dictationProcessor: ((String, Bool) async -> DictationResult?)?
+	var dictationProcessor: ((String, Bool, DictationAppContext?) async -> DictationResult?)?
+
+	/// The app that was frontmost when the latest session started; per-app styles format for it.
+	@ObservationIgnored
+	private(set) var currentAppContext: DictationAppContext?
 
 	// MARK: - Initialization
 
@@ -332,6 +336,8 @@ final class AudioManager: NSObject {
 			enableStreaming && whisperKitTranscriber.supportsLiveTranscription && !cleanUp
 			? .liveTranscription : .text
 		currentRecordingMode = mode
+		// At start, not at paste: by paste time the user may have switched apps.
+		currentAppContext = FrontmostAppContext.capture()
 		startRecording(mode: mode, postProcess: cleanUp)
 	}
 
@@ -683,7 +689,8 @@ extension AudioManager {
 		transcriptionError = nil
 		pendingStopNotice = nil
 		currentRecordingMode = mode
-		let (session, abandoned) = ledger.beginCapture(mode: mode, postProcess: postProcess)
+		let (session, abandoned) = ledger.beginCapture(
+			mode: mode, postProcess: postProcess, appContext: currentAppContext)
 		if let abandoned {
 			AppLogger.shared.audioManager.error("Releasing session \(abandoned.id) whose capture never finished")
 			releaseModel(for: abandoned.id)
@@ -1375,7 +1382,8 @@ extension AudioManager {
 			let secure = SecureDictation.isSecureInputActive
 			let policy = SecureDictationPolicy.resolve(postProcessRequested: false, secureInput: secure)
 			let processed = await self.applyDictationProcessor(
-				text, mode: .text, secureInput: policy.concealClipboard, cleanUp: false)
+				text, mode: .text, secureInput: policy.concealClipboard, cleanUp: false,
+				context: self.currentAppContext)
 			if policy.rememberAsLastTranscription {
 				self.lastTranscription = text
 			}
@@ -1562,7 +1570,7 @@ extension AudioManager {
 			}
 			let processed = await applyDictationProcessor(
 				rawTranscription, mode: session.mode, secureInput: policy.concealClipboard,
-				cleanUp: policy.postProcess)
+				cleanUp: policy.postProcess, context: session.appContext)
 			guard !ledger.isCancelled(id) else {
 				AppLogger.shared.audioManager.info("Discarding the processed dictation of a cancelled recording")
 				return
@@ -1640,12 +1648,13 @@ extension AudioManager {
 	/// execution) when in text mode. Returns nil to paste nothing. Never runs on
 	/// a dictation into a secure input field, which stays out of every LLM. WHI-41.
 	fileprivate func applyDictationProcessor(
-		_ transcription: String, mode: RecordingMode, secureInput: Bool, cleanUp: Bool
+		_ transcription: String, mode: RecordingMode, secureInput: Bool, cleanUp: Bool,
+		context: DictationAppContext?
 	) async -> DictationResult? {
 		guard mode == .text, !secureInput, let processor = dictationProcessor else {
 			return DictationResult(text: transcription, history: nil)
 		}
-		return await processor(transcription, cleanUp)
+		return await processor(transcription, cleanUp, context)
 	}
 }
 
