@@ -3,6 +3,14 @@ import SwiftUI
 /// Extra rows for the Microphone section of Settings.
 struct AudioInputSettingsRows: View {
 	var body: some View {
+		SettingRow(
+			"Switch to an available microphone automatically",
+			description:
+				"When your microphone is disconnected or isn't picking up any sound, record from one that works. Your choice comes back as soon as it's available again."
+		) {
+			Toggle("Switch to an available microphone automatically", isOn: $autoSwitchInput)
+				.labelsHidden()
+		}
 		InputChannelSettingsRow()
 		ClamshellMicrophoneSettingsRow()
 		VoiceActivitySettingsRows()
@@ -16,6 +24,8 @@ struct AudioInputSettingsRows: View {
 	}
 
 	@AppStorage(SystemOutputMuter.settingKey) private var muteOutputWhileRecording = false
+	@AppStorage(AutoInputSwitchSettings.enabledKey) private var autoSwitchInput = AutoInputSwitchSettings
+		.defaultEnabled
 }
 
 struct InputChannelSettingsRow: View {

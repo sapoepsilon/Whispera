@@ -159,6 +159,16 @@ struct NewStringsAreLocalizedTests {
 		"Try it",
 		"Paste a transcript",
 		"Run Clean up",
+		// Automatic microphone switching
+		"Using %@ — your selected microphone isn't available.",
+		"Using %@ — %@ isn't connected.",
+		"Using %@ — %@ isn't responding.",
+		"Using %@ — %@ isn't picking up any sound.",
+		"Using %@ — %@ disconnected.",
+		"%@ isn't picking up any sound, and no other microphone is available.",
+		"Switch to an available microphone automatically",
+		"When your microphone is disconnected or isn't picking up any sound, record from one that works. Your choice comes back as soon as it's available again.",
+		"Selected device is not currently available. Will use an available microphone.",
 	]
 
 	@Test func everyNewStringIsInTheCatalog() throws {

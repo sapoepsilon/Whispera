@@ -229,6 +229,9 @@ final class AudioManager: NSObject {
 	private var pendingStopNotice: String?
 	@ObservationIgnored
 	private var stopNotices: [Int: String] = [:]
+	/// Watches the first seconds of each capture for an input that delivers nothing at all.
+	@ObservationIgnored
+	private var signalProbe = InputSignalProbe()
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -293,8 +296,9 @@ final class AudioManager: NSObject {
 			forName: .activeInputDeviceLost, object: nil, queue: .main
 		) { [weak self] notification in
 			let name = notification.userInfo?["name"] as? String ?? "Microphone"
+			let device = notification.userInfo?["device"] as? AudioInputDevice
 			MainActor.assumeIsolated {
-				self?.handleInputDeviceLost(name: name)
+				self?.handleInputDeviceLost(name: name, device: device)
 			}
 		}
 	}
@@ -303,7 +307,9 @@ final class AudioManager: NSObject {
 		{ [weak self] samples in
 			// Engines deliver per-buffer chunks; cap the window so level
 			// math stays cheap even if a large backlog arrives at once
-			self?.levelMonitor.update(from: Array(samples.suffix(4800)))
+			let recent = Array(samples.suffix(4800))
+			self?.levelMonitor.update(from: recent)
+			self?.noteInputSignal(samples: recent)
 		}
 	}
 
@@ -509,7 +515,7 @@ final class AudioManager: NSObject {
 
 	/// Keeps the recording alive on the system default input when its microphone
 	/// is unplugged; audio captured so far is kept.
-	func handleInputDeviceLost(name: String) {
+	func handleInputDeviceLost(name: String, device: AudioInputDevice? = nil) {
 		guard isRecording || isMicrophoneInitializing else { return }
 		let response = InputLossResponse.decide(path: activeCapturePath, isStartingCapture: isStartingCapture)
 		AppLogger.shared.audioManager.info("Lost input \(name) while recording; response: \(String(describing: response))")
@@ -519,23 +525,28 @@ final class AudioManager: NSObject {
 			finishInterruptedRecording(notice: InputLossResponse.finishedNotice(lostDevice: name))
 			return
 		}
-		deviceManager.beginFallbackToSystemDefault()
-		let notice = InputLossResponse.fallbackNotice(lostDevice: name)
-		inputNotice = notice
-		// Only the pill shows the notice while recording, so without it the user hears about the
-		// switch now, as a system notification when the menu bar is closed; with the pill it comes
-		// with the text
-		if InputLossResponse.fallbackNoticeNeedsNotification(
-			isLive: activeCapturePath == .live, overlay: RecordingOverlayStyle.stored())
-		{
-			postNotice(notice, notifyWhenHidden: true)
-		} else if pendingStopNotice == nil {
-			pendingStopNotice = notice
-		}
+		let fallback = deviceManager.beginFallback(afterLosing: device)
+		announceInputSwitch(
+			fallback?.notice ?? InputLossResponse.fallbackNotice(lostDevice: name),
+			isLive: activeCapturePath == .live, notifyWhenHidden: true)
 		if response == .restartStartup {
 			restartCaptureStartup()
 		} else {
 			reactivateInputDuringRecording()
+		}
+	}
+
+	/// Only the pill shows the notice while recording, so without it the user hears about the
+	/// switch now, in the menu bar (and as a system notification when asked); with the pill it
+	/// comes with the text.
+	private func announceInputSwitch(_ notice: String, isLive: Bool, notifyWhenHidden: Bool) {
+		inputNotice = notice
+		if InputLossResponse.fallbackNoticeNeedsNotification(
+			isLive: isLive, overlay: RecordingOverlayStyle.stored())
+		{
+			postNotice(notice, notifyWhenHidden: notifyWhenHidden)
+		} else if pendingStopNotice == nil {
+			pendingStopNotice = notice
 		}
 	}
 
@@ -571,6 +582,7 @@ final class AudioManager: NSObject {
 	private func reactivateInputDuringRecording() {
 		guard isRecording || isMicrophoneInitializing else { return }
 
+		signalProbe.reset()
 		isMicrophoneInitializing = true
 		let session = ledger.capturing?.id
 		deviceActivationTask = Task {
@@ -699,6 +711,12 @@ extension AudioManager {
 			holdModel(for: session.id)
 		}
 		interruptionPolicy.reset()
+		signalProbe.reset()
+		// Planned from the device list the Core Audio listeners keep current, before any path
+		// opens the microphone, so even a kept-open stream is reopened on the input that works
+		if let fallback = deviceManager.planSessionInput() {
+			announceInputSwitch(fallback.notice, isLive: mode == .liveTranscription, notifyWhenHidden: false)
+		}
 		startCaptureWatchdog()
 		if mode == .liveTranscription {
 			startLiveTranscription()
@@ -852,6 +870,7 @@ extension AudioManager {
 			Task { @MainActor in
 				guard let self = self, let recorder = self.audioRecorder else { return }
 				recorder.updateMeters()
+				self.noteInputSignal(peak: pow(10, recorder.peakPower(forChannel: 0) / 20))
 				let power = recorder.averagePower(forChannel: 0)
 				let linear = pow(10, power / 20)
 				let samples = (0..<700).map { _ in linear + Float.random(in: -0.02...0.02) }
@@ -959,6 +978,7 @@ extension AudioManager {
 			guard let samples = captureBuffer.ingest(buffer, format: format) else { return }
 			Task { @MainActor [weak self] in
 				self?.levelMonitor.update(from: samples)
+				self?.noteInputSignal(samples: samples)
 			}
 		}
 		openStreamDeviceID = deviceID
@@ -1254,9 +1274,66 @@ extension AudioManager {
 					timer.invalidate()
 					return
 				}
+				self.checkInputSignal()
 				self.checkCaptureHealth()
 			}
 		}
+	}
+
+	/// The capture is open and settled, so what arrives now comes from the input being judged.
+	private var isCaptureSteady: Bool {
+		// A switch in flight raises isMicrophoneInitializing until the new input is open
+		isRecording && !isMicrophoneInitializing && activeCapturePath != nil
+	}
+
+	fileprivate func noteInputSignal(samples: [Float]) {
+		guard signalProbe.verdict == .listening, isCaptureSteady else { return }
+		signalProbe.ingest(samples: samples)
+	}
+
+	fileprivate func noteInputSignal(peak: Float) {
+		guard signalProbe.verdict == .listening, isCaptureSteady else { return }
+		signalProbe.ingest(peak: peak)
+	}
+
+	/// An input can be listed, alive and open yet deliver only digital silence (a Continuity
+	/// iPhone that dropped off, a muted or wedged USB interface). After a short window of that the
+	/// recording moves to another input, keeping what it already has.
+	private func checkInputSignal() {
+		guard isCaptureSteady, deviceManager.isAutoSwitchEnabled else { return }
+		if !signalProbe.isArmed, signalProbe.verdict == .listening {
+			if deviceManager.currentInputDevice?.isVirtualOrAggregate == true {
+				signalProbe.exempt()
+				return
+			}
+			signalProbe.arm()
+		}
+		let before = signalProbe.verdict
+		let verdict = signalProbe.evaluate()
+		guard verdict != before, let device = deviceManager.currentInputDevice else { return }
+		switch verdict {
+		case .heard:
+			deviceManager.markInputWorking(device)
+		case .silent:
+			handleSilentInput(device)
+		case .listening, .exempt:
+			break
+		}
+	}
+
+	private func handleSilentInput(_ device: AudioInputDevice) {
+		guard let fallback = deviceManager.markInputSilent(device) else {
+			// Nothing else to try: keep recording here and say so once
+			signalProbe.exempt()
+			announceInputSwitch(
+				InputFallback.noWorkingInputNotice(silentDevice: device.name),
+				isLive: activeCapturePath == .live, notifyWhenHidden: true)
+			return
+		}
+		AppLogger.shared.audioManager.info(
+			"Input \(device.name) is silent; moving the recording to \(fallback.name)")
+		announceInputSwitch(fallback.notice, isLive: activeCapturePath == .live, notifyWhenHidden: true)
+		reactivateInputDuringRecording()
 	}
 
 	private func checkCaptureHealth() {

@@ -1271,6 +1271,9 @@ struct MicMenu: View {
 	@AppStorage("selectedAudioInputDeviceUID") private var selectedUID = AudioDeviceManager.systemDefaultUID
 
 	private var activeName: String {
+		if let fallback = deviceManager.sessionFallback {
+			return fallback.name
+		}
 		if selectedUID == AudioDeviceManager.systemDefaultUID {
 			return String(localized: "System Default")
 		}
@@ -1278,7 +1281,8 @@ struct MicMenu: View {
 	}
 
 	private var activeIcon: String {
-		deviceManager.activeDevice?.iconName ?? "mic.fill"
+		if deviceManager.sessionFallback != nil { return "exclamationmark.triangle.fill" }
+		return deviceManager.activeDevice?.iconName ?? "mic.fill"
 	}
 
 	private var selectionBinding: Binding<String> {
@@ -1317,6 +1321,7 @@ struct MicMenu: View {
 			.foregroundStyle(.primary)
 		}
 		.menuStyle(.borderlessButton)
+		.help(deviceManager.sessionFallback?.notice ?? "")
 		// Borderless menus render as NSPopUpButton and size to intrinsic width;
 		// without a hard cap a long device name pushes past the popover edge.
 		.frame(maxWidth: 150, alignment: .trailing)

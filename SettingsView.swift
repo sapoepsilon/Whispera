@@ -638,7 +638,11 @@ struct SettingsView: View {
 							Image(systemName: "exclamationmark.triangle.fill")
 								.foregroundColor(.orange)
 								.font(.caption)
-							Text("Selected device is not currently available. Will use system default.")
+							Text(
+								AutoInputSwitchSettings.isEnabled(in: .standard)
+									? LocalizedStringKey(
+										"Selected device is not currently available. Will use an available microphone.")
+									: LocalizedStringKey("Selected device is not currently available. Will use system default."))
 								.font(.caption)
 								.foregroundColor(.orange)
 						}
