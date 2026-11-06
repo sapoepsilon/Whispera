@@ -27122,6 +27122,213 @@
           }
         }
       }
+    },
+    "%@ isn't picking up any sound, and no other microphone is available.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ nimmt keinen Ton auf, und kein anderes Mikrofon ist verfügbar."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ no capta ningún sonido y no hay otro micrófono disponible."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ne capte aucun son et aucun autre micro n'est disponible."
+          }
+        }
+      }
+    },
+    "Selected device is not currently available. Will use an available microphone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das ausgewählte Gerät ist gerade nicht verfügbar. Ein verfügbares Mikrofon wird verwendet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El dispositivo seleccionado no está disponible ahora. Se usará un micrófono disponible."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'appareil sélectionné n'est pas disponible pour le moment. Un micro disponible sera utilisé."
+          }
+        }
+      }
+    },
+    "Switch to an available microphone automatically": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch zu einem verfügbaren Mikrofon wechseln"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambiar automáticamente a un micrófono disponible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passer automatiquement à un micro disponible"
+          }
+        }
+      }
+    },
+    "Using %@ — %@ disconnected.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird verwendet – %@ wurde getrennt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa %@: %@ se desconectó."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisation de %@ — %@ a été déconnecté."
+          }
+        }
+      }
+    },
+    "Using %@ — %@ isn't connected.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird verwendet – %@ ist nicht verbunden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa %@: %@ no está conectado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisation de %@ — %@ n'est pas connecté."
+          }
+        }
+      }
+    },
+    "Using %@ — %@ isn't picking up any sound.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird verwendet – %@ nimmt keinen Ton auf."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa %@: %@ no capta ningún sonido."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisation de %@ — %@ ne capte aucun son."
+          }
+        }
+      }
+    },
+    "Using %@ — %@ isn't responding.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird verwendet – %@ reagiert nicht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa %@: %@ no responde."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisation de %@ — %@ ne répond pas."
+          }
+        }
+      }
+    },
+    "Using %@ — your selected microphone isn't available.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird verwendet – dein ausgewähltes Mikrofon ist nicht verfügbar."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa %@: el micrófono que elegiste no está disponible."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisation de %@ — le micro choisi n'est pas disponible."
+          }
+        }
+      }
+    },
+    "When your microphone is disconnected or isn't picking up any sound, record from one that works. Your choice comes back as soon as it's available again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn dein Mikrofon getrennt wird oder keinen Ton aufnimmt, wird mit einem funktionierenden aufgenommen. Deine Auswahl gilt wieder, sobald es verfügbar ist."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si tu micrófono se desconecta o no capta sonido, se graba con uno que funcione. Tu elección vuelve en cuanto esté disponible de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si votre micro est déconnecté ou ne capte aucun son, l'enregistrement utilise un micro qui fonctionne. Votre choix revient dès qu'il est de nouveau disponible."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
