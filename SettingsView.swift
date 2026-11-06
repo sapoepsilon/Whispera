@@ -881,8 +881,8 @@ struct SettingsView: View {
 										)
 										.font(.caption)
 										Spacer()
-										Button("Open Settings") {
-											permissionManager.openMicrophoneSettings()
+										Button("Grant Access") {
+											Task { await permissionManager.requestMicrophoneAccess() }
 										}
 										.buttonStyle(.bordered)
 										.controlSize(.small)
@@ -896,8 +896,8 @@ struct SettingsView: View {
 										)
 										.font(.caption)
 										Spacer()
-										Button("Open Settings") {
-											permissionManager.openAccessibilitySettings()
+										Button("Grant Access") {
+											permissionManager.requestAccessibilityAccess()
 										}
 										.buttonStyle(.bordered)
 										.controlSize(.small)
