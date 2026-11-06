@@ -7,6 +7,8 @@ struct DictationSession: Equatable {
 	let id: Int
 	let mode: RecordingMode
 	let postProcess: Bool
+	/// The app the dictation started in, for per-app styles.
+	var appContext: DictationAppContext? = nil
 }
 
 /// Tracks the one session that is capturing audio and the sessions whose audio is
@@ -22,12 +24,15 @@ struct DictationSessionLedger {
 
 	/// Starts a new capture. A previous capture that never reached stop or cancel (its
 	/// startup died) is returned as abandoned so its resources can be released.
-	mutating func beginCapture(mode: RecordingMode, postProcess: Bool) -> (
+	mutating func beginCapture(
+		mode: RecordingMode, postProcess: Bool, appContext: DictationAppContext? = nil
+	) -> (
 		session: DictationSession, abandoned: DictationSession?
 	) {
 		let abandoned = capturing
 		lastID += 1
-		let session = DictationSession(id: lastID, mode: mode, postProcess: postProcess)
+		let session = DictationSession(
+			id: lastID, mode: mode, postProcess: postProcess, appContext: appContext)
 		capturing = session
 		return (session, abandoned)
 	}

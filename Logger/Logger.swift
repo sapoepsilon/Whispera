@@ -92,6 +92,8 @@ class AppLogger {
 	lazy var ui = ExtendedLogger(logger: Logger(subsystem: subsystem, category: "UI"), category: "UI")
 	lazy var network = ExtendedLogger(
 		logger: Logger(subsystem: subsystem, category: "Network"), category: "Network")
+	lazy var recipes = ExtendedLogger(
+		logger: Logger(subsystem: subsystem, category: "Recipes"), category: "Recipes")
 	lazy var database = ExtendedLogger(
 		logger: Logger(subsystem: subsystem, category: "Database"), category: "Database")
 	lazy var general = ExtendedLogger(

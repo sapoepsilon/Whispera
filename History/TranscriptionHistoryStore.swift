@@ -33,6 +33,12 @@ final class TranscriptionHistoryStore {
 		await DictationCoordinator.shared.cleanUpForHistory(transcript)
 	}
 
+	/// Clean up formatted for the app the entry's dictation went to.
+	static func livePostProcessor(for entry: TranscriptionHistoryEntry) -> PostProcessor {
+		let context = entry.appContext
+		return { transcript in await DictationCoordinator.shared.cleanUpForHistory(transcript, context: context) }
+	}
+
 	static let shared = TranscriptionHistoryStore(
 		directory: TranscriptionHistoryStore.defaultDirectory(), defaults: .standard,
 		presentOptOutPrompt: { HistoryWindowController.shared.show() })
@@ -397,7 +403,7 @@ final class TranscriptionHistoryStore {
 			let result = try await transcribe(url)
 			var postProcessing: HistoryPostProcessing?
 			if postProcess {
-				postProcessing = await (postProcessor ?? Self.livePostProcessor)(result.text)
+				postProcessing = await (postProcessor ?? Self.livePostProcessor(for: entry))(result.text)
 			}
 			// Retention or the user may have deleted the entry while it was transcribing, and
 			// writing to a deleted SwiftData model can trap.
@@ -432,7 +438,7 @@ final class TranscriptionHistoryStore {
 		retranscribingIDs.insert(id)
 		defer { retranscribingIDs.remove(id) }
 
-		let postProcessing = await (postProcessor ?? Self.livePostProcessor)(transcript)
+		let postProcessing = await (postProcessor ?? Self.livePostProcessor(for: entry))(transcript)
 		guard let live = liveEntry(id) else {
 			AppLogger.shared.database.info("History entry \(id) was deleted during post-processing")
 			return

@@ -50,6 +50,8 @@ public struct Recipe: Codable, Identifiable, Equatable, Sendable {
 	public var triggerPhrase: String?
 	public var steps: [RecipeStep]
 	public var outputFormat: String
+	/// Opts a custom recipe into per-app styles. The built-in Clean up always qualifies.
+	public var applyAppStyle: Bool
 
 	public init(
 		id: String = UUID().uuidString,
@@ -57,7 +59,8 @@ public struct Recipe: Codable, Identifiable, Equatable, Sendable {
 		description: String? = nil,
 		triggerPhrase: String? = nil,
 		steps: [RecipeStep],
-		outputFormat: String = "text"
+		outputFormat: String = "text",
+		applyAppStyle: Bool = false
 	) {
 		self.id = id
 		self.name = name
@@ -65,6 +68,18 @@ public struct Recipe: Codable, Identifiable, Equatable, Sendable {
 		self.triggerPhrase = triggerPhrase
 		self.steps = steps
 		self.outputFormat = outputFormat
+		self.applyAppStyle = applyAppStyle
+	}
+
+	public init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		id = try container.decode(String.self, forKey: .id)
+		name = try container.decode(String.self, forKey: .name)
+		description = try container.decodeIfPresent(String.self, forKey: .description)
+		triggerPhrase = try container.decodeIfPresent(String.self, forKey: .triggerPhrase)
+		steps = try container.decode([RecipeStep].self, forKey: .steps)
+		outputFormat = try container.decodeIfPresent(String.self, forKey: .outputFormat) ?? "text"
+		applyAppStyle = try container.decodeIfPresent(Bool.self, forKey: .applyAppStyle) ?? false
 	}
 
 	/// Decodes leniently: a recipe that came from a server carries extra fields
@@ -72,7 +87,7 @@ public struct Recipe: Codable, Identifiable, Equatable, Sendable {
 	/// to learn about. Listing the keys is how the tolerance is expressed without
 	/// importing a single backend type to get it.
 	public enum CodingKeys: String, CodingKey {
-		case id, name, description, triggerPhrase, steps, outputFormat
+		case id, name, description, triggerPhrase, steps, outputFormat, applyAppStyle
 	}
 }
 
@@ -84,6 +99,7 @@ public struct RecipeInput: Encodable, Sendable, Equatable {
 	public var triggerPhrase: String?
 	public var steps: [RecipeStep]
 	public var outputFormat: String
+	public var applyAppStyle: Bool
 
 	public init(from recipe: Recipe) {
 		self.name = recipe.name
@@ -91,6 +107,7 @@ public struct RecipeInput: Encodable, Sendable, Equatable {
 		self.triggerPhrase = recipe.triggerPhrase
 		self.steps = recipe.steps
 		self.outputFormat = recipe.outputFormat
+		self.applyAppStyle = recipe.applyAppStyle
 	}
 }
 

@@ -195,8 +195,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 			await PostProcessingMigration.migrateIfNeeded(in: .standard, store: RecipeStore.shared)
 			audioManager = AudioManager()
 			let coordinator = DictationCoordinator.shared
-			audioManager.dictationProcessor = { text, cleanUp in
-				await coordinator.processDictation(text, cleanUp: cleanUp)
+			audioManager.dictationProcessor = { text, cleanUp, context in
+				await coordinator.processDictation(text, cleanUp: cleanUp, context: context)
 			}
 			shortcutManager = GlobalShortcutManager()
 			fileTranscriptionManager = FileTranscriptionManager()
