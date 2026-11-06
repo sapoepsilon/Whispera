@@ -92,13 +92,14 @@ public final class LinkDaemon: @unchecked Sendable {
 	///     upstream, else `engine` (the e2e daemon).
 	///   - speechKeys: the speech server key Whispera handed over.
 	///   - push: how approvals reach phones; nil picks the relay when `relay` is configured.
-	///   - accountTransport: how the account backend is reached (a fake in tests).
+	///   - accountTransport: how the account backend is reached (a fake in tests); nil is a
+	///     `RecoveringURLSessionTransport` that logs `account.session_reset`.
 	///   - tailnet: who is on the owner's tailnet; nil reads `config.tailscaleCLI` (a fake in tests).
 	///   - recipes: the recipe service; nil reads Whispera's own settings and recipes file.
 	///   - directAccess: whether plain-LAN peers get in; nil follows `config` alone.
 	public init(
 		config: HelperConfig, engine: LocalSpeechEngine?, push: PushNotifier? = nil,
-		accountTransport: LinkTransport = URLSessionLinkTransport(), speechSelection: MacSpeechSelecting? = nil,
+		accountTransport: LinkTransport? = nil, speechSelection: MacSpeechSelecting? = nil,
 		speechKeys: SpeechKeyStoring? = nil, tailnet: TailnetIdentity? = nil, recipes: MacRecipeService? = nil,
 		directAccess: DirectAccessGate? = nil
 	) throws {
@@ -277,7 +278,10 @@ public final class LinkDaemon: @unchecked Sendable {
 			defaultPort: config.port == 0 ? 7787 : config.port, log: opsLog)
 		self.circle = circle
 		account = AccountLink(
-			paths: config.paths, devices: registry, push: switchable, transport: accountTransport,
+			paths: config.paths, devices: registry, push: switchable,
+			transport: accountTransport ?? RecoveringURLSessionTransport(onRecycle: { code in
+				opsLog("account.session_reset", ["detail": "url_error=\(code.rawValue)"])
+			}),
 			pollWait: config.accountPollWait, log: opsLog, ingress: ingress, pushSealer: sealer,
 			approvalFallback: config.approvalFallback, circle: circle,
 			offerContext: { [portBox] in

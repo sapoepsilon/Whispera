@@ -157,7 +157,7 @@ public actor AccountLink {
 
 	public init(
 		paths: HelperConfig.Paths, devices: DeviceRegistry, push: SwitchablePush,
-		transport: LinkTransport = URLSessionLinkTransport(), pollWait: Int = 25, log: OpsLog = .null,
+		transport: LinkTransport = RecoveringURLSessionTransport(), pollWait: Int = 25, log: OpsLog = .null,
 		ingress: RelayIngress? = nil, pushSealer: PushSealer = PushSealer(), approvalFallback: TimeInterval = 20,
 		circle: AccountCircle? = nil,
 		clock: @escaping @Sendable () -> Int = { Int(Date().timeIntervalSince1970) },
