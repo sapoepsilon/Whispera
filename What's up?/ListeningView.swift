@@ -208,6 +208,11 @@ struct ListeningView: View {
 
 			deviceIcon
 
+			// A slow wireless or Continuity mic can take seconds to start; the wait stays cancellable. WHI-54
+			if layout.phase == .initializing {
+				cancelButton
+			}
+
 			if layout.phase == .recording {
 				AudioMeterView(levels: audioManager.audioLevels)
 
