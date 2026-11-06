@@ -212,6 +212,14 @@ final class AudioDeviceManager {
 		let currentDefaultName = currentDefault.flatMap { Self.getDeviceName(for: $0) } ?? "unknown"
 		AppLogger.shared.deviceManager.info("activateSelectedDevice: current default=\(currentDefaultName) (ID: \(currentDefault ?? 0)), switching to \(device.name) (ID: \(device.id))")
 
+		// Already the system default, so there is nothing to switch: skips a redundant CoreAudio
+		// call that blocks for seconds on Continuity and wireless mics. WHI-54
+		if currentDefault == device.id {
+			AppLogger.shared.deviceManager.debug("activateSelectedDevice: \(device.name) already default, skipping switch")
+			activeSessionDevice = device
+			return
+		}
+
 		if savedSystemDefaultDeviceID == nil {
 			savedSystemDefaultDeviceID = currentDefault
 		}
