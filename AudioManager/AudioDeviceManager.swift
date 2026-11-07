@@ -163,6 +163,9 @@ final class AudioDeviceManager {
 	private var deviceStateListeners: [AudioDeviceID: AudioObjectPropertyListenerBlock] = [:]
 	@ObservationIgnored
 	private let listensToHardware: Bool
+	/// Apple laptops cut the built-in microphone off in hardware while the lid is closed.
+	@ObservationIgnored
+	var isLidClosed: () -> Bool = { ClamshellDetector.isLidClosed() }
 
 	@ObservationIgnored
 	private var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
@@ -246,7 +249,7 @@ final class AudioDeviceManager {
 		InputDeviceResolver.effectiveUID(
 			persistedUID: persistedDeviceUID,
 			clamshellUID: clamshellDeviceUID,
-			isLidClosed: !clamshellDeviceUID.isEmpty && ClamshellDetector.isLidClosed(),
+			isLidClosed: !clamshellDeviceUID.isEmpty && isLidClosed(),
 			fallbackUID: sessionFallbackUID,
 			availableUIDs: Set(availableDevices.map(\.uid))
 		)
@@ -271,9 +274,20 @@ final class AudioDeviceManager {
 		InputDeviceResolver.effectiveUID(
 			persistedUID: persistedDeviceUID,
 			clamshellUID: clamshellDeviceUID,
-			isLidClosed: !clamshellDeviceUID.isEmpty && ClamshellDetector.isLidClosed(),
+			isLidClosed: !clamshellDeviceUID.isEmpty && isLidClosed(),
 			availableUIDs: Set(availableDevices.map(\.uid))
 		)
+	}
+
+	/// Inputs that cannot deliver sound right now: recently silent ones, and the built-in
+	/// microphone while the lid is closed.
+	private var unusableInputUIDs: Set<String> {
+		var uids = silentInputs.silentUIDs()
+		if isLidClosed() {
+			uids.formUnion(
+				availableDevices.filter { $0.transportType == kAudioDeviceTransportTypeBuiltIn }.map(\.uid))
+		}
+		return uids
 	}
 
 	private var namesForNotices: [String: String] {
@@ -295,7 +309,7 @@ final class AudioDeviceManager {
 		guard isAutoSwitchEnabled, sessionFallbackUID == nil else { return nil }
 		let preferred = preferredDeviceUID
 		let plan = InputFailoverPlanner.plan(
-			preferredUID: preferred, devices: availableDevices, unusableUIDs: silentInputs.silentUIDs(),
+			preferredUID: preferred, devices: availableDevices, unusableUIDs: unusableInputUIDs,
 			lastWorkingUID: lastWorkingDeviceUID, knownNames: namesForNotices)
 		return apply(plan, context: "recording start, preferred \(preferred)")
 	}
@@ -315,7 +329,7 @@ final class AudioDeviceManager {
 		if let lost { names[lost.uid] = lost.name }
 		let plan = InputFailoverPlanner.plan(
 			preferredUID: lostUID, devices: availableDevices,
-			unusableUIDs: silentInputs.silentUIDs().union([lostUID]),
+			unusableUIDs: unusableInputUIDs.union([lostUID]),
 			lastWorkingUID: lastWorkingDeviceUID, knownNames: names, reasonOverride: .disconnected)
 		if apply(plan, context: "lost \(lost?.name ?? lostUID)", force: true) == nil {
 			sessionFallbackUID = AudioDeviceManager.systemDefaultUID
@@ -340,7 +354,7 @@ final class AudioDeviceManager {
 		silentInputs.markSilent(device.uid)
 		AppLogger.shared.deviceManager.error("Input \(device.name) delivered no signal; skipping it for a while")
 		let plan = InputFailoverPlanner.plan(
-			preferredUID: device.uid, devices: availableDevices, unusableUIDs: silentInputs.silentUIDs(),
+			preferredUID: device.uid, devices: availableDevices, unusableUIDs: unusableInputUIDs,
 			lastWorkingUID: lastWorkingDeviceUID, knownNames: namesForNotices, reasonOverride: .silent)
 		let previous = sessionFallback
 		guard let fallback = apply(plan, context: "silent \(device.name)", force: true) else { return nil }

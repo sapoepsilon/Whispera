@@ -183,9 +183,10 @@ struct InputSignalProbe {
 		armedAt = now
 	}
 
+	/// Samples count from the moment they arrive, but only `arm` starts the window, so the caller
+	/// decides first whether the input is judged at all.
 	mutating func ingest(peak: Float, at now: Date = Date()) {
 		guard verdict == .listening else { return }
-		arm(at: now)
 		if peak > Self.silenceThreshold {
 			verdict = .heard
 		}
