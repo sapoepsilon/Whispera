@@ -206,6 +206,7 @@ struct AutoInputSwitchManagerTests {
 		let manager = AudioDeviceManager(forTesting: true, provider: provider, defaults: defaults)
 		// The real lid state of the Mac running the tests must not decide them
 		manager.isLidClosed = { false }
+		manager.currentDefaultInputID = { devices.first(where: \.isDefault)?.id }
 		return (manager, defaults, provider)
 	}
 
@@ -326,6 +327,19 @@ struct AutoInputSwitchManagerTests {
 		manager.isLidClosed = { true }
 		#expect(manager.planSessionInput() == nil)
 		#expect(!manager.isUsingFallbackInput)
+	}
+
+	/// Losing the device restores the default saved before the recording, which the cached list
+	/// does not show yet; the fallback must follow the restored default, not the stale flag.
+	@Test func lostDeviceFollowsTheRestoredDefaultNotTheCachedOne() throws {
+		let otherMic = device(7, "other-mic", "Desk Mic", transport: kAudioDeviceTransportTypeVirtual)
+		let (manager, _, _) = makeManager([builtInDefault, otherMic], preferred: "airpods")
+		manager.isLidClosed = { true }
+		manager.currentDefaultInputID = { otherMic.id }
+		let fallback = try #require(manager.beginFallback(afterLosing: airPods))
+		#expect(fallback.uid == "other-mic")
+		#expect(fallback.notice.contains("Desk Mic"))
+		#expect(manager.effectiveDeviceUID == AudioDeviceManager.systemDefaultUID)
 	}
 
 	@Test func workingInputIsRememberedAsLastKnownGood() {

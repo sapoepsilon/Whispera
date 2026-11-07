@@ -166,6 +166,9 @@ final class AudioDeviceManager {
 	/// Apple laptops cut the built-in microphone off in hardware while the lid is closed.
 	@ObservationIgnored
 	var isLidClosed: () -> Bool = { ClamshellDetector.isLidClosed() }
+	/// Read fresh where the cached list can lag behind a default this manager just changed.
+	@ObservationIgnored
+	var currentDefaultInputID: () -> AudioDeviceID? = { AudioDeviceManager.getSystemDefaultInputDeviceID() }
 
 	@ObservationIgnored
 	private var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
@@ -327,11 +330,26 @@ final class AudioDeviceManager {
 		let lostUID = lost?.uid ?? preferredDeviceUID
 		var names = namesForNotices
 		if let lost { names[lost.uid] = lost.name }
+		// Restoring the default just changed it, and the cached list still marks whichever input
+		// Core Audio picked when the device vanished
+		let currentDefault = currentDefaultInputID()
+		let devices = availableDevices.map { device in
+			AudioInputDevice(
+				id: device.id, uid: device.uid, name: device.name, isDefault: device.id == currentDefault,
+				transportType: device.transportType, isAlive: device.isAlive,
+				isRunningSomewhere: device.isRunningSomewhere)
+		}
 		let plan = InputFailoverPlanner.plan(
-			preferredUID: lostUID, devices: availableDevices,
+			preferredUID: lostUID, devices: devices,
 			unusableUIDs: unusableInputUIDs.union([lostUID]),
 			lastWorkingUID: lastWorkingDeviceUID, knownNames: names, reasonOverride: .disconnected)
-		if apply(plan, context: "lost \(lost?.name ?? lostUID)", force: true) == nil {
+		var fallbackIsDefault: Bool?
+		if case .fallback(let fallback) = plan {
+			fallbackIsDefault = devices.contains { $0.uid == fallback.uid && $0.isDefault }
+		}
+		if apply(plan, context: "lost \(lost?.name ?? lostUID)", force: true, fallbackIsSystemDefault: fallbackIsDefault)
+			== nil
+		{
 			sessionFallbackUID = AudioDeviceManager.systemDefaultUID
 		}
 		return sessionFallback
@@ -374,7 +392,9 @@ final class AudioDeviceManager {
 		AppLogger.shared.deviceManager.debug("Last working input is now \(device.name)")
 	}
 
-	private func apply(_ plan: InputFailoverPlanner.Plan, context: String, force: Bool = false) -> InputFallback? {
+	private func apply(
+		_ plan: InputFailoverPlanner.Plan, context: String, force: Bool = false, fallbackIsSystemDefault: Bool? = nil
+	) -> InputFallback? {
 		switch plan {
 		case .usePreferred:
 			return nil
@@ -384,7 +404,7 @@ final class AudioDeviceManager {
 		case .fallback(let fallback):
 			guard force || sessionFallbackUID == nil else { return nil }
 			// Following the system default keeps a kept-open stream on it reusable
-			let isDefault = availableDevices.first(where: { $0.uid == fallback.uid })?.isDefault ?? false
+			let isDefault = fallbackIsSystemDefault ?? availableDevices.first(where: { $0.uid == fallback.uid })?.isDefault ?? false
 			sessionFallbackUID = isDefault ? AudioDeviceManager.systemDefaultUID : fallback.uid
 			sessionFallback = fallback
 			activeSessionDevice = nil
