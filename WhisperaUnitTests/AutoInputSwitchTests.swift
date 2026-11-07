@@ -146,6 +146,8 @@ struct InputSignalProbeTests {
 	@Test func digitalSilenceForTheWholeWindowIsSilent() {
 		var probe = InputSignalProbe()
 		probe.ingest(samples: [Float](repeating: 0, count: 1024), at: start)
+		#expect(!probe.isArmed, "Audio alone never starts the window; the caller arms it")
+		probe.arm(at: start)
 		#expect(probe.evaluate(now: start.addingTimeInterval(1)) == .listening)
 		probe.ingest(samples: [Float](repeating: 0, count: 1024), at: start.addingTimeInterval(1.5))
 		#expect(probe.evaluate(now: start.addingTimeInterval(InputSignalProbe.window)) == .silent)
@@ -171,6 +173,7 @@ struct InputSignalProbeTests {
 	@Test func recorderMeteringFloorIsSilence() {
 		var probe = InputSignalProbe()
 		// AVAudioRecorder reports -160 dB for a dead input
+		probe.arm(at: start)
 		probe.ingest(peak: pow(10, -160 / 20), at: start)
 		#expect(probe.evaluate(now: start.addingTimeInterval(InputSignalProbe.window)) == .silent)
 	}
@@ -201,6 +204,8 @@ struct AutoInputSwitchManagerTests {
 		if let autoSwitch { defaults.set(autoSwitch, forKey: AutoInputSwitchSettings.enabledKey) }
 		let provider = FakeInputDeviceProvider(devices: devices)
 		let manager = AudioDeviceManager(forTesting: true, provider: provider, defaults: defaults)
+		// The real lid state of the Mac running the tests must not decide them
+		manager.isLidClosed = { false }
 		return (manager, defaults, provider)
 	}
 
@@ -303,6 +308,24 @@ struct AutoInputSwitchManagerTests {
 		#expect(fallback.notice.contains("AirPods Pro"))
 		#expect(fallback.uid == "built-in")
 		#expect(manager.effectiveDeviceUID == "built-in")
+	}
+
+	@Test func closedLidSkipsTheBuiltInMicrophone() throws {
+		let (manager, _, _) = makeManager([builtInDefault, usb], preferred: "airpods")
+		manager.isLidClosed = { true }
+		let fallback = try #require(manager.planSessionInput())
+		#expect(fallback.uid == "usb-mic", "The built-in mic is cut off while the lid is closed")
+		manager.endRecordingSession()
+
+		manager.isLidClosed = { false }
+		#expect(manager.planSessionInput()?.uid == "built-in")
+	}
+
+	@Test func closedLidWithOnlyTheBuiltInMicLeavesNothingToSwitchTo() {
+		let (manager, _, _) = makeManager([builtInDefault], preferred: AudioDeviceManager.systemDefaultUID)
+		manager.isLidClosed = { true }
+		#expect(manager.planSessionInput() == nil)
+		#expect(!manager.isUsingFallbackInput)
 	}
 
 	@Test func workingInputIsRememberedAsLastKnownGood() {

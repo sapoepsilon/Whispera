@@ -232,6 +232,8 @@ final class AudioManager: NSObject {
 	/// Watches the first seconds of each capture for an input that delivers nothing at all.
 	@ObservationIgnored
 	private var signalProbe = InputSignalProbe()
+	@ObservationIgnored
+	private var signalVerdictHandled = false
 
 	@ObservationIgnored
 	let whisperKitTranscriber = WhisperKitTranscriber.shared
@@ -582,7 +584,7 @@ final class AudioManager: NSObject {
 	private func reactivateInputDuringRecording() {
 		guard isRecording || isMicrophoneInitializing else { return }
 
-		signalProbe.reset()
+		resetSignalProbe()
 		isMicrophoneInitializing = true
 		let session = ledger.capturing?.id
 		deviceActivationTask = Task {
@@ -711,7 +713,7 @@ extension AudioManager {
 			holdModel(for: session.id)
 		}
 		interruptionPolicy.reset()
-		signalProbe.reset()
+		resetSignalProbe()
 		// Planned from the device list the Core Audio listeners keep current, before any path
 		// opens the microphone, so even a kept-open stream is reopened on the input that works
 		if let fallback = deviceManager.planSessionInput() {
@@ -1296,21 +1298,28 @@ extension AudioManager {
 		signalProbe.ingest(peak: peak)
 	}
 
+	private func resetSignalProbe() {
+		signalProbe.reset()
+		signalVerdictHandled = false
+	}
+
 	/// An input can be listed, alive and open yet deliver only digital silence (a Continuity
 	/// iPhone that dropped off, a muted or wedged USB interface). After a short window of that the
 	/// recording moves to another input, keeping what it already has.
 	private func checkInputSignal() {
 		guard isCaptureSteady, deviceManager.isAutoSwitchEnabled else { return }
-		if !signalProbe.isArmed, signalProbe.verdict == .listening {
-			if deviceManager.currentInputDevice?.isVirtualOrAggregate == true {
+		if !signalProbe.isArmed {
+			if signalProbe.verdict == .listening, deviceManager.currentInputDevice?.isVirtualOrAggregate == true {
 				signalProbe.exempt()
 				return
 			}
 			signalProbe.arm()
 		}
-		let before = signalProbe.verdict
 		let verdict = signalProbe.evaluate()
-		guard verdict != before, let device = deviceManager.currentInputDevice else { return }
+		guard !signalVerdictHandled, verdict == .heard || verdict == .silent,
+			let device = deviceManager.currentInputDevice
+		else { return }
+		signalVerdictHandled = true
 		switch verdict {
 		case .heard:
 			deviceManager.markInputWorking(device)
