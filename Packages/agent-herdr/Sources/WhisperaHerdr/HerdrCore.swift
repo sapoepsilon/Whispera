@@ -169,9 +169,10 @@ public enum HerdrCoreAgent {
 }
 
 /// The ask layer's view of one hc terminal: `terminal.read` (text only: hc has no ANSI read),
-/// `terminal.keys`, and `terminal.get`'s self-reported `blocked` status. The host supplies the
-/// call (method, params → the reply's `result`) with its own connection and allowlist, and
-/// `address` is one it found in hc's listing.
+/// `terminal.keys`, `terminal.send` for text keys cannot spell, and `terminal.get`'s
+/// self-reported `blocked` status. The host supplies the call (method, params → the reply's
+/// `result`) with its own connection and allowlist, and `address` is one it found in hc's
+/// listing.
 public struct HerdrCoreAskTerminal: AgentAskTerminal {
     public typealias Call = @Sendable (_ method: String, _ params: [String: Any]) throws -> [String: Any]
 
@@ -196,8 +197,8 @@ public struct HerdrCoreAskTerminal: AgentAskTerminal {
 
     /// hc presses keys, not characters: a lowercase letter, digit, space or unshifted US
     /// punctuation is its own key, an uppercase letter is `shift+<letter>`, and anything else
-    /// (`!`, `?`, quotes, non-ASCII) has no key hc can press. Refused before any key is sent,
-    /// so an answer is never typed half-way.
+    /// (`!`, `?`, quotes, newlines, non-ASCII) has no key hc can press. Such text goes in with
+    /// `typeAndEnter`; here it is refused before any key is sent, so it is never typed half-way.
     public func type(_ text: String) throws {
         guard let keys = Self.keys(typing: text) else {
             let first = text.first { Self.key(for: $0) == nil }.map(String.init) ?? ""
@@ -208,6 +209,23 @@ public struct HerdrCoreAskTerminal: AgentAskTerminal {
             try send(keys: Array(keys[start..<min(keys.count, start + Self.chunk)]))
             start += Self.chunk
         }
+    }
+
+    public func canType(_ text: String) -> Bool { Self.keys(typing: text) != nil }
+
+    /// Text keys can spell is typed key by key, then Enter. Anything else is pasted with
+    /// `terminal.send` (a bracketed paste, then Enter), forced past hc's refusal of a blocked
+    /// program because the dialog is what it answers. The paste can only type: carriage
+    /// returns become newlines and other control characters are dropped (`PastedText`).
+    public func typeAndEnter(_ text: String) throws {
+        if canType(text) {
+            try type(text)
+            try send(keys: ["enter"])
+            return
+        }
+        let pasted = PastedText.sanitize(text)
+        guard !pasted.isEmpty else { throw AgentAskError.invalidAnswer("the answer has no text to type") }
+        _ = try call("terminal.send", ["terminal": address, "text": pasted, "force": true])
     }
 
     public func blocked() throws -> Bool? {

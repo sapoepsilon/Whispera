@@ -109,6 +109,12 @@ Files changed or added here on purpose, not yet upstream. Each has a `local` lin
   pasted prompt cannot press Enter or Ctrl-C; `TmuxClient.send` pastes the sanitized text (the
   key APIs are unchanged) and the helper's prompt route uses the same function for herdr and
   hc. Upstream both, then drop the `local` lines.
+- agent-tui-protocol: `Sources/WhisperaAgents/Asks/AgentAskDriver.swift` (changed).
+  `AgentAskTerminal` gains `canType(_:)` and `typeAndEnter(_:)` (defaults: true, and `type`
+  then Enter), and the driver enters a free-text answer the harness cannot type without Enter
+  with one `typeAndEnter`, where Enter came next anyway. agent-herdr's `HerdrCoreAskTerminal`
+  uses it to paste answers with `?`, quotes, newlines or non-ASCII through `terminal.send`,
+  which hc's keys cannot spell. Upstream both, then drop the `local` line.
 - whispera-components: safety number with a commitment. `apple/Sources/WhisperaLink/SafetyNumber.swift`
   (changed) computes the number as `WL2-SAS` over both link keys, the phone's approve key, the
   attempt, both device ids and two 32-byte nonces, and adds the phone's `WL2-SAS-COMMIT`

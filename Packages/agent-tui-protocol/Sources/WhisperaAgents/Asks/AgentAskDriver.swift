@@ -21,6 +21,12 @@ public protocol AgentAskTerminal: Sendable {
 	func read() throws -> AskTerminalScreen
 	func send(keys: [String]) throws
 	func type(_ text: String) throws
+	/// Whether `type` can enter `text` without pressing Enter. A harness that can only paste
+	/// some text together with Enter (herdr-core has no key for `?`, quotes or non-ASCII) says
+	/// no, and the driver enters that text with `typeAndEnter` where Enter comes next anyway.
+	func canType(_ text: String) -> Bool
+	/// Enters `text`, then presses Enter.
+	func typeAndEnter(_ text: String) throws
 	/// Whether the harness itself says the agent waits on the owner; nil when it cannot tell
 	/// (tmux), and detection rests on parsing the screen.
 	func blocked() throws -> Bool?
@@ -28,6 +34,11 @@ public protocol AgentAskTerminal: Sendable {
 
 extension AgentAskTerminal {
 	public func blocked() throws -> Bool? { nil }
+	public func canType(_ text: String) -> Bool { true }
+	public func typeAndEnter(_ text: String) throws {
+		try type(text)
+		try send(keys: ["enter"])
+	}
 }
 
 /// Enters semantic answers into an ask by keys, one step at a time: every key batch is
@@ -213,9 +224,13 @@ public struct AgentAskDriver: Sendable {
 			try waitFor("move the cursor") { $0.screen.cursorRow == row }
 		}
 
-		mutating func setOther(_ text: String) throws {
+		/// Puts `text` in the free-text row. True when Enter was pressed with it: the harness
+		/// can only paste that text with Enter (see `AgentAskTerminal.canType`), and the caller
+		/// must not press Enter again.
+		@discardableResult
+		mutating func setOther(_ text: String) throws -> Bool {
 			var state = try read()
-			if AgentAskDriver.matches(state.screen.otherText, text) { return }
+			if AgentAskDriver.matches(state.screen.otherText, text) { return false }
 			switch state.screen.dialect {
 			case .claude:
 				if state.screen.otherText != nil {
@@ -232,10 +247,17 @@ public struct AgentAskDriver: Sendable {
 					state = try waitFor("open the notes") { $0.screen.notesOpen }
 				}
 			}
+			guard terminal.canType(text) else {
+				try terminal.typeAndEnter(text)
+				steps += 1
+				keys += text.count + 1
+				return true
+			}
 			try terminal.type(text)
 			steps += 1
 			keys += text.count
 			try waitFor("type the answer") { AgentAskDriver.matches($0.screen.otherText, text) }
+			return false
 		}
 
 		mutating func verifyQuestion(_ question: AgentAsk.Question) throws {
@@ -251,8 +273,9 @@ public struct AgentAskDriver: Sendable {
 			let row = answer.optionIDs.first.flatMap { id in question.options.firstIndex { $0.id == id } }
 				?? question.options.count
 			try moveCursor(to: row)
-			if let other = answer.other { try setOther(other) }
-			try send(["enter"])
+			// Enter on the free-text row takes its text as the answer; a paste may bring it.
+			let entered = try answer.other.map { try setOther($0) } ?? false
+			if !entered { try send(["enter"]) }
 			if last, !ask.hasSubmitStep { return }
 			try waitFor("confirm the answer") { $0.step != from }
 		}
@@ -269,7 +292,11 @@ public struct AgentAskDriver: Sendable {
 			let otherRow = question.options.count
 			if let other = answer.other {
 				try moveCursor(to: otherRow)
-				try setOther(other)
+				if try setOther(other) {
+					// The paste's Enter toggles the row: let both land before reading the check.
+					try waitFor("type the answer") { AgentAskDriver.matches($0.screen.otherText, other) }
+					Thread.sleep(forTimeInterval: driver.poll * 3)
+				}
 				if !(try read().screen.otherChecked) {
 					try send(["enter"])
 					try waitFor("check the typed answer") { $0.screen.otherChecked }

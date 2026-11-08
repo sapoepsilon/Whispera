@@ -519,11 +519,21 @@ extension AskTracker {
 				guard action == .cancel else {
 					throw APIError(409, "dialog_gone", "no MCP form is on screen; nothing was sent")
 				}
-				// Esc on a question form cancels the agent's AskUserQuestion: its card answers it.
-				if AgentAskParser.screen(text: text) != nil {
-					log("dialog.refused", ["detail": "id=\(agentID) reason=ask"])
-					let ask = (try? refresh(agentID, agent: nil, discover: false))?["ask"] as? [String: Any] ?? [:]
-					throw Self.askingError(ask, "The agent is asking you a question; answer it on its card. Nothing was sent.")
+				// Esc on a question form cancels the agent's AskUserQuestion. The phone asks for it
+				// only from an explicit Dismiss (the composer's "Dismiss dialog & send" after its
+				// message was refused with `agent_asking`); the card is how a form is answered.
+				if let screen = AgentAskParser.screen(text: text) {
+					// The phone knows the ask by the id of the whole form it was sent (every tab
+					// read); the screen alone may show only some of it.
+					var known = entry(agentID)?.ask
+					if known?.merge(screen) != true { known = nil }
+					let id = known?.id ?? AgentAsk(screen: screen).id
+					if let promptID, promptID != id, promptID != AgentAsk(screen: screen).id {
+						throw APIError(409, "dialog_changed", "the question on screen changed; nothing was sent", extra: ["prompt_id": id])
+					}
+					try lockedDriving(agentID) { try dismissAsk(agentID, terminal: terminal) }
+					log("dialog.answered", ["detail": "id=\(agentID) action=cancel ask=1"])
+					return ["id": agentID, "prompt_id": id, "action": "cancel", "steps": 1, "keys": 1]
 				}
 				if let dialog = BlockedDialogParser.parse(text) {
 					report = try lockedDriving(agentID) { try driver.dismiss(dialog) }
@@ -539,6 +549,23 @@ extension AskTracker {
 			log("dialog.failed", ["detail": "id=\(agentID) action=\(action.name) error=\(Self.code(error))"])
 			throw Self.apiError(error)
 		}
+	}
+
+	/// Esc on the question form, confirmed by the form leaving the screen; its card is then
+	/// resolved (`approval.resolved`, status `dismissed`) so every phone drops it.
+	private func dismissAsk(_ agentID: String, terminal: any AgentAskTerminal) throws {
+		let wait = try driver(agentID).timeout
+		try terminal.send(keys: ["esc"])
+		let deadline = Date().addingTimeInterval(wait)
+		while Date() < deadline {
+			Thread.sleep(forTimeInterval: poll)
+			let read = try terminal.read()
+			if AgentAskParser.screen(text: read.text, ansi: read.ansi) == nil {
+				clear(agentID, reason: "dismissed")
+				return
+			}
+		}
+		throw ElicitationError.stuck("the question is still on screen after Esc", at: "Esc")
 	}
 
 	/// Esc on a blocked agent whose dialog no parser reads: only while the harness says it is

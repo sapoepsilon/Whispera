@@ -316,6 +316,30 @@ final class HerdrCoreDirectoryTests: XCTestCase {
 		XCTAssertThrowsError(try hc.askTerminal("hc:t42"))
 	}
 
+	/// The 2026-11-07 phone report: a free-text answer with a `?` was refused ("herdr-core can't
+	/// type"), so none of the form's answers could be submitted. Text keys cannot spell is
+	/// pasted with Enter instead, forced past hc's blocked refusal, every character intact.
+	func testAskTerminalPastesTextKeysCannotSpell() throws {
+		let blocked = try hc.askTerminal("hc:t3")
+		XCTAssertTrue(blocked.canType("a B."))
+		for text in ["ok?", "say \"hi\"", "café", "🙂", "two\nlines"] {
+			XCTAssertFalse(blocked.canType(text), text)
+		}
+		try blocked.typeAndEnter("Do you have access to linear? \"quotes\" é 🙂\r\nnext line\u{1B}[201~")
+		try blocked.typeAndEnter("a B")
+		let writes = try rig.writes()
+		XCTAssertEqual(writes.map(\.0), ["terminal.send", "terminal.keys", "terminal.keys"])
+		XCTAssertEqual(writes[0].1["terminal"] as? String, "t3")
+		XCTAssertEqual(writes[0].1["force"] as? Bool, true, "the blocked form is what the paste answers")
+		XCTAssertEqual(
+			writes[0].1["text"] as? String, "Do you have access to linear? \"quotes\" é 🙂\nnext line[201~",
+			"verbatim, with CRLF as a newline and no Esc that could end the bracketed paste")
+		XCTAssertEqual(writes[1].1["keys"] as? [String], ["a", "space", "shift+b"])
+		XCTAssertEqual(writes[2].1["keys"] as? [String], ["enter"])
+		XCTAssertThrowsError(try blocked.typeAndEnter("\u{1B}\u{03}"), "nothing left to paste")
+		XCTAssertEqual(try rig.writes().count, 3)
+	}
+
 	// MARK: Transcripts
 
 	func writeSession(pid: Int, body: [String: Any]) throws {

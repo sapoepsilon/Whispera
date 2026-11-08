@@ -191,6 +191,8 @@ final class HerdrCoreDirectory: @unchecked Sendable {
 	private let log: OpsLog
 
 	static let maxKeys = 64
+	/// The longest free-text answer pasted into an ask.
+	static let maxAnswerText = 4000
 	static let maxReadLines = 2000
 	/// Key names hc takes (`terminal.keys`), beyond single characters and `shift+<letter>`.
 	static let keyNames: Set<String> = [
@@ -391,9 +393,18 @@ final class HerdrCoreDirectory: @unchecked Sendable {
 		let (address, _, _) = try validated(id)
 		let client = self.client
 		return HerdrCoreAskTerminal(address: address) { method, params in
-			guard ["terminal.read", "terminal.keys", "terminal.get"].contains(method),
+			guard ["terminal.read", "terminal.keys", "terminal.get", "terminal.send"].contains(method),
 				params["terminal"] as? String == address
 			else { throw APIError(500, "internal", "herdr-core ask call not allowed") }
+			if method == "terminal.send" {
+				// An ask's free-text answer that keys cannot spell (`?`, quotes, non-ASCII):
+				// pasted into the form with Enter, which is the driver's next key anyway.
+				guard let text = params["text"] as? String, !text.isEmpty,
+					text.unicodeScalars.count <= Self.maxAnswerText,
+					text == PastedText.sanitize(text), params.count == 3, params["force"] as? Bool == true
+				else { throw APIError(400, "bad_request", "an answer is plain text") }
+				return try client.call(method, params, timeout: HerdrCoreClient.inputTimeout)
+			}
 			if method == "terminal.keys" {
 				let keys = params["keys"] as? [String] ?? []
 				guard !keys.isEmpty, keys.count <= Self.maxKeys, keys.allSatisfy(Self.isValidKey) else {

@@ -37,6 +37,7 @@ rm  agent-tui-protocol Tests
 local agent-tui-protocol Sources/WhisperaAgents/Asks/ChoiceMenu.swift
 local agent-tui-protocol Sources/WhisperaAgents/Asks/AgentAsk.swift
 local agent-tui-protocol Sources/WhisperaAgents/PastedText.swift
+local agent-tui-protocol Sources/WhisperaAgents/Asks/AgentAskDriver.swift
 
 git agent-herdr https://github.com/sapoepsilon/agent-herdr b7be30cc8a779b1f3846b5643603f9b0b7d93535
 rm  agent-herdr .gitignore

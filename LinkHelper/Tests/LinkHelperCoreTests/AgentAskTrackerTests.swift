@@ -27,6 +27,11 @@ final class AgentAskTrackerTests: XCTestCase {
 		/// A pane narrower than the tab bar: Claude Code clips every header but the active one,
 		/// and the footer wraps (herdr then reports the agent `idle`).
 		var narrow = false
+		/// A harness like herdr-core: text that is not plain keys only goes in pasted with Enter.
+		var pasteOnly = false
+		var pasted: [String] = []
+		/// Esc cancelled the form.
+		var cancelled = false
 
 		func header(_ index: Int) -> String {
 			let full = questions[index].0
@@ -36,7 +41,7 @@ final class AgentAskTrackerTests: XCTestCase {
 		func read() throws -> AskTerminalScreen {
 			lock.lock()
 			defer { lock.unlock() }
-			if submitted != nil { return AskTerminalScreen(text: "\n⏺ thanks\n\n❯ \n") }
+			if submitted != nil || cancelled { return AskTerminalScreen(text: "\n⏺ thanks\n\n❯ \n") }
 			var bar = "←  "
 			var lit = "←  "
 			for index in questions.indices {
@@ -78,6 +83,16 @@ final class AgentAskTrackerTests: XCTestCase {
 			other[step] += text
 		}
 
+		func canType(_ text: String) -> Bool { !pasteOnly || text.allSatisfy { $0.isLetter && $0.isASCII || $0 == " " } }
+
+		func typeAndEnter(_ text: String) throws {
+			lock.lock()
+			defer { lock.unlock() }
+			pasted.append(text)
+			other[step] += text
+			press("enter")
+		}
+
 		func press(_ key: String) {
 			let n = step < questions.count ? questions[step].2.count : 1
 			let onOther = step < questions.count && cursor == n
@@ -87,6 +102,7 @@ final class AgentAskTrackerTests: XCTestCase {
 			case "tab": if !onOther, step < questions.count { step += 1; cursor = 0 }
 			case "shift+tab": if !onOther, step > 0 { step -= 1; cursor = 0 }
 			case "ctrl+u": if onOther { other[step] = "" }
+			case "esc": cancelled = true
 			case "enter":
 				if step == questions.count {
 					if cursor == 0 { submitted = answers.map { $0 ?? "" } }
@@ -323,18 +339,57 @@ final class AgentAskTrackerTests: XCTestCase {
 		XCTAssertNil(other.entry("w9:p1"))
 	}
 
-	func testFormOnScreenBlocksTypingAndEsc() throws {
+	func testFormOnScreenBlocksTypingUntilDismissed() throws {
 		let form = narrowForm()
-		let tracker = makeTracker(form, Push(), Events())
+		let events = Events()
+		let tracker = makeTracker(form, Push(), events)
 		let ask = try XCTUnwrap(tracker.blockingAsk("w1:p1"))
 		XCTAssertEqual((ask["questions"] as? [Any])?.count, 4)
-		XCTAssertThrowsError(try tracker.answerDialog("w1:p1", action: .cancel, promptID: nil)) { error in
-			XCTAssertEqual((error as? APIError)?.code, "agent_asking")
-			XCTAssertNotNil((error as? APIError)?.extra["ask"])
+		let requestID = try XCTUnwrap(tracker.entry("w1:p1")?.requestID)
+		// A Dismiss for a form that is no longer the one on screen sends nothing.
+		XCTAssertThrowsError(try tracker.answerDialog("w1:p1", action: .cancel, promptID: "0123456789abcdef")) { error in
+			XCTAssertEqual((error as? APIError)?.code, "dialog_changed")
 		}
-		XCTAssertTrue(form.sent.isEmpty, "no Esc reached the form")
-		form.submitted = []
-		XCTAssertNil(tracker.blockingAsk("w1:p1"), "no form, nothing to protect")
+		XCTAssertTrue(form.sent.isEmpty)
+		// The composer's "Dismiss dialog & send" (2026-11-07: refused every time with
+		// agent_asking): Esc cancels the form, and its card is resolved for every phone.
+		let answer = try tracker.answerDialog("w1:p1", action: .cancel, promptID: nil)
+		XCTAssertEqual(answer["action"] as? String, "cancel")
+		XCTAssertEqual(answer["prompt_id"] as? String, ask["prompt_id"] as? String)
+		XCTAssertEqual(form.sent, [["esc"]])
+		XCTAssertNil(tracker.entry("w1:p1"))
+		let resolved = events.list.filter { $0.0 == "approval.resolved" }.map(\.1)
+		XCTAssertEqual(resolved.last?["request_id"] as? String, requestID)
+		XCTAssertEqual(resolved.last?["status"] as? String, "dismissed")
+		XCTAssertNil(tracker.blockingAsk("w1:p1"), "no form: the reply goes through")
+	}
+
+	func testAFormThatStaysAfterEscIsReportedStuck() throws {
+		let form = narrowForm()
+		form.swallow = ["esc"]
+		let tracker = makeTracker(form, Push(), Events())
+		XCTAssertThrowsError(try tracker.answerDialog("w1:p1", action: .cancel, promptID: nil)) { error in
+			XCTAssertEqual((error as? APIError)?.code, "dialog_stuck")
+		}
+		XCTAssertNotNil(tracker.blockingAsk("w1:p1"))
+	}
+
+	/// The 2026-11-07 phone report: herdr-core could not type the `?` of a free-text answer,
+	/// so the form could not be submitted at all. A harness that pastes such text with Enter
+	/// answers it in one step, every character intact, and the review is still checked.
+	func testFreeTextAPasteOnlyHarnessCannotKeyIsPastedWithEnter() throws {
+		let form = FakeForm()
+		form.pasteOnly = true
+		let tracker = makeTracker(form, Push(), Events())
+		let ask = try XCTUnwrap(tracker.current("w1:p1")["ask"] as? [String: Any])
+		let promptID = try XCTUnwrap(ask["prompt_id"] as? String)
+		let text = "Do you have access to linear? \"quotes\" é 🙂 it's fine!"
+		_ = try tracker.answer("w1:p1", promptID: promptID, answers: [
+			.init(question: 0, other: text), .init(question: 1, other: "Medium please"),
+		])
+		XCTAssertEqual(form.submitted, [text, "Medium please"])
+		XCTAssertEqual(form.pasted, [text], "only the text keys cannot spell is pasted")
+		XCTAssertEqual(form.typed, ["Medium please"])
 	}
 
 	func testRoutesAndBodyValidation() throws {
