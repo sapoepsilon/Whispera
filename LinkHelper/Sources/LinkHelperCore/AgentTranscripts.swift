@@ -120,7 +120,7 @@ final class AgentTranscripts: @unchecked Sendable {
 				answer.merge(Self.subagentFields(screen, source: "screen")) { $1 }
 				return answer
 			}
-			throw APIError(404, "transcript_unavailable", "No Claude Code or Codex session is known for this agent")
+			throw APIError(404, "transcript_unavailable", "No Claude Code, Codex or omp session is known for this agent")
 		}
 		let url = URL(fileURLWithPath: binding.path)
 		var reset = false
@@ -323,7 +323,7 @@ final class AgentTranscripts: @unchecked Sendable {
 	func annotate(_ agent: [String: Any]) -> [String: Any] {
 		guard let id = agent["id"] as? String else { return agent }
 		let kind = (agent["agent"] as? String ?? "").lowercased()
-		let live = kind.hasPrefix("claude") || kind.hasPrefix("codex")
+		let live = kind.hasPrefix("claude") || kind.hasPrefix("codex") || kind == "omp"
 		var running = 0
 		// An exited agent's subagents were cut off with it: none run, nothing to read.
 		if live, !id.hasPrefix("tmux:"), case .local = AgentRef(id), let binding = binding(id) {
@@ -399,6 +399,7 @@ final class AgentTranscripts: @unchecked Sendable {
 		switch harness {
 		case .claude: url = locator.newestClaudeLog(cwd: cwd, after: after)
 		case .codex: url = locator.newestCodexLog(cwd: cwd, after: after)
+		case .omp: url = locator.newestOmpLog(cwd: cwd, after: after)
 		}
 		guard let url, !Self.samePath(url.path, dropped), let sessionID = SessionLocator.sessionID(of: url, harness: harness)
 		else { return nil }
@@ -523,6 +524,7 @@ final class AgentTranscripts: @unchecked Sendable {
 		let agent = (info["agent"] as? String ?? (info["agent_session"] as? [String: Any])?["agent"] as? String ?? "").lowercased()
 		if agent.hasPrefix("claude") { return .claude }
 		if agent.hasPrefix("codex") { return .codex }
+		if agent == "omp" { return .omp }
 		return nil
 	}
 

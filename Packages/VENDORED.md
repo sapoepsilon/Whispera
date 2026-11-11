@@ -109,6 +109,15 @@ Files changed or added here on purpose, not yet upstream. Each has a `local` lin
   pasted prompt cannot press Enter or Ctrl-C; `TmuxClient.send` pastes the sanitized text (the
   key APIs are unchanged) and the helper's prompt route uses the same function for herdr and
   hc. Upstream both, then drop the `local` lines.
+- agent-tui-protocol: oh-my-pi (`omp`) session logs. `Sources/WhisperaAgents/Transcript/OmpSessionReader.swift`
+  (added) reads `~/.omp/agent/sessions/<folder>/<time>_<id>.jsonl` (`message` lines with
+  `user`/`assistant`/`toolResult` roles, `toolCall` blocks, `compaction`, `title`/`title_change`)
+  into the same `SessionEntry` values as Claude Code and Codex; `SessionTranscript.swift`,
+  `SessionLog.swift`, `SessionLocator.swift` (`ompHome`, `ompLog`, `newestOmpLog`, the omp
+  session id of a file name), `SessionTurn.swift` (`ompTurn`) and `SessionSubagent.swift` (no omp
+  subagents yet) (changed) add the `omp` harness. agent-herdr's `HerdrCore.swift` (already local)
+  also knows `omp` as an agent and passes hc's `status_ms` on as `status_since_ms`. Upstream
+  both, then drop the `local` lines.
 - whispera-components: safety number with a commitment. `apple/Sources/WhisperaLink/SafetyNumber.swift`
   (changed) computes the number as `WL2-SAS` over both link keys, the phone's approve key, the
   attempt, both device ids and two 32-byte nonces, and adds the phone's `WL2-SAS-COMMIT`
