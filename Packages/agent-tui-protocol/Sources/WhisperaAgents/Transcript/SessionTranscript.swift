@@ -8,6 +8,8 @@ public enum SessionHarness: String, Codable, Sendable, CaseIterable {
     case claude
     /// Codex: `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<session id>.jsonl`.
     case codex
+    /// oh-my-pi: `~/.omp/agent/sessions/<folder of cwd>/<time>_<session id>.jsonl`.
+    case omp
 }
 
 /// One thing in an agent's session, read from the harness's own log rather than its
@@ -219,6 +221,7 @@ public enum SessionLogReaders {
         switch harness {
         case .claude: return ClaudeSessionReader()
         case .codex: return CodexSessionReader()
+        case .omp: return OmpSessionReader()
         }
     }
 }

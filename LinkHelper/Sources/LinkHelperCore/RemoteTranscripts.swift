@@ -238,7 +238,8 @@ final class RemoteTranscripts: @unchecked Sendable {
 		let folder = root.appendingPathComponent(Self.folderName(id), isDirectory: true)
 		try? FileManager.default.removeItem(at: folder)
 		try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-		let local = folder.appendingPathComponent(harness == .codex ? "rollout-\(sessionID).jsonl" : "\(sessionID).jsonl")
+		let local = folder.appendingPathComponent(
+			harness == .codex ? "rollout-\(sessionID).jsonl" : harness == .omp ? "omp_\(sessionID).jsonl" : "\(sessionID).jsonl")
 		FileManager.default.createFile(atPath: local.path, contents: nil)
 		let cwd = (info["cwd"] as? String).flatMap { $0.hasPrefix("/") ? $0 : nil }
 		var mirror = Mirror(
@@ -592,6 +593,8 @@ final class RemoteTranscripts: @unchecked Sendable {
 			return name == mirror.sessionID + ".jsonl" && path.contains("/projects/")
 		case .codex:
 			return name.hasPrefix("rollout-") && name.hasSuffix("-" + mirror.sessionID + ".jsonl") && path.contains("/sessions/")
+		case .omp:
+			return name.hasSuffix("_" + mirror.sessionID + ".jsonl") && path.contains("/sessions/")
 		}
 	}
 
@@ -633,6 +636,9 @@ final class RemoteTranscripts: @unchecked Sendable {
 				script += #"if [ -z "$F" ]; then for G in "$C"/*/"# + q(id + ".jsonl") + #"; do [ -f "$G" ] && { F="$G"; break; }; done; fi; "#
 			case .codex:
 				script += #"for G in "$X"/sessions/*/*/*/rollout-*-"# + q(id + ".jsonl")
+					+ #"; do [ -f "$G" ] && F="$G"; done; "#
+			case .omp:
+				script += #"for G in "${PI_CODING_AGENT_DIR:-$HOME/.omp/agent}"/sessions/*/*_"# + q(id + ".jsonl")
 					+ #"; do [ -f "$G" ] && F="$G"; done; "#
 			}
 		}

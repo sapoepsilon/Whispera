@@ -81,7 +81,7 @@ public enum HerdrCoreAgent {
     public static let knownAgents: [String: String] = [
         "claude": "claude", "claude-code": "claude", "codex": "codex", "pi": "pi", "opencode": "opencode",
         "gemini": "gemini", "amp": "amp", "droid": "droid", "crush": "crush", "qwen": "qwen", "goose": "goose",
-        "cursor-agent": "cursor-agent", "copilot": "copilot",
+        "cursor-agent": "cursor-agent", "copilot": "copilot", "omp": "omp",
     ]
 
     /// hc's status words, as the phone reads them. A terminal whose program never reported (a
@@ -155,6 +155,8 @@ public enum HerdrCoreAgent {
             "machine": machine, "state_labels": [String: Any](),
         ]
         if let turn = terminal["turn"] as? Int { agent["turn"] = turn }
+        // When hc last saw the status change (Unix ms): the phone's "Working · 2m 14s".
+        if let since = terminal["status_ms"] as? Int, since > 0 { agent["status_since_ms"] = since }
         if let kind = blockedKind(terminal) { agent["status_kind"] = kind }
         if let message = clean(statusObject?["msg"]) { agent["status_message"] = message }
         return agent

@@ -42,6 +42,7 @@ extension SessionLog {
             switch harness {
             case .claude: claudeTurn(line, open: &open, tools: &tools, order: &order)
             case .codex: codexTurn(line, open: &open, tools: &tools, order: &order)
+            case .omp: ompTurn(line, open: &open, tools: &tools, order: &order)
             }
         }
         guard let open else { return nil }
@@ -112,6 +113,42 @@ extension SessionLog {
             order.append(id)
         case ("response_item", "function_call_output"?), ("response_item", "custom_tool_call_output"?):
             if let id = payload["call_id"] as? String { tools[id] = nil }
+        default:
+            return
+        }
+    }
+}
+
+extension SessionLog {
+    /// omp: a user message opens a turn, an assistant message that stops for any reason but
+    /// `toolUse` ends it, each `toolCall` waits for the `toolResult` naming it, and the
+    /// process exiting (`session_exit`) ends whatever was open.
+    static func ompTurn(_ line: [String: Any], open: inout Bool?, tools: inout [String: SessionTool], order: inout [String]) {
+        switch line["type"] as? String {
+        case "message":
+            guard let message = line["message"] as? [String: Any] else { return }
+            switch message["role"] as? String {
+            case "user":
+                open = true
+            case "assistant":
+                for block in OmpSessionReader.blocks(message["content"]) where block["type"] as? String == "toolCall" {
+                    if let tool = OmpSessionReader.tool(block) { tools[tool.id] = tool; order.append(tool.id) }
+                }
+                if let reason = message["stopReason"] as? String, reason != "toolUse" {
+                    open = false
+                    tools.removeAll()
+                } else {
+                    open = true
+                }
+            case "toolResult":
+                if let id = message["toolCallId"] as? String { tools[id] = nil }
+                open = true
+            default:
+                return
+            }
+        case "custom" where line["customType"] as? String == "session_exit":
+            open = false
+            tools.removeAll()
         default:
             return
         }

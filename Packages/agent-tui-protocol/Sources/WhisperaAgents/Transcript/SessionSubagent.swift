@@ -151,10 +151,13 @@ public struct SessionSubagentTracker: Sendable {
     /// The subagents started in this log, oldest first. `ended`: the parent agent is gone,
     /// so whatever still reads as running was cut off with it.
     public mutating func refresh(now: Date = Date(), ended: Bool = false) -> [SessionSubagent] {
+        // omp's `task` subagents are not followed yet: its calls show as task steps.
+        guard harness != .omp else { return [] }
         scanParent()
         switch harness {
         case .claude: scanClaudeChildren()
         case .codex: scanCodexChildren()
+        case .omp: break
         }
         return order.compactMap { subagent(for: $0, now: now, ended: ended) }
     }
@@ -187,6 +190,7 @@ public struct SessionSubagentTracker: Sendable {
             switch harness {
             case .claude: claudeParentLine(line)
             case .codex: codexParentLine(line)
+            case .omp: break
             }
         }
         if result == .reset {
@@ -199,6 +203,7 @@ public struct SessionSubagentTracker: Sendable {
                 switch harness {
                 case .claude: claudeParentLine(line)
                 case .codex: codexParentLine(line)
+                case .omp: break
                 }
             }
             offset = again

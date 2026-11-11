@@ -11,10 +11,13 @@ public struct SessionLocator: Sendable {
     public var claudeHome: URL
     /// `~/.codex` (or `CODEX_HOME`).
     public var codexHome: URL
+    /// `~/.omp/agent` (or `PI_CODING_AGENT_DIR`).
+    public var ompHome: URL
 
-    public init(claudeHome: URL, codexHome: URL) {
+    public init(claudeHome: URL, codexHome: URL, ompHome: URL? = nil) {
         self.claudeHome = claudeHome
         self.codexHome = codexHome
+        self.ompHome = ompHome ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".omp/agent")
     }
 
     /// The homes the harnesses themselves use for this user.
@@ -26,6 +29,7 @@ public struct SessionLocator: Sendable {
         }
         claudeHome = configured("CLAUDE_CONFIG_DIR") ?? home.appendingPathComponent(".claude")
         codexHome = configured("CODEX_HOME") ?? home.appendingPathComponent(".codex")
+        ompHome = configured("PI_CODING_AGENT_DIR") ?? home.appendingPathComponent(".omp/agent")
     }
 
     /// UUID-shaped ids only: letters, digits and dashes, 8–64 of them.
@@ -54,7 +58,62 @@ public struct SessionLocator: Sendable {
         switch harness {
         case .claude: return claudeLog(sessionID: sessionID, cwd: cwd)
         case .codex: return codexLog(sessionID: sessionID)
+        case .omp: return ompLog(sessionID: sessionID)
         }
+    }
+
+    /// `~/.omp/agent/sessions/<folder>/<time>_<id>.jsonl`, in whichever folder has it.
+    public func ompLog(sessionID: String) -> URL? {
+        guard Self.isValidSessionID(sessionID) else { return nil }
+        let sessions = ompHome.appendingPathComponent("sessions", isDirectory: true)
+        let suffix = "_" + sessionID + ".jsonl"
+        for folder in (try? FileManager.default.contentsOfDirectory(at: sessions, includingPropertiesForKeys: nil)) ?? [] {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            if let name = names.first(where: { $0.hasSuffix(suffix) }),
+               let file = contained(folder.appendingPathComponent(name), in: sessions) {
+                return file
+            }
+        }
+        return nil
+    }
+
+    /// The newest omp log whose `session` header names `cwd`, written to since `after`: omp's
+    /// terminal reports no session id. Folder names are omp's own encoding of the directory,
+    /// so the header, not the name, decides; at most `maxFiles` recent files are opened.
+    public func newestOmpLog(cwd: String, after: Date, maxFiles: Int = 200) -> URL? {
+        let sessions = ompHome.appendingPathComponent("sessions", isDirectory: true)
+        let wanted = Set(Self.cwdVariants(cwd))
+        var candidates: [(URL, Date)] = []
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
+        for folder in (try? FileManager.default.contentsOfDirectory(at: sessions, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
+            if let modified = (try? folder.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+               modified < after.addingTimeInterval(-86_400) { continue }
+            for file in (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys)) ?? []
+            where file.pathExtension == "jsonl" {
+                guard let values = try? file.resourceValues(forKeys: Set(keys)), values.isRegularFile == true,
+                      let modified = values.contentModificationDate, modified >= after else { continue }
+                candidates.append((file, modified))
+            }
+        }
+        for (file, _) in candidates.sorted(by: { $0.1 > $1.1 }).prefix(maxFiles) {
+            guard let meta = Self.ompMetaCwd(file),
+                  wanted.contains(meta) || wanted.contains(URL(fileURLWithPath: meta).resolvingSymlinksInPath().path)
+            else { continue }
+            return contained(file, in: sessions)
+        }
+        return nil
+    }
+
+    /// The `cwd` of an omp log's `session` header (one of its first lines).
+    static func ompMetaCwd(_ file: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+        let head = handle.readData(ofLength: 64 << 10)
+        for line in head.split(separator: 0x0A).prefix(4) {
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
+            if object["type"] as? String == "session" { return object["cwd"] as? String }
+        }
+        return nil
     }
 
     /// `~/.claude/projects/<slug of cwd>/<id>.jsonl`; if the agent changed folders, the
@@ -125,6 +184,11 @@ public struct SessionLocator: Sendable {
             let groups = name.split(separator: "-")
             guard groups.count >= 5 else { return nil }
             let id = groups.suffix(5).joined(separator: "-")
+            return isValidSessionID(id) ? id : nil
+        case .omp:
+            // 2026-11-11T04-56-12-457Z_<uuid>: the id follows the last underscore.
+            guard let underscore = name.lastIndex(of: "_") else { return nil }
+            let id = String(name[name.index(after: underscore)...])
             return isValidSessionID(id) ? id : nil
         }
     }

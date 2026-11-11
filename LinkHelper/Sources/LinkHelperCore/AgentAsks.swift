@@ -83,7 +83,7 @@ final class AskTracker: @unchecked Sendable {
 		guard event == "agent.status", let id = data["id"] as? String else { return }
 		let status = data["status"] as? String ?? "unknown"
 		let kind = (data["agent"] as? String ?? "").lowercased()
-		let quiet = Self.quietStatuses.contains(status) && (kind.hasPrefix("claude") || kind.hasPrefix("codex"))
+		let quiet = Self.quietStatuses.contains(status) && (kind.hasPrefix("claude") || kind.hasPrefix("codex") || kind == "omp")
 		queue.async { [self] in
 			if status == "blocked" || quiet || entry(id) != nil { _ = try? refresh(id, agent: data, discover: false) }
 		}

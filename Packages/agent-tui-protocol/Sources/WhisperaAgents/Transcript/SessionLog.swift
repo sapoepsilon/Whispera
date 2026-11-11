@@ -38,9 +38,12 @@ public enum SessionLog {
         guard let handle = try? FileHandle(forReadingFrom: url) else { throw SessionLogError.unreadable }
         defer { try? handle.close() }
         let size = Int((try? handle.seekToEnd()) ?? 0)
-        let reader: any SessionLogReader = harness == .codex
-            ? CodexSessionReader(legacyEvents: !hasItemEvents(handle, size: size))
-            : ClaudeSessionReader(sidechain: sidechain)
+        let reader: any SessionLogReader
+        switch harness {
+        case .codex: reader = CodexSessionReader(legacyEvents: !hasItemEvents(handle, size: size))
+        case .claude: reader = ClaudeSessionReader(sidechain: sidechain)
+        case .omp: reader = OmpSessionReader()
+        }
         let limit = max(1, limit)
         if let since {
             return try forward(handle, reader: reader, from: since, size: size, limit: limit, maxScan: maxScan)

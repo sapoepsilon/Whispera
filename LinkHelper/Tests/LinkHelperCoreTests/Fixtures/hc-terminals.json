@@ -1,0 +1,202 @@
+{
+ "codex-done": {
+  "address": "t3b",
+  "argv": [
+   "codex",
+   "--sandbox",
+   "workspace-write",
+   "--ask-for-approval",
+   "never",
+   "Fix the bug in calc.py so add returns a + b, then run python3 -c \"import calc; print(calc.add(2,3))\". Reply with the output only."
+  ],
+  "cols": 200,
+  "created_ms": 1794373275626,
+  "cwd": "/Users/me/Developer/calc",
+  "die_with_parent": true,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "codex",
+    "--sandbox",
+    "workspace-write",
+    "--ask-for-approval",
+    "never",
+    "Fix the bug in calc.py so add returns a + b, then run python3 -c \"import calc; print(calc.add(2,3))\". Reply with the output only."
+   ],
+   "cwd": "/Users/me/Developer/calc",
+   "name": "codex",
+   "pid": 82604
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "where": "whispera / 1"
+  },
+  "name": "wl-codex",
+  "notify": true,
+  "parent": "t1w",
+  "pid": 82604,
+  "reason": null,
+  "reported": true,
+  "rm": false,
+  "rows": 120,
+  "signal": null,
+  "state": "live",
+  "status": {
+   "app": "codex",
+   "state": "done"
+  },
+  "status_ms": 1794373317481,
+  "template": null,
+  "title": "Fix calc.add addition bug | hc-codex",
+  "turn": 1
+ },
+ "codex-working": {
+  "address": "t3b",
+  "argv": [
+   "codex",
+   "--sandbox",
+   "workspace-write",
+   "--ask-for-approval",
+   "never",
+   "Fix the bug in calc.py so add returns a + b, then run python3 -c \"import calc; print(calc.add(2,3))\". Reply with the output only."
+  ],
+  "cols": 200,
+  "created_ms": 1794373275626,
+  "cwd": "/Users/me/Developer/calc",
+  "die_with_parent": true,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "codex",
+    "--sandbox",
+    "workspace-write",
+    "--ask-for-approval",
+    "never",
+    "Fix the bug in calc.py so add returns a + b, then run python3 -c \"import calc; print(calc.add(2,3))\". Reply with the output only."
+   ],
+   "cwd": "/Users/me/Developer/calc",
+   "name": "codex",
+   "pid": 82604
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "where": "whispera / 1"
+  },
+  "name": "wl-codex",
+  "notify": true,
+  "parent": "t1w",
+  "pid": 82604,
+  "reason": null,
+  "reported": true,
+  "rm": false,
+  "rows": 120,
+  "signal": null,
+  "state": "live",
+  "status": {
+   "app": "codex",
+   "state": "working"
+  },
+  "status_ms": 1794373287830,
+  "template": null,
+  "title": "\u2807 hc-codex",
+  "turn": 0
+ },
+ "omp-done": {
+  "address": "t39",
+  "argv": [
+   "omp",
+   "--auto-approve",
+   "Fix the bug in calc.py so add returns a + b, then run python3 -c \"import calc; print(calc.add(2,3))\". Reply with the output only."
+  ],
+  "cols": 200,
+  "created_ms": 1794373275609,
+  "cwd": "/Users/me/Developer/calc",
+  "die_with_parent": true,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "omp",
+    "--auto-approve",
+    "Fix the bug in calc.py so add returns a + b, then run python3 -c \"import calc; print(calc.add(2,3))\". Reply with the output only."
+   ],
+   "cwd": "/Users/me/Developer/calc",
+   "name": "omp",
+   "pid": 82601
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "where": "whispera / 1"
+  },
+  "name": "wl-omp",
+  "notify": true,
+  "parent": "t1w",
+  "pid": 82601,
+  "reason": null,
+  "reported": true,
+  "rm": false,
+  "rows": 120,
+  "signal": null,
+  "state": "live",
+  "status": {
+   "app": "omp",
+   "state": "done"
+  },
+  "status_ms": 1794373279310,
+  "template": null,
+  "title": "\u03c0 > \ud83d\udc0d CALC: Fix add function in calc.py",
+  "turn": 1
+ },
+ "omp-working": {
+  "address": "t39",
+  "argv": [
+   "omp",
+   "--auto-approve",
+   "Fix the bug in calc.py so add returns a + b, then run python3 -c \"import calc; print(calc.add(2,3))\". Reply with the output only."
+  ],
+  "cols": 200,
+  "created_ms": 1794373275609,
+  "cwd": "/Users/me/Developer/calc",
+  "die_with_parent": true,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "omp",
+    "--auto-approve",
+    "Fix the bug in calc.py so add returns a + b, then run python3 -c \"import calc; print(calc.add(2,3))\". Reply with the output only."
+   ],
+   "cwd": "/Users/me/Developer/calc",
+   "name": "omp",
+   "pid": 82601
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "where": "whispera / 1"
+  },
+  "name": "wl-omp",
+  "notify": true,
+  "parent": "t1w",
+  "pid": 82601,
+  "reason": null,
+  "reported": true,
+  "rm": false,
+  "rows": 120,
+  "signal": null,
+  "state": "live",
+  "status": {
+   "app": "omp",
+   "state": "done"
+  },
+  "status_ms": 1794373279310,
+  "template": null,
+  "title": "\u03c0 > \ud83d\udc0d CALC: Fix add function in calc.py",
+  "turn": 1
+ }
+}
