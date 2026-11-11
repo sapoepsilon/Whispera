@@ -119,6 +119,10 @@ public actor AccountLink {
 	/// A pending phone that has not committed this long after it was pinned is taken for one that
 	/// predates the exchange: its card says to update Whispera on the iPhone.
 	static let sasUpdateHintAfter = 60
+	/// A `sas_commit` from a listed iPhone the sync loop has not pinned yet is held this long for
+	/// the next sync to pin it, instead of being dropped (the phone sends it as soon as it sees
+	/// this Mac, usually before the Mac's next sync).
+	static let sasHoldBeforePin = 60
 
 	public struct SyncReport: Sendable, Equatable {
 		public var pinned: [String] = []
@@ -150,6 +154,8 @@ public actor AccountLink {
 	public let circle: AccountCircle?
 	private var state: State?
 	private var snapshot: AccountDevices?
+	/// Commitments that arrived before their sender was pinned, by device id.
+	private var heldCommits: [String: (commit: SASCommit, sender: TrustedDevice, at: Int)] = [:]
 	private var mailbox: RelayMailbox?
 	private var loop: Task<Void, Never>?
 	private var tail: Task<Void, Never>?
@@ -803,7 +809,23 @@ public actor AccountLink {
 		state?.last_error = nil
 		status = "registered"
 		saveState()
+		await startHeldSafetyNumbers()
 		return report
+	}
+
+	/// Answers the commitments held for phones this sync may have pinned; drops stale ones.
+	private func startHeldSafetyNumbers() async {
+		let now = clock()
+		for (id, held) in heldCommits {
+			if now - held.at >= Self.sasHoldBeforePin {
+				heldCommits[id] = nil
+				log("account.sas_refused", ["device": id, "detail": "not pinned here"])
+				continue
+			}
+			guard let record = devices.get(id), record.origin == .account, !record.isRevoked else { continue }
+			heldCommits[id] = nil
+			await startSafetyNumber(held.commit, from: held.sender)
+		}
 	}
 
 	/// Sends a fresh offer (with a newly minted STT key whose hash replaces the old one).
@@ -987,6 +1009,13 @@ public actor AccountLink {
 			return
 		}
 		guard let record = devices.get(sender.id), record.origin == .account, !record.isRevoked else {
+			// Listed in the account but not pinned yet: the sync loop pins it, then answers.
+			if devices.get(sender.id) == nil, snapshot?.phones.contains(where: { $0.id == sender.id }) == true {
+				heldCommits[sender.id] = (commit, sender, clock())
+				log("account.sas_held", ["device": sender.id, "detail": "waiting for the next sync to pin it"])
+				syncSoon()
+				return
+			}
 			log("account.sas_refused", ["device": sender.id, "detail": "not pinned here"])
 			return
 		}

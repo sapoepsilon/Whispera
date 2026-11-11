@@ -203,6 +203,34 @@ final class SafetyNumberCommitmentTests: XCTestCase {
 		XCTAssertTrue(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
 	}
 
+	/// A new iPhone commits as soon as it sees this Mac, usually before the Mac's next sync pins
+	/// it. The commitment waits for that sync instead of being dropped (the phone then waited
+	/// minutes and each side told the owner to update the other).
+	func testACommitThatArrivesBeforeThePhoneIsPinnedIsAnsweredAfterTheNextSync() async throws {
+		let status = try await account.connect(bearer: "tok-alice", backendURL: backend.baseURL)
+		let macID = try XCTUnwrap(status["device_id"] as? String)
+		_ = try await account.syncNow()
+		let phone = AccountPhone(backend: backend)
+		try await phone.register(bearer: "tok-alice", name: "Sam's iPhone")
+		XCTAssertNil(helper.daemon.devices.get(phone.deviceID), "not pinned before the next sync")
+
+		var attempt = try await phone.commit(toMac: macID)
+		try await account.processMessages()
+		_ = try await account.syncNow()
+		XCTAssertNotNil(helper.daemon.devices.get(phone.deviceID))
+
+		let nonce = try await phone.nextNonce(attempt: attempt.attempt)
+		let reveal = try attempt.receive(nonce, listedMacLink: try XCTUnwrap(account.macLinkKey()))
+		try await phone.send(.sasReveal(reveal), toDevice: macID)
+		try await account.processMessages()
+		let number = try XCTUnwrap(attempt.number)
+		let shown = await card(phone)
+		XCTAssertEqual(shown?["safety_number"] as? String, number)
+		XCTAssertEqual(shown?["sas_status"] as? String, "ready")
+		_ = try await account.confirmApprove(phone.deviceID, safetyNumber: number)
+		XCTAssertTrue(try XCTUnwrap(helper.daemon.devices.get(phone.deviceID)).approveConfirmed)
+	}
+
 	func testAnOlderIPhoneThatNeverCommitsGetsNoNumberAndCannotBeConfirmed() async throws {
 		let (phone, macID) = try await listedPhone()
 		let record = try XCTUnwrap(helper.daemon.devices.get(phone.deviceID))
